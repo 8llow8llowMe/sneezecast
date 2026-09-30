@@ -144,9 +144,10 @@ public class AuthSecurityConfigurer {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(true);
         // 목록을 게이트웨이 CORS 설정과 같게 맞춰 둔다. auth 로 직결하는 구성에서도 같은 출처가 통과해야 한다.
-        // 개발·운영 웹 도메인이 정해지면 여기에 추가한다. 지금은 FE 로컬 개발 서버만 허용한다.
         config.setAllowedOriginPatterns(List.of(
-            "http://localhost:[*]"
+            "https://dev.sneezecast.com",   // 개발 웹
+            "https://www.sneezecast.com",   // 운영 웹
+            "http://localhost:[*]"          // FE 로컬 개발 서버
         ));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
