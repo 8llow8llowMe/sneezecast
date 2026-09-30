@@ -74,34 +74,34 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 | 호출 | 경로 | 용도 |
 |------|------|------|
 | auth → surveillance | `GET /internal/v1/districts/{code}` | 행정동 설정 저장 시 코드 검증 |
-| auth → surveillance | `DELETE /internal/v1/reporters/{memberId}` | 탈퇴·민감정보 동의 철회 시 원시 보고 파기 |
-| surveillance → auth | `POST /internal/v1/notifications/broadcasts` | 안내 발행 알림 팬아웃 |
+| auth → surveillance | `DELETE /internal/v1/reporters/{memberId}` | 탈퇴·민감정보 동의 철회 시 원시 보고 파기. **멱등**(0건이어도 204)이고, auth `report_purge_request` 스케줄러가 완료될 때까지 다시 부른다 ([entity-design.md §1-5](entity-design.md#1-5-report_purge_request--원시-보고-파기-요청)) |
+| surveillance → auth | `POST /internal/v1/notifications/broadcasts` | 안내 발행 알림 팬아웃 (2단계) |
 
 ## 5. 핵심 데이터 흐름
 
 | 단계 | 소유 | 방식 |
 |------|------|------|
-| ① 주간 보고 | surveillance `report` | JWT scope `report:write` 확인 → `reporter_key` 계산 → `(reporter_key, iso_week)` unique upsert. 행정동 코드는 보고 행에 스냅샷한다 |
+| ① 주간 보고 | surveillance `report` | JWT scope `report:write` 확인 → `reporter_key` 계산 → **서버가 KST 현재 시각으로 `iso_week` 를 정한다**(현재 주만 쓸 수 있다) → `(reporter_key, iso_week)` unique upsert. 행정동 코드는 요청이 싣고(FE 가 `member_region` 값을 보낸다) surveillance 가 `district` 로 현행 코드인지 검증해 보고 행에 스냅샷한다 |
 | ② 집계 | `aggregate` | 서비스 내 스케줄러가 현재 주를 `GROUP BY` 로 **재계산**한다 (카운터를 누적하지 않아 멱등). 주 마감 시 확정. 참여자 = distinct `reporter_key`, 비율 = 증상 보고 / 참여자 |
-| ③ 자료 부족 판정 | `aggregate` | 참여자 < 최소 표본 또는 참여자 급변 → `INSUFFICIENT`. 임계값은 설정 테이블. 참여 급증·반복 보고·기준선 대비 변화는 검토 후보로 적재 |
-| ④ 운영자 검토 | `advisory` | `OPERATOR` 역할. 초안에 집계 스냅샷을 복사해 인용값을 고정한다. AI 초안은 스냅샷 수치만 입력으로 넣는 동기 호출 (트랜잭션 밖, timeout 명시) |
-| ⑤ 안내 발행 | `advisory` | 상태 `DRAFT → AI_DRAFTED → EDITED → APPROVED → PUBLISHED → RETRACTED`, 전이마다 이력. **자동 발행 경로는 없다** |
-| ⑥ 알림 | surveillance → auth | 발행과 같은 트랜잭션에 outbox 행 → 스케줄러가 Feign 으로 전달 (재시도) → auth 가 행정동 × 알림 동의 × 구독으로 발송. 알림 미지원 환경은 공개 안내 API 로 같은 내용을 본다 |
+| ③ 자료 부족 판정 | `aggregate` | 참여자 < 최소 표본 또는 전주 대비 참여자 급변 → `INSUFFICIENT`. 1단계 임계값은 설정값이고 집계 행에 `rule_version` 을 남긴다. 검토 후보(참여 급증·반복 보고)는 1단계에서 운영자 화면이 조회 시 계산하고, 기준선 대비 변화와 후보 적재(`review_signal`)는 2단계다 |
+| ④ 운영자 검토 | `advisory` | `OPERATOR` 역할. **마감됐고 `INSUFFICIENT` 가 아닌 집계로만** 초안을 만든다. 초안에 집계 스냅샷을 복사해 인용값을 고정한다. AI 초안은 스냅샷 수치만 입력으로 넣는 동기 호출 (트랜잭션 밖, timeout 명시) |
+| ⑤ 안내 발행 | `advisory` | 상태 `DRAFT → AI_DRAFTED → EDITED → APPROVED → PUBLISHED → RETRACTED`, 전이마다 이력. 승인 뒤 수정하면 다시 승인받는다 (허용 전이는 [entity-design.md §2-5](entity-design.md#2-5-advisory-상태-전이)). **자동 발행 경로는 없다** |
+| ⑥ 알림 (2단계) | surveillance → auth | 발행과 같은 트랜잭션에 outbox 행 → 스케줄러가 Feign 으로 전달 (재시도) → auth 가 행정동 × 알림 동의 × 구독으로 발송. 알림 미지원 환경은 공개 안내 API 로 같은 내용을 본다 |
 
 ## 6. 개인정보 경계
 
 - **auth DB 에는 증상이 없고, surveillance DB 에는 `member_id` 가 없다.** 회원 정보(이메일·닉네임·프로필 이미지)는 auth 에만 있다. 성명은 받지 않는다.
 - `reporter_key = HMAC-SHA256(pepper, memberId)`. pepper 는 Vault 의 surveillance 경로에만 있고 auth 는 모른다. 32자 미만이면 기동 실패, 기동 로그에는 지문만 남긴다. **pepper 는 교체하지 않는다** (교체 = 전 행 재키잉).
-- 보고 행 컬럼은 `reporter_key`, `iso_week`, `district_code`, `symptom_mask`, 시각뿐이다. 자유 서술·좌표·성명 컬럼을 만들지 않는다.
+- 보고 행 컬럼은 `reporter_key`, `iso_week`, `district_code`, `symptom_mask`(증상군 비트), `revision_count`, 시각뿐이다. 개별 증상·자유 서술·좌표·성명 컬럼을 만들지 않는다.
 - **공개 API 는 집계와 발행된 안내만 읽는다.** 표본이 임계 미만이면 수치·비율 없이 `INSUFFICIENT` 만 내린다. 원시 보고 행을 반환하는 API 는 운영자용에도 두지 않는다.
 - `advisory` · `official` · `district` 패키지는 `report` 의 영속 계층을 import 하지 않는다 (ArchUnit 으로 검사).
-- 원시 보고는 기준선 산출에 필요한 기간(52주)만 보관하고 스케줄러가 삭제한다. 탈퇴·철회 시 즉시 삭제하고, 익명 집계는 남긴다.
-- 동의 상태는 JWT scope 로 전달한다. access token TTL 은 15분 이하, 철회 시 refresh 세션을 폐기한다.
+- 원시 보고는 기준선 산출에 필요한 기간(52주)만 보관하고 스케줄러가 삭제한다. 탈퇴·철회 시 즉시 삭제하고, 익명 집계는 남긴다. 파기 호출이 실패해도 끝까지 다시 부르고, 탈퇴 회원 행은 파기가 끝난 뒤에만 지운다 (그 전에 지우면 `memberId` 를 잃어 `reporter_key` 를 다시 계산할 수 없다).
+- 동의 상태는 JWT scope 로 전달한다. access token TTL 은 15분 이하, 철회 시 refresh 세션을 폐기한다. 다른 기기의 access token 에 남은 `report:write`(최대 15분)로 들어온 보고는 TTL 이 지난 뒤의 2차 파기가 지운다.
 
 ## 7. 참조 데이터
 
-- **행정동**: surveillance `district` 소유, batch 가 적재. SGIS 행정동 코드(`adm_cd`)를 PK 로 쓰고 `valid_from` / `valid_to` 로 개편을 흡수한다. 경계 GeoJSON 은 프론트 정적 자원으로 싣는다.
-- **질병관리청 감시 자료**: surveillance `official` 소유, batch 가 적재. `source`, 집계 단위(전국·시도), 기준 주, 수집 시각을 필수 컬럼으로 두고 응답에도 항상 싣는다. 자가보고 지표와 같은 응답 필드에 섞지 않는다.
+- **행정동**: surveillance `district` 소유, batch 가 적재. SGIS 읍면동 코드(`adm_cd`, 8자리)를 unique 키로 쓰고 `valid_from_year` / `valid_to_year` 로 개편을 흡수한다 (컬럼은 [entity-design.md §3-1](entity-design.md#3-1-district--행정동-마스터-sgis)). 경계 GeoJSON 은 프론트 정적 자원으로 싣는다.
+- **질병관리청 감시 자료**: surveillance `official` 소유, batch 가 적재. `source`, 집계 단위(전국·시도), 기준 기간(질병관리청 연도·주차와 날짜), 수집 시각을 필수 컬럼으로 두고 응답에도 항상 싣는다. 자가보고 지표와 같은 응답 필드에 섞지 않는다. 전수신고는 공공데이터포털 API, 표본감시는 공식 API 가 없어 감염병포털 화면 데이터를 주 1회 받는다 ([data-api-analysis.md](data-api-analysis.md)). 질병관리청 주차는 일요일 시작이라 우리 ISO 주와 섞지 않는다.
 - 외부 API 원본 응답은 adapter 밖으로 새지 않는다. 쿼터가 있는 API 는 배치 적재 후 DB 조회를 우선한다.
 
 ## 8. API 응답

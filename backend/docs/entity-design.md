@@ -366,7 +366,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 ### 4-3. Spring Batch 메타 테이블
 
-`BATCH_*` 메타 테이블은 **surveillance 스키마**에 둔다 (hondigagae 가 `tour` 스키마에 두는 것과 같은 관계). batch-service 는 이미 surveillance 스키마에 쓰는 유일한 예외이므로 스키마 · 계정을 하나 더 늘리지 않는다. dev 는 애플리케이션이 만들고(`initialize-schema: always`), prod 는 DB 담당자가 적용한다(기본 `never`, #25).
+`BATCH_*` 메타 테이블은 **surveillance 스키마**에 둔다 (hondigagae 가 `tour` 스키마에 두는 것과 같은 관계, 데이터소스 하나). batch-service 는 이미 surveillance 스키마에 쓰는 유일한 예외이므로 스키마를 하나 더 늘리지 않는다. 접속 계정은 surveillance-service 와 다른 **적재용 계정**(`BATCH_DB_USERNAME`)이다. dev 는 애플리케이션이 만들고(`initialize-schema: always`), prod 는 DB 담당자가 적용한다(기본 `never`). 구성 정본은 [modules.md](modules.md#servicebatch-service) (#25).
 
 ---
 
