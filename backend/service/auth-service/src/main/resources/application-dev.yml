@@ -1,0 +1,60 @@
+server:
+  port: ${AUTH_SERVICE_PORT}
+  shutdown: graceful
+
+spring:
+  datasource:
+    # MySQL auth 스키마. surveillance 와 다른 DB 계정을 쓴다.
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${AUTH_DB_URL}
+    username: ${AUTH_DB_USERNAME}
+    password: ${AUTH_DB_PASSWORD}
+  servlet:
+    multipart:
+      # 파일 한 개 상한은 스토리지 검증(infra.storage.max-file-bytes)과 같은 env 를 쓴다. 기본 1MB 로 두면 5MB 허용 이미지가 서블릿에서 먼저 막힌다.
+      max-file-size: ${MINIO_MAX_FILE_BYTES:5242880}
+      # 요청 전체는 파일 + 폼 필드 여유분. MINIO_MAX_FILE_BYTES 를 올리면 이 값도 함께 올린다.
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:6MB}
+  jpa:
+    open-in-view: false
+    hibernate:
+      # dev 만 애플리케이션이 스키마를 맞춘다. prod 스키마는 DB 담당자가 관리한다.
+      ddl-auto: update
+
+eureka:
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 10
+  client:
+    serviceUrl:
+      defaultZone: http://${SERVICE_DISCOVERY_HOSTNAME}:${SERVICE_DISCOVERY_PORT}/eureka/
+
+jwt:
+  # access-key 는 게이트웨이와 같은 값이다. 둘 다 HS512 라 64바이트 이상이어야 한다 (짧으면 기동 실패).
+  access-key: ${JWT_ACCESS_KEY}
+  refresh-key: ${JWT_REFRESH_KEY}
+  # access token 은 15분 이하 — 동의 철회가 scope 에서 빠지기까지의 최대 지연이다. 넘기면 기동에서 실패한다.
+  access-expiration: ${JWT_ACCESS_EXPIRATION:PT15M}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:P14D}
+
+infra:
+  redis:
+    # 팀 인프라는 3노드 Sentinel 이다. 노드는 host:port,host:port 문자열 하나로 받는다.
+    # master-name 이나 sentinel-nodes 가 비면 기동 시점에 실패한다.
+    mode: sentinel
+    master-name: ${REDIS_MASTER_NAME}
+    sentinel-nodes: ${REDIS_SENTINEL_NODES}
+    password: ${REDIS_PASSWORD}
+    # 명령 하나의 대기 상한. 블랙리스트 조회가 요청 경로에 있어 짧게 둔다.
+    command-timeout: ${REDIS_COMMAND_TIMEOUT:1s}
+  storage:
+    # 백엔드는 MinIO 와 다른 호스트에 있으므로 컨테이너명이 아니라 사설 IP 로 접속한다.
+    endpoint: ${MINIO_ENDPOINT}
+    # 브라우저가 이미지를 조회할 공개 주소. DB 에는 오브젝트 키만 저장하고 응답 시 이 값으로 URL 을 조립한다.
+    public-url: ${MINIO_PUBLIC_URL}
+    bucket: ${MINIO_BUCKET}
+    access-key: ${MINIO_ACCESS_KEY}
+    secret-key: ${MINIO_SECRET_KEY}
+    max-file-bytes: ${MINIO_MAX_FILE_BYTES:5242880}
