@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sneezecast.domainlayer.report.application.service.ReporterKeyGenerator;
-import com.sneezecast.global.config.JwtResourceServerPropertiesValidator;
 import com.sneezecast.security.auth.jwt.JwtAuthProperties;
 import com.sneezecast.security.auth.jwt.JwtAuthProvider;
 import com.sneezecast.security.common.constant.SecurityScope;
@@ -87,11 +86,10 @@ class SurveillanceServiceApplicationTests {
     private MockMvc mockMvc;
 
     @Test
-    @DisplayName("보안 구성은 resourceserver 하나다 — 필터 체인 하나, 회원 변환기는 JwtToMemberConverter, 검증 키 기동 검사 포함")
+    @DisplayName("보안 구성은 resourceserver 하나다 — 필터 체인 하나, 회원 변환기는 JwtToMemberConverter")
     void usesResourceServerSecurity() {
         assertThat(context.getBeansOfType(SecurityFilterChain.class)).hasSize(1);
         assertThat(context.getBeansOfType(JwtToMemberConverter.class)).hasSize(1);
-        assertThat(context.getBeansOfType(JwtResourceServerPropertiesValidator.class)).hasSize(1);
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.sneezecast.security.resourceserver.handler.OAuth2AuthenticationFailur
 import com.sneezecast.security.resourceserver.jwt.JwtResourceServerProperties;
 import com.sneezecast.security.resourceserver.jwt.JwtToMemberConverter;
 import com.sneezecast.security.resourceserver.resolver.OAuth2ResourceTokenErrorResolver;
+import java.nio.charset.StandardCharsets;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -52,7 +53,7 @@ public class ResourceServerSecurityConfigurer {
 
     @Bean
     public JwtDecoder jwtDecoder(JwtResourceServerProperties properties) {
-        SecretKey secretKey = new SecretKeySpec(properties.accessKey().getBytes(), "HmacSHA512");
+        SecretKey secretKey = new SecretKeySpec(properties.accessKey().getBytes(StandardCharsets.UTF_8), "HmacSHA512");
         return NimbusJwtDecoder
             .withSecretKey(secretKey)
             .macAlgorithm(MacAlgorithm.HS512)

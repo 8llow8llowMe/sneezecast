@@ -13,6 +13,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.Jwts.SIG;
 import io.jsonwebtoken.security.Keys;
 import io.jsonwebtoken.security.SignatureException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Date;
 import java.util.Set;
@@ -94,7 +95,7 @@ public class JwtAuthProvider {
             .claims(claims)
             .issuedAt(now)
             .expiration(new Date(now.getTime() + expiration.toMillis()))
-            .signWith(Keys.hmacShaKeyFor(secretKey.getBytes()), SIG.HS512)
+            .signWith(Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8)), SIG.HS512)
             .compact();
     }
 
@@ -107,7 +108,7 @@ public class JwtAuthProvider {
     private Claims parseToken(String token, String secretKey) {
         try {
             return Jwts.parser()
-                .verifyWith(Keys.hmacShaKeyFor(secretKey.getBytes()))
+                .verifyWith(Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8)))
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
