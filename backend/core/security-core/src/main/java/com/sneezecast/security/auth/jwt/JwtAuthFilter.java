@@ -68,7 +68,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private String getJwtFrom(HttpServletRequest request) {
         String bearerToken = request.getHeader(HttpHeaders.AUTHORIZATION);
 
-        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith(BEARER_PREFIX)) {
+        // scheme 은 대소문자를 가리지 않는다 (RFC 7235). 게이트웨이 · Resource Server 와 판정을 맞춘다.
+        if (StringUtils.hasText(bearerToken) && bearerToken.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
             return bearerToken.substring(BEARER_PREFIX.length());
         }
 

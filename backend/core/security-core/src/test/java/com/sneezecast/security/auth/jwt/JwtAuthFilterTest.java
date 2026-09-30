@@ -113,6 +113,33 @@ class JwtAuthFilterTest {
     }
 
     @Test
+    @DisplayName("소문자 bearer 도 같은 토큰으로 인증된다 — 게이트웨이가 통과시킨 토큰을 여기서만 익명으로 만들지 않는다")
+    void lowercaseSchemeAuthenticates() throws Exception {
+        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of());
+        MockFilterChain chain = new MockFilterChain();
+
+        filter(tokenId -> false).doFilter(requestWithAuthorization("bearer " + token), new MockHttpServletResponse(), chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        MemberLoginActive principal = (MemberLoginActive) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        assertThat(principal.memberId()).isEqualTo(42L);
+    }
+
+    @Test
+    @DisplayName("소문자 bearer 로 보낸 폐기 토큰도 401 SECURITY_007 — scheme 대소문자로 블랙리스트를 비껴가지 못한다")
+    void lowercaseSchemeRevokedTokenEndsWith401() throws Exception {
+        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter(tokenId -> true).doFilter(requestWithAuthorization("bearer " + token), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("SECURITY_007");
+        assertThat(chain.getRequest()).isNull();
+    }
+
+    @Test
     @DisplayName("Authorization 헤더가 없으면 손대지 않고 통과시킨다 — 인증 필요 여부는 @PreAuthorize 와 진입점의 몫")
     void noHeaderPassesThrough() throws Exception {
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -129,8 +156,12 @@ class JwtAuthFilterTest {
     }
 
     private static MockHttpServletRequest requestWithBearer(String token) {
+        return requestWithAuthorization("Bearer " + token);
+    }
+
+    private static MockHttpServletRequest requestWithAuthorization(String authorization) {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/members/me");
-        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        request.addHeader(HttpHeaders.AUTHORIZATION, authorization);
         return request;
     }
 }
