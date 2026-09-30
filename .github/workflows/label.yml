@@ -1,0 +1,29 @@
+name: label
+
+# **라벨을 사람 손에 맡기지 않는다.**
+#
+# 배포 대상은 PR 라벨로 정해지고(#10), 라벨이 없으면 배포가 나가지 않게 한다(fail-closed).
+# 손으로 붙이게 두면 빠뜨린 PR 이 머지돼도 배포가 안 나가는 일이 생긴다.
+#
+# 매핑은 `.github/labeler.yml` 이다.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# 기본 토큰은 읽기 전용이다. 라벨을 붙이려면 이 권한이 필요하다
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      # 포크에서 온 PR 은 `pull_request` 토큰이 읽기 전용이라 라벨을 붙이지 못한다.
+      # 이 저장소는 포크 없이 브랜치로 작업하므로 `pull_request_target` 을 쓰지 않는다 —
+      # 그쪽은 base 의 권한으로 돌아 더 위험하다.
+      - uses: actions/labeler@v5
+        with:
+          # **더하기만 한다.** 사람이 넓혀 둔 스코프를 지우지 않는다 (labeler.yml 주석)
+          sync-labels: false
