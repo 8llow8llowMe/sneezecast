@@ -65,9 +65,9 @@ Feign 전용 응답 DTO 는 `*ClientResponse` 로 짓고 `adapter/out/client/fei
 ```java
 @Builder
 public record WeeklyReportRequest(
-    @Schema(description = "보고 주차 시작일 (월요일)", example = "2026-09-28")
-    @NotNull(message = ReportValidationMessage.WEEK_START_REQUIRED)
-    LocalDate weekStart,
+    @Schema(description = "보고 행정동 코드 (SGIS 8자리). 보고 주는 서버가 정한다", example = "11240660")
+    @NotBlank(message = ReportValidationMessage.DISTRICT_CODE_REQUIRED)
+    String districtCode,
 
     @Schema(description = "증상군 코드 목록. 증상 없음이면 빈 목록")
     @NotNull(message = ReportValidationMessage.SYMPTOMS_REQUIRED)
