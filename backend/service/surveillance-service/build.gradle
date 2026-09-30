@@ -1,0 +1,23 @@
+// 공통 의존성(actuator · prometheus · Spring Cloud BOM)은 루트 build.gradle 의 cloudAppModules 가 처리한다.
+// Redis · MinIO 는 쓰지 않으므로 redis-core · storage-core 를 넣지 않는다.
+dependencies {
+    implementation project(':core:common-core')
+    implementation project(':core:persistence-core')
+    // resourceserver 패키지(JWT 검증 필터 체인)를 쓴다. oauth2-resource-server · jjwt 런타임은 security-core 가 끌고 온다.
+    implementation project(':core:security-core')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    // security-core 가 필터 체인을 만들지만, 컨트롤러의 @PreAuthorize 는 이 서비스가 직접 컴파일한다.
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    // OpenAPI 문서 빈(SurveillanceServiceSwaggerConfig)과 컨트롤러 Swagger 어노테이션용. 버전은 common-core 와 같게 둔다.
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
+    // 컨텍스트 로딩 테스트(SurveillanceServiceApplicationTests)가 실제 MySQL 없이 JPA 까지 조립해 본다.
+    testRuntimeOnly 'com.h2database:h2'
+    // 컨텍스트 테스트가 claim 규약을 어긴 토큰을 직접 서명한다. 버전은 security-core 와 같게 두고, impl · jackson 런타임은 security-core 가 끌고 온다.
+    testImplementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+}

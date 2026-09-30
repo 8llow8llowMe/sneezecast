@@ -1,0 +1,39 @@
+server:
+  port: ${SURVEILLANCE_SERVICE_PORT}
+  shutdown: graceful
+
+spring:
+  datasource:
+    # MySQL surveillance 스키마. auth 와 다른 DB 계정을 쓴다 — 신원과 가명 증상을 한 계정으로 결합할 수 없게 한다.
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${SURVEILLANCE_DB_URL}
+    username: ${SURVEILLANCE_DB_USERNAME}
+    password: ${SURVEILLANCE_DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      # dev 만 애플리케이션이 스키마를 맞춘다. prod 스키마는 DB 담당자가 관리한다.
+      ddl-auto: update
+
+eureka:
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 10
+  client:
+    serviceUrl:
+      defaultZone: http://${SERVICE_DISCOVERY_HOSTNAME}:${SERVICE_DISCOVERY_PORT}/eureka/
+
+app:
+  security:
+    jwt:
+      resource:
+        # auth-service · 게이트웨이와 같은 JWT_ACCESS_KEY 다 (HS512). 다르면 모든 토큰이 401 이 된다.
+        access-key: ${JWT_ACCESS_KEY}
+
+surveillance:
+  reporter-key:
+    # reporter_key = HMAC-SHA256(pepper, memberId). 기본값 없음 — 없거나 32자 미만이면 기동 실패. 로그에는 지문만 남는다.
+    # 교체하지 않는다 (교체 = 전 행 재키잉). Vault 의 surveillance 경로에만 두고 auth 에는 주지 않는다.
+    pepper: ${REPORTER_KEY_PEPPER}
