@@ -115,7 +115,7 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 
 바꾸면 저장된 데이터가 깨진다. 변경은 기존 데이터 변환 계획과 함께만 한다.
 
-- `reporter_key` 산출식과 pepper
+- `reporter_key` 산출식과 pepper — `lowercase-hex(HMAC-SHA256(key = pepper 의 UTF-8 바이트, msg = memberId 10진 문자열의 UTF-8 바이트))`, 64자. `memberId <= 0` 은 거부한다. 구현은 `ReporterKeyGenerator` 이고 고정 벡터 테스트로 묶여 있다
 - 주 정의 — ISO 주, 월요일 시작, KST
 - 행정동 코드 체계 — SGIS `adm_cd`
 - JWT claim — `sub`(회원 ID), `role`(단일 역할 `USER` / `OPERATOR` / `ADMIN`), `scope`(공백 구분 문자열, 예: `report:write`). 서비스에서는 `hasAuthority('SCOPE_report:write')` 로 검사한다

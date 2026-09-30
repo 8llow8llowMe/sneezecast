@@ -61,7 +61,7 @@ backend/
 ## core/security-core
 
 - `auth` 패키지 — JWT 발급·파싱(`JwtAuthProvider`), auth-service 용 필터 체인·비밀번호 인코더, access token 블랙리스트 계약(`AccessTokenBlacklistVerifier`, 구현은 auth-service)
-- `resourceserver` 패키지 — 서비스 측 JWT 검증(Resource Server), `SecurityFilterChain` 기본 구성. claim 이 규약과 다른 토큰은 401 `TOKEN_INVALID` 로 거부한다 (auth 쪽과 같은 판정)
+- `resourceserver` 패키지 — 서비스 측 JWT 검증(Resource Server), `SecurityFilterChain` 기본 구성. claim 이 규약과 다른 토큰은 401 `TOKEN_INVALID` 로 거부한다 (auth 쪽과 같은 판정). 사용처: surveillance-service (검증 키 `app.security.jwt.resource.access-key`)
 - 역할 `USER`(일반 회원) / `OPERATOR`(검토·안내 발행) / `ADMIN`(관리자 페이지 — 회원·역할 부여, 운영 설정, 참조 데이터 수동 적재. 운영 API 도 허용), scope claim 해석 (`report:write` — 민감정보 동의를 마친 회원에게만 발급)
   - authority 는 역할 이름 그대로(`ROLE_` 접두어 없음) + scope 마다 `SCOPE_<scope>`. 검사는 `hasAuthority('OPERATOR')`, `hasAuthority(SecurityScope.REPORT_WRITE_AUTHORITY)` 로 한다 — `hasRole(...)` 은 동작하지 않는다.
   - scope 문자열·claim 이름은 `SecurityScope` 한 곳에만 둔다.
@@ -165,6 +165,13 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 
 - 스키마: MySQL `surveillance`, **auth 와 다른 DB 계정**.
 - **`member_id` 를 저장하지 않는다.** 보고자는 가명 키(`reporter_key`)로만 식별한다. 예외는 운영자 감사 컬럼(`operator_id`)뿐이다.
+
+**설정 · 기동 규칙**
+
+- 프로필은 dev / prod 만, 값은 환경변수. prod 는 Swagger 를 끈다. 보안은 security-core `resourceserver`(검증만, 발급 없음).
+- Redis · MinIO 를 쓰지 않는다. 폐기 토큰 차단은 게이트웨이 블랙리스트에 맡기므로 **서비스 포트를 외부에 노출하지 않는다.**
+- `JWT_ACCESS_KEY` 는 auth · 게이트웨이와 같은 값, `SPRING_APPLICATION_NAME` 은 게이트웨이 `SURVEILLANCE_SERVICE_APP_NAME` 과 같은 값.
+- `REPORTER_KEY_PEPPER`(`surveillance.reporter-key.pepper`) — 32자 미만이면 기동 실패. 기동 로그에는 SHA-256 앞 8자 지문만 남긴다. Vault 의 surveillance 경로에만 두고 auth 에는 주지 않는다.
 
 ## service/batch-service
 
