@@ -8,8 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 현재 상태
 
-기획 단계다. 애플리케이션 코드가 없고 GitHub 템플릿(`.github/`)과 Claude Code 설정(`.claude/`)만 있다. 빌드·린트·테스트 명령과 CI 도 아직 없다.
-워크스페이스가 생기면 이 문서에 **실제 명령과 구조를 추가**한다. 존재하지 않는 명령을 추측해서 돌리지 않는다.
+셋업 단계다. 애플리케이션 코드가 아직 없고, 빌드·린트·테스트 명령과 CI 도 없다. 존재하지 않는 명령을 추측해서 돌리지 않는다.
+
+| 워크스페이스 | 대상 | 엔트리 문서 |
+|--------------|------|-------------|
+| `backend/` | Spring Cloud MSA + Hexagonal (설계 문서만 있음) | [`backend/CLAUDE.md`](backend/CLAUDE.md) |
+
+작업 시작 시 해당 워크스페이스의 엔트리 문서를 먼저 읽는다. 로컬 인프라는 두지 않고 팀 개발 서버에 배포해서 개발한다 (팀 인프라 레포 `8llow8llowMe/Infra`).
 
 ## 도메인 규칙 (기획서 기준, 구현이 지켜야 할 불변식)
 
