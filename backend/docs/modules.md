@@ -178,5 +178,8 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - SGIS 행정동 마스터·경계 적재 (연 1회 + 수동), 질병관리청 감시 자료 주간 적재.
 - **상주 서비스 안의 Quartz 스케줄러**가 Spring Batch 잡을 실행한다 (hondigagae batch-service 와 같은 구성). 잡 스토어는 in-memory — JDBC 스토어를 쓰면 surveillance 스키마에 `QRTZ_*` 테이블만 는다. 주기 트리거는 코드(`QuartzScheduleConfig`)가 들고, 스레드는 1개.
 - 기동 시 잡 자동 실행은 끈다 (`spring.batch.job.enabled: false`). 수동 실행은 잡 이름을 지정해서만 한다.
-- Spring Batch 메타 테이블은 dev 에서 애플리케이션이 만들고, prod 는 DB 담당자가 직접 적용한다. 기본값은 `never` 로 둔다 — 새 프로필이 조용히 DDL 을 도는 쪽이 더 위험하다.
+- Spring Batch 메타 테이블(`BATCH_*`)은 **surveillance 스키마**에 둔다 (hondigagae 와 같이 적재 대상 스키마에, 데이터소스 하나). 접속 계정은 surveillance-service 와 다른 적재용 계정이다. 메타 테이블은 dev 에서 애플리케이션이 만들고, prod 는 DB 담당자가 직접 적용한다. 기본값은 `never` 로 둔다 — 새 프로필이 조용히 DDL 을 도는 쪽이 더 위험하다.
 - surveillance 스키마의 `district` · `official_surveillance` 에 쓰기만 한다. 적재는 멱등 upsert. **서비스별 스키마 원칙의 유일한 예외**다 (hondigagae batch → tour 스키마와 같은 관계). 대상 테이블 구조는 surveillance 가 정본이다.
+- **JPA 를 쓰지 않는다** — 쓰기는 JDBC. 엔티티가 없으니 `ddl-auto` 도 없고, batch 가 돌리는 DDL 은 dev 의 `BATCH_*` 생성뿐이다. 대상 테이블에 엔티티를 두면 구조가 surveillance 와 둘로 갈라진다.
+- 주기 실행 스위치 `BATCH_SCHEDULE_ENABLED`(`batch.schedule.enabled`) — 정확히 `true` 이고 `spring.batch.job.enabled` 가 false 일 때만 스케줄러가 시작된다. 기본 dev 켜짐 · prod 꺼짐 (첫 적재 잡을 dev 에서 관찰한 뒤 켠다). 잡 트리거는 반드시 `QuartzScheduleConfig` 안에 `@Bean` 으로 둔다 — 밖에 두면 스위치가 닿지 않는다.
+- 상주 프로세스라 웹 서버(starter-web)를 둔다 — Quartz 스레드는 데몬이라 JVM 을 붙들지 못한다. 컨트롤러는 없고 springdoc 은 끈다. 공개 API 가 없어 security-core 를 쓰지 않으므로 actuator 가 인증 없이 열린다 — **포트를 외부에 노출하지 않는다.**
