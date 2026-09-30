@@ -1,0 +1,52 @@
+# 경로 → 라벨 매핑 (actions/labeler v5)
+#
+# 라벨은 **배포 대상을 정하는 값**으로 쓴다 — 개발 서버 배포 파이프라인(#10)이 PR 라벨로
+# 배포 스코프를 정한다. 라벨이 빠진 PR 은 머지돼도 배포되지 않게 하는 것(fail-closed)이 목표라,
+# 사람 손에 맡기지 않고 경로로 자동 부착한다.
+#
+# **더하기만 한다** (`label.yml` 의 `sync-labels: false`). 사람이 손으로 붙인 라벨을 지우지 않는다 —
+# 지우기 시작하면 아래 `backend-core` 주석처럼 의도적으로 넓힌 스코프가 사라진다.
+#
+# 여기 없는 경로(루트 문서 · `.github/**` · `.claude/**`)는 라벨이 붙지 않는다.
+# 모듈이 아직 없는 라벨(`backend-guidance-service` · `backend-ai-service`)은 모듈이 생길 때 매핑을 추가한다.
+
+frontend-web:
+  - changed-files:
+      - any-glob-to-any-file: 'frontend/**'
+
+# ── 백엔드 서비스 — 배포 단위가 곧 라벨이다
+backend-auth-service:
+  - changed-files:
+      - any-glob-to-any-file: 'backend/service/auth-service/**'
+
+backend-surveillance-service:
+  - changed-files:
+      - any-glob-to-any-file: 'backend/service/surveillance-service/**'
+
+backend-batch-service:
+  - changed-files:
+      - any-glob-to-any-file: 'backend/service/batch-service/**'
+
+backend-api-gateway:
+  - changed-files:
+      - any-glob-to-any-file: 'backend/cloud/api-gateway/**'
+
+backend-service-discovery:
+  - changed-files:
+      - any-glob-to-any-file: 'backend/cloud/service-discovery/**'
+
+# **`backend-core` 는 배포 라벨이 아니다.**
+#
+# 공용 모듈이라 바뀌면 그것을 쓰는 서비스 전부의 런타임이 바뀌는데, 배포 스코프는
+# `backend-{service}` 단위다. 그래서 이 라벨만 붙은 PR 은 **아무 서비스도 배포되지 않는다.**
+#
+# 그렇다고 여기서 서비스 라벨을 다 붙이지는 않는다 — "의도한 대상만 배포한다" 가
+# fail-closed 설계의 요점이고, 자동으로 전체 배포를 열면 그 설계가 무너진다.
+# **core 를 건드린 PR 의 작성자가 배포할 서비스 라벨을 직접 더한다.**
+backend-core:
+  - changed-files:
+      - any-glob-to-any-file: 'backend/core/**'
+
+backend-docs:
+  - changed-files:
+      - any-glob-to-any-file: 'backend/docs/**'
