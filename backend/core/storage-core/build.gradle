@@ -1,1 +1,11 @@
-// 의존성과 소스는 #7 에서 채운다. 모듈 역할은 docs/modules.md 참고.
+// jar/bootJar 설정은 루트 build.gradle 의 libraryModules 가 처리한다.
+dependencies {
+    // MinIO(S3 호환) 클라이언트. 버전은 이 모듈에서만 선언한다.
+    // 서비스는 ObjectStorageClient 만 사용하므로 minio 를 직접 의존하지 않는다
+    // (서비스마다 중복 선언하면 버전이 갈라진다).
+    implementation 'io.minio:minio:8.6.0'
+    // MultipartFile -> 도메인 자료형 변환은 어댑터 경계(MultipartFileSupport)에서만 일어난다.
+    implementation 'org.springframework:spring-web'
+    // 삭제를 커밋 이후로 미루기 위한 TransactionSynchronizationManager
+    implementation 'org.springframework:spring-tx'
+}
