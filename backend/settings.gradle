@@ -1,0 +1,19 @@
+rootProject.name = 'backend'
+
+// 모듈 구성의 정본은 docs/modules.md 다. 모듈을 추가하면 문서도 함께 고친다.
+
+// Cores
+include 'core:common-core'
+include 'core:persistence-core'
+include 'core:redis-core'
+include 'core:security-core'
+include 'core:storage-core'
+
+// Cloud — #9 에서 추가
+// include 'cloud:service-discovery'
+// include 'cloud:api-gateway'
+
+// Services — #11 에서 추가
+// include 'service:auth-service'
+// include 'service:surveillance-service'
+// include 'service:batch-service'
