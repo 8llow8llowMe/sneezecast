@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sneezecast.redis.properties.RedisProperties.SentinelNode;
 import com.sneezecast.redis.properties.enums.RedisMode;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -51,11 +52,30 @@ class RedisPropertiesTest {
         assertThat(withKeyPrefix(" custom ").normalizedKeyPrefix()).isEqualTo("custom");
     }
 
+    @Test
+    void 명령_타임아웃이_없으면_1초를_쓴다() {
+        assertThat(withCommandTimeout(null).resolvedCommandTimeout()).isEqualTo(Duration.ofSeconds(1));
+        assertThat(withCommandTimeout(Duration.ofMillis(500)).resolvedCommandTimeout()).isEqualTo(Duration.ofMillis(500));
+    }
+
+    @Test
+    void 명령_타임아웃이_0_이하면_기동에서_실패시킨다() {
+        assertThatThrownBy(() -> withCommandTimeout(Duration.ZERO).resolvedCommandTimeout())
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("command-timeout");
+        assertThatThrownBy(() -> withCommandTimeout(Duration.ofSeconds(-1)).resolvedCommandTimeout())
+            .isInstanceOf(IllegalStateException.class);
+    }
+
     private static RedisProperties sentinel(String sentinelNodes, List<SentinelNode> sentinels) {
-        return new RedisProperties(RedisMode.SENTINEL, null, null, "mymaster", null, sentinels, sentinelNodes, null);
+        return new RedisProperties(RedisMode.SENTINEL, null, null, "mymaster", null, sentinels, sentinelNodes, null, null);
     }
 
     private static RedisProperties withKeyPrefix(String keyPrefix) {
-        return new RedisProperties(RedisMode.STANDALONE, "localhost", 6379, null, null, null, null, keyPrefix);
+        return new RedisProperties(RedisMode.STANDALONE, "localhost", 6379, null, null, null, null, keyPrefix, null);
+    }
+
+    private static RedisProperties withCommandTimeout(Duration commandTimeout) {
+        return new RedisProperties(RedisMode.STANDALONE, "localhost", 6379, null, null, null, null, null, commandTimeout);
     }
 }
