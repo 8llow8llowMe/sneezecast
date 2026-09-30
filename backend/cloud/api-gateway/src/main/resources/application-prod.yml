@@ -1,0 +1,73 @@
+# ============================================================================
+# prod 프로파일
+#
+# dev 와 같은 구조를 유지하고, 운영에서 달라야 하는 항목만 다르게 둔다. 지금은 차이가 없다.
+# 값은 dev 와 동일한 env 키를 쓰되 Vault prod secret 에서 주입된다.
+# ============================================================================
+server:
+  port: ${API_GATEWAY_PORT}
+  shutdown: graceful
+
+spring:
+  cloud:
+    gateway:
+      # 업스트림 대기 상한. 넘으면 게이트웨이가 504 로 끊는다 — 멈춘 서비스가 게이트웨이 연결을 붙잡지 않게 한다.
+      httpclient:
+        connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:10s}
+      # WebSocket 을 쓰지 않는다. 쓰지 않는 라우팅 경로를 열어 두지 않는다.
+      global-filter:
+        websocket-routing:
+          enabled: false
+      # 게이트웨이와 auth-service(직결 대비)가 둘 다 CORS 헤더를 붙이면 값이 두 번 나가 브라우저가 거부한다. 먼저 붙은 게이트웨이 것을 남긴다.
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials Vary, RETAIN_FIRST
+      # 라우트는 dev · prod 가 같다. 한쪽만 고치면 GatewayRouteCoverageTest 가 막는다.
+      # /internal/** 은 서비스 간 호출 전용이라 절대 라우팅하지 않는다. 나머지 라우트는 기능 이슈에서 추가한다.
+      routes:
+        - id: auth-service-auth
+          uri: lb://${AUTH_SERVICE_APP_NAME}
+          predicates:
+            - Path=/api/v1/auth/**
+        - id: auth-service-members
+          uri: lb://${AUTH_SERVICE_APP_NAME}
+          predicates:
+            - Path=/api/v1/members/**
+        - id: surveillance-service-districts
+          uri: lb://${SURVEILLANCE_SERVICE_APP_NAME}
+          predicates:
+            - Path=/api/v1/districts/**
+        - id: surveillance-service-reports
+          uri: lb://${SURVEILLANCE_SERVICE_APP_NAME}
+          predicates:
+            - Path=/api/v1/reports/**
+        - id: surveillance-service-advisories
+          uri: lb://${SURVEILLANCE_SERVICE_APP_NAME}
+          predicates:
+            - Path=/api/v1/advisories/**
+
+eureka:
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 10
+  client:
+    serviceUrl:
+      defaultZone: http://${SERVICE_DISCOVERY_HOSTNAME}:${SERVICE_DISCOVERY_PORT}/eureka/
+
+jwt:
+  access-key: ${JWT_ACCESS_KEY}
+  # true 면 Redis 장애 때 블랙리스트 확인을 건너뛰고 통과시킨다. 기본은 거부(503)다.
+  blacklist-fail-open: ${JWT_BLACKLIST_FAIL_OPEN:false}
+
+infra:
+  redis:
+    # 팀 인프라는 3노드 Sentinel 이다. 노드는 host:port,host:port 문자열 하나로 받는다.
+    # master-name 이나 sentinel-nodes 가 비면 기동 시점에 실패한다.
+    mode: sentinel
+    master-name: ${REDIS_MASTER_NAME}
+    sentinel-nodes: ${REDIS_SENTINEL_NODES}
+    password: ${REDIS_PASSWORD}
+    # 명령 하나의 대기 상한. 블랙리스트 조회가 요청 경로에 있어 짧게 둔다.
+    command-timeout: ${REDIS_COMMAND_TIMEOUT:1s}

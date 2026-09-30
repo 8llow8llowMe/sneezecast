@@ -1,0 +1,16 @@
+# ============================================================================
+# prod 프로파일
+#
+# dev 와 같은 구조를 유지하고, 운영에서 달라야 하는 항목만 다르게 둔다. 지금은 차이가 없다.
+# 값은 dev 와 동일한 env 키를 쓰되 Vault prod secret 에서 주입된다.
+# ============================================================================
+server:
+  port: ${SERVICE_DISCOVERY_PORT}
+  shutdown: graceful
+
+eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+  server:
+    enable-self-preservation: false

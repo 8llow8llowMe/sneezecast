@@ -9,9 +9,9 @@ include 'core:redis-core'
 include 'core:security-core'
 include 'core:storage-core'
 
-// Cloud — #9 에서 추가
-// include 'cloud:service-discovery'
-// include 'cloud:api-gateway'
+// Cloud
+include 'cloud:service-discovery'
+include 'cloud:api-gateway'
 
 // Services — #11 에서 추가
 // include 'service:auth-service'
