@@ -1,1 +1,15 @@
-// 의존성과 소스는 #8 에서 채운다. 모듈 역할은 docs/modules.md 참고.
+// jar/bootJar 설정은 루트 build.gradle 의 libraryModules 가 처리한다.
+dependencies {
+    // 기본 오류 writer 가 공통 응답 봉투(Response/DataHeader)로 쓴다.
+    // 소비하는 서비스가 common-core 를 이미 직접 선언하므로 implementation 으로 충분하다.
+    // common-core 는 security-core 를 모르므로 순환이 아니다.
+    implementation project(':core:common-core')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+
+    implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
+}
