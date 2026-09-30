@@ -57,6 +57,7 @@ eureka:
       defaultZone: http://${SERVICE_DISCOVERY_HOSTNAME}:${SERVICE_DISCOVERY_PORT}/eureka/
 
 jwt:
+  # auth-service · 각 서비스와 같은 JWT_ACCESS_KEY 다. HS512 라 UTF-8 64바이트 이상이어야 한다 (짧으면 기동 실패).
   access-key: ${JWT_ACCESS_KEY}
   # true 면 Redis 장애 때 블랙리스트 확인을 건너뛰고 통과시킨다. 기본은 거부(503)다.
   blacklist-fail-open: ${JWT_BLACKLIST_FAIL_OPEN:false}

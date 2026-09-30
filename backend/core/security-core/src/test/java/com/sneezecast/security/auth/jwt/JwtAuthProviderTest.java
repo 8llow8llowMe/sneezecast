@@ -11,6 +11,7 @@ import com.sneezecast.security.common.exception.SecurityJwtException;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Date;
 import java.util.List;
@@ -176,7 +177,7 @@ class JwtAuthProviderTest {
     }
 
     private static Claims claimsOf(String token) {
-        return Jwts.parser().verifyWith(Keys.hmacShaKeyFor(ACCESS_KEY.getBytes())).build().parseSignedClaims(token).getPayload();
+        return Jwts.parser().verifyWith(Keys.hmacShaKeyFor(ACCESS_KEY.getBytes(StandardCharsets.UTF_8))).build().parseSignedClaims(token).getPayload();
     }
 
     private static String signedWith(String key, String subject, String role, Date expiration) {
@@ -191,6 +192,6 @@ class JwtAuthProviderTest {
         if (scope != null) {
             builder.claim(SecurityScope.CLAIM_NAME, scope);
         }
-        return builder.signWith(Keys.hmacShaKeyFor(key.getBytes()), Jwts.SIG.HS512).compact();
+        return builder.signWith(Keys.hmacShaKeyFor(key.getBytes(StandardCharsets.UTF_8)), Jwts.SIG.HS512).compact();
     }
 }
