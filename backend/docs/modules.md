@@ -56,7 +56,7 @@ backend/
 
 - Redis Sentinel 연결 설정 (팀 인프라 3노드 센티널). 설정이 빠지면 기동에서 실패시킨다.
 - 명령 timeout `infra.redis.command-timeout` 기본 1초 (0 이하는 기동 실패). Lettuce 기본값 60초로 두면 페일오버 동안 호출자가 통째로 멈춘다.
-- 사용처는 현재 auth-service(세션·OAuth state)뿐이다.
+- 사용처: auth-service(세션 · OAuth state · access token 블랙리스트 쓰기), api-gateway(블랙리스트 조회). 두 앱의 `REDIS_KEY_PREFIX` 는 같아야 한다.
 
 ## core/security-core
 
@@ -145,6 +145,13 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | MinIO | 업로드한 프로필 이미지 |
 
 - 탈퇴 회원은 30일 보존 후 스케줄러가 파기한다. 고아 프로필 이미지는 정리 스케줄러가 지운다.
+
+**설정 · 기동 규칙**
+
+- 프로필은 dev / prod 만(로컬 없음), 값은 환경변수. prod 는 Swagger(springdoc) 를 끈다.
+- 게이트웨이와 반드시 같은 값: `JWT_ACCESS_KEY`, `REDIS_KEY_PREFIX`. 게이트웨이의 `AUTH_SERVICE_APP_NAME` 은 이 서비스의 `SPRING_APPLICATION_NAME` 과 같다.
+- 기동 시 JWT 설정을 검사한다 — access 만료 15분 초과, HS512 키 64바이트 미만이면 기동 실패 (짧은 키는 모든 토큰을 조용히 401 로 만든다).
+- access token 블랙리스트 키는 게이트웨이와 같은 `{prefix}:auth:accessTokenBlacklist:{jti}`, TTL 은 토큰 남은 만료 시간. Redis 장애는 항상 503 `SECURITY_008` (fail-closed).
 
 ## service/surveillance-service
 
