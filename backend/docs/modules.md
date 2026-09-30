@@ -10,7 +10,7 @@ backend/
 │   ├── common-core          응답 봉투, 검증 오류 변환, Swagger·Jasypt 공통
 │   ├── persistence-core     JPA Auditing, QueryDSL, Snowflake ID
 │   ├── redis-core           Redis Sentinel 설정
-│   ├── security-core        JWT 검증, 역할·scope 해석, 인증 오류 응답
+│   ├── security-core        JWT 발급·검증, 역할·scope 해석, 인증 오류 응답
 │   └── storage-core         MinIO 오브젝트 스토리지 (프로필 이미지)
 ├── cloud/           실행 모듈 (bootJar on)
 │   ├── service-discovery    Eureka 서버
@@ -59,11 +59,14 @@ backend/
 
 ## core/security-core
 
-- 서비스 측 JWT 검증 (Resource Server), `SecurityFilterChain` 기본 구성
+- `auth` 패키지 — JWT 발급·파싱(`JwtAuthProvider`), auth-service 용 필터 체인·비밀번호 인코더, access token 블랙리스트 계약(`AccessTokenBlacklistVerifier`, 구현은 auth-service)
+- `resourceserver` 패키지 — 서비스 측 JWT 검증(Resource Server), `SecurityFilterChain` 기본 구성. claim 이 규약과 다른 토큰은 401 `TOKEN_INVALID` 로 거부한다 (auth 쪽과 같은 판정)
 - 역할 `USER` / `OPERATOR`, scope claim 해석 (`report:write` — 민감정보 동의를 마친 회원에게만 발급)
+  - authority 는 역할 이름 그대로(`ROLE_` 접두어 없음) + scope 마다 `SCOPE_<scope>`. 검사는 `hasAuthority('OPERATOR')`, `hasAuthority(SecurityScope.REPORT_WRITE_AUTHORITY)` 로 한다 — `hasRole(...)` 은 동작하지 않는다.
+  - scope 문자열·claim 이름은 `SecurityScope` 한 곳에만 둔다.
 - 인증·인가 실패를 `Response` 봉투로 쓰는 오류 writer
 
-**넣지 않는 것**: 토큰 발급(auth-service 소유), 회원 조회.
+**넣지 않는 것**: 발급 **정책**(언제 어떤 역할·scope 를 싣는지 — auth-service 소유), 회원 조회.
 
 ## core/storage-core
 
