@@ -10,7 +10,8 @@ backend/
 │   ├── common-core          응답 봉투, 검증 오류 변환, Swagger·Jasypt 공통
 │   ├── persistence-core     JPA Auditing, QueryDSL, Snowflake ID
 │   ├── redis-core           Redis Sentinel 설정
-│   └── security-core        JWT 검증, 역할·scope 해석, 인증 오류 응답
+│   ├── security-core        JWT 검증, 역할·scope 해석, 인증 오류 응답
+│   └── storage-core         MinIO 오브젝트 스토리지 (프로필 이미지)
 ├── cloud/           실행 모듈 (bootJar on)
 │   ├── service-discovery    Eureka 서버
 │   └── api-gateway          Spring Cloud Gateway
@@ -27,7 +28,6 @@ backend/
 
 | 모듈 | 이유 | 다시 검토하는 시점 |
 |------|------|---------------------|
-| `storage-core` (MinIO) | 이미지·파일 기능이 없다. 이용자 업로드는 개인정보 원칙상 받지 않는다 | 공식 자료 원본 보관·안내 첨부 이미지가 실제로 필요해질 때 |
 | `shared-*` 공유 도메인 모듈 | 서비스를 가로지르는 개념이 행정동 코드 하나뿐이고, 그 검증은 surveillance API 가 정본이다 | 두 서비스가 같은 enum 을 쓰게 될 때 (`core/shared-surveillance`) |
 | `ai-service` | LLM 은 안내문 초안 한 곳에서만 쓴다. surveillance 의 out-port 로 둔다 | AI 사용처가 여럿으로 늘 때 |
 
@@ -65,6 +65,14 @@ backend/
 
 **넣지 않는 것**: 토큰 발급(auth-service 소유), 회원 조회.
 
+## core/storage-core
+
+- MinIO(S3 호환) 클라이언트, 버킷 초기화, 업로드 · 삭제 · 공개 URL 조립
+- 삭제는 DB 커밋 이후로 미룬다 (`deleteAfterCommit`). 롤백됐는데 파일만 지워지는 일을 막는다.
+- 이미지 검증 (형식 · 크기)
+- DB 에는 URL 이 아니라 **오브젝트 키**를 저장한다. 버킷·도메인이 바뀌어도 데이터를 고치지 않는다.
+- 사용처는 현재 auth-service(프로필 이미지)뿐이다. **증상·건강 관련 파일은 올리지 않는다.**
+
 ---
 
 ## cloud/service-discovery
@@ -83,14 +91,36 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 
 | 컨텍스트 | 책임 |
 |----------|------|
-| `auth` | 카카오 소셜 로그인, 이메일 가입·로그인, 토큰 발급·재발급·폐기 |
-| `member` | 회원 (성명·프로필 이미지 없음), 탈퇴 |
+| `auth` | 이메일 + 비밀번호 가입·로그인, 카카오 소셜 로그인, 이메일 인증 코드, 비밀번호 재설정, 토큰 발급·재발급·폐기, 세션(기기) 관리 |
+| `member` | 회원 (닉네임·프로필 이미지), 내 정보 수정, 비밀번호 변경·설정, 탈퇴 |
 | `consent` | 민감정보 처리·알림 수신 동의와 철회 이력 |
 | `region` | 회원이 선택한 행정동 |
 | `notification` | PWA 푸시 구독, 안내 발행 시 팬아웃 발송, 발송 로그 |
 
-- 스키마: MySQL `auth`. Redis 사용.
+- 스키마: MySQL `auth`. Redis · MinIO 사용.
 - **증상 보고를 저장하지 않는다.**
+- hondigagae auth-service 구조를 따른다 (반려견 `pet` 컨텍스트와 네이버 로그인은 제외).
+
+**API** (`/api/v1/auth`, `/api/v1/members`)
+
+| 구분 | API |
+|------|-----|
+| 가입 | `POST /email/send-code` · `POST /email/verify-code` · `POST /signup` |
+| 로그인 | `POST /login` · `GET /{provider}/authorize` · `GET /{provider}/login` · `POST /token/reissue` · `POST /logout` |
+| 비밀번호 | `POST /password/reset/send-code` · `POST /password/reset` · `POST /me/password` (변경) · `POST /me/password/setup` (소셜 가입자 최초 설정) |
+| 세션 | `GET /sessions` · `DELETE /sessions/{sessionId}` |
+| 내 정보 | `GET /me` · `PATCH /me` · `DELETE /me/profile-image` · `POST /me/withdraw` |
+
+**저장소**
+
+| 위치 | 대상 |
+|------|------|
+| MySQL `member` | 이메일(unique) · 비밀번호 해시 · 닉네임 · 프로필 이미지(소셜 URL / 업로드 오브젝트 키) · 역할 · 소셜 제공자 · 상태 · 탈퇴 시각 |
+| MySQL `member_consent` | 동의 종류 · 동의/철회 이력 |
+| Redis (TTL) | 이메일 인증 코드, 비밀번호 재설정 코드, 로그인 시도 횟수, OAuth state, refresh 토큰 · 세션 |
+| MinIO | 업로드한 프로필 이미지 |
+
+- 탈퇴 회원은 30일 보존 후 스케줄러가 파기한다. 고아 프로필 이미지는 정리 스케줄러가 지운다.
 
 ## service/surveillance-service
 
@@ -111,4 +141,4 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - **상주 서비스 안의 Quartz 스케줄러**가 Spring Batch 잡을 실행한다 (hondigagae batch-service 와 같은 구성). 잡 스토어는 in-memory — JDBC 스토어를 쓰면 surveillance 스키마에 `QRTZ_*` 테이블만 는다. 주기 트리거는 코드(`QuartzScheduleConfig`)가 들고, 스레드는 1개.
 - 기동 시 잡 자동 실행은 끈다 (`spring.batch.job.enabled: false`). 수동 실행은 잡 이름을 지정해서만 한다.
 - Spring Batch 메타 테이블은 dev 에서 애플리케이션이 만들고, prod 는 DB 담당자가 직접 적용한다. 기본값은 `never` 로 둔다 — 새 프로필이 조용히 DDL 을 도는 쪽이 더 위험하다.
-- surveillance 스키마의 `district` · `official_surveillance` 에 쓰기만 한다. 적재는 멱등 upsert.
+- surveillance 스키마의 `district` · `official_surveillance` 에 쓰기만 한다. 적재는 멱등 upsert. **서비스별 스키마 원칙의 유일한 예외**다 (hondigagae batch → tour 스키마와 같은 관계). 대상 테이블 구조는 surveillance 가 정본이다.

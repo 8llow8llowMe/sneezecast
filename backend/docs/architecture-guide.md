@@ -90,7 +90,7 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 
 ## 6. 개인정보 경계
 
-- **auth DB 에는 증상이 없고, surveillance DB 에는 `member_id` 가 없다.**
+- **auth DB 에는 증상이 없고, surveillance DB 에는 `member_id` 가 없다.** 회원 정보(이메일·닉네임·프로필 이미지)는 auth 에만 있다. 성명은 받지 않는다.
 - `reporter_key = HMAC-SHA256(pepper, memberId)`. pepper 는 Vault 의 surveillance 경로에만 있고 auth 는 모른다. 32자 미만이면 기동 실패, 기동 로그에는 지문만 남긴다. **pepper 는 교체하지 않는다** (교체 = 전 행 재키잉).
 - 보고 행 컬럼은 `reporter_key`, `iso_week`, `district_code`, `symptom_mask`, 시각뿐이다. 자유 서술·좌표·성명 컬럼을 만들지 않는다.
 - **공개 API 는 집계와 발행된 안내만 읽는다.** 표본이 임계 미만이면 수치·비율 없이 `INSUFFICIENT` 만 내린다. 원시 보고 행을 반환하는 API 는 운영자용에도 두지 않는다.

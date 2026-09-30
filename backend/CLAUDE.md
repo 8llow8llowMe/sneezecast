@@ -13,14 +13,14 @@
 ## 구성 요약
 
 - Spring Cloud MSA + Hexagonal. Java 21, Spring Boot 3.4.x, Spring Cloud 2024.0.x, 패키지 루트 `com.sneezecast`
-- `core`(common · persistence · redis · security) / `cloud`(service-discovery · api-gateway) / `service`(auth · surveillance · batch)
+- `core`(common · persistence · redis · security · storage) / `cloud`(service-discovery · api-gateway) / `service`(auth · surveillance · batch)
 - 흐름: `Controller → WebUseCase → WebFacade → Processor → Port → Adapter`, `Info → Presenter → Response`
 
 ## 자주 어기는 것
 
 - **surveillance 에 `member_id` 를 저장하지 않는다.** 보고자는 `reporter_key` 로만 식별한다.
 - 공개 API 는 집계·발행된 안내만 읽고, 표본 부족이면 수치 없이 `INSUFFICIENT` 만 내린다.
-- JPA 연관관계 어노테이션 금지, 네이티브 쿼리 금지, 응답 ID 는 `String`.
+- JPA 연관관계 어노테이션 금지, **DB FK 제약 없음** (서비스별 스키마, ID 값으로만 참조), 네이티브 쿼리 금지, 응답 ID 는 `String`.
 - 외부 I/O 를 트랜잭션 안에서 기다리지 않는다. 모든 외부 호출에 timeout.
 - 증상·회원 식별정보·토큰을 로그에 남기지 않는다.
 
