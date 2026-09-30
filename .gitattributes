@@ -1,0 +1,34 @@
+* text=auto eol=lf
+
+# 인코딩 강제 (Windows CP949 저장으로 한글이 깨지는 것을 막는다)
+*.java working-tree-encoding=UTF-8
+*.kt working-tree-encoding=UTF-8
+*.md working-tree-encoding=UTF-8
+*.yml working-tree-encoding=UTF-8
+*.yaml working-tree-encoding=UTF-8
+*.ts working-tree-encoding=UTF-8
+*.tsx working-tree-encoding=UTF-8
+*.js working-tree-encoding=UTF-8
+*.jsx working-tree-encoding=UTF-8
+*.mjs working-tree-encoding=UTF-8
+*.cjs working-tree-encoding=UTF-8
+*.json working-tree-encoding=UTF-8
+*.toml working-tree-encoding=UTF-8
+*.py working-tree-encoding=UTF-8
+*.css working-tree-encoding=UTF-8
+*.scss working-tree-encoding=UTF-8
+*.html working-tree-encoding=UTF-8
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text
+*.woff binary
+*.woff2 binary
+*.jar binary
+

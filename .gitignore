@@ -1,0 +1,26 @@
+# Claude Code local settings
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Java / Gradle (backend)
+backend/**/build/
+# Eclipse·VS Code Java 확장의 컴파일 출력. src/main/resources 복사본이 섞여 있어 커밋 대상이 아니다
+backend/**/bin/
+backend/.gradle/
+backend/.gradle-home/
+*.class
+hs_err_pid*.log
+replay_pid*.log
+
+# env / secrets
+.env
+.env.*
+!.env.example

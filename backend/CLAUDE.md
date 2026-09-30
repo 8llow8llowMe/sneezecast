@@ -26,7 +26,17 @@
 
 ## 명령
 
-아직 Gradle 프로젝트가 없다 (#6 에서 구성). 구성되면 빌드·테스트 명령을 여기에 적는다.
+`backend/` 에서 실행한다. Gradle Wrapper 9.2.1, JDK 21 toolchain.
+
+```bash
+./gradlew build                                   # 전체 빌드 + 테스트
+./gradlew :core:common-core:test                  # 모듈 단위 테스트
+./gradlew :core:common-core:test --tests '*ResponseTest'   # 테스트 하나
+./gradlew cleanTest test --no-build-cache         # 검증 보고용 — 캐시(UP-TO-DATE/FROM-CACHE)로 테스트가 건너뛰어지지 않게
+```
+
+- 버전은 루트 `build.gradle` 이 정본이다 — Spring Boot 3.4.5, Spring Cloud 2024.0.0 BOM (실행 모듈에만).
+- 라이브러리 모듈 목록(`libraryModules`)과 실행 모듈 목록(`cloudAppModules`)도 루트 `build.gradle` 에 있다. 모듈을 추가하면 `settings.gradle` 과 함께 여기도 고친다.
 
 ## 파일 인코딩
 
