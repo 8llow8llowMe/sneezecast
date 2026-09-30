@@ -293,9 +293,9 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | id | BIGINT | N | PK (Snowflake) |
 | source | VARCHAR(30) | N | `OfficialSource` |
 | program | VARCHAR(20) | N | `OfficialProgram` — 위 표 |
-| disease_key | VARCHAR(100) | N | 정규화 키. 표본감시는 **포털 병원체 코드**(예: `ND0715` 노로바이러스, 합계는 `TOTAL`, 인플루엔자 분율은 `ILI`), 전수신고는 원천에 코드가 없어 감염병명 |
+| disease_key | VARCHAR(100) | N | 정규화 키. 표본감시는 **포털 병원체 코드**(예: `ND0715` 노로바이러스, 합계는 `TOTAL`, 인플루엔자 분율은 `ILI`), 전수신고는 원천에 코드가 없어 감염병명에서 앞의 `@` 표식을 뗀 값 |
 | disease_name | VARCHAR(100) | N | 표시 이름 (원천 그대로) |
-| disease_group | VARCHAR(20) | Y | 원천 분류 — 전수신고 `icdGroupNm`(예: 제2급), 표본감시 세균 / 바이러스 / 원충 |
+| disease_group | VARCHAR(20) | Y | 원천 분류 — 전수신고 `icdGroupNm` 을 `제N급` 으로 맞춘 값(원천은 오퍼레이션마다 `제2급` / `2급`), 표본감시 세균 / 바이러스 / 원충 |
 | metric | VARCHAR(30) | N | `OfficialMetric` — CASE_COUNT / INCIDENCE_PER_100K / ILI_PER_1000 |
 | age_group | VARCHAR(20) | N | `OfficialAgeGroup`, default ALL. 인플루엔자는 연령대별 행만 온다 |
 | region_level | VARCHAR(10) | N | `OfficialRegionLevel` — NATION / SIDO |
@@ -314,6 +314,8 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - 인덱스: `idx_official_surveillance_program_period_start` (최근 기간 조회), `idx_official_surveillance_source_snapshot_id` (FK 조회)
 - **인플루엔자 절기 → 연도**: 절기 `startYear`–`endYear` 의 36 ~ 52(53)주는 `period_year = startYear`, 01 ~ 35주는 `endYear` 로 넣는다. 열 제목(`headerList`)의 주차만 보고 연도를 정하면 1년 어긋난다.
 - 원천은 **잠정 통계**라 과거 주 값이 바뀐다. 적재 잡은 최근 N주(설정)를 다시 받아 덮어쓴다. 값 변경 이력은 두지 않고, 어느 실행이 마지막으로 썼는지만 `source_snapshot_id` 로 남긴다.
+- **전수신고 주별은 신고 지연으로 최근 주 값이 계속 늘어난다** (진행 중인 주까지 온다, [data-api-analysis.md §2-3](data-api-analysis.md#2-3-신고-지연--최근-주는-값이-계속-늘어난다)). 적재는 하되, 화면의 기준 주는 **현재 주에서 2주 전**(설정 `official.notifiable.display-lag-weeks`, 기본 2)으로 하고 그보다 최근 주는 보이지 않는다.
+- 전수신고 응답의 `계` 행(주별 합)은 적재하지 않는다. 시도 값을 더해 전국 · 권역을 만들지 않는다 (광주 · 전남 · 전남광주 코드가 기간에 따라 겹친다).
 - 표시 대상(감염병 · 병원체 목록)은 1단계에서 설정값으로 둔다.
 - 라이선스 **공공누리 제4유형(출처표시 · 상업적 이용금지 · 변경금지)** — 화면에 출처를 밝히고 원값을 그대로 보인다. 파생값(예: 전주 대비)을 보이면 파생값임을 밝힌다.
 
@@ -348,7 +350,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | 잡 | 원천 | 기본 주기 (KST) | 조회 범위 | upsert 키 | 비고 |
 |----|------|-----------------|-----------|-----------|------|
 | `districtImportJob` | SGIS 경계 · 단계별 주소 | **수동** (연 1회, SGIS 기준 연도 공개 후) | 지정한 `year` 전체 | district.code | 행 수 급감 시 폐지 처리 없이 실패 (§3-1) |
-| `notifiableImportJob` | 전수신고 API `PeriodBasic`(주) · `Region`(연) | 매주 화 05:00 | 올해 + 전년 | §3-2 UK | 개발계정 일 1,000건 — 실행당 수십 건이라 여유 |
+| `notifiableImportJob` | 전수신고 API `PeriodBasic`(주) · `Region`(연) | 매주 화 05:00 | 올해 + 전년 | §3-2 UK | 실행당 약 74건 (시도마다 1회) — 개발계정 일 1,000건의 7% |
 | `sentinelImportJob` | 감염병포털 표본감시 (인플루엔자 · 급성호흡기 · 장관) | 매주 금 06:00 | 최근 8주 (인플루엔자는 현재 절기) | §3-2 UK | 포털 요청 간격 ≥ 3초, 실행당 요청 상한 (설정) |
 
 - 주기는 전부 설정값(`batch.schedule.*-cron`)이다. 표본감시 공표 요일은 확인되지 않았다 — 2026-09-30(수) 기준 38주(09-13 ~ 09-19)까지 공개돼 있었다. 몇 주 적재해 보고 조정한다.
