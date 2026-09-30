@@ -1,0 +1,33 @@
+server:
+  port: ${BATCH_SERVICE_PORT}
+  shutdown: graceful
+
+spring:
+  datasource:
+    # MySQL surveillance 스키마. 적재 대상(district · official_surveillance)과 Spring Batch 메타 테이블(BATCH_*)이 함께 있다.
+    # 계정은 surveillance-service 와 다른 적재 전용 계정이다 — 권한을 적재 대상 · 메타 테이블로 좁힐 수 있게 한다.
+    # JPA 를 쓰지 않으므로 ddl-auto 가 없다. 대상 테이블 구조는 surveillance 가 정본이고 batch 는 DDL 을 돌리지 않는다.
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${BATCH_DB_URL}
+    username: ${BATCH_DB_USERNAME}
+    password: ${BATCH_DB_PASSWORD}
+  batch:
+    jdbc:
+      # dev 만 애플리케이션이 BATCH_* 메타 테이블을 만든다 (적재 계정에 dev 한정 CREATE 권한이 필요하다).
+      initialize-schema: always
+
+# dev 는 프로세스 안 Quartz 를 켠다. 등록된 트리거가 없으면 빈 스케줄러가 돈다.
+# 끄려면 배포 설정에 BATCH_SCHEDULE_ENABLED=false 를 준다.
+batch:
+  schedule:
+    enabled: ${BATCH_SCHEDULE_ENABLED:true}
+
+eureka:
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 10
+  client:
+    serviceUrl:
+      defaultZone: http://${SERVICE_DISCOVERY_HOSTNAME}:${SERVICE_DISCOVERY_PORT}/eureka/

@@ -1,0 +1,20 @@
+// 공통 의존성(actuator · prometheus · Spring Cloud BOM)은 루트 build.gradle 의 cloudAppModules 가 처리한다.
+// 공개 API 가 없으므로 security-core 를 넣지 않는다. Redis · MinIO 도 쓰지 않으므로 redis-core · storage-core 를 넣지 않는다.
+dependencies {
+    // Jasypt(ENC() 값 복호화)와 observability-common.yml 을 쓴다.
+    implementation project(':core:common-core')
+
+    // 적재 대상(district · official_surveillance)은 surveillance 가 정본인 테이블이라 여기에 엔티티를 두지 않는다 — JPA 를 쓰지 않는다.
+    // 쓰기는 JDBC 로 한다 (coding-conventions "배치 대량 쓰기만 JDBC"). JdbcTemplate · DataSource 는 starter-batch 가 끌고 오는 starter-jdbc 에서 온다.
+    implementation 'org.springframework.boot:spring-boot-starter-batch'
+    // 주기 실행을 배포 호스트 cron 이 아니라 이 프로세스 안에 둔다. 이유는 QuartzScheduleConfig javadoc.
+    implementation 'org.springframework.boot:spring-boot-starter-quartz'
+    // 상주 프로세스다. Quartz 스레드는 데몬이라 JVM 을 붙들지 못하므로 웹 서버(non-daemon 스레드)가 붙든다.
+    // actuator(health · prometheus)도 이 서버로 연다. 컨트롤러는 두지 않는다.
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
+    // 컨텍스트 로딩 테스트(BatchServiceApplicationTests)가 실제 MySQL 없이 Spring Batch 메타 테이블까지 만들어 본다.
+    testRuntimeOnly 'com.h2database:h2'
+}
