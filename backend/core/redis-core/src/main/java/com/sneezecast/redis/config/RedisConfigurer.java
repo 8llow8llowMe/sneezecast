@@ -7,6 +7,7 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.RedisPassword;
 import org.springframework.data.redis.connection.RedisSentinelConfiguration;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -77,7 +78,7 @@ public class RedisConfigurer {
             sentinelConfig.setPassword(RedisPassword.of(redisProperties.password()));
         }
 
-        return new LettuceConnectionFactory(sentinelConfig);
+        return new LettuceConnectionFactory(sentinelConfig, clientConfiguration(redisProperties));
     }
 
     private LettuceConnectionFactory createStandaloneConnectionFactory(RedisProperties redisProperties, boolean hasPassword) {
@@ -87,6 +88,13 @@ public class RedisConfigurer {
             standaloneConfig.setPassword(RedisPassword.of(redisProperties.password()));
         }
 
-        return new LettuceConnectionFactory(standaloneConfig);
+        return new LettuceConnectionFactory(standaloneConfig, clientConfiguration(redisProperties));
+    }
+
+    /** 두 모드가 같은 명령 타임아웃을 쓴다. 지정하지 않으면 Lettuce 기본값 60초가 걸린다. */
+    private LettuceClientConfiguration clientConfiguration(RedisProperties redisProperties) {
+        return LettuceClientConfiguration.builder()
+            .commandTimeout(redisProperties.resolvedCommandTimeout())
+            .build();
     }
 }

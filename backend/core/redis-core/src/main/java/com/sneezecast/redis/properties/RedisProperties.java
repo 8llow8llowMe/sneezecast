@@ -1,6 +1,7 @@
 package com.sneezecast.redis.properties;
 
 import com.sneezecast.redis.properties.enums.RedisMode;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -22,17 +23,39 @@ public record RedisProperties(
      * 문자열 하나로 받으면 노드 수와 무관하게 한 값만 관리한다.
      */
     String sentinelNodes,
-    String keyPrefix
+    String keyPrefix,
+    /**
+     * 명령 하나를 기다리는 최대 시간. 비우면 {@link #DEFAULT_COMMAND_TIMEOUT} 이다.
+     *
+     * <p>지정하지 않으면 Lettuce 기본값 60초가 걸린다. Redis 가 멈췄을 때 요청 스레드가 1분씩 묶이고,
+     * 게이트웨이 블랙리스트 조회처럼 요청 경로에 있는 호출은 그동안 응답하지 못한다.
+     */
+    Duration commandTimeout
 ) {
 
     private static final String DEFAULT_KEY_PREFIX = "sneezecast";
     private static final int DEFAULT_SENTINEL_PORT = 26379;
+    private static final Duration DEFAULT_COMMAND_TIMEOUT = Duration.ofSeconds(1);
 
     public String normalizedKeyPrefix() {
         if (keyPrefix == null || keyPrefix.isBlank()) {
             return DEFAULT_KEY_PREFIX;
         }
         return keyPrefix.trim();
+    }
+
+    /**
+     * 실제로 적용할 명령 타임아웃. 0 이하는 설정 실수로 보고 기동에서 실패시킨다 — 조용히 기본값으로 바꾸면
+     * 의도한 값이 적용되지 않았다는 사실이 드러나지 않는다.
+     */
+    public Duration resolvedCommandTimeout() {
+        if (commandTimeout == null) {
+            return DEFAULT_COMMAND_TIMEOUT;
+        }
+        if (commandTimeout.isZero() || commandTimeout.isNegative()) {
+            throw new IllegalStateException("infra.redis.command-timeout 은 0 보다 커야 합니다: " + commandTimeout);
+        }
+        return commandTimeout;
     }
 
     /**
