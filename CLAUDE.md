@@ -16,6 +16,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 작업 시작 시 해당 워크스페이스의 엔트리 문서를 먼저 읽는다. 로컬 인프라는 두지 않고 팀 개발 서버에 배포해서 개발한다 (팀 인프라 레포 `8llow8llowMe/Infra`).
 
+| 환경 | 웹 | API (게이트웨이) |
+|------|-----|------------------|
+| dev | `https://dev.sneezecast.com` | `https://api-dev.sneezecast.com` |
+| prod | `https://www.sneezecast.com` | `https://api.sneezecast.com` |
+
+CORS 허용 오리진은 웹 도메인 두 개 + FE 로컬(`http://localhost:*`)이다. 게이트웨이와 auth-service 설정을 같게 맞춘다.
+
 ## 도메인 규칙 (기획서 기준, 구현이 지켜야 할 불변식)
 
 **보고와 집계**
