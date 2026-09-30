@@ -1,0 +1,10 @@
+server:
+  port: ${SERVICE_DISCOVERY_PORT}
+  shutdown: graceful
+
+eureka:
+  client:
+    register-with-eureka: false  # Eureka 서버는 다른 Eureka 서버에 등록하지 않음
+    fetch-registry: false        # 자체적으로 레지스트리를 가져오지 않음 (중앙 서버 역할)
+  server:
+    enable-self-preservation: false

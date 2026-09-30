@@ -1,0 +1,4 @@
+// 공통 의존성(actuator · prometheus · Spring Cloud BOM)은 루트 build.gradle 의 cloudAppModules 가 처리한다.
+dependencies {
+    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-server'
+}

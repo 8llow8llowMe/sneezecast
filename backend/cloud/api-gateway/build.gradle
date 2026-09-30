@@ -1,0 +1,13 @@
+// 공통 의존성(actuator · prometheus · Spring Cloud BOM)은 루트 build.gradle 의 cloudAppModules 가 처리한다.
+dependencies {
+    implementation project(':core:common-core')
+    implementation project(':core:redis-core')
+
+    implementation 'org.springframework.cloud:spring-cloud-starter-gateway'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+
+    implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
+}
