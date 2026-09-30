@@ -255,13 +255,13 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 ### 3-1. district — 행정동 마스터 (SGIS)
 
-원천: SGIS `boundary/hadmarea.geojson` (`year` 지정, `properties.adm_cd` · `adm_nm`) — 기준 연도별 스냅샷. 시도 · 시군구 이름은 `addr/stage.json` 단계 조회로 채운다.
+원천: SGIS `boundary/hadmarea.geojson` (`year` 지정, 시도마다 `low_search=2`) — 기준 연도별 스냅샷. 시도 · 시군구 이름은 `addr/stage.json` 단계 조회로 채운다 ([data-api-analysis.md §1](data-api-analysis.md#1-sgis-오픈api-통계청--행정동-마스터)).
 
 | 컬럼 | 타입 | Null | 원천 필드 | 설명 |
 |------|------|------|-----------|------|
 | id | BIGINT | N | — | PK (Snowflake) |
 | code | VARCHAR(8) | N | adm_cd | SGIS 읍면동 코드 8자리. **`uk_district_code`** |
-| name | VARCHAR(50) | N | adm_nm | 읍면동 이름 (예: 가락1동) |
+| name | VARCHAR(50) | N | adm_nm 마지막 토큰 | 읍면동 이름 (예: 가락1동). `adm_nm` 은 전체 주소(`서울특별시 송파구 가락1동`)라 마지막 토큰만 쓴다 |
 | sido_code | VARCHAR(2) | N | adm_cd 앞 2자리 | SGIS 시도 코드 |
 | sido_name | VARCHAR(30) | N | stage.json addr_name | 시도 이름 |
 | sigungu_code | VARCHAR(5) | N | adm_cd 앞 5자리 | SGIS 시군구 코드 |
@@ -272,8 +272,9 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 - 인덱스: `idx_district_sigungu_code` (시군구별 선택 목록)
 - **SGIS 코드는 행안부 행정동 코드(10자리)와 번호 체계가 다르다.** 자릿수를 잘라 변환하지 않는다. 행안부 코드가 필요해지면 매핑 컬럼을 출처 · 기준일과 함께 추가한다.
-- 적재는 멱등 upsert (키 `code`). 폐지된 동은 지우지 않고 `valid_to_year` 만 채운다 — 과거 보고 · 집계 행이 그 코드를 참조한다. **폐지됐던 코드가 새 스냅샷에 다시 나오면** `valid_to_year` 를 null 로 되돌리고 이름을 갱신한다.
-- 새 스냅샷의 행 수가 직전보다 크게 줄면(설정 비율) 폐지 처리를 하지 않고 잡을 실패시킨다 — 잘린 응답으로 멀쩡한 동을 폐지하지 않게.
+- 적재는 멱등 upsert (키 `code`). **이름으로 맞추지 않는다** — 분동하면 이름이 같은 채 코드가 바뀐다 (2025 부산 녹산동 `21120560` → `21120561`). 폐지된 동은 지우지 않고 `valid_to_year` 만 채운다 — 과거 보고 · 집계 행이 그 코드를 참조한다. **폐지됐던 코드가 새 스냅샷에 다시 나오면** `valid_to_year` 를 null 로 되돌리고 이름을 갱신한다.
+- `valid_from_year` 는 첫 적재 때 그 적재 연도(예: 2025)다 — 실제 신설 연도가 아니라 "우리가 처음 본 연도" 다.
+- **보호 규칙**: 직전 현행 코드 중 새 스냅샷에서 사라지는 비율이 임계값(설정, 기본 2%)을 넘으면 폐지 처리를 하지 않고 잡을 실패시킨다. 2024 → 2025 는 3,559개 중 3개(0.1%)였다. 잘린 응답과 광주 · 전남 통합 같은 대규모 코드 변경은 운영자가 확인한 뒤 잡 파라미터 `allowMassRetire=true` 로 다시 돌린다 — 폐지되면 그 동을 고른 회원 전원이 재선택해야 하기 때문이다.
 - 경계 GeoJSON 은 테이블에 넣지 않는다. 프론트 정적 자원이다 (UTM-K EPSG:5179 → 웹 지도용 4326 으로 변환해서 싣는다).
 - 폐지된 코드를 가진 `member_region` 은 화면에서 재선택을 요구한다. 신 · 구 코드 연계표 API 는 확인되지 않아 자동 이관하지 않는다.
 
@@ -349,7 +350,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 | 잡 | 원천 | 기본 주기 (KST) | 조회 범위 | upsert 키 | 비고 |
 |----|------|-----------------|-----------|-----------|------|
-| `districtImportJob` | SGIS 경계 · 단계별 주소 | **수동** (연 1회, SGIS 기준 연도 공개 후) | 지정한 `year` 전체 | district.code | 행 수 급감 시 폐지 처리 없이 실패 (§3-1) |
+| `districtImportJob` | SGIS 경계 · 단계별 주소 | **수동** (연 1회, SGIS 기준 연도 공개 후) | 지정한 `year` 전체 (경계 시도별 17회, 약 33MB + 단계별 주소 18회) | district.code | 사라지는 코드 비율이 임계값을 넘으면 폐지 처리 없이 실패 (§3-1) |
 | `notifiableImportJob` | 전수신고 API `PeriodBasic`(주) · `Region`(연) | 매주 화 05:00 | 올해 + 전년 | §3-2 UK | 실행당 약 74건 (시도마다 1회) — 개발계정 일 1,000건의 7% |
 | `sentinelImportJob` | 감염병포털 표본감시 (인플루엔자 · 급성호흡기 · 장관) | 매주 금 06:00 | 최근 8주 (인플루엔자는 현재 절기) | §3-2 UK | 포털 요청 간격 ≥ 3초, 실행당 요청 상한 (설정) |
 
@@ -362,7 +363,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - 트리거는 코드(`QuartzScheduleConfig`)에 정의하고 cron 값만 설정으로 뺀다. Quartz cron 은 초가 맨 앞이다 (예: `0 0 6 ? * FRI`). 시간대는 `batch.schedule.time-zone=Asia/Seoul` 로 고정한다.
 - 잡 스토어는 in-memory, 스레드 1개 — 잡끼리 겹치지 않는다. misfire 는 `FireAndProceed` 지만 **프로세스가 떠 있는 동안 늦어진 발화만** 보충한다. in-memory 스토어라 배포 · 장애로 내려가 있던 동안의 발화는 재기동 뒤 보충되지 않는다 → 배포는 발화 시각을 피하고, 놓쳤으면 수동 실행한다.
 - 같은 잡은 `@DisallowConcurrentExecution`, 다른 잡 · 수동 실행 JVM 과의 겹침은 배치 메타데이터의 STARTED 로 판정해 이번 주기를 건너뛴다.
-- 스케줄 스위치 `batch.schedule.enabled` 는 dev 만 true. 수동 실행은 `--spring.batch.job.name=<잡> runAt=<ISO 시각>` 로 한다 (`runAt` 을 새 값으로 주지 않으면 이미 완료된 JobInstance 로 거절된다).
+- 스케줄 스위치 `batch.schedule.enabled` 는 dev 만 true. 수동 실행은 `--spring.batch.job.name=<잡> runAt=<ISO 시각>` 로 한다 (`runAt` 을 새 값으로 주지 않으면 이미 완료된 JobInstance 로 거절된다). `districtImportJob` 은 `year=<기준 연도>` 가 필수이고, 대규모 폐지를 허용할 때만 `allowMassRetire=true` 를 더한다.
 - 적재는 JDBC `batchUpdate` + `ON DUPLICATE KEY UPDATE`, 500건 단위 (배치 대량 쓰기는 JDBC 허용 — [coding-conventions.md §8-4](coding-conventions.md#8-4-쿼리-수단-순서)).
 - 원천 하나가 실패해도 다른 잡은 계속 돈다. 실패한 원천의 기존 데이터는 지우지 않는다.
 
