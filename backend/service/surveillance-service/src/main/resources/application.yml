@@ -1,0 +1,15 @@
+# 로컬 인프라를 두지 않고 팀 개발 서버에 바로 배포하므로 local 프로파일이 없다. 기본값은 dev 다.
+# 값은 env 로 받고, 배포 때 Vault 에서 주입한다.
+spring:
+  application:
+    # 게이트웨이의 SURVEILLANCE_SERVICE_APP_NAME 과 같은 값이어야 한다 (lb:// 라우트 대상).
+    name: ${SPRING_APPLICATION_NAME:surveillance-service}
+  config:
+    import: optional:classpath:observability-common.yml
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+logging:
+  level:
+    # Eureka 클라이언트가 주기적으로 Eureka 서버 엔드포인트를 확인할 때 출력하는 반복 로그를 줄이기 위한 설정
+    com.netflix.discovery.shared.resolver.aws.ConfigClusterResolver: WARN

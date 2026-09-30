@@ -15,5 +15,5 @@ include 'cloud:api-gateway'
 
 // Services — 나머지는 각 서비스 골격 이슈에서 추가한다
 include 'service:auth-service'
-// include 'service:surveillance-service'
+include 'service:surveillance-service'
 // include 'service:batch-service'

@@ -1,0 +1,52 @@
+# ============================================================================
+# prod 프로파일
+#
+# dev 와 같은 구조를 유지하고, 운영에서 달라야 하는 항목만 다르게 둔다.
+#   - ddl-auto: none — 애플리케이션이 운영 스키마를 바꾸지 않는다. 필요한 DDL 은 PR 본문에 적어 DB 담당자에게 넘긴다.
+#   - API 문서(springdoc) 엔드포인트를 끈다.
+# 값은 dev 와 동일한 env 키를 쓰되 Vault prod secret 에서 주입된다.
+# ============================================================================
+server:
+  port: ${SURVEILLANCE_SERVICE_PORT}
+  shutdown: graceful
+
+spring:
+  datasource:
+    # MySQL surveillance 스키마. auth 와 다른 DB 계정을 쓴다 — 신원과 가명 증상을 한 계정으로 결합할 수 없게 한다.
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${SURVEILLANCE_DB_URL}
+    username: ${SURVEILLANCE_DB_USERNAME}
+    password: ${SURVEILLANCE_DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+eureka:
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 10
+  client:
+    serviceUrl:
+      defaultZone: http://${SERVICE_DISCOVERY_HOSTNAME}:${SERVICE_DISCOVERY_PORT}/eureka/
+
+app:
+  security:
+    jwt:
+      resource:
+        # auth-service · 게이트웨이와 같은 JWT_ACCESS_KEY 다 (HS512). 다르면 모든 토큰이 401 이 된다.
+        access-key: ${JWT_ACCESS_KEY}
+
+surveillance:
+  reporter-key:
+    # reporter_key = HMAC-SHA256(pepper, memberId). 기본값 없음 — 없거나 32자 미만이면 기동 실패. 로그에는 지문만 남는다.
+    # 교체하지 않는다 (교체 = 전 행 재키잉). Vault 의 surveillance 경로에만 두고 auth 에는 주지 않는다.
+    pepper: ${REPORTER_KEY_PEPPER}
