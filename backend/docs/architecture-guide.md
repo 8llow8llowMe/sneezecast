@@ -106,7 +106,7 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 
 ## 8. API 응답
 
-- 공통 봉투 `Response<T>` — `dataHeader { success, resultCode, resultMessage, fieldErrors }` + `dataBody`. 게이트웨이 오류도 같은 봉투.
+- 공통 봉투 `Response<T>` — `dataHeader { success, resultCode, resultMessage, fieldErrors }` + `dataBody`. 게이트웨이의 JWT 거부 응답(401 · 503 SECURITY_00x)도 같은 봉투다. 라우트 없음(404) · 인스턴스 없음(503) · 업스트림 timeout 같은 게이트웨이 자체 오류는 아직 Spring 기본 형식이다 — FE 는 봉투가 없는 응답을 일시 장애로 다룬다.
 - 부모당 0~1개인 하위 리소스의 부재는 200 + `dataBody: null`. 리소스 자체 부재·타인 리소스는 404.
 - 인증 API 는 `@PreAuthorize` 를 명시하고 회원 식별은 JWT claim 으로 한다. 클라이언트 헤더로 회원을 받지 않는다.
 - 목록은 `SliceResponse` 우선. `totalCount` 는 자르기 전 총계를 Processor 가 계산한다.

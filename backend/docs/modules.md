@@ -55,6 +55,7 @@ backend/
 ## core/redis-core
 
 - Redis Sentinel 연결 설정 (팀 인프라 3노드 센티널). 설정이 빠지면 기동에서 실패시킨다.
+- 명령 timeout `infra.redis.command-timeout` 기본 1초 (0 이하는 기동 실패). Lettuce 기본값 60초로 두면 페일오버 동안 호출자가 통째로 멈춘다.
 - 사용처는 현재 auth-service(세션·OAuth state)뿐이다.
 
 ## core/security-core
@@ -85,8 +86,28 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 ## cloud/api-gateway
 
 - 라우팅, CORS, JWT 1차 검증. 토큰이 없는 요청은 통과시키고 권한 판단은 각 서비스가 한다.
-- **`/internal/**` 은 라우팅하지 않는다.** 라우트 커버리지 테스트로 막는다.
-- 오류 응답도 `Response` 봉투를 쓴다.
+- JWT 는 **서명 · 만료 · 폐기(블랙리스트)만** 본다. `role` · `scope` 는 해석하지 않는다 — 역할 목록을 게이트웨이에 복사하면 역할이 늘 때 게이트웨이만 뒤처진다. claim 규약 위반 거부는 서비스 Resource Server(`JwtToMemberConverter`)가 한다.
+- **`/internal/**` 은 라우팅하지 않는다.** 라우트 커버리지 테스트(`GatewayRouteCoverageTest`)로 막는다. 모든 공개 경로는 `/api/v1/` 로 시작한다.
+- **JWT 거부 응답**은 `Response` 봉투를 쓴다 (그 밖의 게이트웨이 오류는 아직 Spring 기본 형식). 에러 코드는 security-core `SecurityErrorCode` 와 같은 문자열이다 (계약 테스트로 고정).
+- CORS 허용 오리진은 security-core `AuthSecurityConfigurer` 와 같은 목록이다.
+
+| 경로 | 서비스 |
+|------|--------|
+| `/api/v1/auth/**`, `/api/v1/members/**` | auth-service |
+| `/api/v1/districts/**`, `/api/v1/reports/**`, `/api/v1/advisories/**` | surveillance-service |
+
+- 라우트는 dev · prod 가 같다. 새 공개 경로는 해당 기능 이슈에서 이 표와 함께 추가한다.
+- 설정은 dev / prod 프로필만 두고(로컬 프로필 없음) 값은 환경변수로 받는다. Swagger 집계는 아직 두지 않는다.
+
+**JWT 필터 규칙**
+
+- `Authorization` 헤더가 **없을 때만** 비로그인으로 통과시킨다. 헤더가 있는데 `Bearer <token>` 이 아니면(scheme 은 대소문자 무시) 401 `SECURITY_005` 로 거부한다 — 서비스 쪽 토큰 리졸버는 대소문자를 가리지 않아, 게이트웨이가 통과시키면 블랙리스트를 우회한다.
+- `jti` 가 없는 토큰은 폐기할 수 없으므로 401 `SECURITY_003` 으로 거부한다.
+- 블랙리스트 조회는 이벤트 루프 밖(`boundedElastic`)에서 한다.
+- 필터 순서는 `HIGHEST_PRECEDENCE + 1` 로 고정한다 (로드밸런서 · 라우팅 필터보다 앞). WebSocket 라우팅은 쓰지 않으므로 끈다.
+- 클라이언트가 보낸 회원 헤더(`X-Authenticated-Member-Id`, `X-Member-Id`)는 지우고 `sub` 로 다시 붙인다.
+
+**그 밖의 설정**: 응답 CORS 헤더 중복 제거(`DedupeResponseHeader`, auth-service 도 CORS 를 붙이므로), 업스트림 connect 2초 · response 10초 (초과 시 504, 봉투 아님).
 
 ---
 
