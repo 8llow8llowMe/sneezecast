@@ -20,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -39,15 +40,16 @@ class JwtAuthProviderTest {
     private final JwtAuthProvider provider = new JwtAuthProvider(
         new JwtAuthProperties(ACCESS_KEY, Duration.ofMinutes(15), REFRESH_KEY, Duration.ofDays(14)));
 
-    @Test
-    @DisplayName("정상 토큰은 회원 식별자·권한·jti 를 돌려준다")
-    void parsesIssuedToken() {
-        String token = provider.issueAccessToken(42L, SecurityRole.OPERATOR, Set.of());
+    @ParameterizedTest
+    @EnumSource(SecurityRole.class)
+    @DisplayName("정상 토큰은 회원 식별자·권한·jti 를 돌려준다 (모든 역할)")
+    void parsesIssuedToken(SecurityRole role) {
+        String token = provider.issueAccessToken(42L, role, Set.of());
 
         MemberLoginActive member = provider.parseAccessToken(token);
 
         assertThat(member.memberId()).isEqualTo(42L);
-        assertThat(member.role()).isEqualTo(SecurityRole.OPERATOR);
+        assertThat(member.role()).isEqualTo(role);
         assertThat(member.tokenId()).isNotBlank();
     }
 
@@ -144,7 +146,7 @@ class JwtAuthProviderTest {
             Arguments.of("subject 가 숫자가 아님", signedWith(ACCESS_KEY, "not-a-number", SecurityRole.USER.name(), future)),
             Arguments.of("role 클레임 없음", signedWith(ACCESS_KEY, "1", null, future)),
             Arguments.of("role 이 알 수 없는 값", signedWith(ACCESS_KEY, "1", "SUPERUSER", future)),
-            Arguments.of("role 이 제거된 역할(ADMIN)", signedWith(ACCESS_KEY, "1", "ADMIN", future)),
+            Arguments.of("role 이 정의되지 않은 역할(MANAGER)", signedWith(ACCESS_KEY, "1", "MANAGER", future)),
             Arguments.of("subject 없음", signedWith(ACCESS_KEY, null, SecurityRole.USER.name(), future)),
             Arguments.of("scope 가 문자열이 아님(배열)", signedWith(ACCESS_KEY, "1", SecurityRole.USER.name(), future, List.of(SecurityScope.REPORT_WRITE)))
         );

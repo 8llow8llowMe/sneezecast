@@ -78,7 +78,7 @@ class JwtToMemberConverterTest {
             Arguments.of("sub 가 숫자가 아님", jwt().subject("not-a-number").claim("role", "USER").build()),
             Arguments.of("sub 없음", Jwt.withTokenValue("token").header("alg", "HS512").jti("jti-1").claim("role", "USER").build()),
             Arguments.of("role 없음", jwt().claim(SecurityScope.CLAIM_NAME, SecurityScope.REPORT_WRITE).build()),
-            Arguments.of("제거된 역할 ADMIN", jwt().claim("role", "ADMIN").build()),
+            Arguments.of("정의되지 않은 역할 MANAGER", jwt().claim("role", "MANAGER").build()),
             Arguments.of("scope 가 배열", jwt().claim("role", "USER").claim(SecurityScope.CLAIM_NAME, List.of("a", "b report:write")).build()));
     }
 
