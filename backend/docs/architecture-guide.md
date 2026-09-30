@@ -118,5 +118,5 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 - `reporter_key` 산출식과 pepper
 - 주 정의 — ISO 주, 월요일 시작, KST
 - 행정동 코드 체계 — SGIS `adm_cd`
-- JWT claim — `sub`(회원 ID), `role`(단일 역할 `USER` / `OPERATOR`), `scope`(공백 구분 문자열, 예: `report:write`). 서비스에서는 `hasAuthority('SCOPE_report:write')` 로 검사한다
+- JWT claim — `sub`(회원 ID), `role`(단일 역할 `USER` / `OPERATOR` / `ADMIN`), `scope`(공백 구분 문자열, 예: `report:write`). 서비스에서는 `hasAuthority('SCOPE_report:write')` 로 검사한다
 - `/internal/v1` 경로
