@@ -1,0 +1,39 @@
+# ============================================================================
+# prod 프로파일
+#
+# dev 와 같은 구조를 유지하고, 운영에서 달라야 하는 항목만 다르게 둔다.
+#   - batch.jdbc.initialize-schema: never — BATCH_* 메타 테이블은 애플리케이션이 만들지 않는다. DB 담당자가 직접 적용한다.
+#   - batch.schedule.enabled 기본 false — 첫 적재 잡을 dev 에서 몇 주기 관찰한 뒤 켠다.
+# 값은 dev 와 동일한 env 키를 쓰되 Vault prod secret 에서 주입된다.
+# ============================================================================
+server:
+  port: ${BATCH_SERVICE_PORT}
+  shutdown: graceful
+
+spring:
+  datasource:
+    # MySQL surveillance 스키마. 적재 대상(district · official_surveillance)과 Spring Batch 메타 테이블(BATCH_*)이 함께 있다.
+    # 계정은 surveillance-service 와 다른 적재 전용 계정이다 — 권한을 적재 대상 · 메타 테이블로 좁힐 수 있게 한다.
+    # JPA 를 쓰지 않으므로 ddl-auto 가 없다. 대상 테이블 구조는 surveillance 가 정본이고 batch 는 DDL 을 돌리지 않는다.
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${BATCH_DB_URL}
+    username: ${BATCH_DB_USERNAME}
+    password: ${BATCH_DB_PASSWORD}
+  batch:
+    jdbc:
+      initialize-schema: never
+
+# prod 에서 스케줄을 켤지는 첫 적재 잡을 dev 에서 관찰한 뒤 정한다. 켜려면 BATCH_SCHEDULE_ENABLED=true 만 주면 된다.
+batch:
+  schedule:
+    enabled: ${BATCH_SCHEDULE_ENABLED:false}
+
+eureka:
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 10
+  client:
+    serviceUrl:
+      defaultZone: http://${SERVICE_DISCOVERY_HOSTNAME}:${SERVICE_DISCOVERY_PORT}/eureka/

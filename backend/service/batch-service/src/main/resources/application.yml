@@ -1,0 +1,61 @@
+# 로컬 인프라를 두지 않고 팀 개발 서버에 바로 배포하므로 local 프로파일이 없다. 기본값은 dev 다.
+# 값은 env 로 받고, 배포 때 Vault 에서 주입한다.
+spring:
+  application:
+    name: ${SPRING_APPLICATION_NAME:batch-service}
+  config:
+    import: optional:classpath:observability-common.yml
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  batch:
+    job:
+      # 기동 시 잡 자동 실행 금지 — 잡 이름을 지정한 수동 실행만 허용한다.
+      # 예) --spring.batch.job.enabled=true --spring.batch.job.name=<잡 이름> --spring.main.web-application-type=none
+      enabled: false
+    jdbc:
+      # Spring Batch 메타 테이블(BATCH_*). dev 는 애플리케이션이 만들고(always), prod 는 DB 담당자가 직접 적용한다(never).
+      # 기본을 never 로 두는 이유: 새 프로파일이 생겼을 때 조용히 DDL 을 도는 쪽이 더 위험하다.
+      initialize-schema: never
+  # 프로세스 안 Quartz. 주기 실행 트리거는 QuartzScheduleConfig 가 코드로 들고 있다.
+  quartz:
+    # 인스턴스가 하나고 트리거 정의가 코드에 있어 영속할 상태가 없다.
+    # JDBC 스토어를 쓰면 surveillance 스키마에 QRTZ_* 테이블만 늘어난다.
+    job-store-type: memory
+    # 여기서는 항상 끈다. 켜는 것은 QuartzScheduleConfig 의 SchedulerFactoryBeanCustomizer 로,
+    # 스케줄 조건(ScheduleEnabledCondition)이 참인 컨텍스트에서만 auto-startup 을 true 로 되돌린다.
+    # ${batch.schedule.enabled:false} 를 그대로 꽂으면 env 가 빈 문자열일 때 불리언 바인딩이 깨진다.
+    auto-startup: false
+    properties:
+      org.quartz.scheduler.instanceName: batch-service-scheduler
+      # 스레드 1개 = 적재 잡끼리 절대 동시에 돌지 않는다.
+      # 잡마다 JobKey 가 다르므로 @DisallowConcurrentExecution 만으로는 막히지 않는다.
+      org.quartz.threadPool.threadCount: "1"
+      # Quartz 스레드는 데몬이다. SchedulerFactoryBean 은 auto-startup 과 무관하게 스케줄러를 만들면서
+      # 스레드풀 · 스케줄러 스레드를 띄우므로, non-daemon 이면 `--spring.main.web-application-type=none` 으로 띄운
+      # 수동 실행 JVM 이 잡을 끝내고도 죽지 않고 컨테이너 안에 좀비 JVM 으로 남는다.
+      # 상주 프로세스는 웹 서버 스레드가 JVM 을 붙든다. 메모리 잡 스토어 + 단일 인스턴스라 갑작스러운 종료로 잃을 상태도 없다.
+      org.quartz.threadPool.makeThreadsDaemons: "true"
+      org.quartz.scheduler.makeSchedulerThreadDaemon: "true"
+
+# 주기 실행 스위치.
+#
+# 두 조건이 모두 맞아야 트리거가 등록되고 스케줄러가 시작된다 — batch.schedule.enabled 가 true 이고
+# spring.batch.job.enabled 가 false 여야 한다. 후자가 true 인 JVM 은 잡 하나만 돌리고 끝나는 수동 실행이라 스케줄을 얹으면 안 된다.
+# 판정은 SpEL 이 아니라 @ConditionalOnProperty 조합(ScheduleEnabledCondition)이다.
+# 정확히 "true" 가 아닌 값(빈 문자열 · yes · 1)은 전부 꺼짐으로 본다 — 기동을 막지 않는다.
+# 기본은 꺼짐이고, 프로파일이 기본값을 정한다 (dev 켜짐, prod 꺼짐).
+batch:
+  schedule:
+    enabled: ${BATCH_SCHEDULE_ENABLED:false}
+
+# 공개 API 가 없다. common-core 가 springdoc 을 끌고 오므로 빈 API 문서 엔드포인트가 열리지 않게 끈다.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    # Eureka 클라이언트가 주기적으로 Eureka 서버 엔드포인트를 확인할 때 출력하는 반복 로그를 줄이기 위한 설정
+    com.netflix.discovery.shared.resolver.aws.ConfigClusterResolver: WARN
