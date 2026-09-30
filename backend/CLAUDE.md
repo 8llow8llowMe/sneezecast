@@ -7,6 +7,8 @@
 1. [docs/modules.md](docs/modules.md) — 모듈 구성과 각 모듈에 넣는 것 / 넣지 않는 것
 2. [docs/architecture-guide.md](docs/architecture-guide.md) — 서비스 경계, 계층 흐름, 데이터 흐름, 개인정보 경계
 3. [docs/coding-conventions.md](docs/coding-conventions.md) — 네이밍, 예외, 영속성, Feign, 로그
+4. [docs/entity-design.md](docs/entity-design.md) — 테이블 · 컬럼 · 인덱스 · enum (1단계 핵심 기능)
+5. [docs/data-api-analysis.md](docs/data-api-analysis.md) — 외부 원천(SGIS · 질병관리청) 명세와 테이블 매핑
 
 도메인 불변식(보고·집계·자료 부족·운영자 검토·개인정보)은 루트 [`CLAUDE.md`](../CLAUDE.md) 가 정본이다.
 
