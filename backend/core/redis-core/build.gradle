@@ -1,1 +1,4 @@
-// 의존성과 소스는 #7 에서 채운다. 모듈 역할은 docs/modules.md 참고.
+// jar/bootJar 설정은 루트 build.gradle 의 libraryModules 가 처리한다.
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+}
