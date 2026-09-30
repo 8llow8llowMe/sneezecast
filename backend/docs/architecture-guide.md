@@ -10,7 +10,7 @@ client ──▶ api-gateway ──lb://──▶ auth-service ─────�
                 │                                         │ Feign /internal/v1
                 └────────lb://──▶ surveillance-service ◀─┘
                                         ▲
-             batch-service (잡) ─────────┘ 참조 데이터 적재 (DB 쓰기)
+             batch-service (Quartz) ──────┘ 참조 데이터 적재 (DB 쓰기)
              service-discovery (Eureka) — 게이트웨이·서비스 등록
 ```
 
@@ -18,7 +18,7 @@ client ──▶ api-gateway ──lb://──▶ auth-service ─────�
 
 - **개인정보 경계가 곧 서비스 경계다.** 신원(auth)과 가명 증상(surveillance)을 다른 프로세스·다른 DB 계정에 둬서, 둘을 결합할 수 있는 주체를 없앤다.
 - **보고·집계·검토·발행은 한 서비스다.** 운영자가 검토한 집계값과 발행문에 인용된 값이 같아야 하는데, 서비스를 나누면 이 값을 경계 너머로 복제·동기화해야 한다. `advisory` 는 패키지(컨텍스트) 경계로 분리해 두고, 규모가 커지면 떼어 낸다.
-- **batch 는 상주하지 않는다.** 주 1회 몇 초 도는 적재에 메모리를 상시 쓰지 않는다.
+- **적재는 batch-service 로 분리한다.** 외부 API 쿼터·장애가 사용자 요청 경로에 번지지 않게 하고, 주기 실행은 서비스 안의 Quartz 스케줄러가 맡는다.
 - **Kafka 는 쓰지 않는다.** 알림 팬아웃은 outbox + Feign 으로 충분하다. outbox 를 두었으므로 발행자만 바꾸면 이행된다.
 
 ## 2. 패키지 구조
@@ -113,7 +113,7 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 
 ## 9. 처음부터 고정하는 계약
 
-바꾸면 저장된 데이터가 깨진다. 변경은 마이그레이션 계획과 함께만 한다.
+바꾸면 저장된 데이터가 깨진다. 변경은 기존 데이터 변환 계획과 함께만 한다.
 
 - `reporter_key` 산출식과 pepper
 - 주 정의 — ISO 주, 월요일 시작, KST

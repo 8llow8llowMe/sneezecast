@@ -8,7 +8,7 @@
 backend/
 ├── core/            라이브러리 (jar, bootJar off)
 │   ├── common-core          응답 봉투, 검증 오류 변환, Swagger·Jasypt 공통
-│   ├── persistence-core     JPA Auditing, QueryDSL, Snowflake ID, Flyway
+│   ├── persistence-core     JPA Auditing, QueryDSL, Snowflake ID
 │   ├── redis-core           Redis Sentinel 설정
 │   └── security-core        JWT 검증, 역할·scope 해석, 인증 오류 응답
 ├── cloud/           실행 모듈 (bootJar on)
@@ -17,7 +17,7 @@ backend/
 └── service/         도메인 서비스 (bootJar on)
     ├── auth-service         회원·인증·동의·행정동 설정·알림 발송
     ├── surveillance-service 행정동·주간 보고·집계·운영자 검토·안내 발행·공식 자료
-    └── batch-service        외부 참조 데이터 적재 잡 (상주하지 않음)
+    └── batch-service        외부 참조 데이터 적재 (Quartz + Spring Batch)
 ```
 
 - 패키지 루트는 `com.sneezecast`. Java 21, Spring Boot 3.4.x, Spring Cloud 2024.0.x.
@@ -50,7 +50,7 @@ backend/
 - `config.QuerydslConfigurer` — `JPAQueryFactory` 빈
 - `config.SnowflakeConfigurer`, `util.SnowflakeIdGenerator`
 - `dto.SliceResponse` — 무한 스크롤 응답
-- **Flyway** 표준 설정 — 스키마는 마이그레이션으로만 바꾼다. dev 에서도 `ddl-auto` 는 `validate`. 증상 보고는 보관·파기 감사 대상이라 스키마 변경 이력이 남아야 한다.
+- 스키마는 DB 담당자가 직접 관리한다 (마이그레이션 도구 없음). `ddl-auto` 는 dev `update`, prod `none` — 애플리케이션이 운영 스키마를 바꾸지 않는다. prod 에 필요한 DDL 은 PR 본문에 적어 담당자에게 넘긴다.
 
 ## core/redis-core
 
@@ -69,7 +69,7 @@ backend/
 
 ## cloud/service-discovery
 
-Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트웨이·Feign 은 `lb://<서비스명>` 으로 찾는다. batch-service 는 상주하지 않으므로 등록하지 않는다.
+Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트웨이·Feign 은 `lb://<서비스명>` 으로 찾는다. batch-service 도 등록한다.
 
 ## cloud/api-gateway
 
@@ -108,5 +108,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 ## service/batch-service
 
 - SGIS 행정동 마스터·경계 적재 (연 1회 + 수동), 질병관리청 감시 자료 주간 적재.
-- **상주하지 않는 잡 컨테이너**로 실행한다. 실행 트리거(Jenkins 스케줄 / 호스트 cron)는 배포 이슈(#10)에서 정한다.
+- **상주 서비스 안의 Quartz 스케줄러**가 Spring Batch 잡을 실행한다 (hondigagae batch-service 와 같은 구성). 잡 스토어는 in-memory — JDBC 스토어를 쓰면 surveillance 스키마에 `QRTZ_*` 테이블만 는다. 주기 트리거는 코드(`QuartzScheduleConfig`)가 들고, 스레드는 1개.
+- 기동 시 잡 자동 실행은 끈다 (`spring.batch.job.enabled: false`). 수동 실행은 잡 이름을 지정해서만 한다.
+- Spring Batch 메타 테이블은 dev 에서 애플리케이션이 만들고, prod 는 DB 담당자가 직접 적용한다. 기본값은 `never` 로 둔다 — 새 프로필이 조용히 DDL 을 도는 쪽이 더 위험하다.
 - surveillance 스키마의 `district` · `official_surveillance` 에 쓰기만 한다. 적재는 멱등 upsert.
