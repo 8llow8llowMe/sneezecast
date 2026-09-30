@@ -65,6 +65,7 @@ backend/
 - 역할 `USER`(일반 회원) / `OPERATOR`(검토·안내 발행) / `ADMIN`(관리자 페이지 — 회원·역할 부여, 운영 설정, 참조 데이터 수동 적재. 운영 API 도 허용), scope claim 해석 (`report:write` — 민감정보 동의를 마친 회원에게만 발급)
   - authority 는 역할 이름 그대로(`ROLE_` 접두어 없음) + scope 마다 `SCOPE_<scope>`. 검사는 `hasAuthority('OPERATOR')`, `hasAuthority(SecurityScope.REPORT_WRITE_AUTHORITY)` 로 한다 — `hasRole(...)` 은 동작하지 않는다.
   - scope 문자열·claim 이름은 `SecurityScope` 한 곳에만 둔다.
+- 서명 키를 담는 설정 record(`JwtAuthProperties` · `JwtResourceServerProperties`)가 HS512 키 길이(UTF-8 64바이트)를 생성 시점에 검사하고 `toString()` 에서 키를 가린다. 공통 규칙은 `common.jwt.JwtSigningKeys`. 키를 바이트로 바꿀 때는 항상 UTF-8 을 명시한다 — 발급과 검증의 바이트 해석이 어긋나면 모든 토큰이 401 이 된다.
 - 인증·인가 실패를 `Response` 봉투로 쓰는 오류 writer
 
 **넣지 않는 것**: 발급 **정책**(언제 어떤 역할·scope 를 싣는지 — auth-service 소유), 회원 조회.
@@ -90,6 +91,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - **`/internal/**` 은 라우팅하지 않는다.** 라우트 커버리지 테스트(`GatewayRouteCoverageTest`)로 막는다. 모든 공개 경로는 `/api/v1/` 로 시작한다.
 - **JWT 거부 응답**은 `Response` 봉투를 쓴다 (그 밖의 게이트웨이 오류는 아직 Spring 기본 형식). 에러 코드는 security-core `SecurityErrorCode` 와 같은 문자열이다 (계약 테스트로 고정).
 - CORS 허용 오리진은 security-core `AuthSecurityConfigurer` 와 같은 목록이다.
+- `JWT_ACCESS_KEY` 가 UTF-8 64바이트 미만 · 공백이면 기동 실패 (`JwtVerificationProperties`). 게이트웨이는 security-core 에 의존하지 않아 같은 규칙을 이 record 에 따로 둔다 — 규칙을 바꾸면 security-core `JwtSigningKeys` 와 함께 고친다.
 
 | 경로 | 서비스 |
 |------|--------|
@@ -153,7 +155,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 
 - 프로필은 dev / prod 만(로컬 없음), 값은 환경변수. prod 는 Swagger(springdoc) 를 끈다.
 - 게이트웨이와 반드시 같은 값: `JWT_ACCESS_KEY`, `REDIS_KEY_PREFIX`. 게이트웨이의 `AUTH_SERVICE_APP_NAME` 은 이 서비스의 `SPRING_APPLICATION_NAME` 과 같다.
-- 기동 시 JWT 설정을 검사한다 — access 만료 15분 초과, HS512 키 64바이트 미만이면 기동 실패 (짧은 키는 모든 토큰을 조용히 401 로 만든다).
+- 기동 시 JWT 설정 검사 — 키 길이(access · refresh 키 UTF-8 64바이트 이상, null · 공백 금지)는 security-core `JwtAuthProperties` 가 바인딩 시점에, 만료 정책(access 15분 이하, 0 이하 금지)은 auth 의 `JwtAuthPropertiesValidator` 가 검사한다. 어느 쪽이든 어기면 기동 실패 (짧은 키는 모든 토큰을 조용히 401 로 만든다).
 - access token 블랙리스트 키는 게이트웨이와 같은 `{prefix}:auth:accessTokenBlacklist:{jti}`, TTL 은 토큰 남은 만료 시간. Redis 장애는 항상 503 `SECURITY_008` (fail-closed).
 
 ## service/surveillance-service
@@ -174,7 +176,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 
 - 프로필은 dev / prod 만, 값은 환경변수. prod 는 Swagger 를 끈다. 보안은 security-core `resourceserver`(검증만, 발급 없음).
 - Redis · MinIO 를 쓰지 않는다. 폐기 토큰 차단은 게이트웨이 블랙리스트에 맡기므로 **서비스 포트를 외부에 노출하지 않는다.**
-- `JWT_ACCESS_KEY` 는 auth · 게이트웨이와 같은 값, `SPRING_APPLICATION_NAME` 은 게이트웨이 `SURVEILLANCE_SERVICE_APP_NAME` 과 같은 값.
+- `JWT_ACCESS_KEY` 는 auth · 게이트웨이와 같은 값 (UTF-8 64바이트 미만 · 공백이면 security-core `JwtResourceServerProperties` 가 기동을 막는다), `SPRING_APPLICATION_NAME` 은 게이트웨이 `SURVEILLANCE_SERVICE_APP_NAME` 과 같은 값.
 - `REPORTER_KEY_PEPPER`(`surveillance.reporter-key.pepper`) — 32자 미만이면 기동 실패. 기동 로그에는 SHA-256 앞 8자 지문만 남긴다. Vault 의 surveillance 경로에만 두고 auth 에는 주지 않는다.
 
 ## service/batch-service
