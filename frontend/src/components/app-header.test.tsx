@@ -71,4 +71,28 @@ describe('AppHeader', () => {
     expect(reportWrapper?.classList).toContain('hidden')
     expect(reportWrapper?.classList).toContain('tablet:contents')
   })
+
+  it('제목이 있으면 모바일 · 태블릿은 동네 버튼 대신 제목을 보이고, 모바일에서는 알림을 숨긴다 (내 정보)', () => {
+    renderHeader({ title: '내 정보', current: 'me' })
+
+    // 제목은 화면 제목(h1)이고 데스크톱에서 숨는다
+    expect(screen.getByRole('heading', { level: 1, name: '내 정보' }).classList).toContain(
+      'desktop:hidden',
+    )
+    const region = screen.getByRole('button', { name: '동네 바꾸기, 현재 ○○동' })
+    expect(region.classList).toContain('hidden')
+    expect(region.classList).toContain('desktop:flex')
+    const bellWrapper = screen.getByRole('button', { name: '알림 설정' }).parentElement
+    expect(bellWrapper?.classList).toContain('hidden')
+    expect(bellWrapper?.classList).toContain('tablet:contents')
+  })
+
+  it('제목이 없으면 동네 버튼 · 알림이 모바일에서도 보인다', () => {
+    renderHeader()
+
+    expect(screen.getByRole('button', { name: '동네 바꾸기, 현재 ○○동' }).classList).not.toContain(
+      'hidden',
+    )
+    expect(screen.getByRole('button', { name: '알림 설정' }).parentElement?.tagName).toBe('HEADER')
+  })
 })

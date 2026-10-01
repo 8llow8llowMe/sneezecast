@@ -19,6 +19,12 @@ export type AppHeaderProps = {
   reportLabel?: string | undefined
   /** 데스크톱 메뉴 링크 뒤에 붙일 쿼리(앞 `?` 없이). 둘러보기 동네(`region=<코드>`)를 메뉴를 옮겨도 잃지 않게 한다 */
   navSearch?: string | undefined
+  /**
+   * 화면 제목 (내 정보 — Settings · Settings-T 시안). 있으면 모바일 · 태블릿에서 동네 버튼 대신 제목을 보이고,
+   * 모바일은 제목만(높이 56 · 알림 없음), 태블릿은 아래 구분선을 둔다. 데스크톱은 제목 없이 같은 구성이다.
+   * 제목은 화면 제목(`h1`)으로 그린다 — 데스크톱에서는 숨으므로(`display: none`) 데스크톱 화면 제목은 부르는 쪽이 따로 둔다
+   */
+  title?: string | undefined
   className?: string
 }
 
@@ -31,7 +37,7 @@ export type AppHeaderProps = {
  * | 태블릿 | 72 | 동네 · 알림 · 보고 버튼 |
  * | 데스크톱 | 64 | 서비스명 · 동네 · 메뉴 · 알림 · 보고 버튼, 아래 구분선 |
  *
- * 시안: Home(모바일) · Tablet · Desktop, 비회원 Home-guest(-T · -D)
+ * 시안: Home(모바일) · Tablet · Desktop, 비회원 Home-guest(-T · -D), 제목이 있는 내 정보 Settings(-T · -D)
  */
 export function AppHeader({
   regionName,
@@ -41,14 +47,18 @@ export function AppHeader({
   onReportClick,
   reportLabel = '이번 주 건강 보고하기',
   navSearch,
+  title,
   className,
 }: AppHeaderProps) {
+  const bell = <IconButton label="알림 설정" icon={<BellIcon />} onClick={onNotificationClick} />
   return (
     <header
       className={clsx(
         'flex shrink-0 items-center',
-        'pt-2 pr-2 pl-3',
-        'tablet:h-header-tablet tablet:gap-2 tablet:pt-0 tablet:pr-5 tablet:pl-4',
+        title
+          ? 'h-14 px-5 tablet:border-b tablet:border-divider tablet:pr-5 tablet:pl-3'
+          : 'pt-2 pr-2 pl-3 tablet:pt-0 tablet:pr-5 tablet:pl-4',
+        'tablet:h-header-tablet tablet:gap-2',
         'desktop:h-header-desktop desktop:gap-6 desktop:border-b desktop:border-divider desktop:px-8',
         className,
       )}
@@ -57,11 +67,18 @@ export function AppHeader({
         우리동네체온계
       </span>
 
+      {title && (
+        <h1 className="text-screen-title font-bold text-fg tablet:pl-2 desktop:hidden">{title}</h1>
+      )}
+
       <button
         type="button"
         aria-label={`동네 바꾸기, 현재 ${regionName}`}
         onClick={onRegionClick}
-        className="flex h-11 cursor-pointer items-center gap-1 px-2 text-screen-title font-bold text-fg desktop:text-section-title"
+        className={clsx(
+          title ? 'hidden desktop:flex' : 'flex',
+          'h-11 cursor-pointer items-center gap-1 px-2 text-screen-title font-bold text-fg desktop:text-section-title',
+        )}
       >
         <span>{regionName}</span>
         <ChevronDownIcon />
@@ -89,7 +106,8 @@ export function AppHeader({
       {/* 모바일 · 태블릿에서 알림 · 보고 버튼을 오른쪽으로 민다. 데스크톱은 메뉴가 늘어나 자리를 채운다 */}
       <span className="grow desktop:hidden" />
 
-      <IconButton label="알림 설정" icon={<BellIcon />} onClick={onNotificationClick} />
+      {/* 제목이 있는 모바일 머리줄에는 알림이 없다 (Settings 시안) */}
+      {title ? <span className="hidden tablet:contents">{bell}</span> : bell}
 
       {/*
         모바일에서는 화면 아래 고정 버튼이 보고를 맡는다.

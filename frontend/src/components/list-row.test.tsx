@@ -27,6 +27,7 @@ describe('ListRow', () => {
   it.each([
     ['data', 'font-semibold', 'text-sub'],
     ['link', 'font-medium', 'text-caption'],
+    ['menu', 'font-medium', 'text-sub'],
   ] as const)('%s 행은 제목 %s · 보조 문구 %s 다', (kind, titleClass, descriptionClass) => {
     render(<ListRow kind={kind} title="제목" description="보조" />)
     expect(screen.getByText('제목').classList).toContain(titleClass)

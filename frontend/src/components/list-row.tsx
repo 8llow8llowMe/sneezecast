@@ -5,8 +5,9 @@ import clsx from 'clsx'
 /**
  * - data: 데이터 행 (증상별 변화) — 제목 15px 굵게, 보조 문구 13px
  * - link: 이동 행 (공식 정보) — 제목 15px 보통, 보조 문구 12px
+ * - menu: 설정 메뉴 행 (내 정보) — 제목 15px 보통, 보조 문구 13px. 제목은 줄지 않고 뒤쪽 값이 줄어든다(긴 이메일)
  */
-export type ListRowKind = 'data' | 'link'
+export type ListRowKind = 'data' | 'link' | 'menu'
 
 export type ListRowProps = {
   kind?: ListRowKind
@@ -25,6 +26,7 @@ export type ListRowProps = {
 const TEXT_CLASS: Record<ListRowKind, { box: string; title: string; description: string }> = {
   data: { box: 'gap-0.5', title: 'font-semibold', description: 'text-sub font-medium' },
   link: { box: 'gap-px', title: 'font-medium', description: 'text-caption' },
+  menu: { box: 'shrink-0 gap-0.5', title: 'font-medium', description: 'text-sub' },
 }
 
 /**
