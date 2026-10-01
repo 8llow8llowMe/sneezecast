@@ -1,0 +1,55 @@
+// sneezecast auth-service 배포 잡.
+// 회원 · 동의 · 토큰 발급. 외부 진입은 게이트웨이 경유뿐이다 (nginx 직결 라우트 없음).
+//
+// Jenkins 멀티브랜치 파이프라인 이름: sneezecast-auth-service
+// 배포 대상 PR 라벨:                  backend-auth-service
+//   dev  -> backend-1 (192.168.0.13), 호스트 포트 3081
+//   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4081
+//
+// Vault: 공통 + kv/sneezecast/backend/{env}/auth-service
+//   REPORTER_KEY_PEPPER 는 읽지 않는다 — surveillance-service 경로에만 있고, 이 잡은 그 경로를 읽지 않는다.
+def backendPipeline
+node('builder-backend') {
+    checkout scm
+    backendPipeline = load 'Jenkinsfile.backend-common.groovy'
+}
+
+backendPipeline.run([
+    serviceGroup       : 'service',
+    serviceName        : 'auth-service',
+    modulePath         : 'service:auth-service',
+    fsPath             : 'backend/service/auth-service',
+    dockerfile         : 'auth-service.Dockerfile',
+    composeFile        : 'docker-compose-auth-service.yml',
+    composeServiceName : 'auth-service',
+    containerNamePrefix: 'sneezecast-auth-service',
+    deploySubdir       : 'service/auth-service',
+    buildAgentLabel    : 'builder-backend',
+    deployAgentLabels  : [
+        dev : 'deploy-backend-dev2',
+        prod: 'deploy-backend-prod'
+    ],
+    readServiceSecret  : true,
+    portEnvKey         : 'AUTH_SERVICE_PORT',
+    hostPorts          : [dev: '3081', prod: '4081'],
+    // yml 에 기본값이 없는 자리표시자. SPRING_PROFILES_ACTIVE · portEnvKey 는 공용 파이프라인이 항상 검사한다.
+    // AUTH_SERVICE_APP_NAME 은 compose 가 SPRING_APPLICATION_NAME 으로 넘긴다 (게이트웨이 lb:// 대상과 같아야 한다).
+    requiredEnvKeys    : [
+        'SERVICE_DISCOVERY_HOSTNAME',
+        'SERVICE_DISCOVERY_PORT',
+        'AUTH_SERVICE_APP_NAME',
+        'JWT_ACCESS_KEY',
+        'JWT_REFRESH_KEY',
+        'REDIS_MASTER_NAME',
+        'REDIS_SENTINEL_NODES',
+        'REDIS_PASSWORD',
+        'AUTH_DB_URL',
+        'AUTH_DB_USERNAME',
+        'AUTH_DB_PASSWORD',
+        'MINIO_ENDPOINT',
+        'MINIO_PUBLIC_URL',
+        'MINIO_BUCKET',
+        'MINIO_ACCESS_KEY',
+        'MINIO_SECRET_KEY'
+    ]
+])

@@ -4,7 +4,7 @@ server:
 
 spring:
   datasource:
-    # MySQL auth 스키마. surveillance 와 다른 DB 계정을 쓴다.
+    # MySQL auth 스키마(`sneezecast_auth`). surveillance 와 다른 DB 계정을 쓴다.
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${AUTH_DB_URL}
     username: ${AUTH_DB_USERNAME}

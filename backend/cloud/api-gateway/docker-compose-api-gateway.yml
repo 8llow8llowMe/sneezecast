@@ -1,0 +1,111 @@
+# sneezecast api-gateway 배포 정의.
+#
+# 배치:
+#   dev  -> backend-1 (192.168.0.13), 호스트 포트 3000  (sneezecast dev 는 3xxx 대역)
+#   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4000  (sneezecast prod 는 4xxx 대역)
+#   (Infra README §4 배치 원칙 5번 · §7 sneezecast 배치 요약)
+#
+# 포트: 컨테이너 내부 포트 = 호스트 포트 = Vault API_GATEWAY_PORT (dev 3000 / prod 4000).
+#   파이프라인이 Jenkinsfile-api-gateway 의 hostPorts 와 대조하고 다르면 배포 전에 실패한다.
+#
+# **인그레스(nginx)가 프록시하는 유일한 백엔드 포트다.** (Infra nginx/conf.d/api-dev.sneezecast.conf → 192.168.0.13:3000)
+#   다른 서비스 포트는 외부 노출 대상이 아니다 — access token 블랙리스트 · 회원 헤더 제거 · 업스트림 타임아웃을
+#   게이트웨이가 맡으므로, 서비스로 직결하면 이 검사를 건너뛴다.
+#
+# 서비스 간 통신:
+#   - discovery 는 사설 IP(SERVICE_DISCOVERY_HOSTNAME, dev 192.168.0.13) + SERVICE_DISCOVERY_PORT(호스트 포트와 같은 값)로 붙는다.
+#   - 업스트림 서비스는 Eureka 에 등록된 주소(같은 호스트 8llow8llowme-net 브리지 IP + 서비스 포트)로 호출한다.
+#
+# Vault: 공통 + kv/sneezecast/backend/{env}/api-gateway
+
+x-api-gateway-environment: &api_gateway_environment
+  TIME_ZONE: ${TIME_ZONE:-Asia/Seoul}
+  # prod 로 띄우면서 이 값이 dev 로 남으면 dev 프로필로 뜬다. 파이프라인이 배포 환경과 같은지 검사한다.
+  SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+  API_GATEWAY_PORT: ${API_GATEWAY_PORT}
+  SERVICE_DISCOVERY_HOSTNAME: ${SERVICE_DISCOVERY_HOSTNAME}
+  SERVICE_DISCOVERY_PORT: ${SERVICE_DISCOVERY_PORT}
+  # 라우트 lb:// 대상. 각 서비스의 SPRING_APPLICATION_NAME(= compose 가 넘기는 같은 키)과 같아야 한다.
+  AUTH_SERVICE_APP_NAME: ${AUTH_SERVICE_APP_NAME}
+  SURVEILLANCE_SERVICE_APP_NAME: ${SURVEILLANCE_SERVICE_APP_NAME}
+  # 업스트림 대기 상한. 기본값은 application-*.yml 과 같다.
+  GATEWAY_CONNECT_TIMEOUT_MS: ${GATEWAY_CONNECT_TIMEOUT_MS:-2000}
+  GATEWAY_RESPONSE_TIMEOUT: ${GATEWAY_RESPONSE_TIMEOUT:-10s}
+  # auth-service · surveillance-service 와 같은 값이다 (공통 경로의 한 항목). HS512 라 UTF-8 64바이트 이상.
+  JWT_ACCESS_KEY: ${JWT_ACCESS_KEY}
+  # false = fail-closed. 블랙리스트 조회가 실패하면 503 으로 막는다.
+  JWT_BLACKLIST_FAIL_OPEN: ${JWT_BLACKLIST_FAIL_OPEN:-false}
+  # 팀 Redis 3노드 Sentinel. 노드는 host:port 콤마 구분 문자열 하나.
+  REDIS_MASTER_NAME: ${REDIS_MASTER_NAME}
+  REDIS_SENTINEL_NODES: ${REDIS_SENTINEL_NODES}
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
+  # auth-service 와 같은 값이어야 한다 (access token 블랙리스트 키).
+  REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-sneezecast}
+  REDIS_COMMAND_TIMEOUT: ${REDIS_COMMAND_TIMEOUT:-1s}
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+services:
+  api-gateway-dev:
+    image: sneezecast-api-gateway:latest
+    container_name: sneezecast-api-gateway-dev
+    labels:
+      observability.project: sneezecast
+      observability.group: cloud
+      observability.service: api-gateway
+      observability.env: dev
+      observability.application: api-gateway
+      observability.deployment: sneezecast-api-gateway-dev
+    build:
+      context: .
+      dockerfile: api-gateway.Dockerfile
+    ports:
+      - "${API_GATEWAY_PORT}:${API_GATEWAY_PORT}" # host:container (같은 값)
+    environment:
+      <<: *api_gateway_environment
+    # 컨테이너 메모리 상한. JVM heap 은 Dockerfile 의 MaxRAMPercentage 가 이 값을 기준으로 산정한다.
+    deploy:
+      resources:
+        limits:
+          memory: ${API_GATEWAY_MEM_LIMIT_DEV:-512m}
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+    networks:
+      - 8llow8llowme-net
+
+  api-gateway-prod:
+    image: sneezecast-api-gateway:latest
+    container_name: sneezecast-api-gateway-prod
+    labels:
+      observability.project: sneezecast
+      observability.group: cloud
+      observability.service: api-gateway
+      observability.env: prod
+      observability.application: api-gateway
+      observability.deployment: sneezecast-api-gateway-prod
+    build:
+      context: .
+      dockerfile: api-gateway.Dockerfile
+    ports:
+      - "${API_GATEWAY_PORT}:${API_GATEWAY_PORT}" # host:container (같은 값)
+    environment:
+      <<: *api_gateway_environment
+    deploy:
+      resources:
+        limits:
+          memory: ${API_GATEWAY_MEM_LIMIT_PROD:-768m}
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+    networks:
+      - 8llow8llowme-net
+
+networks:
+  8llow8llowme-net:
+    name: 8llow8llowme-net
+    external: true

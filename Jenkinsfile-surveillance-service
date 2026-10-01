@@ -1,0 +1,47 @@
+// sneezecast surveillance-service 배포 잡.
+// 주간 보고 · 집계 · 안내 · 공식 감시 자료 조회. 외부 진입은 게이트웨이 경유뿐이다.
+//
+// Jenkins 멀티브랜치 파이프라인 이름: sneezecast-surveillance-service
+// 배포 대상 PR 라벨:                  backend-surveillance-service
+//   dev  -> backend-1 (192.168.0.13), 호스트 포트 3082
+//   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4082
+//
+// Vault: 공통 + kv/sneezecast/backend/{env}/surveillance-service
+//   REPORTER_KEY_PEPPER 는 이 경로에만 둔다. 공통이나 다른 서비스 경로에 있으면 파이프라인이 실패한다.
+def backendPipeline
+node('builder-backend') {
+    checkout scm
+    backendPipeline = load 'Jenkinsfile.backend-common.groovy'
+}
+
+backendPipeline.run([
+    serviceGroup       : 'service',
+    serviceName        : 'surveillance-service',
+    modulePath         : 'service:surveillance-service',
+    fsPath             : 'backend/service/surveillance-service',
+    dockerfile         : 'surveillance-service.Dockerfile',
+    composeFile        : 'docker-compose-surveillance-service.yml',
+    composeServiceName : 'surveillance-service',
+    containerNamePrefix: 'sneezecast-surveillance-service',
+    deploySubdir       : 'service/surveillance-service',
+    buildAgentLabel    : 'builder-backend',
+    deployAgentLabels  : [
+        dev : 'deploy-backend-dev2',
+        prod: 'deploy-backend-prod'
+    ],
+    readServiceSecret  : true,
+    portEnvKey         : 'SURVEILLANCE_SERVICE_PORT',
+    hostPorts          : [dev: '3082', prod: '4082'],
+    // yml 에 기본값이 없는 자리표시자. SPRING_PROFILES_ACTIVE · portEnvKey 는 공용 파이프라인이 항상 검사한다.
+    // SURVEILLANCE_SERVICE_APP_NAME 은 compose 가 SPRING_APPLICATION_NAME 으로 넘긴다 (게이트웨이 lb:// 대상과 같아야 한다).
+    requiredEnvKeys    : [
+        'SERVICE_DISCOVERY_HOSTNAME',
+        'SERVICE_DISCOVERY_PORT',
+        'SURVEILLANCE_SERVICE_APP_NAME',
+        'JWT_ACCESS_KEY',
+        'SURVEILLANCE_DB_URL',
+        'SURVEILLANCE_DB_USERNAME',
+        'SURVEILLANCE_DB_PASSWORD',
+        'REPORTER_KEY_PEPPER'
+    ]
+])

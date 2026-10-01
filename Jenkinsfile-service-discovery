@@ -1,0 +1,38 @@
+// sneezecast service-discovery 배포 잡.
+// Eureka 서버. 다른 서비스가 등록할 대상이라 가장 먼저 배포한다.
+//
+// Jenkins 멀티브랜치 파이프라인 이름: sneezecast-service-discovery
+// 배포 대상 PR 라벨:                  backend-service-discovery
+//   dev  -> backend-1 (192.168.0.13), 호스트 포트 3761
+//   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4761
+//
+// Vault: 공통 경로(kv/sneezecast/backend/{env}/env)만 읽는다. 서비스 전용 경로가 없다.
+// 클라이언트가 사설 IP + SERVICE_DISCOVERY_PORT 로 붙으므로 SERVICE_DISCOVERY_PORT 가 곧 호스트 포트다.
+def backendPipeline
+node('builder-backend') {
+    checkout scm
+    backendPipeline = load 'Jenkinsfile.backend-common.groovy'
+}
+
+backendPipeline.run([
+    serviceGroup       : 'cloud',
+    serviceName        : 'service-discovery',
+    modulePath         : 'cloud:service-discovery',
+    fsPath             : 'backend/cloud/service-discovery',
+    dockerfile         : 'service-discovery.Dockerfile',
+    composeFile        : 'docker-compose-service-discovery.yml',
+    composeServiceName : 'service-discovery',
+    containerNamePrefix: 'sneezecast-service-discovery',
+    deploySubdir       : 'cloud/service-discovery',
+    buildAgentLabel    : 'builder-backend',
+    deployAgentLabels  : [
+        dev : 'deploy-backend-dev2',
+        prod: 'deploy-backend-prod'
+    ],
+    // false = 공통 경로만 읽는다. 키를 빠뜨리면 파이프라인이 실패한다 (명시 필수).
+    readServiceSecret  : false,
+    portEnvKey         : 'SERVICE_DISCOVERY_PORT',
+    hostPorts          : [dev: '3761', prod: '4761'],
+    // yml 에 기본값이 없는 자리표시자. SPRING_PROFILES_ACTIVE · portEnvKey 는 공용 파이프라인이 항상 검사한다.
+    requiredEnvKeys    : []
+])

@@ -1,0 +1,45 @@
+// sneezecast api-gateway 배포 잡.
+// 라우팅 · CORS · JWT 1차 검증. nginx(api-dev.sneezecast.com)가 프록시하는 유일한 대상이다.
+//
+// Jenkins 멀티브랜치 파이프라인 이름: sneezecast-api-gateway
+// 배포 대상 PR 라벨:                  backend-api-gateway
+//   dev  -> backend-1 (192.168.0.13), 호스트 포트 3000
+//   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4000
+//
+// Vault: 공통 + kv/sneezecast/backend/{env}/api-gateway
+def backendPipeline
+node('builder-backend') {
+    checkout scm
+    backendPipeline = load 'Jenkinsfile.backend-common.groovy'
+}
+
+backendPipeline.run([
+    serviceGroup       : 'cloud',
+    serviceName        : 'api-gateway',
+    modulePath         : 'cloud:api-gateway',
+    fsPath             : 'backend/cloud/api-gateway',
+    dockerfile         : 'api-gateway.Dockerfile',
+    composeFile        : 'docker-compose-api-gateway.yml',
+    composeServiceName : 'api-gateway',
+    containerNamePrefix: 'sneezecast-api-gateway',
+    deploySubdir       : 'cloud/api-gateway',
+    buildAgentLabel    : 'builder-backend',
+    deployAgentLabels  : [
+        dev : 'deploy-backend-dev2',
+        prod: 'deploy-backend-prod'
+    ],
+    readServiceSecret  : true,
+    portEnvKey         : 'API_GATEWAY_PORT',
+    hostPorts          : [dev: '3000', prod: '4000'],
+    // yml 에 기본값이 없는 자리표시자. SPRING_PROFILES_ACTIVE · portEnvKey 는 공용 파이프라인이 항상 검사한다.
+    requiredEnvKeys    : [
+        'SERVICE_DISCOVERY_HOSTNAME',
+        'SERVICE_DISCOVERY_PORT',
+        'JWT_ACCESS_KEY',
+        'REDIS_MASTER_NAME',
+        'REDIS_SENTINEL_NODES',
+        'REDIS_PASSWORD',
+        'AUTH_SERVICE_APP_NAME',
+        'SURVEILLANCE_SERVICE_APP_NAME'
+    ]
+])

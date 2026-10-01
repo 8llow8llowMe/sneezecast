@@ -1,0 +1,44 @@
+// sneezecast batch-service 배포 잡.
+// 외부 원천(SGIS · 질병관리청) 적재. 상주 프로세스 안 Quartz 가 잡을 부른다.
+// 웹 트래픽이 없어 마지막에 배포한다. 잡 실행은 배포와 분리한다.
+//
+// Jenkins 멀티브랜치 파이프라인 이름: sneezecast-batch-service
+// 배포 대상 PR 라벨:                  backend-batch-service
+//   dev  -> backend-1 (192.168.0.13), 호스트 포트 3080
+//   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4080
+//
+// Vault: 공통 + kv/sneezecast/backend/{env}/batch-service
+def backendPipeline
+node('builder-backend') {
+    checkout scm
+    backendPipeline = load 'Jenkinsfile.backend-common.groovy'
+}
+
+backendPipeline.run([
+    serviceGroup       : 'service',
+    serviceName        : 'batch-service',
+    modulePath         : 'service:batch-service',
+    fsPath             : 'backend/service/batch-service',
+    dockerfile         : 'batch-service.Dockerfile',
+    composeFile        : 'docker-compose-batch-service.yml',
+    composeServiceName : 'batch-service',
+    containerNamePrefix: 'sneezecast-batch-service',
+    deploySubdir       : 'service/batch-service',
+    buildAgentLabel    : 'builder-backend',
+    deployAgentLabels  : [
+        dev : 'deploy-backend-dev2',
+        prod: 'deploy-backend-prod'
+    ],
+    readServiceSecret  : true,
+    portEnvKey         : 'BATCH_SERVICE_PORT',
+    hostPorts          : [dev: '3080', prod: '4080'],
+    // yml 에 기본값이 없는 자리표시자. SPRING_PROFILES_ACTIVE · portEnvKey 는 공용 파이프라인이 항상 검사한다.
+    // BATCH_SCHEDULE_ENABLED 는 필수가 아니다 — 없으면 compose 가 프로필 기본값(dev true / prod false)을 넘긴다.
+    requiredEnvKeys    : [
+        'SERVICE_DISCOVERY_HOSTNAME',
+        'SERVICE_DISCOVERY_PORT',
+        'BATCH_DB_URL',
+        'BATCH_DB_USERNAME',
+        'BATCH_DB_PASSWORD'
+    ]
+])

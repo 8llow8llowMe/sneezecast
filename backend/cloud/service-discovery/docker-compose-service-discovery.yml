@@ -1,0 +1,88 @@
+# sneezecast service-discovery 배포 정의.
+#
+# 배치:
+#   dev  -> backend-1 (192.168.0.13), 호스트 포트 3761  (sneezecast dev 는 3xxx 대역)
+#   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4761  (sneezecast prod 는 4xxx 대역)
+#   (Infra README §4 배치 원칙 5번 · §7 sneezecast 배치 요약)
+#
+# 포트: 컨테이너 내부 포트 = 호스트 포트 = Vault 공통 SERVICE_DISCOVERY_PORT (dev 3761 / prod 4761).
+#   다른 서비스는 사설 IP(SERVICE_DISCOVERY_HOSTNAME) + SERVICE_DISCOVERY_PORT 로 붙으므로 두 값이 같아야 한다.
+#   파이프라인이 Jenkinsfile-service-discovery 의 hostPorts 와 대조하고 다르면 배포 전에 실패한다.
+#
+# **서비스 포트는 외부 노출 대상이 아니다.** 인그레스(nginx)는 게이트웨이(3000)만 프록시한다.
+#   이 포트는 사설망 안의 Eureka 클라이언트와 운영자 점검용이다. nginx 에 이 포트로 가는 location 을 만들지 않는다.
+#
+# Vault: 공통 경로(kv/sneezecast/backend/{env}/env)만 읽는다. 서비스 전용 경로가 없다.
+
+x-service-discovery-environment: &service_discovery_environment
+  TIME_ZONE: ${TIME_ZONE:-Asia/Seoul}
+  # prod 로 띄우면서 이 값이 dev 로 남으면 dev 프로필로 뜬다. 파이프라인이 배포 환경과 같은지 검사한다.
+  SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+  SERVICE_DISCOVERY_PORT: ${SERVICE_DISCOVERY_PORT}
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+services:
+  service-discovery-dev:
+    image: sneezecast-service-discovery:latest
+    container_name: sneezecast-service-discovery-dev
+    labels:
+      observability.project: sneezecast
+      observability.group: cloud
+      observability.service: service-discovery
+      observability.env: dev
+      observability.application: service-discovery
+      observability.deployment: sneezecast-service-discovery-dev
+    build:
+      context: .
+      dockerfile: service-discovery.Dockerfile
+    ports:
+      - "${SERVICE_DISCOVERY_PORT}:${SERVICE_DISCOVERY_PORT}" # host:container (같은 값)
+    environment:
+      <<: *service_discovery_environment
+    # 컨테이너 메모리 상한. JVM heap 은 Dockerfile 의 MaxRAMPercentage 가 이 값을 기준으로 산정한다.
+    deploy:
+      resources:
+        limits:
+          memory: ${SERVICE_DISCOVERY_MEM_LIMIT_DEV:-384m}
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+    networks:
+      - 8llow8llowme-net
+
+  service-discovery-prod:
+    image: sneezecast-service-discovery:latest
+    container_name: sneezecast-service-discovery-prod
+    labels:
+      observability.project: sneezecast
+      observability.group: cloud
+      observability.service: service-discovery
+      observability.env: prod
+      observability.application: service-discovery
+      observability.deployment: sneezecast-service-discovery-prod
+    build:
+      context: .
+      dockerfile: service-discovery.Dockerfile
+    ports:
+      - "${SERVICE_DISCOVERY_PORT}:${SERVICE_DISCOVERY_PORT}" # host:container (같은 값)
+    environment:
+      <<: *service_discovery_environment
+    deploy:
+      resources:
+        limits:
+          memory: ${SERVICE_DISCOVERY_MEM_LIMIT_PROD:-512m}
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+    networks:
+      - 8llow8llowme-net
+
+networks:
+  8llow8llowme-net:
+    name: 8llow8llowme-net
+    external: true
