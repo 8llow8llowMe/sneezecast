@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatCount, formatMonthDayTime } from './format'
+import { formatCount, formatMonthDay, formatMonthDayTime } from './format'
 
 describe('formatCount', () => {
   it('천 단위 쉼표를 넣는다', () => {
@@ -26,4 +26,18 @@ describe('formatMonthDayTime', () => {
   it('읽을 수 없는 값이면 null 이다', () => {
     expect(formatMonthDayTime('not-a-date')).toBeNull()
   })
+})
+
+describe('formatMonthDay', () => {
+  it('날짜의 월 · 일을 앞 0 없이 쓴다', () => {
+    expect(formatMonthDay('2026-12-01')).toBe('12월 1일')
+    expect(formatMonthDay('2026-03-15')).toBe('3월 15일')
+  })
+
+  it.each(['2026-12-1', '2026-02-30', '2026-13-01', '', '2026-12-01T00:00:00Z'])(
+    '모양이 다르거나 없는 날짜(%s)면 null 이다',
+    (value) => {
+      expect(formatMonthDay(value)).toBeNull()
+    },
+  )
 })
