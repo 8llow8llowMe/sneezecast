@@ -22,8 +22,10 @@ export const SETUP_REGION_PATH = '/setup/region'
 /** 보고 없이 둘러보기. 동네 선택을 단계 없이 쓴다 (docs/design/auth/README.md 제안 라우트) */
 export const BROWSE_REGION_PATH = '/browse/region'
 export const SETUP_ADULT_PATH = '/setup/adult'
-/** 동의 (S02-3). 다음 이슈에서 만든다 */
-export const SETUP_CONSENT_PATH = '/setup/consent'
+/** 가입 동의 (S02-3, 3 / 4). 여기서 회원 가입 요청을 보낸다 */
+export const SETUP_TERMS_PATH = '/setup/terms'
+/** 증상 보고 동의 (S02-4, 4 / 4). 가입을 마친 뒤 건강정보 동의를 따로 받는다 */
+export const SETUP_HEALTH_CONSENT_PATH = '/setup/health-consent'
 
 /** 둘러보기에서 고른 동네의 홈 */
 export function browseHomePath(code: string): string {

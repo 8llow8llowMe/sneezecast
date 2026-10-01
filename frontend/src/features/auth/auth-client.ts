@@ -1,5 +1,7 @@
 import { SETUP_REGION_PATH } from '@/features/onboarding/paths'
 
+import type { Consent } from './legal'
+
 /**
  * 로그인. **API 연동 전 목 구현이다.** 세션 · 토큰 저장은 연동 이슈 범위라 여기서 하지 않는다 — 성공하면 이동만 한다.
  *
@@ -107,4 +109,49 @@ export function verifyEmailCode(email: string, code: string): Promise<VerifyCode
   }
   mockCodes.delete(normalizeEmail(email))
   return Promise.resolve({ status: 'ok', verificationToken: `mock-verified-${Date.now()}` })
+}
+
+/* ── 가입 · 내 동네 · 건강정보 동의 (S02-3 · S02-4) ─────────────────────────────────
+ *
+ * 연동 때 바꾼다: 가입 `POST /api/v1/auth/signup`(백엔드 #56), 내 동네 저장(#60), 건강정보 동의(#59).
+ *
+ * 목에서 실패를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
+ * - 가입: 이메일 `signup-fail@example.com` 으로 가입하면 응답을 받지 못한다(거부)
+ */
+
+export const MOCK_SIGNUP_FAIL_EMAIL = 'signup-fail@example.com'
+
+/**
+ * 가입 요청. 가입 종류는 인증 값(`verificationToken`) 유무로 가린다 — 있으면 이메일 가입, 없으면 카카오 가입.
+ * 카카오 가입은 카카오가 이메일 · 닉네임을 주므로 동의만 보낸다.
+ * 비밀번호는 이 요청에 한 번 실어 보내고 화면은 바로 지운다(로그 · 저장소 금지).
+ */
+export type SignupRequest =
+  | {
+      kind: 'email'
+      email: string
+      verificationToken: string
+      password: string
+      nickname: string
+      consents: Consent[]
+    }
+  | { kind: 'kakao'; consents: Consent[] }
+
+export function signup(request: SignupRequest): Promise<void> {
+  if (request.kind === 'email' && normalizeEmail(request.email) === MOCK_SIGNUP_FAIL_EMAIL) {
+    return Promise.reject(new Error('mock signup failure'))
+  }
+  return Promise.resolve()
+}
+
+/** 내 동네(행정동 코드) 저장 */
+export function saveRegion(code: string): Promise<void> {
+  void code
+  return Promise.resolve()
+}
+
+/** 건강 · 증상 정보(민감정보) 처리 동의. 근거 문서 버전을 함께 보낸다 */
+export function agreeHealthConsent(consent: Consent): Promise<void> {
+  void consent
+  return Promise.resolve()
 }

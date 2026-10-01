@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/checkbox'
 
 import { useOnboarding } from './onboarding-context'
 import { OnboardingLayout } from './onboarding-layout'
-import { SETUP_CONSENT_PATH, SETUP_REGION_PATH } from './paths'
+import { SETUP_REGION_PATH, SETUP_TERMS_PATH } from './paths'
 
 /**
  * S02-2 성인 확인. 성인 본인 보고만 받는다는 것을 확인받는다 — 아이 대리 보고는 이번 범위가 아니다.
@@ -39,11 +39,7 @@ export function AdultScreen() {
         </>
       }
       footer={
-        <Button
-          fullWidth
-          disabled={!adultConfirmed}
-          onClick={() => router.push(SETUP_CONSENT_PATH)}
-        >
+        <Button fullWidth disabled={!adultConfirmed} onClick={() => router.push(SETUP_TERMS_PATH)}>
           다음
         </Button>
       }

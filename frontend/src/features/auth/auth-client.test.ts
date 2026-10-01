@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { loginWithEmail, sendEmailCode, startKakaoLogin, verifyEmailCode } from './auth-client'
+import {
+  agreeHealthConsent,
+  loginWithEmail,
+  saveRegion,
+  sendEmailCode,
+  signup,
+  startKakaoLogin,
+  verifyEmailCode,
+} from './auth-client'
+import { consentFor, LEGAL_VERSIONS } from './legal'
 
 describe('loginWithEmail (목)', () => {
   it('재현용 잠긴 이메일이면 locked 다 (대소문자 · 앞뒤 공백 무시)', async () => {
@@ -80,5 +89,53 @@ describe('verifyEmailCode (목)', () => {
     await sendEmailCode('late@example.com')
     vi.setSystemTime(Date.now() + 301_000)
     expect(await verifyEmailCode('late@example.com', '482915')).toEqual({ status: 'expired' })
+  })
+})
+
+describe('signup · saveRegion · agreeHealthConsent (목)', () => {
+  const consents = [consentFor('TERMS_OF_SERVICE')]
+
+  it('이메일 · 카카오 가입 모두 성공한다', async () => {
+    await expect(
+      signup({
+        kind: 'email',
+        email: 'dong@example.com',
+        verificationToken: 't',
+        password: 'dongne2026',
+        nickname: '동네지기',
+        consents,
+      }),
+    ).resolves.toBeUndefined()
+    await expect(signup({ kind: 'kakao', consents })).resolves.toBeUndefined()
+  })
+
+  it('재현용 이메일이면 가입이 거부된다', async () => {
+    await expect(
+      signup({
+        kind: 'email',
+        email: 'signup-fail@example.com',
+        verificationToken: 't',
+        password: 'dongne2026',
+        nickname: '동네지기',
+        consents,
+      }),
+    ).rejects.toThrow()
+  })
+
+  it('내 동네 저장 · 건강정보 동의는 성공한다', async () => {
+    await expect(saveRegion('11680640')).resolves.toBeUndefined()
+    await expect(agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))).resolves.toBeUndefined()
+  })
+})
+
+describe('legal', () => {
+  it('항목 이름은 백엔드 ConsentType 과 같고 성인 확인은 이용약관 버전을 쓴다', () => {
+    expect(Object.keys(LEGAL_VERSIONS).sort()).toEqual([
+      'AGE_OVER_19',
+      'PRIVACY_POLICY',
+      'SENSITIVE_HEALTH_INFO',
+      'TERMS_OF_SERVICE',
+    ])
+    expect(consentFor('AGE_OVER_19').documentVersion).toBe(LEGAL_VERSIONS.TERMS_OF_SERVICE)
   })
 })
