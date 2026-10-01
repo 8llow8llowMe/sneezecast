@@ -82,6 +82,15 @@ const MAPPING: Record<string, string> = {
   'size.dialogWidthTablet': '--size-dialog-width-tablet',
   'size.dialogWidthDesktop': '--size-dialog-width-desktop',
   'letterSpacing.brand': '--letter-spacing-brand',
+  'fontSize.setupTitle': '--fs-setup-title',
+  'fontSize.startTitle': '--fs-start-title',
+  'fontSize.startTitleTablet': '--fs-start-title-tablet',
+  'fontSize.heroTitle': '--fs-hero-title',
+  'fontSize.lead': '--fs-lead',
+  'fontSize.bodyLarge': '--fs-body-large',
+  'radius.checkbox': '--rounded-checkbox',
+  'effects.onImageSub': '--on-image-sub',
+  'effects.onImageLine': '--on-image-line',
 }
 
 /**

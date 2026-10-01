@@ -25,6 +25,7 @@ describe('Button', () => {
   it.each([
     ['secondary', 'bg-section'],
     ['text', 'text-brand'],
+    ['subtle', 'text-fg-sub'],
   ] as const)('%s 변형은 %s 를 쓴다', (variant, expected) => {
     render(<Button variant={variant}>보고 수정하기</Button>)
     expect(screen.getByRole('button').classList).toContain(expected)

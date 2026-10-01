@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
+import { Checkbox } from '@/components/checkbox'
 import { ListRow } from '@/components/list-row'
 import { ProgressBar } from '@/components/progress-bar'
 import { Section, SectionBand } from '@/components/section'
@@ -108,12 +109,23 @@ export default function ComponentsPreviewPage() {
               보고 수정하기
             </Button>
             <Button variant="text">우리 동네 자료 함께 채우기</Button>
+            <Button variant="subtle">보고 없이 둘러보기</Button>
             <div className="flex gap-2">
               <Button size="sm">이번 주 건강 보고하기</Button>
               <Button size="sm" disabled>
                 비활성
               </Button>
             </div>
+          </div>
+        </Section>
+
+        <SectionBand />
+
+        {/* 상태를 바꾸려면 클라이언트 상태가 필요해 켜짐 · 꺼짐 모양만 나란히 둔다 */}
+        <Section title="체크 상자">
+          <div className="flex flex-col pt-2">
+            <Checkbox checked readOnly label="성인 본인의 건강 상태만 보고할게요" />
+            <Checkbox checked={false} readOnly size="md" label="주간 보고 알림 받기" />
           </div>
         </Section>
       </div>

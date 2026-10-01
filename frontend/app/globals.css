@@ -48,6 +48,8 @@
   --color-muted-bar: var(--muted-bar);
   --color-dim: var(--dim);
   --color-image-cover: var(--image-cover);
+  --color-on-image-sub: var(--on-image-sub);
+  --color-on-image-line: var(--on-image-line);
 
   /* ── 상태 */
   --color-status-normal: var(--status-normal-fill);
@@ -72,6 +74,12 @@
   --text-sheet-title: var(--fs-sheet-title);
   --text-dialog-title: var(--fs-dialog-title);
   --text-dialog-body: var(--fs-dialog-body);
+  --text-setup-title: var(--fs-setup-title);
+  --text-start-title: var(--fs-start-title);
+  --text-start-title-tablet: var(--fs-start-title-tablet);
+  --text-hero-title: var(--fs-hero-title);
+  --text-lead: var(--fs-lead);
+  --text-body-large: var(--fs-body-large);
 
   /* ── 모서리: rounded-card, rounded-button … */
   --radius-card: var(--rounded-card);
@@ -82,6 +90,7 @@
   --radius-small: var(--rounded-small);
   --radius-bar: var(--rounded-bar);
   --radius-progress: var(--rounded-progress);
+  --radius-checkbox: var(--rounded-checkbox);
 
   /* ── 간격·크기: px-page-mobile, h-band, min-h-touch, h-button … */
   --spacing-page-mobile: var(--space-page-mobile);
