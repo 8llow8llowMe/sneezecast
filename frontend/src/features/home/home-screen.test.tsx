@@ -71,7 +71,7 @@ describe('HomeScreen 판단 기준', () => {
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
     await userEvent.setup().click(screen.getByRole('button', { name: '왜 이렇게 보나요?' }))
-    expect(pushState).toHaveBeenCalledWith(null, '', '?mock=high&explain=1')
+    expect(pushState).toHaveBeenCalledWith({ sneezecastModalDepth: 1 }, '', '?mock=high&explain=1')
   })
 
   it('?explain=1 이면 판단 기준이 열린다', () => {
@@ -85,16 +85,16 @@ describe('HomeScreen 판단 기준', () => {
   it('주소로 바로 열린 판단 기준을 닫으면 뒤로 가지 않고 주소에서 explain 만 지운다', async () => {
     search = 'mock=high&explain=1'
     const replaceState = vi.spyOn(window.history, 'replaceState')
-    const back = vi.spyOn(window.history, 'back')
+    const go = vi.spyOn(window.history, 'go')
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
     await userEvent.setup().click(screen.getByRole('button', { name: '확인' }))
-    expect(replaceState).toHaveBeenCalledWith(null, '', '?mock=high')
-    expect(back).not.toHaveBeenCalled()
+    expect(replaceState).toHaveBeenCalledWith({ sneezecastModalDepth: 0 }, '', '?mock=high')
+    expect(go).not.toHaveBeenCalled()
   })
 
   it('앱 안에서 연 판단 기준을 닫으면 쌓은 기록을 되돌린다 (휴대폰 뒤로 가기와 같다)', async () => {
-    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    const go = vi.spyOn(window.history, 'go').mockImplementation(() => {})
     const user = userEvent.setup()
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
@@ -104,7 +104,7 @@ describe('HomeScreen 판단 기준', () => {
     await user.click(screen.getByRole('button', { name: '알림 설정' }))
     await user.click(screen.getByRole('button', { name: '확인' }))
 
-    expect(back).toHaveBeenCalledTimes(1)
+    expect(go).toHaveBeenCalledWith(-1)
   })
 
   it('자료 부족이면 버튼이 없고, ?explain=1 로 들어와도 열지 않는다', () => {
