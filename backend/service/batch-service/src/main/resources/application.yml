@@ -48,6 +48,14 @@ batch:
   schedule:
     enabled: ${BATCH_SCHEDULE_ENABLED:false}
 
+# SGIS 오픈API (districtImportJob). 인증키는 Vault kv/sneezecast/batch 에서 주입한다.
+# 비어 있어도 기동은 성공하고, 잡을 실행할 때 SGIS_CREDENTIALS_MISSING 으로 실패한다.
+# base-url · connect-timeout(3s) · read-timeout(30s) 기본값은 SgisProperties,
+# 폐지 비율 임계값 district-import.max-retire-ratio(0.02) 기본값은 DistrictImportProperties 에 있다.
+sgis:
+  consumer-key: ${SGIS_CONSUMER_KEY:}
+  consumer-secret: ${SGIS_CONSUMER_SECRET:}
+
 # 공개 API 가 없다. common-core 가 springdoc 을 끌고 오므로 빈 API 문서 엔드포인트가 열리지 않게 끈다.
 springdoc:
   api-docs:
