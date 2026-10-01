@@ -13,6 +13,8 @@ type HomeCommon = {
   regionName: string
   /** 예: "11월 3주" */
   weekLabel: string
+  /** 집계 기간. 예: "11월 17일~23일" (판단 기준 시트) */
+  weekRangeLabel: string
   /** 예: "오늘 09:00 갱신" */
   updatedLabel: string
   /** 이번 주 보고한 사람 수 (건강한 보고 포함 — 지표의 분모) */
@@ -34,7 +36,12 @@ export type MeasuredWeek = {
   /** 이번 주 증상을 보고한 사람 수 */
   symptomReports: number
   groups: SymptomGroup[]
+  /** 판정 기준. 기준선보다 몇 %p 높으면 조금 · 많이로 보는지. 백엔드가 판정에 쓴 값을 그대로 내려 준다 */
+  thresholds: { slightDeltaPp: number; highDeltaPp: number }
 }
+
+/** 수치가 있는 주의 홈 데이터. 판단 기준 시트는 이 경우에만 연다 */
+export type MeasuredHomeWeekly = Extract<HomeWeekly, MeasuredWeek>
 
 export type InsufficientWeek = {
   status: 'insufficient'
