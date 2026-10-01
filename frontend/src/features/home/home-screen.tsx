@@ -55,7 +55,7 @@ export function HomeScreen({
   regionCode = null,
 }: {
   week: HomeWeekly
-  /** 둘러보기(`?region=`)로 고른 행정동 코드. `app/page.tsx` 가 아는 코드일 때만 넘긴다 */
+  /** 둘러보기(`?region=`)로 고른 행정동 코드. `app/(home)/page.tsx` 가 아는 코드일 때만 넘긴다 */
   regionCode?: string | null
 }) {
   const { toast, show, dismiss } = useToast()
