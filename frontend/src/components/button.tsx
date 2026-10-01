@@ -2,12 +2,13 @@ import type { ComponentPropsWithoutRef } from 'react'
 
 import clsx from 'clsx'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'text' | 'subtle'
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'text' | 'subtle'
 export type ButtonSize = 'lg' | 'sm'
 
 export type ButtonProps = ComponentPropsWithoutRef<'button'> & {
   /**
-   * primary: 네이비 주요 동작 · secondary: 회색 보조 동작 · text: 글자만 있는 낮은 강조 ·
+   * primary: 네이비 주요 동작 · secondary: 회색 보조 동작 · danger: 빨강 되돌릴 수 없는 동작(동의 철회 · 탈퇴) ·
+   * text: 글자만 있는 낮은 강조 ·
    * subtle: 회색 글자만 있는 가장 낮은 강조 (Start "보고 없이 둘러보기")
    */
   variant?: ButtonVariant
@@ -20,6 +21,7 @@ export type ButtonProps = ComponentPropsWithoutRef<'button'> & {
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary: 'bg-brand text-bg rounded-button',
   secondary: 'bg-section text-fg rounded-button',
+  danger: 'bg-danger text-bg rounded-button',
   text: 'bg-transparent text-brand',
   subtle: 'bg-transparent text-fg-sub',
 }
@@ -28,6 +30,7 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
 const SIZE_CLASS: Record<ButtonVariant, Record<ButtonSize, string>> = {
   primary: { lg: 'h-button px-5 text-section-title', sm: 'h-button-sm px-5 text-body' },
   secondary: { lg: 'h-button px-5 text-section-title', sm: 'h-button-sm px-5 text-body' },
+  danger: { lg: 'h-button px-5 text-section-title', sm: 'h-button-sm px-5 text-body' },
   text: { lg: 'min-h-touch px-3 text-body', sm: 'min-h-touch px-3 text-body' },
   subtle: { lg: 'min-h-touch px-3 text-body', sm: 'min-h-touch px-3 text-body' },
 }

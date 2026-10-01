@@ -24,6 +24,7 @@ describe('Button', () => {
 
   it.each([
     ['secondary', 'bg-section'],
+    ['danger', 'bg-danger'],
     ['text', 'text-brand'],
     ['subtle', 'text-fg-sub'],
   ] as const)('%s 변형은 %s 를 쓴다', (variant, expected) => {

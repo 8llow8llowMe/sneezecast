@@ -111,6 +111,9 @@ export default function ComponentsPreviewPage() {
             <Button variant="secondary" fullWidth>
               보고 수정하기
             </Button>
+            <Button variant="danger" fullWidth>
+              탈퇴하기
+            </Button>
             <Button variant="text">우리 동네 자료 함께 채우기</Button>
             <Button variant="subtle">보고 없이 둘러보기</Button>
             <div className="flex gap-2">
