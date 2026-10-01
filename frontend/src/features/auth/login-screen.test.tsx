@@ -118,6 +118,30 @@ describe('LoginScreen', () => {
     expect(draft()).toEqual({ ...EMPTY_SIGNUP, email: 'dong@example.com' })
   })
 
+  it('들어오면 그만둔 비밀번호 재설정의 보낸 시각 · 토큰도 지우고 이메일만 남긴다', () => {
+    function ResetProbe() {
+      const { passwordReset } = useOnboarding()
+      return (
+        <span hidden data-testid="reset">
+          {JSON.stringify(passwordReset)}
+        </span>
+      )
+    }
+    render(
+      <OnboardingProvider
+        initialPasswordReset={{ email: 'dong@example.com', codeSentAt: 1, resetToken: 'token-1' }}
+      >
+        <LoginScreen notice={null} />
+        <ResetProbe />
+      </OnboardingProvider>,
+    )
+    expect(JSON.parse(screen.getByTestId('reset').textContent ?? '{}')).toEqual({
+      email: 'dong@example.com',
+      codeSentAt: null,
+      resetToken: null,
+    })
+  })
+
   it('카카오로 시작하면 가입 초안을 모두 비우고 가입 종류를 카카오로 둔다', async () => {
     renderLogin(null, ABANDONED)
     await userEvent.setup().click(screen.getByRole('button', { name: '카카오로 계속하기' }))

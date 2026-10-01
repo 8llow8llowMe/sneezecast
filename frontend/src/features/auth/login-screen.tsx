@@ -30,7 +30,7 @@ import type { LoginNotice } from './login-notice'
  */
 export function LoginScreen({ notice }: { notice: LoginNotice | null }) {
   const router = useRouter()
-  const { goBack, resetSignup, updateSignup } = useOnboarding()
+  const { goBack, resetSignup, updateSignup, clearPasswordReset } = useOnboarding()
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const [pending, setPending] = useState(false)
@@ -40,10 +40,12 @@ export function LoginScreen({ notice }: { notice: LoginNotice | null }) {
     if (notice === 'expired') show({ message: '다시 로그인해 주세요' })
   }, [notice, show])
 
-  // 그만둔 가입의 가입 종류 · 인증 · 비밀번호를 지운다. 이메일 가입으로 다시 갈 수 있어 이메일만 남긴다
+  // 그만둔 가입의 가입 종류 · 인증 · 비밀번호를 지운다. 이메일 가입으로 다시 갈 수 있어 이메일만 남긴다.
+  // 그만둔 비밀번호 재설정(S13-6)의 보낸 시각 · 인증 시각도 같은 규칙으로 지운다
   useEffect(() => {
     resetSignup({ keepEmail: true })
-  }, [resetSignup])
+    clearPasswordReset({ keepEmail: true })
+  }, [resetSignup, clearPasswordReset])
 
   async function continueWithKakao() {
     setPending(true)

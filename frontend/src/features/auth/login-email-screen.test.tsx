@@ -3,7 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { OnboardingProvider } from '@/features/onboarding/onboarding-context'
+import { OnboardingProvider, useOnboarding } from '@/features/onboarding/onboarding-context'
 
 import type * as authClient from './auth-client'
 import { loginWithEmail } from './auth-client'
@@ -188,6 +188,54 @@ describe('LoginEmailScreen', () => {
               region.textContent === '비밀번호를 바꿨어요. 새 비밀번호로 로그인해 주세요.',
           ),
       ).toBe(true),
+    )
+  })
+
+  it('비밀번호를 바꾸고 왔으면 재설정에 쓴 이메일로 칸을 채운다 — reset-done 이 아니면 비운다', () => {
+    const reset = { email: 'dong@example.com', codeSentAt: null, resetToken: null }
+    const { unmount } = render(
+      <OnboardingProvider initialPasswordReset={reset}>
+        <LoginEmailScreen resetDone />
+      </OnboardingProvider>,
+    )
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: '이메일' }).value).toBe(
+      'dong@example.com',
+    )
+    unmount()
+
+    render(
+      <OnboardingProvider initialPasswordReset={reset}>
+        <LoginEmailScreen />
+      </OnboardingProvider>,
+    )
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: '이메일' }).value).toBe('')
+  })
+
+  it('들어오면 그만둔 재설정의 보낸 시각 · 토큰을 지우고 이메일은 남겨 칸을 채운다', () => {
+    function ResetProbe() {
+      const { passwordReset } = useOnboarding()
+      return (
+        <span hidden data-testid="reset">
+          {JSON.stringify(passwordReset)}
+        </span>
+      )
+    }
+    render(
+      <OnboardingProvider
+        initialPasswordReset={{ email: 'dong@example.com', codeSentAt: 1, resetToken: 'token-1' }}
+      >
+        <LoginEmailScreen resetDone />
+        <ResetProbe />
+      </OnboardingProvider>,
+    )
+    expect(JSON.parse(screen.getByTestId('reset').textContent ?? '{}')).toEqual({
+      email: 'dong@example.com',
+      codeSentAt: null,
+      resetToken: null,
+    })
+    // 칸의 처음 값은 지우기 전(첫 렌더)에 읽는다
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: '이메일' }).value).toBe(
+      'dong@example.com',
     )
   })
 

@@ -31,7 +31,7 @@ type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'failed'
  * | 기본 | 이메일 · 비밀번호(보기) · 로그인. 빈 칸이 있으면 로그인이 꺼진다 |
  * | wrong | "이메일 또는 비밀번호가 맞지 않아요." 빨강 상자 |
  * | locked | 회색 상자(`role="alert"`) · 로그인 꺼짐. 이메일을 바꿔야 다시 켜진다 — 비밀번호만 고쳐서는 풀리지 않는다 |
- * | reset-done | `?reason=reset-done` 이면 "비밀번호를 바꿨어요" 토스트 |
+ * | reset-done | `?reason=reset-done` 이면 "비밀번호를 바꿨어요" 토스트 · 재설정에 쓴 이메일로 칸을 채운다(S13-6) |
  *
  * 로그인 버튼은 `disabled` 대신 `aria-disabled` 로 끈다. 보내는 중 · 잠김으로 바뀌어도 포커스가 버튼에 남고
  * (disabled 가 되면 포커스가 사라진다) 스크린리더는 "흐리게 표시됨" 으로 읽는다. 누름은 `submit` 이 막는다.
@@ -44,13 +44,21 @@ type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'failed'
  */
 export function LoginEmailScreen({ resetDone = false }: { resetDone?: boolean }) {
   const router = useRouter()
-  const { goBack } = useOnboarding()
+  const { goBack, passwordReset, clearPasswordReset } = useOnboarding()
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const formId = useId()
-  const [email, setEmail] = useState('')
+  // 비밀번호를 바꾸고 왔으면 재설정에 쓴 이메일로 칸을 채운다. 주소로는 받지 않는다(이메일을 주소에 남기지 않는다) —
+  // 새로고침했거나 주소로 바로 왔으면 Provider 가 비어 빈 칸이다
+  const [email, setEmail] = useState(resetDone ? passwordReset.email : '')
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<Status>('idle')
+
+  // 그만둔(또는 마친) 비밀번호 재설정의 보낸 시각 · 토큰을 지운다. 공용 기기에서 앞으로 가기로 새 비밀번호 화면에 다시
+  // 들어가지 못하게 한다. 이메일은 남긴다 — 위 칸의 처음 값은 이 effect 보다 먼저(첫 렌더) 읽힌다
+  useEffect(() => {
+    clearPasswordReset({ keepEmail: true })
+  }, [clearPasswordReset])
 
   useEffect(() => {
     if (resetDone) show({ message: '비밀번호를 바꿨어요. 새 비밀번호로 로그인해 주세요.' })
