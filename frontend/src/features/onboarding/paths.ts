@@ -12,8 +12,13 @@ export const HOME_PATH = '/'
 export const LOGIN_PATH = '/login'
 /** 이메일 로그인 (S13-5). `?reason=reset-done` 이면 비밀번호를 바꿨다는 안내를 띄운다 */
 export const LOGIN_EMAIL_PATH = '/login/email'
-/** 이메일 가입: 이메일 (S13-2) → 인증 코드 (S13-3) → 비밀번호 · 닉네임 (S13-4) → 동네 선택 */
+/**
+ * 이메일 가입: 이메일 (S13-2) → 인증 코드 (S13-3) → 비밀번호 · 닉네임 (S13-4) → 동네 선택.
+ * 이메일 화면은 `?reason=verification-expired` 면 인증 시간이 지났다는 안내를 띄운다
+ */
 export const SIGNUP_EMAIL_PATH = '/signup/email'
+/** 가입 요청이 인증 만료(`AUTH_007`)로 돌아왔을 때 S02-3 이 보내는 곳 */
+export const SIGNUP_EMAIL_VERIFICATION_EXPIRED_PATH = `${SIGNUP_EMAIL_PATH}?reason=verification-expired`
 export const SIGNUP_CODE_PATH = '/signup/code'
 export const SIGNUP_ACCOUNT_PATH = '/signup/account'
 /** 비밀번호 재설정 (S13-6). 다음 단계에서 만든다 */
