@@ -71,6 +71,7 @@
   --text-tab: var(--fs-tab);
   --text-sheet-title: var(--fs-sheet-title);
   --text-dialog-title: var(--fs-dialog-title);
+  --text-dialog-body: var(--fs-dialog-body);
 
   /* ── 모서리: rounded-card, rounded-button … */
   --radius-card: var(--rounded-card);
