@@ -27,6 +27,7 @@ const MAPPING: Record<string, string> = {
   'color.brand': '--brand',
   'color.infoBg': '--info-bg',
   'color.danger': '--danger',
+  'color.dangerBg': '--danger-bg',
   'color.toast': '--toast',
   'color.toastAction': '--toast-action',
   'color.skeleton': '--skeleton',

@@ -41,6 +41,7 @@
   --color-brand: var(--brand);
   --color-info-bg: var(--info-bg);
   --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
   --color-toast: var(--toast);
   --color-toast-action: var(--toast-action);
   --color-skeleton: var(--skeleton);
