@@ -259,7 +259,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 | 컬럼 | 타입 | Null | 원천 필드 | 설명 |
 |------|------|------|-----------|------|
-| id | BIGINT | N | — | PK (Snowflake) |
+| id | BIGINT | N | — | PK. SGIS 코드를 숫자로 바꾼 값 (batch 가 결정적으로 만든다 — batch 는 Snowflake 를 쓰지 않는다, hondigagae `PlaceIdFactory` 와 같은 이유) |
 | code | VARCHAR(8) | N | adm_cd | SGIS 읍면동 코드 8자리. **`uk_district_code`** |
 | name | VARCHAR(50) | N | adm_nm 마지막 토큰 | 읍면동 이름 (예: 가락1동). `adm_nm` 은 전체 주소(`서울특별시 송파구 가락1동`)라 마지막 토큰만 쓴다 |
 | sido_code | VARCHAR(2) | N | adm_cd 앞 2자리 | SGIS 시도 코드 |
@@ -268,12 +268,14 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | sigungu_name | VARCHAR(30) | N | stage.json addr_name | 시군구 이름 |
 | valid_from_year | SMALLINT | N | (적재 year) | 처음 확인된 SGIS 기준 연도 |
 | valid_to_year | SMALLINT | Y | (가공) | 새 기준 연도 스냅샷에 없으면 직전 연도를 채운다. **null = 현행** |
+| last_seen_year | SMALLINT | N | (적재 year) | 이 코드가 마지막으로 확인된 SGIS 기준 연도. 적재마다 갱신하고 폐지는 건드리지 않는다 (연도 역행 판정용) |
 | synced_at | TIMESTAMP | N | — | 마지막 적재 시각 |
 
 - 인덱스: `idx_district_sigungu_code` (시군구별 선택 목록)
 - **SGIS 코드는 행안부 행정동 코드(10자리)와 번호 체계가 다르다.** 자릿수를 잘라 변환하지 않는다. 행안부 코드가 필요해지면 매핑 컬럼을 출처 · 기준일과 함께 추가한다.
 - 적재는 멱등 upsert (키 `code`). **이름으로 맞추지 않는다** — 분동하면 이름이 같은 채 코드가 바뀐다 (2025 부산 녹산동 `21120560` → `21120561`). 폐지된 동은 지우지 않고 `valid_to_year` 만 채운다 — 과거 보고 · 집계 행이 그 코드를 참조한다. **폐지됐던 코드가 새 스냅샷에 다시 나오면** `valid_to_year` 를 null 로 되돌리고 이름을 갱신한다.
 - `valid_from_year` 는 첫 적재 때 그 적재 연도(예: 2025)다 — 실제 신설 연도가 아니라 "우리가 처음 본 연도" 다.
+- **연도 역행 금지**: 적재 `year` 가 마지막 적재 연도 `MAX(last_seen_year)` 보다 작으면 아무것도 쓰지 않고 실패한다(`YEAR_REGRESSION`). `valid_from_year` · `valid_to_year` 로는 셀 수 없다 — 폐지만 있던 해는 `valid_from_year` 에 남지 않고, 재등장한 코드는 `valid_to_year` 를 지운다. 과거 연도로 다시 돌리면 그 뒤에 생긴 동은 폐지되고 그 뒤에 폐지된 동은 되살아난다. 테이블이 비면 제한 없음, 같은 연도 재실행은 허용 (멱등).
 - **보호 규칙**: 직전 현행 코드 중 새 스냅샷에서 사라지는 비율이 임계값(설정, 기본 2%)을 넘으면 폐지 처리를 하지 않고 잡을 실패시킨다. 2024 → 2025 는 3,559개 중 3개(0.1%)였다. 잘린 응답과 광주 · 전남 통합 같은 대규모 코드 변경은 운영자가 확인한 뒤 잡 파라미터 `allowMassRetire=true` 로 다시 돌린다 — 폐지되면 그 동을 고른 회원 전원이 재선택해야 하기 때문이다.
 - 경계 GeoJSON 은 테이블에 넣지 않는다. 프론트 정적 자원이다 (UTM-K EPSG:5179 → 웹 지도용 4326 으로 변환해서 싣는다).
 - 폐지된 코드를 가진 `member_region` 은 화면에서 재선택을 요구한다. 신 · 구 코드 연계표 API 는 확인되지 않아 자동 이관하지 않는다.
