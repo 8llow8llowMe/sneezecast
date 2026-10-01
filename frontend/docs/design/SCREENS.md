@@ -3,6 +3,8 @@
 | ID | 화면 | 모바일 | 태블릿 | 데스크톱 | 제안 라우트 |
 | --- | --- | --- | --- | --- | --- |
 | S01 | 시작 | Start | Start-T | Start-D | `/start` |
+| S13-1 | 로그인 방법 고르기 (auth 캔버스) | Login, Login-kakao-fail, Login-kakao-exists | -T | -D | `/login` |
+| S13-5 | 이메일 로그인 (auth 캔버스) | Login-email | -T | -D | `/login/email` |
 | S02-1 | 동네 선택 | Setup-1 | Setup-1-T | Setup-1-D | `/setup/region` |
 | S02-2 | 성인 확인 | Setup-2 | Setup-2-T | Setup-2-D | `/setup/adult` |
 | S02-3 | 동의 | Setup-3 | Setup-3-T | Setup-3-D | `/setup/consent` |
@@ -22,11 +24,14 @@
 
 S09 학부모 그룹은 이번 범위가 아니라 만들지 않습니다.
 
-## 첫 진입 (S01 · S02) 메모
+## 첫 진입 (S01 · S02 · S13) 메모
 
 - 단계 표시는 `n / 4` 입니다. 시안은 `/ 3` 이지만 S02-4 증상 보고 동의가 더해질 예정입니다.
 - 둘러보기 변형: S01 `보고 없이 둘러보기` → `/browse/region` (Setup-1-browse). 단계 표시가 없고 버튼이 `이 동네 보기` 이며, 고르면 `/?region=<행정동 코드>` 홈으로 갑니다.
 - S02-1 동네 선택 · 결과 없음 · 둘러보기와 S02-2 성인 확인은 새 캔버스 `auth/screens/` 의 Setup-1 · Setup-1-empty · Setup-1-browse · Setup-2 가 정본입니다. 이 폴더의 `screens/Setup-1*` · `Setup-2*` 와 다르면 새 쪽을 따릅니다.
-- 로그인 단계는 시안을 기다리는 중입니다. 오면 S01 과 S02-1 사이에 끼웁니다.
+- 흐름: S01 `시작하기` → `/login`(S13-1) → 카카오 신규 회원이면 `/setup/region`. 로그인 화면은 단계 표시가 없습니다.
+- `/login` 상태는 주소 쿼리로 받습니다: `?error=kakao-fail` · `?error=kakao-exists` · `?reason=expired`. 연동 때 카카오 콜백 · 세션 만료가 같은 쿼리로 돌려보냅니다. `/login/email?reason=reset-done` 은 비밀번호를 바꾼 뒤입니다.
+- 이메일 로그인 목(`features/auth/auth-client.ts`)에서 상태를 재현하는 입력: 이메일 `locked@example.com` → 잠김(locked), 비밀번호 `wrong` → 맞지 않음(wrong), 그 밖 → 성공(홈으로).
+- 로그인 화면의 오른쪽 일러스트도 `public/onboarding/neighborhood.svg` 와 같습니다.
 - 검색 결과 없음은 Setup-1-empty 문구(`‘검색어’과 맞는 행정동이 없어요`)를 따르고, 조사(과/와)는 받침에 맞춰 고릅니다. 불러오지 못함은 시안이 없어 같은 모양에 문구만 바꿨습니다.
 - 데스크톱 오른쪽 일러스트는 Start-T · Start-D · Setup-1/2/3-D 가 모두 같아 `public/onboarding/neighborhood.svg` 하나로 뽑았습니다.
