@@ -195,6 +195,13 @@ describe('RegionScreen', () => {
     expect(router.replace).not.toHaveBeenCalled()
   })
 
+  it('이메일 가입(비밀번호 · 닉네임)에서 왔어도 뒤로는 기록을 되돌린다', async () => {
+    renderAfterNavigation('/signup/account', '/setup/region')
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).toHaveBeenCalledTimes(1)
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
   it('둘러보기는 시작 화면에서 왔을 때 기록을 되돌린다', async () => {
     renderAfterNavigation('/start', '/browse/region', true)
     await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))

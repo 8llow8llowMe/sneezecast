@@ -13,13 +13,19 @@ import { withGwaWa } from '@/lib/korean'
 
 import { useOnboarding } from './onboarding-context'
 import { OnboardingLayout } from './onboarding-layout'
-import { browseHomePath, LOGIN_PATH, SETUP_ADULT_PATH, START_PATH } from './paths'
+import {
+  browseHomePath,
+  LOGIN_PATH,
+  SETUP_ADULT_PATH,
+  SIGNUP_ACCOUNT_PATH,
+  START_PATH,
+} from './paths'
 
 /**
- * 가입 흐름 동네 선택의 앞 단계. 카카오 신규 회원은 로그인에서 온다.
- * 이메일 가입(S13-4 `/signup/account`)이 생기면 후보에 더한다. 둘러보기의 앞 단계는 시작 화면이다
+ * 가입 흐름 동네 선택의 앞 단계. 카카오 신규 회원은 로그인에서, 이메일 가입은 비밀번호 · 닉네임(S13-4)에서 온다.
+ * 주소로 바로 들어오면 첫 후보(로그인)로 바꿔 간다. 둘러보기의 앞 단계는 시작 화면이다
  */
-const SETUP_REGION_PREVIOUS = [LOGIN_PATH] as const
+const SETUP_REGION_PREVIOUS = [LOGIN_PATH, SIGNUP_ACCOUNT_PATH] as const
 
 /** 기본(보고하러 가는 길) · 둘러보기 문구 (Setup-1 · Setup-1-browse) */
 const COPY = {
