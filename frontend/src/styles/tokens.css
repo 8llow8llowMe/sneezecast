@@ -18,6 +18,8 @@
   --brand: #1f2f57;
   --info-bg: #e8f3ff;
   --danger: #c0392b;
+  /* 오류 알림 바탕 (docs/design/auth/README.md) */
+  --danger-bg: #fdedeb;
   --toast: #191f28;
   --toast-action: #9ec5ff;
   --skeleton: #e5e8eb;

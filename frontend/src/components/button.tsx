@@ -50,7 +50,9 @@ export function Button({
       type={type}
       className={clsx(
         'inline-flex shrink-0 cursor-pointer items-center justify-center font-semibold',
+        // aria-disabled: 포커스를 잃지 않게 꺼진 모양만 보이는 버튼 (이메일 로그인 잠김 — 누름은 부르는 쪽이 막는다)
         'disabled:cursor-not-allowed disabled:opacity-disabled',
+        'aria-disabled:cursor-not-allowed aria-disabled:opacity-disabled',
         VARIANT_CLASS[variant],
         SIZE_CLASS[variant][size],
         fullWidth && 'w-full',

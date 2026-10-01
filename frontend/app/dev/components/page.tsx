@@ -1,14 +1,17 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 
+import { AlertBox } from '@/components/alert-box'
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Checkbox } from '@/components/checkbox'
+import { KakaoButton } from '@/components/kakao-button'
 import { ListRow } from '@/components/list-row'
 import { ProgressBar } from '@/components/progress-bar'
 import { Section, SectionBand } from '@/components/section'
 import { StatusGauge } from '@/components/status-gauge'
 import { StatusWord } from '@/components/status-word'
+import { TextField } from '@/components/text-field'
 import { REGION_STATUSES } from '@/lib/status'
 
 import { OverlayDemo } from './overlay-demo'
@@ -126,6 +129,25 @@ export default function ComponentsPreviewPage() {
           <div className="flex flex-col pt-2">
             <Checkbox checked readOnly label="성인 본인의 건강 상태만 보고할게요" />
             <Checkbox checked={false} readOnly size="md" label="주간 보고 알림 받기" />
+          </div>
+        </Section>
+
+        <SectionBand />
+
+        <Section title="입력칸 · 알림 상자 · 카카오 버튼">
+          <div className="flex flex-col gap-5 pt-2">
+            <TextField label="이메일" type="email" defaultValue="dong@example.com" />
+            <TextField label="비밀번호" type="password" defaultValue="dongne2026" />
+            <TextField label="닉네임" hint="2~10자로 지어 주세요" />
+            <TextField label="이메일" error="이메일 형식이 아니에요" defaultValue="dong@" />
+            <AlertBox tone="danger">이메일 또는 비밀번호가 맞지 않아요.</AlertBox>
+            <AlertBox tone="info" action={<Button fullWidth>이메일로 로그인</Button>}>
+              이 카카오 계정의 이메일은 이미 이메일 회원으로 가입돼 있어요.
+            </AlertBox>
+            <AlertBox tone="neutral">
+              로그인 시도가 많아 잠시 막혔어요. 10분 뒤 다시 시도해 주세요.
+            </AlertBox>
+            <KakaoButton>카카오로 계속하기</KakaoButton>
           </div>
         </Section>
       </div>
