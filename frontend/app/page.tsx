@@ -10,7 +10,10 @@ import { districtFromParam } from '@/features/region/region-param'
  *
  * `?region=<행정동 코드>` 는 둘러보기(S02-1)에서 고른 동네다. 찾으면 그 이름을 보이고,
  * 없거나 모르는 코드면 목 데이터의 이름을 그대로 둔다. home 이 region 을 모르게 여기서 맞춘다
- * (값 해석은 `districtFromParam` 이 맡고 단위 테스트가 있다).
+ * (값 해석은 `districtFromParam` 이 맡고 단위 테스트가 있다). 찾은 코드는 홈이 메뉴 링크에 붙여 잃지 않게 한다.
+ *
+ * 회원 · 동의 상태(목)는 홈이 `useMockAuth` 로 읽는다. QA 용 `?mock-auth=guest|member|member-no-consent` 덮어쓰기도
+ * 그 훅이 주소에서 읽는다 — 동의한 뒤 홈이 주소에서 지우면 바로 따라가야 해서 서버 props 로 넘기지 않는다.
  */
 export default async function HomePage({
   searchParams,
@@ -20,5 +23,10 @@ export default async function HomePage({
   const { mock, region } = await searchParams
   const week = pickHomeMock(mock)
   const district = await districtFromParam(region)
-  return <HomeScreen week={district ? { ...week, regionName: district.name } : week} />
+  return (
+    <HomeScreen
+      week={district ? { ...week, regionName: district.name } : week}
+      regionCode={district?.code ?? null}
+    />
+  )
 }

@@ -1,12 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
+import { AlertBox } from '@/components/alert-box'
 import { AppHeader } from '@/components/app-header'
 import { Button } from '@/components/button'
 import { SectionBand } from '@/components/section'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
+import { HealthConsentSheet } from '@/features/auth/health-consent-sheet'
+import { LoginSheet } from '@/features/auth/login-sheet'
+import { MOCK_AUTH_PARAM, useMockAuth } from '@/features/auth/use-mock-auth'
 import { REPORT_PARAM, ReportFlow } from '@/features/report/report-flow'
 import type { SubmittedReport } from '@/features/report/types'
 import { useModalParam } from '@/lib/use-modal-param'
@@ -15,6 +19,7 @@ import { ExplainSheet } from './explain-sheet'
 import { MapPlaceholder } from './map-placeholder'
 import { NoticeSection } from './notice-section'
 import { OfficialPanel, OfficialRow } from './official'
+import { guardReportEntry, REPORT_GATE, reportEntryFor } from './report-gate'
 import { StatusCard } from './status-card'
 import { SymptomTrends } from './symptom-trends'
 import type { HomeWeekly } from './types'
@@ -31,14 +36,45 @@ import { useExplainParam } from './use-explain-param'
  *
  * 공식 정보 행은 모바일과 태블릿 이상에서 놓이는 자리가 달라 두 번 그리고 폭에 따라 하나만 보인다.
  * 숨긴 쪽은 `display: none` 이라 보조기술에도 한 번만 읽힌다.
+ *
+ * **보고 진입은 회원 · 동의 상태(목, `useMockAuth`)로 나뉜다** (`report-gate.ts`). 머리줄 · 하단 보고 버튼이 같은 함수를 부른다.
+ * 비회원은 로그인 안내 시트(`?report=login`), 동의하지 않은 회원은 증상 보고 동의 시트(`?report=health-consent`),
+ * 동의한 회원은 보고 흐름(`?report=start`)이 열린다. 주소로 바로 들어온 값이 상태에 맞지 않으면 맞는 시트로 바꾼다(replace).
+ * 보고 흐름과 보낸 보고는 동의한 회원에게만 그린다.
+ *
+ * 비회원 홈(Home-guest)은 동네 현황이 같고 보고 버튼 문구가 "로그인하고 보고하기" 다. 모바일은 하단 버튼 위에 한 줄 안내,
+ * 태블릿 · 데스크톱은 본문 맨 위에 안내 상자를 둔다. 둘러보기에서 고른 동네(`regionCode`)는 메뉴 링크에 붙여 잃지 않게 한다.
  */
-export function HomeScreen({ week }: { week: HomeWeekly }) {
+export function HomeScreen({
+  week,
+  regionCode = null,
+}: {
+  week: HomeWeekly
+  /** 둘러보기(`?region=`)로 고른 행정동 코드. `app/page.tsx` 가 아는 코드일 때만 넘긴다 */
+  regionCode?: string | null
+}) {
   const { toast, show, dismiss } = useToast()
   const explain = useExplainParam()
   const report = useModalParam(REPORT_PARAM)
+  const auth = useMockAuth()
+  const guest = auth === 'guest'
   // 이번 주에 보낸 보고. API 연동 전이라 화면을 떠나면 사라진다 — 연동 이슈에서 서버 값으로 바꾼다
   const [submitted, setSubmitted] = useState<SubmittedReport | null>(null)
-  const openReport = () => report.open('start')
+  const openReport = () => report.open(reportEntryFor(auth))
+  const navSearch = regionCode ? new URLSearchParams({ region: regionCode }).toString() : undefined
+
+  // 주소로 바로 들어온 ?report= 가 지금 상태에 맞지 않으면 기록을 쌓지 않고 맞는 시트로 바꾼다.
+  // 이번 그림의 effect 가 모두 끝난 뒤에 바꾼다 — Next 는 history 를 감싸 useSearchParams 와 맞추는 일을 최상위
+  // 라우터의 effect 에서 시작하는데, 처음 열 때는 자식(이 화면) effect 가 먼저 돌아 그 전에 바꾸면 Next 가 모른다
+  const { value: reportValue, replace: replaceReport } = report
+  // 시트 열림은 바뀔 값으로 미리 정한다. 하이드레이션 직후(replace 전)에도 맞는 시트가 바로 보이고, replace 는 주소 정리만 한다
+  const reportEntry = guardReportEntry(reportValue, auth) ?? reportValue
+  useEffect(() => {
+    const fixed = guardReportEntry(reportValue, auth)
+    if (fixed === null) return
+    const timer = setTimeout(() => replaceReport(fixed), 0)
+    return () => clearTimeout(timer)
+  }, [reportValue, auth, replaceReport])
 
   // 동네 바꾸기(S02) · 알림 설정(S10) 화면이 생기면 각각 연결한다
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
@@ -53,6 +89,8 @@ export function HomeScreen({ week }: { week: HomeWeekly }) {
         onRegionClick={() => notReady('동네 바꾸기')}
         onNotificationClick={() => notReady('알림 설정')}
         onReportClick={openReport}
+        reportLabel={guest ? '로그인하고 보고하기' : undefined}
+        navSearch={navSearch}
       />
 
       <p className="px-page-mobile text-sub text-fg-sub tablet:hidden">
@@ -65,6 +103,15 @@ export function HomeScreen({ week }: { week: HomeWeekly }) {
 
       <main className="flex grow flex-col tablet:gap-7 tablet:p-6 desktop:flex-row desktop:gap-8 desktop:px-8">
         <div className="flex flex-col tablet:grid tablet:grid-cols-2 tablet:items-start tablet:gap-7 desktop:order-last desktop:flex desktop:w-105 desktop:shrink-0 desktop:gap-4">
+          {/* 비회원 안내. 태블릿은 격자 위 한 줄, 데스크톱은 패널 맨 위 (Home-guest-T · -D). 모바일은 하단 버튼 위 문장이 맡는다 */}
+          {guest && (
+            <div className="hidden tablet:col-span-2 tablet:block">
+              <AlertBox tone="info">
+                로그인하면 이번 주 보고를 할 수 있어요. 동네 현황은 지금처럼 볼 수 있어요.
+              </AlertBox>
+            </div>
+          )}
+
           <StatusCard week={week} onExplain={explain.openExplain} />
 
           <SectionBand className="tablet:hidden" />
@@ -91,20 +138,40 @@ export function HomeScreen({ week }: { week: HomeWeekly }) {
 
       {/* 모바일 · 태블릿 하단. 모바일만 보고 버튼이 있고(태블릿 · 데스크톱은 헤더에 있다) 탭바는 데스크톱에서 숨는다 */}
       <div className="sticky bottom-0 bg-bg">
-        <div className="border-t border-divider px-page-mobile py-3 tablet:hidden">
+        <div className="flex flex-col gap-2 border-t border-divider px-page-mobile py-3 tablet:hidden">
+          {guest && (
+            <p className="text-center text-sub text-fg-sub">
+              로그인하면 이번 주 보고를 할 수 있어요
+            </p>
+          )}
           <Button fullWidth onClick={openReport}>
-            이번 주 건강 보고하기
+            {guest ? '로그인하고 보고하기' : '이번 주 건강 보고하기'}
           </Button>
         </div>
-        <TabBar current="home" />
+        <TabBar current="home" navSearch={navSearch} />
       </div>
 
-      <ReportFlow
-        week={week}
-        submitted={submitted}
-        onSubmittedChange={setSubmitted}
-        onNotReady={notReady}
+      {/* reportEntry 는 회원 상태에 맞춘 값이라 login 은 비회원, health-consent 는 미동의 회원에게만 나온다 */}
+      <LoginSheet open={reportEntry === REPORT_GATE.login} onClose={report.close} />
+
+      <HealthConsentSheet
+        open={reportEntry === REPORT_GATE.healthConsent}
+        onClose={report.close}
+        // 동의 시트를 보고 시작으로 바꾼다(replace) — 뒤로 가기로 동의 시트에 돌아오지 않고, 닫으면 홈이다.
+        // QA 덮어쓰기(?mock-auth=member-no-consent)가 남으면 동의한 뒤에도 미동의로 보여 함께 지운다.
+        // 덮어쓰기가 없으면 동의 순간 목 세션이 member 가 되어 시트가 먼저 닫힐 수 있다 — 그때는 위 guard 가 같은 값으로 바꾼다
+        onAgreed={() => report.replace('start', { remove: [MOCK_AUTH_PARAM] })}
       />
+
+      {/* 보고 흐름과 보낸 보고는 동의한 회원만 쓴다 */}
+      {auth === 'member' && (
+        <ReportFlow
+          week={week}
+          submitted={submitted}
+          onSubmittedChange={setSubmitted}
+          onNotReady={notReady}
+        />
+      )}
 
       {/* 자료 부족이면 보일 숫자가 없어 ?explain=1 로 들어와도 열지 않는다 */}
       {week.status !== 'insufficient' && (
