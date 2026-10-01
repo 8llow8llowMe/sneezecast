@@ -25,7 +25,10 @@ import {
  * 오류가 남아 있으면 "다음" 이 꺼진다(`aria-disabled` — 포커스를 지킨다).
  * 닉네임 글자 수는 늘 보이고 10자를 넘으면 빨갛다.
  *
- * 값은 Provider 메모리에만 두고 동네 선택으로 간다. 비밀번호는 가입 요청(S02-3) 때 한 번 보내고 버린다.
+ * 값은 Provider 메모리에만 두고 동네 선택으로 간다. 비밀번호는 가입 요청(S02-3)과 이어지는 로그인에 쓰고 버린다.
+ * 비밀번호 칸은 20자로 자르지 않는다(`maxLength` 없음) — 붙여 넣은 값이 조용히 잘리면 다른 비밀번호로 가입된다.
+ * 넘으면 규칙 오류로 알린다. 도움말 · 오류 문구는 시안에 상한 · 공백 규칙을 더했다(백엔드 #56 규칙).
+ * 인증 시간이 지나 이메일 단계부터 다시 오면 닉네임은 남아 있고 비밀번호는 다시 쓴다.
  * 인증을 마치지 않았으면(주소로 바로 들어옴 · 새로고침) 이메일 입력으로 돌려보낸다.
  *
  * 시안: docs/design/auth/screens/ 의 Signup-account (+ -T · -D)
@@ -39,7 +42,7 @@ export function SignupAccountScreen() {
   const [nickname, setNickname] = useState(signup.nickname)
   const [checked, setChecked] = useState(false)
 
-  const verified = signup.verificationToken !== null
+  const verified = signup.verifiedAt !== null
   useEffect(() => {
     if (!verified) replace(SIGNUP_EMAIL_PATH)
   }, [verified, replace])
@@ -93,9 +96,11 @@ export function SignupAccountScreen() {
           autoComplete="new-password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          hint="8자 이상 · 영문과 숫자 포함"
+          hint="8~20자 · 영문과 숫자 포함 · 띄어쓰기 없이"
           error={
-            checked && problems.password ? '8자 이상으로 영문과 숫자를 함께 써 주세요.' : undefined
+            checked && problems.password
+              ? '영문과 숫자를 함께 8~20자로, 띄어쓰기 없이 써 주세요.'
+              : undefined
           }
         />
         <TextField

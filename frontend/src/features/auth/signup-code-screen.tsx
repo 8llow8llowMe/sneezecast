@@ -39,11 +39,15 @@ const CODE_LENGTH = 6
  *
  * | 상태 | 보이는 것 |
  * | --- | --- |
- * | 기본 | 보낸 이메일 · 이메일 바꾸기 · 코드 칸(남은 시간) · 다시 받기(대기 60초) · 확인 |
+ * | 기본 | 중립 문구 · 보낸 이메일 · 이메일 바꾸기 · 코드 칸(남은 시간) · 다시 받기(대기 60초) · 확인 |
  * | wrong | 칸 아래 "코드가 맞지 않아요. 남은 시도는 n번이에요." |
  * | expired | 남은 시간 0:00(빨강) · 빨강 상자 · 확인 꺼짐 · 다시 받기 켜짐 |
  * | locked | 칸 꺼짐 · 빨강 상자 안 "이메일 다시 입력하기" · 두 버튼 꺼짐 |
  * | 인증 마침 | 비밀번호 화면에서 뒤로 돌아온 경우. 칸 꺼짐 · 남은 시간 숨김 · 파랑 안내, 확인은 다시 묻지 않고 넘어간다 |
+ *
+ * 제목 아래 "이미 가입한 이메일이면 코드 대신 안내 메일이 가요." 는 상태와 무관하게 늘 보인다. 코드 받기가
+ * 가입 여부와 무관하게 같은 응답이라(계정 열거 방지) 화면은 가입 여부를 모른 채 이 단계로 온다.
+ * 칸 도움말은 오류 · 만료 · 잠김에서 바뀌므로 도움말이 아니라 설명 문단(이메일 화면의 제목 아래 문단과 같은 자리)에 둔다.
  *
  * 남은 시간은 코드를 보낸 시각(Provider)으로 계산해 탭이 백그라운드였거나 다음 단계에서 돌아와도 맞다.
  * 다시 받으면 코드 · 시간 · 남은 시도가 처음으로 돌아가고 앞선 인증은 무효가 된다.
@@ -70,7 +74,7 @@ export function SignupCodeScreen() {
 
   if (!ready) return null
 
-  const verified = signup.verificationToken !== null
+  const verified = signup.verifiedAt !== null
   const locked = !verified && status.kind === 'locked'
   const expired = !verified && !locked && (secondsLeft === 0 || status.kind === 'expired')
   const busy = status.kind === 'submitting' || status.kind === 'resending'
@@ -96,7 +100,7 @@ export function SignupCodeScreen() {
       const result = await verifyEmailCode(signup.email, code)
       if (!active.current) return
       if (result.status === 'ok') {
-        updateSignup({ verificationToken: result.verificationToken })
+        updateSignup({ verifiedAt: Date.now() })
         router.push(SIGNUP_ACCOUNT_PATH)
         return
       }
@@ -119,11 +123,11 @@ export function SignupCodeScreen() {
       if (!active.current) return
       if (result.status === 'sent') {
         // 새 코드를 받으면 앞선 인증은 무효다
-        updateSignup({ codeSentAt: Date.now(), verificationToken: null })
+        updateSignup({ codeSentAt: Date.now(), verifiedAt: null })
         setCode('')
         setStatus({ kind: 'idle' })
       } else {
-        setStatus({ kind: result.status === 'limit' ? 'limit' : 'resend-failed' })
+        setStatus({ kind: 'limit' })
       }
     } catch {
       if (active.current) setStatus({ kind: 'resend-failed' })
@@ -168,11 +172,16 @@ export function SignupCodeScreen() {
         noValidate
         className="flex flex-col gap-5"
       >
-        <h1 className="text-setup-title leading-[1.4] font-bold text-fg">
-          메일로 받은 코드를
-          <br />
-          입력해 주세요
-        </h1>
+        <div>
+          <h1 className="text-setup-title leading-[1.4] font-bold text-fg">
+            메일로 받은 코드를
+            <br />
+            입력해 주세요
+          </h1>
+          <p className="mt-2 text-body leading-[1.6] text-fg-sub">
+            이미 가입한 이메일이면 코드 대신 안내 메일이 가요.
+          </p>
+        </div>
 
         <div className="flex items-center justify-between gap-2 pb-1">
           <span className="min-w-0 text-body break-all text-fg">
@@ -239,7 +248,7 @@ export function SignupCodeScreen() {
         )}
         {status.kind === 'limit' && (
           <AlertBox tone="neutral" role="alert">
-            코드 요청이 많아 잠시 막혔어요. 10분 뒤 다시 시도해 주세요.
+            코드 요청이 많아 잠시 막혔어요. 조금 뒤 다시 시도해 주세요.
           </AlertBox>
         )}
         {status.kind === 'failed' && (

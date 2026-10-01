@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import type { ReactNode } from 'react'
+
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,7 +16,9 @@ import {
 import type { District } from '@/features/region/types'
 
 import type * as authClient from './auth-client'
-import { saveRegion, signup } from './auth-client'
+import { loginWithEmail, saveRegion, sendEmailCode, signup, verifyEmailCode } from './auth-client'
+import { LoginScreen } from './login-screen'
+import { SignupEmailScreen } from './signup-email-screen'
 import { TermsScreen } from './terms-screen'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
@@ -28,18 +32,21 @@ vi.mock('./auth-client', async (importOriginal) => {
   return {
     ...actual,
     signup: vi.fn(actual.signup),
+    loginWithEmail: vi.fn(actual.loginWithEmail),
     saveRegion: vi.fn(actual.saveRegion),
   }
 })
 
 const DISTRICT: District = { code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구' }
 const EMAIL_DRAFT: SignupDraft = {
+  method: 'email',
   email: 'dong@example.com',
   codeSentAt: 1,
-  verificationToken: 'mock-verified',
+  verifiedAt: 1,
   password: 'dongne2026',
   nickname: '동네지기',
 }
+const KAKAO_DRAFT: SignupDraft = { ...EMPTY_SIGNUP, method: 'kakao' }
 
 function Probe() {
   const { signup: draft, membership, notificationOptIn } = useOnboarding()
@@ -57,29 +64,49 @@ const state = () =>
   }
 
 function setup({
-  draft = EMPTY_SIGNUP,
+  draft = KAKAO_DRAFT,
   district = DISTRICT,
   adult = true,
   membership = NO_MEMBERSHIP,
+  page = <TermsScreen />,
 }: {
   draft?: SignupDraft
   district?: District | null
   adult?: boolean
   membership?: Membership
+  /** 처음 그릴 화면. Provider 는 그대로 두고 `show` 로 화면만 바꾼다(레이아웃 안 이동과 같다) */
+  page?: ReactNode
 } = {}) {
   const user = userEvent.setup()
-  const utils = render(
+  const tree = (child: ReactNode) => (
     <OnboardingProvider
       initialDistrict={district}
       initialSignup={draft}
       initialAdultConfirmed={adult}
       initialMembership={membership}
     >
-      <TermsScreen />
+      {child}
       <Probe />
-    </OnboardingProvider>,
+    </OnboardingProvider>
   )
-  return { user, ...utils }
+  const utils = render(tree(page))
+  const show = (child: ReactNode) => utils.rerender(tree(child))
+  return { user, show, ...utils }
+}
+
+/** 코드 확인 · 비밀번호 화면이 채우는 값을 흉내 낸다 */
+function FillAccount() {
+  const { updateSignup } = useOnboarding()
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        updateSignup({ verifiedAt: Date.now(), password: 'dongne2026', nickname: '새닉' })
+      }
+    >
+      계정 채우기
+    </button>
+  )
 }
 
 const box = (name: string | RegExp) => screen.getByRole<HTMLInputElement>('checkbox', { name })
@@ -87,12 +114,21 @@ const submit = () => screen.getByRole('button', { name: '동의하고 가입하�
 const isOff = (button: HTMLElement) => button.getAttribute('aria-disabled') === 'true'
 
 describe('TermsScreen', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     router.push.mockClear()
     router.replace.mockClear()
     vi.mocked(signup).mockReset()
+    vi.mocked(loginWithEmail).mockReset()
     vi.mocked(saveRegion).mockReset()
+    // 목 서버에 이 이메일의 인증 완료 표시를 만든다 (가입이 확인하고 지운다)
+    await sendEmailCode(EMAIL_DRAFT.email)
+    await verifyEmailCode(EMAIL_DRAFT.email, '482915')
   })
+
+  async function agreeAndSubmit(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(box('전체 동의'))
+    await user.click(submit())
+  }
 
   it('3 / 4 단계이고 필수를 켜기 전에는 가입하기가 꺼져 있어 눌러도 보내지 않는다', async () => {
     const { user } = setup()
@@ -131,7 +167,7 @@ describe('TermsScreen', () => {
     ).toBe(true)
   })
 
-  it('이메일 가입이면 비밀번호까지 보내고, 가입 뒤 비밀번호 · 인증 값을 지우고 동네를 저장한다', async () => {
+  it('이메일 가입이면 가입 → 로그인 → 동네 저장 순서로 보내고, 로그인 뒤 비밀번호 · 인증을 지운다', async () => {
     const { user } = setup({ draft: EMAIL_DRAFT })
     await user.click(box(/서비스 이용약관/))
     await user.click(box(/개인정보 수집·이용/))
@@ -141,7 +177,6 @@ describe('TermsScreen', () => {
     expect(signup).toHaveBeenCalledWith({
       kind: 'email',
       email: 'dong@example.com',
-      verificationToken: 'mock-verified',
       password: 'dongne2026',
       nickname: '동네지기',
       consents: [
@@ -150,60 +185,246 @@ describe('TermsScreen', () => {
         { type: 'AGE_OVER_19', documentVersion: '2026-10-01' },
       ],
     })
+    expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026')
     expect(saveRegion).toHaveBeenCalledWith('11680640')
+    const [signedUp] = vi.mocked(signup).mock.invocationCallOrder
+    const [loggedIn] = vi.mocked(loginWithEmail).mock.invocationCallOrder
+    const [saved] = vi.mocked(saveRegion).mock.invocationCallOrder
+    expect(signedUp).toBeLessThan(loggedIn ?? 0)
+    expect(loggedIn).toBeLessThan(saved ?? 0)
     expect(state().draft.password).toBe('')
-    expect(state().draft.verificationToken).toBeNull()
-    expect(state().membership).toEqual({ accountCreated: true, regionSaved: true })
+    expect(state().draft.verifiedAt).toBeNull()
+    expect(state().membership).toEqual({ accountCreated: true, loggedIn: true, regionSaved: true })
   })
 
-  it('카카오 가입이면 동의만 보낸다', async () => {
-    const { user } = setup()
-    await user.click(box('전체 동의'))
-    await user.click(submit())
-    await waitFor(() => expect(signup).toHaveBeenCalledTimes(1))
+  it('카카오 가입이면 동의만 보내고 로그인 없이 동네를 저장한다', async () => {
+    const { user } = setup({ draft: KAKAO_DRAFT })
+    await agreeAndSubmit(user)
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
     const request = vi.mocked(signup).mock.calls[0]?.[0]
     expect(request?.kind).toBe('kakao')
     expect(request).not.toHaveProperty('password')
+    expect(loginWithEmail).not.toHaveBeenCalled()
+    expect(state().membership).toEqual({ accountCreated: true, loggedIn: true, regionSaved: true })
+  })
+
+  it('가입 종류는 인증 값이 아니라 method 로 가린다 — 카카오면 남은 이메일 값을 보내지 않는다', async () => {
+    const { user } = setup({ draft: { ...EMAIL_DRAFT, method: 'kakao' } })
+    await agreeAndSubmit(user)
+    await waitFor(() => expect(signup).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(signup).mock.calls[0]?.[0]).toEqual({
+      kind: 'kakao',
+      consents: expect.any(Array) as unknown,
+    })
   })
 
   it('보내는 동안 두 번 눌러도 한 번만 가입한다', async () => {
-    let resolve: () => void = () => {}
-    vi.mocked(signup).mockImplementationOnce(() => new Promise<void>((done) => (resolve = done)))
+    let resolve: (value: { status: 'ok' }) => void = () => {}
+    vi.mocked(signup).mockImplementationOnce(() => new Promise((done) => (resolve = done)))
     const { user } = setup()
-    await user.click(box('전체 동의'))
-    await user.click(submit())
+    await agreeAndSubmit(user)
     await user.click(submit())
     expect(isOff(submit())).toBe(true)
     expect(signup).toHaveBeenCalledTimes(1)
     await act(async () => {
-      resolve()
+      resolve({ status: 'ok' })
       await Promise.resolve()
     })
   })
 
   it('가입이 거부되면 alert 로 알리고 다시 누를 수 있다', async () => {
     vi.mocked(signup).mockRejectedValueOnce(new Error('network'))
-    const { user } = setup()
-    await user.click(box('전체 동의'))
-    await user.click(submit())
+    const { user } = setup({ draft: EMAIL_DRAFT })
+    await agreeAndSubmit(user)
     expect((await screen.findByRole('alert')).textContent).toBe(
       '가입하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
     )
     expect(isOff(submit())).toBe(false)
+    expect(loginWithEmail).not.toHaveBeenCalled()
+    expect(saveRegion).not.toHaveBeenCalled()
+    // 다시 보낼 수 있게 비밀번호를 남긴다
+    expect(state().draft.password).toBe('dongne2026')
+  })
+
+  it('인증 시간이 지났으면(AUTH_007) 인증 · 비밀번호를 지우고 안내와 함께 이메일 단계로 보낸다', async () => {
+    vi.mocked(signup).mockResolvedValueOnce({ status: 'verification-expired' })
+    const { user } = setup({ draft: EMAIL_DRAFT })
+    await agreeAndSubmit(user)
+
+    await waitFor(() =>
+      expect(router.replace).toHaveBeenCalledWith('/signup/email?reason=verification-expired'),
+    )
+    // 안내 없는 이메일 단계로 한 번 더 보내 쿼리를 덮지 않는다
+    expect(router.replace).toHaveBeenCalledTimes(1)
+    expect(state().draft).toEqual({
+      ...EMAIL_DRAFT,
+      codeSentAt: null,
+      verifiedAt: null,
+      password: '',
+    })
+    expect(state().membership).toEqual(NO_MEMBERSHIP)
+    expect(loginWithEmail).not.toHaveBeenCalled()
     expect(saveRegion).not.toHaveBeenCalled()
   })
 
-  it('동네 저장만 실패하면 다시 누를 때 가입을 두 번 보내지 않는다', async () => {
+  it.each([
+    ['맞지 않음', () => vi.mocked(loginWithEmail).mockResolvedValueOnce({ status: 'wrong' })],
+    ['잠김', () => vi.mocked(loginWithEmail).mockResolvedValueOnce({ status: 'locked' })],
+    ['응답 없음', () => vi.mocked(loginWithEmail).mockRejectedValueOnce(new Error('network'))],
+  ])(
+    '가입 뒤 로그인이 %s 이면 비밀번호를 남기고, 다시 누르면 가입 없이 로그인부터 한다',
+    async (_, failLogin) => {
+      failLogin()
+      const { user } = setup({ draft: EMAIL_DRAFT })
+      await agreeAndSubmit(user)
+      expect((await screen.findByRole('alert')).textContent).toBe(
+        '가입은 됐지만 로그인하지 못했어요. 잠시 뒤 다시 눌러 주세요.',
+      )
+      expect(state().draft.password).toBe('dongne2026')
+      expect(state().membership).toEqual({
+        accountCreated: true,
+        loggedIn: false,
+        regionSaved: false,
+      })
+      expect(saveRegion).not.toHaveBeenCalled()
+      expect(isOff(submit())).toBe(false)
+
+      await user.click(submit())
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
+      expect(signup).toHaveBeenCalledTimes(1)
+      expect(loginWithEmail).toHaveBeenCalledTimes(2)
+      expect(state().draft.password).toBe('')
+    },
+  )
+
+  it('동네 저장만 실패하면 다시 누를 때 가입 · 로그인을 다시 보내지 않는다', async () => {
     vi.mocked(saveRegion).mockRejectedValueOnce(new Error('network'))
-    const { user } = setup()
-    await user.click(box('전체 동의'))
-    await user.click(submit())
+    const { user } = setup({ draft: EMAIL_DRAFT })
+    await agreeAndSubmit(user)
     expect((await screen.findByRole('alert')).textContent).toContain('동네를 저장하지 못했어요')
 
     await user.click(submit())
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
     expect(signup).toHaveBeenCalledTimes(1)
+    expect(loginWithEmail).toHaveBeenCalledTimes(1)
     expect(saveRegion).toHaveBeenCalledTimes(2)
+  })
+
+  describe('새 가입 시도는 앞선 가입 마무리 진행을 쓰지 않는다', () => {
+    const STALE: Membership = { accountCreated: true, loggedIn: false, regionSaved: false }
+
+    it('가입 뒤 로그인을 못 한 채 카카오로 다시 시작하면 가입부터 다시 보낸다', async () => {
+      const { user, show } = setup({ draft: EMAIL_DRAFT, membership: STALE, page: null })
+      show(<LoginScreen notice={null} />)
+      expect(state().membership).toEqual(NO_MEMBERSHIP)
+      await user.click(screen.getByRole('button', { name: '카카오로 계속하기' }))
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith('/setup/region'))
+
+      show(<TermsScreen />)
+      await agreeAndSubmit(user)
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
+      expect(signup).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(signup).mock.calls[0]?.[0].kind).toBe('kakao')
+      expect(loginWithEmail).not.toHaveBeenCalled()
+    })
+
+    it('가입 뒤 로그인을 못 한 채 새 이메일로 코드를 받으면 가입부터 다시 보낸다', async () => {
+      const { user, show } = setup({ draft: EMAIL_DRAFT, membership: STALE, page: null })
+      show(<SignupEmailScreen />)
+      const email = screen.getByRole('textbox', { name: '이메일' })
+      await user.clear(email)
+      await user.type(email, 'new@example.com')
+      await user.click(screen.getByRole('button', { name: '인증 코드 받기' }))
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith('/signup/code'))
+      expect(state().membership).toEqual(NO_MEMBERSHIP)
+
+      // 코드 확인 · 비밀번호 화면을 거친 셈으로 목 서버에 인증 표시를 만들고 초안을 채운다
+      await verifyEmailCode('new@example.com', '482915')
+      show(<FillAccount />)
+      await user.click(screen.getByRole('button', { name: '계정 채우기' }))
+
+      show(<TermsScreen />)
+      await agreeAndSubmit(user)
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
+      expect(signup).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(signup).mock.calls[0]?.[0]).toMatchObject({
+        kind: 'email',
+        email: 'new@example.com',
+      })
+      expect(loginWithEmail).toHaveBeenCalledWith('new@example.com', 'dongne2026')
+    })
+  })
+
+  describe('응답을 기다리는 동안 화면을 떠나도 서버에서 끝난 단계는 남긴다', () => {
+    it('가입 응답 전에 떠났다 돌아와 다시 누르면 가입을 다시 보내지 않는다', async () => {
+      let resolve: (value: { status: 'ok' }) => void = () => {}
+      vi.mocked(signup).mockImplementationOnce(() => new Promise((done) => (resolve = done)))
+      const { user, show } = setup({ draft: EMAIL_DRAFT })
+      await agreeAndSubmit(user)
+      show(null)
+      await act(async () => {
+        resolve({ status: 'ok' })
+        await Promise.resolve()
+      })
+      expect(state().membership).toEqual({
+        accountCreated: true,
+        loggedIn: false,
+        regionSaved: false,
+      })
+      // 떠난 뒤에는 로그인을 이어 보내지 않는다 — 비밀번호는 다음 제출을 위해 남긴다
+      expect(loginWithEmail).not.toHaveBeenCalled()
+      expect(state().draft.password).toBe('dongne2026')
+      expect(router.replace).not.toHaveBeenCalled()
+
+      show(<TermsScreen />)
+      await agreeAndSubmit(user)
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
+      expect(signup).toHaveBeenCalledTimes(1)
+      expect(loginWithEmail).toHaveBeenCalledTimes(1)
+    })
+
+    it('로그인 응답 전에 떠났다 돌아와 다시 누르면 로그인을 다시 보내지 않는다', async () => {
+      let resolve: (value: { status: 'ok' }) => void = () => {}
+      vi.mocked(loginWithEmail).mockImplementationOnce(
+        () => new Promise((done) => (resolve = done)),
+      )
+      const { user, show } = setup({ draft: EMAIL_DRAFT })
+      await agreeAndSubmit(user)
+      await waitFor(() => expect(loginWithEmail).toHaveBeenCalledTimes(1))
+      show(null)
+      await act(async () => {
+        resolve({ status: 'ok' })
+        await Promise.resolve()
+      })
+      expect(state().membership).toEqual({
+        accountCreated: true,
+        loggedIn: true,
+        regionSaved: false,
+      })
+      expect(state().draft.password).toBe('')
+      expect(saveRegion).not.toHaveBeenCalled()
+
+      show(<TermsScreen />)
+      await agreeAndSubmit(user)
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
+      expect(signup).toHaveBeenCalledTimes(1)
+      expect(loginWithEmail).toHaveBeenCalledTimes(1)
+      expect(saveRegion).toHaveBeenCalledTimes(1)
+    })
+
+    it('인증 만료 응답 전에 떠났으면 인증 · 비밀번호는 지우되 이동하지 않는다', async () => {
+      let resolve: (value: { status: 'verification-expired' }) => void = () => {}
+      vi.mocked(signup).mockImplementationOnce(() => new Promise((done) => (resolve = done)))
+      const { user, show } = setup({ draft: EMAIL_DRAFT })
+      await agreeAndSubmit(user)
+      show(null)
+      await act(async () => {
+        resolve({ status: 'verification-expired' })
+        await Promise.resolve()
+      })
+      expect(state().draft).toMatchObject({ verifiedAt: null, codeSentAt: null, password: '' })
+      expect(router.replace).not.toHaveBeenCalled()
+    })
   })
 
   it.each([
@@ -211,13 +432,39 @@ describe('TermsScreen', () => {
     ['성인 확인이 없으면 성인 확인', { adult: false }, '/setup/adult'],
     [
       '이미 가입을 마쳤으면 증상 보고 동의',
-      { membership: { accountCreated: true, regionSaved: true } },
+      { membership: { accountCreated: true, loggedIn: true, regionSaved: true } },
       '/setup/health-consent',
+    ],
+    ['가입 종류를 모르면 로그인 방법 선택', { draft: EMPTY_SIGNUP }, '/login'],
+    [
+      '이메일 가입인데 인증을 마치지 않았으면 이메일 단계',
+      { draft: { ...EMAIL_DRAFT, verifiedAt: null } },
+      '/signup/email',
+    ],
+    [
+      '이메일 가입인데 비밀번호가 없으면 이메일 단계',
+      { draft: { ...EMAIL_DRAFT, password: '' } },
+      '/signup/email',
+    ],
+    [
+      '동네가 없으면 가입 종류보다 먼저 동네 선택',
+      { district: null, draft: EMPTY_SIGNUP },
+      '/setup/region',
     ],
   ] as const)('%s 로 돌려보낸다', (_, options, path) => {
     setup(options)
+    expect(router.replace).toHaveBeenCalledTimes(1)
     expect(router.replace).toHaveBeenCalledWith(path)
     expect(screen.queryByRole('heading')).toBeNull()
+  })
+
+  it('가입을 마친 뒤 로그인만 남았으면 인증 값이 없어도 돌려보내지 않는다', () => {
+    setup({
+      draft: { ...EMAIL_DRAFT, verifiedAt: null },
+      membership: { accountCreated: true, loggedIn: false, regionSaved: false },
+    })
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { level: 1 })).toBeDefined()
   })
 
   it('주소로 바로 들어왔으면 뒤로는 성인 확인으로 바꿔 간다', async () => {
