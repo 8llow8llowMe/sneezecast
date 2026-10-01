@@ -364,7 +364,8 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 - 트리거는 코드(`QuartzScheduleConfig`)에 정의하고 cron 값만 설정으로 뺀다. Quartz cron 은 초가 맨 앞이다 (예: `0 0 6 ? * FRI`). 시간대는 `batch.schedule.time-zone=Asia/Seoul` 로 고정한다.
 - 잡 스토어는 in-memory, 스레드 1개 — 잡끼리 겹치지 않는다. misfire 는 `FireAndProceed` 지만 **프로세스가 떠 있는 동안 늦어진 발화만** 보충한다. in-memory 스토어라 배포 · 장애로 내려가 있던 동안의 발화는 재기동 뒤 보충되지 않는다 → 배포는 발화 시각을 피하고, 놓쳤으면 수동 실행한다.
-- 같은 잡은 `@DisallowConcurrentExecution`, 다른 잡 · 수동 실행 JVM 과의 겹침은 배치 메타데이터의 STARTED 로 판정해 이번 주기를 건너뛴다.
+- 같은 잡은 `@DisallowConcurrentExecution`, 다른 잡 · 수동 실행 JVM 과의 겹침은 배치 메타데이터의 실행 중(STARTING · STARTED · STOPPING) 실행으로 판정해 이번 주기를 건너뛴다. 시작한 지 `batch.schedule.stale-running-after`(기본 6h)를 넘긴 실행은 죽은 JVM 의 잔재로 보고 무시한다 (ERROR 로그). 실행 브리지 구성은 [modules.md](modules.md#servicebatch-service).
+- 스케줄 발화는 예정 발화 시각을 `batch.schedule.time-zone`(기본 KST) 기준 초 단위로 자른 `runAt`(예: `2026-10-06T05:00:00`)을 identifying 파라미터로, `trigger=quartz` 를 기록용(non-identifying)으로 넘긴다.
 - 스케줄 스위치 `batch.schedule.enabled` 는 dev 만 true. 수동 실행은 `--spring.batch.job.name=<잡> runAt=<ISO 시각>` 로 한다 (`runAt` 을 새 값으로 주지 않으면 이미 완료된 JobInstance 로 거절된다). `districtImportJob` 은 `year=<기준 연도>` 가 필수이고, 대규모 폐지를 허용할 때만 `allowMassRetire=true` 를 더한다.
 - 적재는 JDBC `batchUpdate` + `ON DUPLICATE KEY UPDATE`, 500건 단위 (배치 대량 쓰기는 JDBC 허용 — [coding-conventions.md §8-4](coding-conventions.md#8-4-쿼리-수단-순서)).
 - 원천 하나가 실패해도 다른 잡은 계속 돈다. 실패한 원천의 기존 데이터는 지우지 않는다.
