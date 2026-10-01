@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { OnboardingProvider } from '@/features/onboarding/onboarding-context'
+import {
+  EMPTY_SIGNUP,
+  OnboardingProvider,
+  type SignupDraft,
+  useOnboarding,
+} from '@/features/onboarding/onboarding-context'
 
 import type * as authClient from './auth-client'
 import { startKakaoLogin } from './auth-client'
@@ -21,10 +26,30 @@ vi.mock('./auth-client', async (importOriginal) => {
   return { ...actual, startKakaoLogin: vi.fn(actual.startKakaoLogin) }
 })
 
-function renderLogin(notice: LoginNotice | null = null) {
+/** 그만둔 이메일 가입 초안 */
+const ABANDONED: SignupDraft = {
+  email: 'dong@example.com',
+  codeSentAt: 1,
+  verificationToken: 'mock-verified',
+  password: 'dongne2026',
+  nickname: '동네지기',
+}
+
+function Probe() {
+  const { signup } = useOnboarding()
+  return (
+    <span hidden data-testid="draft">
+      {JSON.stringify(signup)}
+    </span>
+  )
+}
+const draft = () => JSON.parse(screen.getByTestId('draft').textContent ?? '{}') as SignupDraft
+
+function renderLogin(notice: LoginNotice | null = null, initialSignup: SignupDraft = EMPTY_SIGNUP) {
   return render(
-    <OnboardingProvider>
+    <OnboardingProvider initialSignup={initialSignup}>
       <LoginScreen notice={notice} />
+      <Probe />
     </OnboardingProvider>,
   )
 }
@@ -84,6 +109,31 @@ describe('LoginScreen', () => {
         .getAllByRole('status')
         .some((region) => region.textContent?.includes('시작하지 못했어요')),
     ).toBe(true)
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('들어오면 그만둔 가입의 비밀번호 · 인증 값을 지우고 이메일만 남긴다', () => {
+    renderLogin(null, ABANDONED)
+    expect(draft()).toEqual({ ...EMPTY_SIGNUP, email: 'dong@example.com' })
+  })
+
+  it('카카오로 시작하면 가입 초안을 모두 비운다', async () => {
+    renderLogin(null, ABANDONED)
+    await userEvent.setup().click(screen.getByRole('button', { name: '카카오로 계속하기' }))
+    await waitFor(() => expect(router.push).toHaveBeenCalled())
+    expect(draft()).toEqual(EMPTY_SIGNUP)
+  })
+
+  it('카카오를 기다리는 동안 화면을 떠나면 늦은 응답으로 이동하지 않는다', async () => {
+    let resolve: (value: { redirectTo: string }) => void = () => {}
+    vi.mocked(startKakaoLogin).mockImplementationOnce(() => new Promise((done) => (resolve = done)))
+    const { unmount } = renderLogin()
+    await userEvent.setup().click(screen.getByRole('button', { name: '카카오로 계속하기' }))
+    unmount()
+    await act(async () => {
+      resolve({ redirectTo: '/setup/region' })
+      await Promise.resolve()
+    })
     expect(router.push).not.toHaveBeenCalled()
   })
 

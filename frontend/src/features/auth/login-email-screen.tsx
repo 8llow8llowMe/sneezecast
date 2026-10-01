@@ -16,6 +16,7 @@ import {
   PASSWORD_RESET_PATH,
   SIGNUP_EMAIL_PATH,
 } from '@/features/onboarding/paths'
+import { useActiveRef } from '@/lib/use-active-ref'
 
 import { loginWithEmail } from './auth-client'
 
@@ -44,6 +45,7 @@ type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'failed'
 export function LoginEmailScreen({ resetDone = false }: { resetDone?: boolean }) {
   const router = useRouter()
   const { goBack } = useOnboarding()
+  const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const formId = useId()
   const [email, setEmail] = useState('')
@@ -74,13 +76,15 @@ export function LoginEmailScreen({ resetDone = false }: { resetDone?: boolean })
     setStatus('submitting')
     try {
       const result = await loginWithEmail(email.trim(), password)
+      // 기다리는 동안 화면을 떠났으면 늦은 응답으로 이동하지 않는다
+      if (!active.current) return
       if (result.status === 'ok') {
         router.replace(HOME_PATH)
         return
       }
       setStatus(result.status)
     } catch {
-      setStatus('failed')
+      if (active.current) setStatus('failed')
     }
   }
 

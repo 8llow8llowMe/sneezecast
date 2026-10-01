@@ -11,6 +11,7 @@ import { ToastRegion, useToast } from '@/components/toast'
 import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
 import { LOGIN_EMAIL_PATH, SIGNUP_EMAIL_PATH, START_PATH } from '@/features/onboarding/paths'
+import { useActiveRef } from '@/lib/use-active-ref'
 
 import { startKakaoLogin } from './auth-client'
 import type { LoginNotice } from './login-notice'
@@ -29,7 +30,8 @@ import type { LoginNotice } from './login-notice'
  */
 export function LoginScreen({ notice }: { notice: LoginNotice | null }) {
   const router = useRouter()
-  const { goBack } = useOnboarding()
+  const { goBack, resetSignup } = useOnboarding()
+  const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const [pending, setPending] = useState(false)
   const exists = notice === 'kakao-exists'
@@ -38,13 +40,22 @@ export function LoginScreen({ notice }: { notice: LoginNotice | null }) {
     if (notice === 'expired') show({ message: '다시 로그인해 주세요' })
   }, [notice, show])
 
+  // 그만둔 이메일 가입의 비밀번호 · 인증 값을 지운다. 이메일 가입으로 다시 갈 수 있어 이메일만 남긴다
+  useEffect(() => {
+    resetSignup({ keepEmail: true })
+  }, [resetSignup])
+
   async function continueWithKakao() {
     setPending(true)
+    // 카카오 가입은 이메일 가입 초안을 쓰지 않는다 — 남아 있으면 S02-3 이 이메일 가입으로 잘못 본다
+    resetSignup()
     try {
       const { redirectTo } = await startKakaoLogin({ switchAccount: exists })
+      if (!active.current) return
       // 이동하는 동안은 꺼진 채로 둔다 — 다시 눌러 두 번 시작하지 않게 한다
       router.push(redirectTo)
     } catch {
+      if (!active.current) return
       show({ message: '카카오 로그인을 시작하지 못했어요. 잠시 뒤 다시 시도해 주세요.' })
       setPending(false)
     }
