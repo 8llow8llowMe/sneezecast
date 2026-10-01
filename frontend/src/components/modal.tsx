@@ -14,6 +14,10 @@ import clsx from 'clsx'
 import { IconButton } from './icon-button'
 import { ChevronLeftIcon, CloseIcon } from './icons'
 
+/**
+ * 단계에 따라 있거나 없는 값(step · onBack · icon · footer)은 `undefined` 를 그대로 넘길 수 있게 둔다
+ * (`exactOptionalPropertyTypes` 에서 조건부로 넘기기 쉽게).
+ */
 export type ModalProps = {
   open: boolean
   /** Esc · 바깥 누르기 · 닫기 버튼에서 부른다. 상태는 부모가 갖고, 이 함수에서 open 을 false 로 바꾼다 */
@@ -21,9 +25,9 @@ export type ModalProps = {
   /** 제목. 대화상자의 이름(`aria-labelledby`)이 된다. 모바일에서만 줄을 바꾸려면 `<br className="tablet:hidden" />` */
   title: ReactNode
   /** 머리줄 가운데 단계 표시. 예: "1 / 2" */
-  step?: string
+  step?: string | undefined
   /** 있으면 머리줄 왼쪽에 이전 단계 버튼을 둔다 */
-  onBack?: () => void
+  onBack?: (() => void) | undefined
   /**
    * **모바일 시트에서만** 머리줄(이전 단계 · 단계 표시 · 닫기)을 숨긴다. 판단 기준처럼 읽고 아래
    * 확인 버튼으로 닫는 시트용이다 (Explain 시안). 태블릿 · 데스크톱 대화상자는 손잡이가 없어
@@ -41,9 +45,9 @@ export type ModalProps = {
    */
   mobileLayout?: 'sheet' | 'screen'
   /** 제목 위 아이콘 (보고 완료 체크) */
-  icon?: ReactNode
+  icon?: ReactNode | undefined
   /** 아래 버튼 영역. `screen` 배치의 모바일에서는 화면 아래에 붙는다 */
-  footer?: ReactNode
+  footer?: ReactNode | undefined
   children: ReactNode
 }
 

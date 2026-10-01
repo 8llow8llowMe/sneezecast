@@ -80,6 +80,22 @@ describe('useModalParam', () => {
     expect(window.location.search).toBe('?mock=high')
   })
 
+  it('back 은 쌓은 기록이 있으면 뒤로 가고, 없으면 대체 단계로 바꾼다', () => {
+    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    window.history.replaceState(null, '', '/?report=symptom')
+    const { result, rerender } = renderHook(() => useModalParam('report'))
+
+    act(() => result.current.back('start'))
+    expect(historyBack).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?report=start')
+
+    rerender()
+    act(() => result.current.push('symptom'))
+    rerender()
+    act(() => result.current.back('start'))
+    expect(historyBack).toHaveBeenCalledTimes(1)
+  })
+
   it('다른 쿼리가 없으면 경로만 남긴다', () => {
     window.history.replaceState(null, '', '/?report=start')
     const { result } = renderHook(() => useModalParam('report'))
