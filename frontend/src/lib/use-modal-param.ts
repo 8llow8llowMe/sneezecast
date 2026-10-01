@@ -24,6 +24,8 @@ function currentDepth(): number {
  *
  * - `open` · `push`: 기록을 하나 쌓는다. 휴대폰 뒤로 가기가 이전 단계로, 첫 단계에서는 닫기로 이어진다
  * - `replace`: 기록을 쌓지 않고 값만 바꾼다. 보낸 뒤 완료 화면처럼 **뒤로 가서 되돌아오면 안 되는 단계**에 쓴다
+ * - `back`: 이전 단계로. 이 훅이 쌓은 기록이 있으면 뒤로 가고(휴대폰 뒤로 가기와 같다), 주소로 바로 들어와
+ *   쌓은 기록이 없으면 사이트를 떠나지 않게 `fallback` 단계로 바꾼다
  * - `close`: 이 훅이 쌓은 만큼만 되돌린다. 주소로 바로 들어와 쌓은 기록이 없으면 쿼리만 지운다
  *
  * **쌓은 깊이를 컴포넌트 변수가 아니라 `history.state` 에 둔다.** 사용자가 뒤로 가기로 한 단계 돌아온 뒤
@@ -61,6 +63,14 @@ export function useModalParam(name: string) {
     [urlWith],
   )
 
+  const back = useCallback(
+    (fallback: string) => {
+      if (currentDepth() > 0) window.history.back()
+      else replace(fallback)
+    },
+    [replace],
+  )
+
   const close = useCallback(() => {
     const depth = currentDepth()
     if (depth > 0) {
@@ -70,5 +80,5 @@ export function useModalParam(name: string) {
     window.history.replaceState({ [DEPTH_KEY]: 0 }, '', urlWith(null))
   }, [urlWith])
 
-  return { value, open: push, push, replace, close }
+  return { value, open: push, push, replace, back, close }
 }
