@@ -13,6 +13,8 @@ export type OnboardingLayoutProps = {
   step?: number | undefined
   /** 없으면 뒤로 버튼을 그리지 않는다 (가입을 마친 뒤의 증상 보고 동의 — 되돌아가 다시 가입하지 않게) */
   onBack?: (() => void) | undefined
+  /** 뒤로 버튼을 꺼진 모양으로 둔다(`aria-disabled`, 포커스는 남는다). 누름은 `onBack` 이 막는다 — 보내는 중 */
+  backDisabled?: boolean | undefined
   /** 데스크톱 오른쪽 패널의 큰 문구 */
   panelTitle: ReactNode
   /** 화면 아래 버튼 영역 */
@@ -35,6 +37,7 @@ export type OnboardingLayoutProps = {
 export function OnboardingLayout({
   step,
   onBack,
+  backDisabled,
   panelTitle,
   footer,
   children,
@@ -52,6 +55,7 @@ export function OnboardingLayout({
               label="뒤로"
               icon={<ChevronLeftIcon />}
               onClick={onBack}
+              aria-disabled={backDisabled || undefined}
               className="-ml-3"
             />
           ) : (
