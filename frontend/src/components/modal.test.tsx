@@ -94,6 +94,31 @@ describe('Modal', () => {
     expect(header?.classList).not.toContain('hidden')
   })
 
+  it('아이콘은 제목 위, footer 는 내용 아래에 놓인다', () => {
+    const { dialog } = renderModal({
+      icon: <svg data-testid="icon" />,
+      footer: <button type="button">우리 동네 변화 보기</button>,
+    })
+    const order = [...dialog.querySelectorAll('[data-testid="icon"], h2, p, button')].map(
+      (el) => el.tagName.toLowerCase() + (el.textContent ? `:${el.textContent}` : ''),
+    )
+
+    expect(order.indexOf('svg')).toBeLessThan(order.findIndex((x) => x.startsWith('h2')))
+    expect(order.at(-1)).toBe('button:우리 동네 변화 보기')
+  })
+
+  it('screen 배치는 모바일 전체 화면이고 손잡이 · 모바일 머리줄이 없다', () => {
+    const { dialog } = renderModal({ mobileLayout: 'screen', footer: <span>버튼</span> })
+    const header = screen.getByRole('button', { name: '닫기' }).parentElement
+
+    expect(dialog.classList).toContain('h-dvh')
+    expect(dialog.classList).not.toContain('rounded-t-sheet')
+    expect(dialog.querySelector('.rounded-bar')).toBeNull()
+    expect(header?.classList).toContain('hidden')
+    expect(header?.classList).toContain('tablet:flex')
+    expect(screen.getByRole('heading', { level: 2 }).classList).toContain('text-status')
+  })
+
   it('모바일은 시트, 태블릿부터 가운데 대화상자 폭을 쓴다', () => {
     const { classList } = renderModal().dialog
 

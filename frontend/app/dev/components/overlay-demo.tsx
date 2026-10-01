@@ -4,13 +4,17 @@ import { useState } from 'react'
 
 import { AppHeader } from '@/components/app-header'
 import { Button } from '@/components/button'
+import { Callout } from '@/components/callout'
+import { ChoiceButton } from '@/components/choice-button'
+import { SuccessIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
 
 /** 상호작용이 필요한 오버레이 · 내비게이션 미리보기. 데이터는 시안 예시 값이다 */
 export function OverlayDemo() {
-  const [modal, setModal] = useState<'report' | 'symptom' | 'explain' | null>(null)
+  const [modal, setModal] = useState<'report' | 'symptom' | 'explain' | 'done' | null>(null)
+  const [picked, setPicked] = useState<string[]>(['발열·기침·인후통'])
   const { toast, show, dismiss } = useToast()
 
   const close = () => setModal(null)
@@ -36,6 +40,9 @@ export function OverlayDemo() {
         </Button>
         <Button variant="secondary" fullWidth onClick={() => setModal('explain')}>
           판단 기준 시트 열기 (시트만 머리줄 없음)
+        </Button>
+        <Button variant="secondary" fullWidth onClick={() => setModal('done')}>
+          보고 완료 열기 (모바일 전체 화면)
         </Button>
         <Button
           variant="text"
@@ -66,12 +73,12 @@ export function OverlayDemo() {
           </>
         }
       >
+        <Callout>11월 19일에 보고했어요. 수정하면 집계에는 마지막 보고만 반영돼요.</Callout>
         <p className="text-body-strong text-fg-sub">
           11월 17일(월)~23일(일) · 성인 본인의 상태만 알려주세요
         </p>
-        <Button fullWidth onClick={() => setModal('symptom')}>
-          증상이 있었어요
-        </Button>
+        <ChoiceButton label="증상 없었어요" onClick={close} />
+        <ChoiceButton label="증상이 있었어요" onClick={() => setModal('symptom')} />
       </Modal>
 
       <Modal
@@ -82,6 +89,55 @@ export function OverlayDemo() {
         title="어떤 증상이었나요?"
       >
         <p className="text-body-strong text-fg-sub">여러 개 고를 수 있어요</p>
+        {['발열·기침·인후통', '구토·설사'].map((label) => (
+          <ChoiceButton
+            key={label}
+            label={label}
+            size="md"
+            selected={picked.includes(label)}
+            onClick={() =>
+              setPicked((now) =>
+                now.includes(label) ? now.filter((x) => x !== label) : [...now, label],
+              )
+            }
+          />
+        ))}
+        <ChoiceButton
+          label="그 외 증상만 있었어요"
+          hint="두통, 근육통 등 · 위 두 가지와 함께 고를 수 없어요"
+          size="md"
+          selected={false}
+        />
+      </Modal>
+
+      <Modal
+        open={modal === 'done'}
+        onClose={close}
+        mobileLayout="screen"
+        icon={<SuccessIcon />}
+        title="이번 주 보고를 받았어요"
+        footer={
+          <>
+            <ToastRegion
+              toast={{
+                message: '증상 없음으로 보냈어요',
+                action: { label: '되돌리기', onClick: close },
+              }}
+              className="absolute inset-x-5 bottom-full tablet:static"
+            />
+            <Button fullWidth onClick={close}>
+              우리 동네 변화 보기
+            </Button>
+            <Button variant="secondary" fullWidth onClick={() => setModal('report')}>
+              보고 수정하기
+            </Button>
+          </>
+        }
+      >
+        <p className="text-section-title leading-[1.55] text-fg-sub tablet:text-dialog-body">
+          이번 주 안에는 언제든 고칠 수 있어요.
+          <br className="tablet:hidden" /> 집계에는 한 번만 들어가요.
+        </p>
       </Modal>
 
       <Modal open={modal === 'explain'} onClose={close} compactSheet title="이렇게 판단했어요">
