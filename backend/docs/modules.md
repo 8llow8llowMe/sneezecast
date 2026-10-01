@@ -123,7 +123,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | `region` | 회원이 선택한 행정동 |
 | `notification` | PWA 푸시 구독, 안내 발행 시 팬아웃 발송, 발송 로그 (2단계) |
 
-- 스키마: MySQL `auth`. Redis · MinIO 사용.
+- 스키마: MySQL `auth` (물리 DB 이름 `sneezecast_auth` — 공유 dev MySQL 에서 다른 프로젝트와 겹치지 않게 접두사를 붙인다). Redis · MinIO 사용.
 - **증상 보고를 저장하지 않는다.**
 - hondigagae auth-service 구조를 따른다 (반려견 `pet` 컨텍스트와 네이버 로그인은 제외).
 
@@ -168,7 +168,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | `advisory` | 운영자 검토, AI 초안, 승인·수정·발행 이력, 공개 안내 |
 | `official` | 질병관리청 감시 자료 조회 (자가보고와 분리) |
 
-- 스키마: MySQL `surveillance`, **auth 와 다른 DB 계정**.
+- 스키마: MySQL `surveillance` (물리 DB 이름 `sneezecast_surveillance`), **auth 와 다른 DB 계정**.
 - **`member_id` 를 저장하지 않는다.** 보고자는 가명 키(`reporter_key`)로만 식별한다. 예외는 운영자 감사 컬럼(`operator_id`)뿐이다.
 - 테이블 · 컬럼 정본은 [entity-design.md §2 · §3](entity-design.md#2-surveillance--자가보고와-안내).
 
@@ -184,7 +184,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - SGIS 행정동 마스터 적재 (연 1회 수동), 질병관리청 전수신고 API 주간 적재, 표본감시(감염병포털 화면 데이터) 주간 적재. 잡 · 주기 · Quartz 규칙은 [entity-design.md §4](entity-design.md#4-batch-service--적재-잡과-스케줄).
 - **상주 서비스 안의 Quartz 스케줄러**가 Spring Batch 잡을 실행한다 (hondigagae batch-service 와 같은 구성). 잡 스토어는 in-memory — JDBC 스토어를 쓰면 surveillance 스키마에 `QRTZ_*` 테이블만 는다. 주기 트리거는 코드(`QuartzScheduleConfig`)가 들고, 스레드는 1개.
 - 기동 시 잡 자동 실행은 끈다 (`spring.batch.job.enabled: false`). 수동 실행은 잡 이름을 지정해서만 한다.
-- Spring Batch 메타 테이블(`BATCH_*`)은 **surveillance 스키마**에 둔다 (hondigagae 와 같이 적재 대상 스키마에, 데이터소스 하나). 접속 계정은 surveillance-service 와 다른 적재용 계정이다. 메타 테이블은 dev 에서 애플리케이션이 만들고, prod 는 DB 담당자가 직접 적용한다. 기본값은 `never` 로 둔다 — 새 프로필이 조용히 DDL 을 도는 쪽이 더 위험하다.
+- Spring Batch 메타 테이블(`BATCH_*`)은 **surveillance 스키마**(`sneezecast_surveillance`)에 둔다 (hondigagae 와 같이 적재 대상 스키마에, 데이터소스 하나). 접속 계정은 surveillance-service 와 다른 적재용 계정이다. 메타 테이블은 dev 에서 애플리케이션이 만들고, prod 는 DB 담당자가 직접 적용한다. 기본값은 `never` 로 둔다 — 새 프로필이 조용히 DDL 을 도는 쪽이 더 위험하다.
 - surveillance 스키마의 `district` · `official_surveillance` · `official_source_snapshot` 에 쓰기만 한다 (메타 테이블은 위). 적재는 멱등 upsert. **서비스별 스키마 원칙의 유일한 예외**다 (hondigagae batch → tour 스키마와 같은 관계). 대상 테이블 구조는 surveillance 가 정본이다 ([entity-design.md §3](entity-design.md#3-surveillance--외부-원천-적재)).
 - **JPA 를 쓰지 않는다** — 쓰기는 JDBC. 엔티티가 없으니 `ddl-auto` 도 없고, batch 가 돌리는 DDL 은 dev 의 `BATCH_*` 생성뿐이다. 대상 테이블에 엔티티를 두면 구조가 surveillance 와 둘로 갈라진다.
 - 주기 실행 스위치 `BATCH_SCHEDULE_ENABLED`(`batch.schedule.enabled`) — 정확히 `true` 이고 `spring.batch.job.enabled` 가 false 일 때만 스케줄러가 시작된다. 기본 dev 켜짐 · prod 꺼짐 (첫 적재 잡을 dev 에서 관찰한 뒤 켠다). 잡 트리거는 반드시 `QuartzScheduleConfig` 안에 `@Bean` 으로 둔다 — 밖에 두면 스위치가 닿지 않는다.

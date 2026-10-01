@@ -9,6 +9,7 @@
 3. [docs/coding-conventions.md](docs/coding-conventions.md) — 네이밍, 예외, 영속성, Feign, 로그
 4. [docs/entity-design.md](docs/entity-design.md) — 테이블 · 컬럼 · 인덱스 · enum (1단계 핵심 기능)
 5. [docs/data-api-analysis.md](docs/data-api-analysis.md) — 외부 원천(SGIS · 질병관리청) 명세와 테이블 매핑
+6. [docs/deploy-guide.md](docs/deploy-guide.md) — 개발 서버 배포: 포트표, PR 라벨 → Jenkins 흐름, Vault 두 층 · 필수 키, 서버 준비 체크리스트
 
 도메인 불변식(보고·집계·자료 부족·운영자 검토·개인정보)은 루트 [`CLAUDE.md`](../CLAUDE.md) 가 정본이다.
 
