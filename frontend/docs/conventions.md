@@ -34,7 +34,7 @@ frontend/
 - **`lib` · `components` · `types` 는 `features` 를 import 하지 않는다** (ESLint 로 막는다). 의존 방향은 `app → features → components · lib · types` 다.
 - `src/types/` 는 아직 없다. 처음 쓰는 PR 에서 만든다.
 - 화면 하나는 `src/features/<도메인>/` 에 데이터 모델(`types.ts`) · 화면 조각 · 조립(`*-screen.tsx`)을 둔다. `app/**/page.tsx` 는 데이터를 구해 조립 컴포넌트에 넘기기만 한다 (예: `features/home`).
-- 여러 화면이 같이 쓰는 데이터는 화면이 아니라 데이터 도메인에 둔다. 행정동(`features/region`)은 홈 · 첫 진입이 같이 쓴다. 도메인끼리 서로 모르게 해야 하면 `app/` 에서 맞춘다 (홈 `?region=` 은 `app/page.tsx` 가 `findDistrict` 로 이름을 덮어쓴다).
+- 여러 화면이 같이 쓰는 데이터는 화면이 아니라 데이터 도메인에 둔다. 행정동(`features/region`)은 홈 · 첫 진입이 같이 쓴다. 도메인끼리 서로 모르게 해야 하면 `app/` 에서 맞춘다 (홈 `?region=` 은 `app/(home)/page.tsx` 가 `findDistrict` 로 이름을 덮어쓴다).
 
 ## import
 
@@ -60,7 +60,7 @@ frontend/
 | 글자            | `text-status` · `text-status-desktop` · `text-screen-title` · `text-section-title` · `text-body` · `text-body-strong` · `text-sub` · `text-caption` · `text-tab`                 |
 | 첫 진입         | `text-setup-title`(24) · `text-start-title`(28) · `text-start-title-tablet`(38) · `text-hero-title`(36) · `text-lead`(18) · `text-body-large`(16) · `rounded-checkbox`(6)        |
 | 이미지 위       | `bg-image-cover`(덮개 0.42) · `text-on-image-sub`(흰 0.85) · `border-on-image-line`(흰 0.5) — 흰 글자는 `text-bg`                                                                |
-| 모서리          | `rounded-card` · `rounded-button` · `rounded-chip` · `rounded-sheet` · `rounded-dialog` · `rounded-small` · `rounded-bar`(2) · `rounded-progress`(4)                             |
+| 모서리          | `rounded-card` · `rounded-button` · `rounded-chip` · `rounded-sheet` · `rounded-dialog` · `rounded-small` · `rounded-bar`(2) · `rounded-progress`(4) · `rounded-skeleton`(6)     |
 | 테두리 · 투명도 | `border-hairline`(1) · `border-emphasis`(1.5) · `border-selected`(2) · `opacity-disabled`(0.5) · `stroke-opacity-inactive`(0.28) — `globals.css` 의 이름 있는 유틸리티           |
 | 오버레이        | `text-sheet-title`(22) · `text-dialog-title`(24) · `w-dialog-tablet`(520) · `w-dialog-desktop`(480) · `max-w-dialog` · `max-h-modal` · `pb-sheet` · `pb-safe` · `tracking-brand` |
 | 간격 · 크기     | `px-page-mobile` · `px-page-tablet` · `px-page-desktop` · `h-band` · `min-h-touch` · `size-touch` · `h-button` · `h-button-sm` · `h-tab-bar` · `h-header-desktop`                |
@@ -97,6 +97,10 @@ frontend/
 | `AlertBox`                 | 로그인 실패 · 안내 · 잠김         | `tone`: danger(`role=alert`) · info · neutral(`role=status`) / `action` — 여러 줄 문장 + 아래 버튼. 한 줄 안내는 `Callout`                                                                                                                                                                                 |
 | `KakaoButton`              | 카카오로 계속하기                 | 높이 56 — 색은 카카오 가이드 값을 이 컴포넌트에만 둔다(토큰 밖 예외, 근거 주석)                                                                                                                                                                                                                            |
 | `Checkbox`                 | 성인 확인 · 동의                  | `checked` · `onChange` · `label` / `size`: lg(17 굵게) · md(15) — 네이티브 체크 상자를 숨기고 모양만 그린다                                                                                                                                                                                                |
+| `LoadingState`             | 불러오는 중 (홈 · 내 정보 경계)   | `nav`(지금 메뉴 — 탭바 · 머리줄, 하단 버튼 자리는 홈만)                                                                                                                                                                                                                                                    |
+| `Skeleton`                 | 불러오는 중 막대                  | `shape`: bar(6) · button(12) — 크기는 `className`                                                                                                                                                                                                                                                          |
+| `ErrorState`               | 오류 (`app/error.tsx`)            | `onRetry`(라우트는 Next `retry`) · `nav` — 자료를 대신 보이지 않는다                                                                                                                                                                                                                                       |
+| `OfflineNotice`            | 홈 알림 줄의 오프라인 띠          | `offline`(`useOnline()`) · `receivedAt`(모르면 시각 없이) — 바깥 `aria-live` 는 늘 그려 둔다                                                                                                                                                                                                               |
 | 아이콘 (`icons.tsx`)       | 시안의 선 아이콘                  | `size` — 색은 글자색(`currentColor`)을 따른다                                                                                                                                                                                                                                                              |
 
 - `className` 은 바깥 배치(여백 · 정렬 · 폭)에만 쓴다. 색 · 크기 · 모서리는 컴포넌트가 고르는 값으로 바꾼다.
@@ -115,6 +119,9 @@ frontend/
   - 레이아웃으로 묶을 수 없는 공개 화면(공식 정보 `/official`)은 Provider 대신 이 문서를 처음 연 주소(Navigation Timing)로 판단한다 (`features/official/back.ts`). 처음 연 주소가 그 화면이 아니면 `router.back()`, 그 화면이면 홈으로 `router.replace` 다. 한계: 그 화면을 바로 열고 홈을 거쳐 다시 오거나, 새로고침하거나, bfcache 없이 브라우저 뒤로로 돌아오면 홈으로 replace 해 기록에 홈이 두 번 남는다. 다른 문서에서 그 화면으로 `router.replace` 하는 경로를 만들면 뒤로가 사이트 밖으로 나갈 수 있어 판단을 함께 바꾼다.
   - 동네 안내 `/notice/…` 는 들어가는 링크(`NoticeLink`)가 남긴 표시를 안내 화면이 마운트할 때 소비해 판단한다(`features/notice/notice-entry.ts`). 표시는 한 번만 쓰므로 새로고침 · 새 탭 · 휴대폰 뒤로 · 앞으로로 다시 그린 안내의 뒤로는 앞 기록과 무관하게 홈으로 replace 한다.
   - `/install` 은 진입 링크가 `markInstallEntry` 를 부르고 화면이 마운트 때 소비해 판단한다(`features/install/install-entry.ts`). 진입 링크마다 표시를 남겨야 하고, `router.replace('/install')` 로 들어오는 경로는 두지 않는다. 새로고침 · 새 탭이면 표시가 없어 홈으로 replace 한다.
+- **로딩 경계(`loading.tsx`)는 루트에 두지 않고 주요 메뉴 화면에만 둔다** (`app/(home)/loading.tsx` · `app/me/loading.tsx`). 루트에 두면 모든 경로가 Suspense 안에서 스트리밍되어 `notFound()` 가 404 대신 200 으로 나간다. 홈을 괄호 폴더 `(home)` 에 둔 것도 경계를 홈에만 걸기 위해서다(주소는 `/`).
+- **브라우저 연결 상태는 `src/lib/use-online.ts` 의 `useOnline()` 으로만 읽는다.** 서버 그림과 하이드레이션 첫 그림은 늘 온라인이다(SSR 불일치 방지). 오프라인 안내는 화면 전체를 바꾸지 않고 띠(`OfflineNotice`)로 보인다.
+- **로그인 만료는 `src/lib/session-expiry.ts` 의 `notifySessionExpired()` 하나로 알린다.** 루트 레이아웃의 `features/auth/session-expiry-watcher.tsx` 가 세션을 비우고 `/login?reason=expired` 로 `replace` 한다. 연동 때 API 계층의 401 처리가 부르고, 화면 코드는 401 을 따로 다루지 않는다.
 - **회원만 보는 화면의 가드는 하이드레이션을 마친 뒤 판단한다.** 서버와 하이드레이션 첫 그림의 회원 상태는 늘 `guest` 라(`useMockAuth`) 그 값으로 로그인에 보내면 회원도 튕긴다. `src/lib/use-hydrated.ts` 가 true 인 그림의 상태로만 판단하고 Next 라우터(`router.replace`)로 보낸다 (`features/me/member-gate.ts`).
 - **router 내비게이션이 대기 중일 때 `history.replaceState` · `pushState` 를 부르면 Next 가 그 내비게이션을 버린다 — 가드가 보낼 곳이 있으면 주소 정리를 하지 않는다.** 원시 history 변경이 Next 의 복원(ACTION_RESTORE)을 일으켜 대기 중인 `router.replace` 가 버려진다(프로덕션 빌드에서 재현). 같은 그림에서 주소 쿼리를 정리하는 화면(홈의 `?report=` · 내 정보의 `?confirm=` 정리)은 `useRequiredStepsGate` · `useRequiredStepsTarget`(`features/me/member-gate.ts`)이 돌려준 보낼 곳이 있으면 정리를 건너뛴다.
 - **레이아웃 · 정적 라우트에서 `useSearchParams` 를 읽는 클라이언트 컴포넌트는 `<Suspense>` 로 감싼다.** 감싸지 않으면 `next build` 의 정적 생성이 `missing-suspense-with-csr-bailout` 으로 멈춘다(dev 서버에서는 드러나지 않는다). 하이드레이션 뒤에야 그리는 화면은 대체 그림을 비워 둔다(`app/me/layout.tsx` 의 가드, `app/(onboarding)/terms/reconsent/page.tsx`). 페이지가 `searchParams` 를 await 하면 동적 라우트라 필요 없다.
