@@ -12,5 +12,10 @@ eureka:
   client:
     register-with-eureka: false
     fetch-registry: false
+    # 서버에 내장된 클라이언트의 peer 주소. 지정하지 않으면 기본값 http://localhost:8761/eureka/ 가 남아,
+    # 단일 노드인데도 없는 포트(8761)를 peer 로 보고 대시보드에 unavailable-replicas 로 뜨고 경고 로그가 쌓인다.
+    # 자기 자신의 실제 포트를 가리키게 둔다 (sneezecast 는 내부 포트 = 호스트 포트라 SERVICE_DISCOVERY_PORT 그대로다).
+    serviceUrl:
+      defaultZone: http://localhost:${SERVICE_DISCOVERY_PORT}/eureka/
   server:
     enable-self-preservation: false

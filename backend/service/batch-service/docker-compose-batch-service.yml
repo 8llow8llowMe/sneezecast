@@ -1,0 +1,125 @@
+# sneezecast batch-service 배포 정의.
+#
+# 배치:
+#   dev  -> backend-1 (192.168.0.13), 호스트 포트 3080  (sneezecast dev 는 3xxx 대역)
+#   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4080  (sneezecast prod 는 4xxx 대역)
+#   (Infra README §4 배치 원칙 5번 · §7 sneezecast 배치 요약)
+#
+# 포트: 컨테이너 내부 포트 = 호스트 포트 = Vault BATCH_SERVICE_PORT (dev 3080 / prod 4080).
+#   파이프라인이 Jenkinsfile-batch-service 의 hostPorts 와 대조하고 다르면 배포 전에 실패한다.
+#
+# **서비스 포트는 외부 노출 대상이 아니다.** 인그레스(nginx)는 게이트웨이(3000)만 프록시한다.
+#   그래서 포트를 호스트 루프백(127.0.0.1)에만 publish 한다 — LAN 의 다른 호스트에서 닿지 않고, .13 에서 로컬 점검만 된다.
+#   batch 를 부르는 서비스는 없다. Eureka 등록은 브리지 IP 로 되므로 publish 범위와 무관하다.
+#   공개 API 가 없어 security-core 를 쓰지 않으므로 actuator 가 인증 없이 열린다.
+#
+# 서비스 간 통신:
+#   - discovery 는 사설 IP(SERVICE_DISCOVERY_HOSTNAME, dev 192.168.0.13) + SERVICE_DISCOVERY_PORT 로 붙는다.
+#   - MySQL(.11)은 다른 호스트라 사설 IP 로 접속한다.
+#
+# Vault: 공통 + kv/sneezecast/backend/{env}/batch-service
+#
+# 상주 프로세스 + Quartz
+#   주기 실행은 프로세스 안 Quartz 가 맡는다. 스위치는 BATCH_SCHEDULE_ENABLED 이고 Vault 값을 그대로 넘긴다.
+#   Vault 에 없으면 아래 서비스 블록이 프로필 기본값(dev true / prod false)을 넘긴다 — 빈 문자열을 넘기면
+#   application.yml 의 기본값이 적용되지 않고 "꺼짐" 으로 해석되기 때문이다.
+#   Spring Batch 메타 테이블(BATCH_*)은 dev 에서 애플리케이션이 만들고(initialize-schema: always),
+#   prod 는 DB 담당자가 직접 적용한다 (backend/docs/deploy-guide.md "MySQL 스키마 · 계정").
+#
+# 배포와 적재는 분리한다
+#   기동 시 잡을 자동 실행하지 않는다(spring.batch.job.enabled=false). 적재는 외부 API 상태에 좌우되므로
+#   배포 파이프라인에 넣지 않는다.
+#
+#   수동으로 한 잡만 돌릴 때. 같은 컨테이너 안에 두 번째 JVM 이 뜨므로 메모리 상한을 낮추고
+#   웹 · Eureka 를 끈다(포트 재바인딩 · 중복 등록 방지). spring.batch.job.enabled=true 가 스케줄러도 끈다:
+#     docker exec sneezecast-batch-service-dev \
+#       java -XX:MaxRAMPercentage=25 -XX:InitialRAMPercentage=5 -jar /app/batch-service.jar \
+#         --spring.main.web-application-type=none \
+#         --eureka.client.enabled=false \
+#         --spring.batch.job.enabled=true \
+#         --spring.batch.job.name=<잡 이름> <잡 파라미터...>
+
+x-batch-service-environment: &batch_service_environment
+  TIME_ZONE: ${TIME_ZONE:-Asia/Seoul}
+  # prod 로 띄우면서 이 값이 dev 로 남으면 BATCH_* 메타 테이블 DDL 이 운영에서 돈다.
+  # 파이프라인이 배포 환경과 같은지 검사한다.
+  SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+  BATCH_SERVICE_PORT: ${BATCH_SERVICE_PORT}
+  SERVICE_DISCOVERY_HOSTNAME: ${SERVICE_DISCOVERY_HOSTNAME}
+  SERVICE_DISCOVERY_PORT: ${SERVICE_DISCOVERY_PORT}
+  # surveillance 스키마(`sneezecast_surveillance` — 적재 대상 + BATCH_* 메타 테이블). surveillance-service 와 다른 적재 전용 계정이다.
+  BATCH_DB_URL: ${BATCH_DB_URL}
+  BATCH_DB_USERNAME: ${BATCH_DB_USERNAME}
+  BATCH_DB_PASSWORD: ${BATCH_DB_PASSWORD}
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+services:
+  batch-service-dev:
+    image: sneezecast-batch-service:latest
+    container_name: sneezecast-batch-service-dev
+    labels:
+      observability.project: sneezecast
+      observability.group: service
+      observability.service: batch-service
+      observability.env: dev
+      observability.application: batch-service
+      observability.deployment: sneezecast-batch-service-dev
+    build:
+      context: .
+      dockerfile: batch-service.Dockerfile
+    ports:
+      - "127.0.0.1:${BATCH_SERVICE_PORT}:${BATCH_SERVICE_PORT}" # 호스트 루프백에만 publish — LAN 비노출 (이 서비스를 부르는 쪽이 없다)
+    environment:
+      <<: *batch_service_environment
+      # dev 기본 켜짐 (application-dev.yml 과 같다). 끄려면 Vault 에 BATCH_SCHEDULE_ENABLED=false.
+      BATCH_SCHEDULE_ENABLED: ${BATCH_SCHEDULE_ENABLED:-true}
+    # 컨테이너 메모리 상한. JVM heap 은 Dockerfile 의 MaxRAMPercentage 가 이 값을 기준으로 산정한다.
+    # 수동 잡 실행은 같은 상한 안에 두 번째 JVM 을 띄운다 (위 주석의 MaxRAMPercentage=25).
+    deploy:
+      resources:
+        limits:
+          memory: ${BATCH_SERVICE_MEM_LIMIT_DEV:-512m}
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+    networks:
+      - 8llow8llowme-net
+
+  batch-service-prod:
+    image: sneezecast-batch-service:latest
+    container_name: sneezecast-batch-service-prod
+    labels:
+      observability.project: sneezecast
+      observability.group: service
+      observability.service: batch-service
+      observability.env: prod
+      observability.application: batch-service
+      observability.deployment: sneezecast-batch-service-prod
+    build:
+      context: .
+      dockerfile: batch-service.Dockerfile
+    ports:
+      - "127.0.0.1:${BATCH_SERVICE_PORT}:${BATCH_SERVICE_PORT}" # 호스트 루프백에만 publish — LAN 비노출 (이 서비스를 부르는 쪽이 없다)
+    environment:
+      <<: *batch_service_environment
+      # prod 기본 꺼짐 (application-prod.yml 과 같다). 첫 적재 잡을 dev 에서 관찰한 뒤 Vault 에 true 를 넣는다.
+      BATCH_SCHEDULE_ENABLED: ${BATCH_SCHEDULE_ENABLED:-false}
+    deploy:
+      resources:
+        limits:
+          memory: ${BATCH_SERVICE_MEM_LIMIT_PROD:-768m}
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+    networks:
+      - 8llow8llowme-net
+
+networks:
+  8llow8llowme-net:
+    name: 8llow8llowme-net
+    external: true

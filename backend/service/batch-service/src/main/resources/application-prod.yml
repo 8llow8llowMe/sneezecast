@@ -12,7 +12,7 @@ server:
 
 spring:
   datasource:
-    # MySQL surveillance 스키마. 적재 대상(district · official_surveillance)과 Spring Batch 메타 테이블(BATCH_*)이 함께 있다.
+    # MySQL surveillance 스키마(`sneezecast_surveillance`). 적재 대상(district · official_surveillance)과 Spring Batch 메타 테이블(BATCH_*)이 함께 있다.
     # 계정은 surveillance-service 와 다른 적재 전용 계정이다 — 권한을 적재 대상 · 메타 테이블로 좁힐 수 있게 한다.
     # JPA 를 쓰지 않으므로 ddl-auto 가 없다. 대상 테이블 구조는 surveillance 가 정본이고 batch 는 DDL 을 돌리지 않는다.
     driver-class-name: com.mysql.cj.jdbc.Driver

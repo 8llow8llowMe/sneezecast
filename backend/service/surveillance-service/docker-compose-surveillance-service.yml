@@ -1,0 +1,107 @@
+# sneezecast surveillance-service 배포 정의.
+#
+# 배치:
+#   dev  -> backend-1 (192.168.0.13), 호스트 포트 3082  (sneezecast dev 는 3xxx 대역)
+#   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4082  (sneezecast prod 는 4xxx 대역)
+#   (Infra README §4 배치 원칙 5번 · §7 sneezecast 배치 요약)
+#
+# 포트: 컨테이너 내부 포트 = 호스트 포트 = Vault SURVEILLANCE_SERVICE_PORT (dev 3082 / prod 4082).
+#   파이프라인이 Jenkinsfile-surveillance-service 의 hostPorts 와 대조하고 다르면 배포 전에 실패한다.
+#
+# **서비스 포트는 외부 노출 대상이 아니다.** 인그레스(nginx)는 게이트웨이(3000)만 프록시한다.
+#   그래서 포트를 호스트 루프백(127.0.0.1)에만 publish 한다 — LAN 의 다른 호스트에서 닿지 않고, .13 에서 로컬 점검만 된다.
+#   게이트웨이는 이 포트가 아니라 Eureka 에 등록된 브리지 IP 로 컨테이너에 직접 붙으므로 영향이 없다.
+#   폐기 토큰 차단은 게이트웨이 블랙리스트에 맡기므로(이 서비스는 Redis 를 쓰지 않는다) 직결하면 폐기 토큰이 통과한다.
+#
+# 서비스 간 통신:
+#   - discovery 는 사설 IP(SERVICE_DISCOVERY_HOSTNAME, dev 192.168.0.13) + SERVICE_DISCOVERY_PORT 로 붙는다.
+#   - MySQL(.11)은 다른 호스트라 사설 IP 로 접속한다.
+#
+# Vault: 공통 + kv/sneezecast/backend/{env}/surveillance-service
+#   REPORTER_KEY_PEPPER 는 이 서비스 경로에만 있고 이 compose 만 컨테이너에 넘긴다.
+
+x-surveillance-service-environment: &surveillance_service_environment
+  TIME_ZONE: ${TIME_ZONE:-Asia/Seoul}
+  # prod 로 띄우면서 이 값이 dev 로 남으면 ddl-auto:update 로 운영 스키마가 배포마다 바뀐다.
+  # 파이프라인이 배포 환경과 같은지 검사한다.
+  SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+  # 게이트웨이 라우트(lb://${SURVEILLANCE_SERVICE_APP_NAME})와 같은 값이어야 해서 공통 키를 그대로 쓴다.
+  SPRING_APPLICATION_NAME: ${SURVEILLANCE_SERVICE_APP_NAME}
+  SURVEILLANCE_SERVICE_PORT: ${SURVEILLANCE_SERVICE_PORT}
+  SERVICE_DISCOVERY_HOSTNAME: ${SERVICE_DISCOVERY_HOSTNAME}
+  SERVICE_DISCOVERY_PORT: ${SERVICE_DISCOVERY_PORT}
+  # MySQL surveillance 스키마(`sneezecast_surveillance`) 전용 계정. auth 와 다른 계정이다 — 신원과 가명 증상을 한 계정으로 결합할 수 없게 한다.
+  SURVEILLANCE_DB_URL: ${SURVEILLANCE_DB_URL}
+  SURVEILLANCE_DB_USERNAME: ${SURVEILLANCE_DB_USERNAME}
+  SURVEILLANCE_DB_PASSWORD: ${SURVEILLANCE_DB_PASSWORD}
+  # auth-service · 게이트웨이와 같은 공통 항목. 다르면 모든 토큰이 401 이 된다.
+  JWT_ACCESS_KEY: ${JWT_ACCESS_KEY}
+  # reporter_key = HMAC-SHA256(pepper, memberId). 32자 미만이면 기동 실패. 교체 금지 (교체 = 전 행 재키잉).
+  REPORTER_KEY_PEPPER: ${REPORTER_KEY_PEPPER}
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+services:
+  surveillance-service-dev:
+    image: sneezecast-surveillance-service:latest
+    container_name: sneezecast-surveillance-service-dev
+    labels:
+      observability.project: sneezecast
+      observability.group: service
+      observability.service: surveillance-service
+      observability.env: dev
+      observability.application: ${SURVEILLANCE_SERVICE_APP_NAME}
+      observability.deployment: sneezecast-surveillance-service-dev
+    build:
+      context: .
+      dockerfile: surveillance-service.Dockerfile
+    ports:
+      - "127.0.0.1:${SURVEILLANCE_SERVICE_PORT}:${SURVEILLANCE_SERVICE_PORT}" # 호스트 루프백에만 publish — LAN 비노출 (게이트웨이는 브리지 IP 로 직접 호출)
+    environment:
+      <<: *surveillance_service_environment
+    # 컨테이너 메모리 상한. JVM heap 은 Dockerfile 의 MaxRAMPercentage 가 이 값을 기준으로 산정한다.
+    deploy:
+      resources:
+        limits:
+          memory: ${SURVEILLANCE_SERVICE_MEM_LIMIT_DEV:-512m}
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+    networks:
+      - 8llow8llowme-net
+
+  surveillance-service-prod:
+    image: sneezecast-surveillance-service:latest
+    container_name: sneezecast-surveillance-service-prod
+    labels:
+      observability.project: sneezecast
+      observability.group: service
+      observability.service: surveillance-service
+      observability.env: prod
+      observability.application: ${SURVEILLANCE_SERVICE_APP_NAME}
+      observability.deployment: sneezecast-surveillance-service-prod
+    build:
+      context: .
+      dockerfile: surveillance-service.Dockerfile
+    ports:
+      - "127.0.0.1:${SURVEILLANCE_SERVICE_PORT}:${SURVEILLANCE_SERVICE_PORT}" # 호스트 루프백에만 publish — LAN 비노출 (게이트웨이는 브리지 IP 로 직접 호출)
+    environment:
+      <<: *surveillance_service_environment
+    deploy:
+      resources:
+        limits:
+          memory: ${SURVEILLANCE_SERVICE_MEM_LIMIT_PROD:-768m}
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+    networks:
+      - 8llow8llowme-net
+
+networks:
+  8llow8llowme-net:
+    name: 8llow8llowme-net
+    external: true

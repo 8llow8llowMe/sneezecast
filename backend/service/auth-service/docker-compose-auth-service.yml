@@ -1,0 +1,127 @@
+# sneezecast auth-service 배포 정의.
+#
+# 배치:
+#   dev  -> backend-1 (192.168.0.13), 호스트 포트 3081  (sneezecast dev 는 3xxx 대역)
+#   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4081  (sneezecast prod 는 4xxx 대역)
+#   (Infra README §4 배치 원칙 5번 · §7 sneezecast 배치 요약)
+#
+# 포트: 컨테이너 내부 포트 = 호스트 포트 = Vault AUTH_SERVICE_PORT (dev 3081 / prod 4081).
+#   파이프라인이 Jenkinsfile-auth-service 의 hostPorts 와 대조하고 다르면 배포 전에 실패한다.
+#
+# **서비스 포트는 외부 노출 대상이 아니다.** 인그레스(nginx)는 게이트웨이(3000)만 프록시한다.
+#   그래서 포트를 호스트 루프백(127.0.0.1)에만 publish 한다 — LAN 의 다른 호스트에서 닿지 않고, .13 에서 로컬 점검만 된다.
+#   게이트웨이는 이 포트가 아니라 Eureka 에 등록된 브리지 IP 로 컨테이너에 직접 붙으므로 영향이 없다.
+#   actuator(health, info, prometheus)가 인증 없이 열려 있고, 블랙리스트 확인 · 회원 헤더 제거는 게이트웨이가 한다.
+#   혼디가개처럼 /api/v1/auth 를 nginx 에서 auth 로 직결하는 라우트를 만들지 않는다.
+#
+# 서비스 간 통신:
+#   - discovery 는 사설 IP(SERVICE_DISCOVERY_HOSTNAME, dev 192.168.0.13) + SERVICE_DISCOVERY_PORT 로 붙는다.
+#   - MySQL(.11) · Redis Sentinel(.11/.13/.12) · MinIO(.12)는 다른 호스트라 사설 IP 로 접속한다.
+#
+# Vault: 공통 + kv/sneezecast/backend/{env}/auth-service
+#   **REPORTER_KEY_PEPPER 를 넘기지 않는다.** pepper 와 auth DB 계정이 한 프로세스에 모이면 회원과 가명 보고를
+#   이을 수 있다. 파이프라인은 이 잡에서 surveillance-service 경로를 읽지 않고, 여기서도 키를 매핑하지 않는다.
+
+x-auth-service-environment: &auth_service_environment
+  TIME_ZONE: ${TIME_ZONE:-Asia/Seoul}
+  # prod 로 띄우면서 이 값이 dev 로 남으면 ddl-auto:update 로 운영 스키마가 배포마다 바뀐다.
+  # 파이프라인이 배포 환경과 같은지 검사한다.
+  SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+  # 게이트웨이 라우트(lb://${AUTH_SERVICE_APP_NAME})와 같은 값이어야 해서 공통 키를 그대로 쓴다.
+  SPRING_APPLICATION_NAME: ${AUTH_SERVICE_APP_NAME}
+  AUTH_SERVICE_PORT: ${AUTH_SERVICE_PORT}
+  SERVICE_DISCOVERY_HOSTNAME: ${SERVICE_DISCOVERY_HOSTNAME}
+  SERVICE_DISCOVERY_PORT: ${SERVICE_DISCOVERY_PORT}
+  # MySQL auth 스키마(`sneezecast_auth`) 전용 계정. surveillance · batch 와 다른 계정이다.
+  AUTH_DB_URL: ${AUTH_DB_URL}
+  AUTH_DB_USERNAME: ${AUTH_DB_USERNAME}
+  AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD}
+  # access-key 는 게이트웨이 · surveillance 와 같은 공통 항목, refresh-key 는 auth 전용. 둘 다 HS512 64바이트 이상.
+  JWT_ACCESS_KEY: ${JWT_ACCESS_KEY}
+  JWT_REFRESH_KEY: ${JWT_REFRESH_KEY}
+  # access 15분을 넘기면 기동 실패. 기본값은 application-*.yml 과 같다.
+  JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION:-PT15M}
+  JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-P14D}
+  REDIS_MASTER_NAME: ${REDIS_MASTER_NAME}
+  REDIS_SENTINEL_NODES: ${REDIS_SENTINEL_NODES}
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
+  # 게이트웨이와 같은 값이어야 한다 (access token 블랙리스트 키를 auth 가 쓰고 게이트웨이가 읽는다).
+  REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-sneezecast}
+  REDIS_COMMAND_TIMEOUT: ${REDIS_COMMAND_TIMEOUT:-1s}
+  # MinIO 는 storage(192.168.0.12)에 있다. 다른 호스트라 컨테이너명이 아니라 사설 IP 로 접속한다.
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+  # DB 에는 오브젝트 키만 저장하고 응답 시 이 값으로 URL 을 조립한다.
+  MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL}
+  MINIO_BUCKET: ${MINIO_BUCKET}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+  MINIO_MAX_FILE_BYTES: ${MINIO_MAX_FILE_BYTES:-5242880}
+  # nginx client_max_body_size(6M)와 짝이다. 바꾸면 Infra 의 api-*.sneezecast.conf 도 함께 바꾼다.
+  MULTIPART_MAX_REQUEST_SIZE: ${MULTIPART_MAX_REQUEST_SIZE:-6MB}
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+services:
+  auth-service-dev:
+    image: sneezecast-auth-service:latest
+    container_name: sneezecast-auth-service-dev
+    labels:
+      observability.project: sneezecast
+      observability.group: service
+      observability.service: auth-service
+      observability.env: dev
+      observability.application: ${AUTH_SERVICE_APP_NAME}
+      observability.deployment: sneezecast-auth-service-dev
+    build:
+      context: .
+      dockerfile: auth-service.Dockerfile
+    ports:
+      - "127.0.0.1:${AUTH_SERVICE_PORT}:${AUTH_SERVICE_PORT}" # 호스트 루프백에만 publish — LAN 비노출 (게이트웨이는 브리지 IP 로 직접 호출)
+    environment:
+      <<: *auth_service_environment
+    # 컨테이너 메모리 상한. JVM heap 은 Dockerfile 의 MaxRAMPercentage 가 이 값을 기준으로 산정한다.
+    deploy:
+      resources:
+        limits:
+          memory: ${AUTH_SERVICE_MEM_LIMIT_DEV:-512m}
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+    networks:
+      - 8llow8llowme-net
+
+  auth-service-prod:
+    image: sneezecast-auth-service:latest
+    container_name: sneezecast-auth-service-prod
+    labels:
+      observability.project: sneezecast
+      observability.group: service
+      observability.service: auth-service
+      observability.env: prod
+      observability.application: ${AUTH_SERVICE_APP_NAME}
+      observability.deployment: sneezecast-auth-service-prod
+    build:
+      context: .
+      dockerfile: auth-service.Dockerfile
+    ports:
+      - "127.0.0.1:${AUTH_SERVICE_PORT}:${AUTH_SERVICE_PORT}" # 호스트 루프백에만 publish — LAN 비노출 (게이트웨이는 브리지 IP 로 직접 호출)
+    environment:
+      <<: *auth_service_environment
+    deploy:
+      resources:
+        limits:
+          memory: ${AUTH_SERVICE_MEM_LIMIT_PROD:-768m}
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+    networks:
+      - 8llow8llowme-net
+
+networks:
+  8llow8llowme-net:
+    name: 8llow8llowme-net
+    external: true

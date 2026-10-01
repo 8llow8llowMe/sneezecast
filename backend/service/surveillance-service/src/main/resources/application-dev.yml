@@ -4,7 +4,7 @@ server:
 
 spring:
   datasource:
-    # MySQL surveillance 스키마. auth 와 다른 DB 계정을 쓴다 — 신원과 가명 증상을 한 계정으로 결합할 수 없게 한다.
+    # MySQL surveillance 스키마(`sneezecast_surveillance`). auth 와 다른 DB 계정을 쓴다 — 신원과 가명 증상을 한 계정으로 결합할 수 없게 한다.
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${SURVEILLANCE_DB_URL}
     username: ${SURVEILLANCE_DB_USERNAME}
