@@ -23,16 +23,18 @@ frontend/
 │   └── globals.css      # Tailwind 진입점 + 토큰 → 테마 매핑
 ├── src/
 │   ├── components/      # 도메인을 모르는 공통 UI (버튼, 리스트 행, 바텀시트 …)
-│   ├── features/<도메인>/ # 화면별 UI (home, report, map, notice, official, admin …)
+│   ├── features/<도메인>/ # 화면별 UI (home, report, onboarding, region, map, notice, official, admin …)
 │   ├── lib/             # 로직. api/ 는 API 호출 계층, env.client.ts 는 공개 환경변수
 │   ├── styles/          # tokens.css (토큰 정본) 와 토큰 검사 테스트
 │   └── types/           # 공용 타입
+├── public/              # 정적 파일. 시안에서 뽑은 그림(onboarding/neighborhood.svg)
 └── docs/                # 규칙 정본과 시안 원본
 ```
 
 - **`lib` · `components` · `types` 는 `features` 를 import 하지 않는다** (ESLint 로 막는다). 의존 방향은 `app → features → components · lib · types` 다.
 - `src/types/` 는 아직 없다. 처음 쓰는 PR 에서 만든다.
 - 화면 하나는 `src/features/<도메인>/` 에 데이터 모델(`types.ts`) · 화면 조각 · 조립(`*-screen.tsx`)을 둔다. `app/**/page.tsx` 는 데이터를 구해 조립 컴포넌트에 넘기기만 한다 (예: `features/home`).
+- 여러 화면이 같이 쓰는 데이터는 화면이 아니라 데이터 도메인에 둔다. 행정동(`features/region`)은 홈 · 첫 진입이 같이 쓴다. 도메인끼리 서로 모르게 해야 하면 `app/` 에서 맞춘다 (홈 `?region=` 은 `app/page.tsx` 가 `findDistrict` 로 이름을 덮어쓴다).
 
 ## import
 
@@ -56,6 +58,8 @@ frontend/
 | 색              | `text-fg` · `text-fg-sub` · `text-fg-muted` · `bg-bg` · `bg-section` · `border-divider` · `bg-brand` · `bg-info-bg` · `text-danger` · `bg-dim`                                   |
 | 상태            | `bg-status-normal` · `text-status-normal-text` (slight · high · insufficient 같은 형식)                                                                                          |
 | 글자            | `text-status` · `text-status-desktop` · `text-screen-title` · `text-section-title` · `text-body` · `text-body-strong` · `text-sub` · `text-caption` · `text-tab`                 |
+| 첫 진입         | `text-setup-title`(24) · `text-start-title`(28) · `text-start-title-tablet`(38) · `text-hero-title`(36) · `text-lead`(18) · `text-body-large`(16) · `rounded-checkbox`(6)        |
+| 이미지 위       | `bg-image-cover`(덮개 0.42) · `text-on-image-sub`(흰 0.85) · `border-on-image-line`(흰 0.5) — 흰 글자는 `text-bg`                                                                |
 | 모서리          | `rounded-card` · `rounded-button` · `rounded-chip` · `rounded-sheet` · `rounded-dialog` · `rounded-small` · `rounded-bar`(2) · `rounded-progress`(4)                             |
 | 테두리 · 투명도 | `border-hairline`(1) · `border-emphasis`(1.5) · `border-selected`(2) · `opacity-disabled`(0.5) · `stroke-opacity-inactive`(0.28) — `globals.css` 의 이름 있는 유틸리티           |
 | 오버레이        | `text-sheet-title`(22) · `text-dialog-title`(24) · `w-dialog-tablet`(520) · `w-dialog-desktop`(480) · `max-w-dialog` · `max-h-modal` · `pb-sheet` · `pb-safe` · `tracking-brand` |
@@ -75,7 +79,7 @@ frontend/
 
 | 컴포넌트                   | 쓰는 곳 (시안)                    | 고르는 값                                                                                                             |
 | -------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `Button`                   | 하단 고정 버튼 · 헤더 · 보고 완료 | `variant`: primary · secondary · text / `size`: lg(56) · sm(44) / `fullWidth`                                         |
+| `Button`                   | 하단 고정 버튼 · 헤더 · 보고 완료 | `variant`: primary · secondary · text · subtle(회색 글자) / `size`: lg(56) · sm(44) / `fullWidth`                     |
 | `Badge`                    | 공식 정보 행 · 동네 안내 · 지도   | `kind`: official(공식) · citizen(시민 자가보고) · review(운영자 검토)                                                 |
 | `StatusWord`               | 홈 상태 카드                      | `status`                                                                                                              |
 | `StatusGauge`              | 홈 상태 카드                      | `status` — 자료 부족이면 회색 · 점 없음                                                                               |
@@ -89,6 +93,7 @@ frontend/
 | `IconButton`               | 알림 설정 · 닫기 · 이전 단계      | `label`(필수) · `icon`                                                                                                |
 | `ChoiceButton`             | 보고 선택지                       | `label` · `hint`(설명으로 읽힘) / `selected`(여러 개 고르기 — `aria-pressed`) / `size`: lg(64) · md(56)               |
 | `Callout`                  | 보고 수정 안내 · 홈 상단 알림     | `tone`: info · neutral / `icon`                                                                                       |
+| `Checkbox`                 | 성인 확인 · 동의                  | `checked` · `onChange` · `label` / `size`: lg(17 굵게) · md(15) — 네이티브 체크 상자를 숨기고 모양만 그린다           |
 | 아이콘 (`icons.tsx`)       | 시안의 선 아이콘                  | `size` — 색은 글자색(`currentColor`)을 따른다                                                                         |
 
 - `className` 은 바깥 배치(여백 · 정렬 · 폭)에만 쓴다. 색 · 크기 · 모서리는 컴포넌트가 고르는 값으로 바꾼다.
@@ -102,6 +107,8 @@ frontend/
 ## 데이터와 환경변수
 
 - **`자료 부족` 의 수치는 타입에서 막는다.** 화면 데이터 모델은 상태로 갈리는 유니온으로 두고, `insufficient` 쪽에는 증상 비율 · 기준선 · 증상별 변화 필드를 아예 두지 않는다 (`features/home/types.ts`). 화면 코드가 실수로 수치를 그리면 타입 오류가 난다.
+- **페이지 사이에 넘기는 값은 라우트 레이아웃의 Provider(React context)에 둔다** (`app/(onboarding)/layout.tsx` 의 고른 동네 · 성인 확인). 괄호 폴더(route group)는 주소를 바꾸지 않고 여러 화면을 한 레이아웃으로 묶는다. 레이아웃은 그 화면들 사이를 오가도 다시 그려지지 않는다. 새로고침하면 사라지므로 다음 단계는 값이 없으면 앞 단계로 `replace` 한다.
+- **단계 화면의 "뒤로" 는 기록을 쌓지 않는다.** 앱 안에서 앞 단계를 거쳐 왔으면 `router.back()`, 주소로 바로 들어와 앞 단계 기록이 없으면 `router.replace(앞 단계)` 다. 판별은 Provider 가 앱 안 이동 경로를 기록해서 한다 (`features/onboarding/onboarding-trail.ts`).
 - **화면 위에 뜨는 시트 · 대화상자의 열림 상태는 주소 쿼리에 둔다** (`docs/design/SCREENS.md` 의 제안 라우트, 예: 판단 기준 `/?explain=1`). 새로고침 · 공유해도 같은 화면이 열린다. `src/lib/use-modal-param.ts` 를 쓴다. 단계마다 `push` 로 기록을 쌓아 휴대폰 뒤로 가기가 이전 단계 · 닫기로 이어지게 하고, 보낸 뒤 완료처럼 되돌아오면 안 되는 단계는 `replace` 로 바꾼다. `close` 는 이 훅이 쌓은 깊이만큼만 되돌린다 — 깊이는 `history.state` 에 두어 뒤로 가기로 단계를 되돌린 뒤 닫아도 홈 앞까지만 간다. 주소로 바로 들어와 쌓은 기록이 없으면 쿼리만 지운다. `router.push` 는 서버에 화면을 다시 요청하므로 쓰지 않는다.
 - 서버에 보내는 동작(보고 보내기 · 고치기 · 되돌리기)은 연동 전에도 `features/<도메인>/*-client.ts` 에 Promise 를 돌려주는 함수로 둔다. 연동 때 함수 안만 `src/lib/api/` 호출로 바꾸고 화면 코드는 그대로 둔다 (`features/report/report-client.ts`).
 - API 연동 전 화면은 `features/<도메인>/mock.ts` 의 목 데이터로 만든다. 목 데이터의 기본값은 `자료 부족` 처럼 수치를 지어내지 않는 상태로 둔다. 연동 이슈에서 목 데이터를 지운다.
