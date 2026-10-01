@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import type { ReactNode } from 'react'
+
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,18 +13,22 @@ import {
   loginWithEmail,
   logout,
   resetMockSession,
+  setupPassword,
+  signup,
   withdrawHealthConsent,
   withdrawMembership,
 } from '@/features/auth/auth-client'
 import { consentFor } from '@/features/auth/legal'
 
 import { MeScreen } from './me-screen'
+import { MeTrailProvider, useMeTrail } from './me-trail'
 
 // 테스트에는 Next 라우터가 없다. 주소 쿼리는 이 값으로 흉내 낸다
 let search = ''
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(search),
+  usePathname: () => '/me',
   useRouter: () => router,
 }))
 
@@ -36,8 +42,20 @@ vi.mock('@/features/auth/auth-client', async (importOriginal) => {
   }
 })
 
+// 내 정보는 레이아웃의 MeTrailProvider 안에서 그려진다(계정 화면이 남긴 알림을 읽는다)
+function withTrail(children: ReactNode) {
+  return <MeTrailProvider>{children}</MeTrailProvider>
+}
+
 function renderMe(props: { regionCode?: string } = {}) {
-  return render(<MeScreen regionName="○○동" {...props} />)
+  return render(withTrail(<MeScreen regionName="○○동" {...props} />))
+}
+
+/** 계정 화면처럼 레이아웃에 알림을 남긴다. 내 정보가 그려지기 전에 부른다 */
+let trail: ReturnType<typeof useMeTrail> | null = null
+function TrailProbe() {
+  trail = useMeTrail()
+  return null
 }
 
 /** 동의한 회원으로 로그인해 둔다 (목 세션) */
@@ -78,8 +96,13 @@ describe('MeScreen 회원 상태별 화면', () => {
     expect(screen.getByText('이메일 · me@example.com')).toBeDefined()
     // 행의 이름은 제목 · 값을 이어 읽는다
     expect(screen.getByRole('button', { name: /^닉네임/ }).textContent).toBe('닉네임동네지기')
-    expect(screen.getByRole('button', { name: '비밀번호 변경' })).toBeDefined()
-    expect(screen.queryByRole('button', { name: /비밀번호 설정/ })).toBeNull()
+    expect(screen.getByRole('link', { name: '비밀번호 변경' }).getAttribute('href')).toBe(
+      '/me/password',
+    )
+    expect(screen.queryByRole('link', { name: /비밀번호 설정/ })).toBeNull()
+    expect(screen.getByRole('link', { name: '로그인한 기기' }).getAttribute('href')).toBe(
+      '/me/devices',
+    )
     expect(screen.getByRole('heading', { level: 2, name: '내 보고' })).toBeDefined()
     expect(screen.getByRole('button', { name: /^최근 보고 내역/ }).textContent).toContain(
       '52주 보관',
@@ -96,10 +119,23 @@ describe('MeScreen 회원 상태별 화면', () => {
     renderMe()
 
     expect(screen.getByText('카카오 · dong@kakao.com')).toBeDefined()
-    expect(screen.getByRole('button', { name: /^비밀번호 설정/ }).textContent).toBe(
-      '비밀번호 설정이메일로도 로그인할 수 있어요',
-    )
-    expect(screen.queryByRole('button', { name: '비밀번호 변경' })).toBeNull()
+    const setup = screen.getByRole('link', { name: /^비밀번호 설정/ })
+    expect(setup.textContent).toBe('비밀번호 설정이메일로도 로그인할 수 있어요')
+    // 같은 화면이 설정을 맡는다. QA 덮어쓰기를 남겨 하위 화면에서도 같은 회원으로 보인다
+    expect(setup.getAttribute('href')).toBe('/me/password?mock-auth=member&mock-provider=kakao')
+    expect(screen.queryByRole('link', { name: '비밀번호 변경' })).toBeNull()
+  })
+
+  it('카카오 회원이 비밀번호를 설정하면 행이 "비밀번호 변경" 으로 바뀐다', async () => {
+    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] })
+    renderMe()
+    expect(screen.getByRole('link', { name: /^비밀번호 설정/ })).toBeDefined()
+
+    await act(async () => {
+      await setupPassword('newpass2026')
+    })
+    expect(screen.getByRole('link', { name: '비밀번호 변경' })).toBeDefined()
+    expect(screen.queryByText('이메일로도 로그인할 수 있어요')).toBeNull()
   })
 
   it('?mock-auth= 덮어쓰기만 있으면 이메일 예시 프로필을 보인다', () => {
@@ -234,10 +270,50 @@ describe('MeScreen 메뉴', () => {
     search = 'mock-auth=member'
     renderMe()
 
-    await userEvent.setup().click(screen.getByRole('button', { name: '로그인한 기기' }))
+    await userEvent.setup().click(screen.getByRole('button', { name: /^닉네임/ }))
     expect(
-      screen.getByText('로그인한 기기 화면은 준비하고 있어요').closest('[role="status"]'),
+      screen.getByText('닉네임 바꾸기 화면은 준비하고 있어요').closest('[role="status"]'),
     ).not.toBeNull()
+  })
+
+  it('로그인한 기기 · 비밀번호 행은 동네 · 덮어쓰기를 남긴 채 계정 화면으로 간다 (다른 쿼리는 뺀다)', () => {
+    search = 'region=11440660&mock-auth=member&confirm=unknown'
+    renderMe({ regionCode: '11440660' })
+    expect(screen.getByRole('link', { name: '로그인한 기기' }).getAttribute('href')).toBe(
+      '/me/devices?region=11440660&mock-auth=member',
+    )
+    expect(screen.getByRole('link', { name: '비밀번호 변경' }).getAttribute('href')).toBe(
+      '/me/password?region=11440660&mock-auth=member',
+    )
+  })
+
+  it.each([
+    ['password-changed', '비밀번호를 바꿨어요'],
+    ['password-set', '비밀번호를 설정했어요. 이제 이메일로도 로그인할 수 있어요'],
+  ] as const)(
+    '계정 화면이 남긴 알림(%s)을 회원에게 한 번 띄우고 비운다 — 다시 그려도 뜨지 않는다',
+    async (notice, message) => {
+      await loginAsMember()
+      const { rerender } = render(withTrail(<TrailProbe />))
+      act(() => trail?.leaveNotice(notice))
+
+      rerender(withTrail(<MeScreen regionName="○○동" />))
+      expect(screen.getByText(message).closest('[role="status"]')).not.toBeNull()
+      expect(trail?.takeNotice()).toBeNull()
+
+      // 계정 화면에 갔다가 돌아와도(내 정보가 다시 마운트) 다시 뜨지 않는다
+      rerender(withTrail(<TrailProbe />))
+      rerender(withTrail(<MeScreen regionName="○○동" />))
+      expect(screen.queryByText(message)).toBeNull()
+    },
+  )
+
+  it('비회원에게는 남은 알림을 띄우지 않고 비우기만 한다', () => {
+    const { rerender } = render(withTrail(<TrailProbe />))
+    act(() => trail?.leaveNotice('password-changed'))
+    rerender(withTrail(<MeScreen regionName="○○동" />))
+    expect(screen.queryByText('비밀번호를 바꿨어요')).toBeNull()
+    expect(trail?.takeNotice()).toBeNull()
   })
 
   it('알림 스위치는 구독하지 않는다 — 꺼진 채로 준비 중을 알린다', async () => {
@@ -423,7 +499,7 @@ describe('MeScreen 확인 대화상자', () => {
 
     // 휴대폰 뒤로 가기: 주소에서 confirm 이 빠져 대화상자가 닫힌다
     search = 'mock-auth=member'
-    rerender(<MeScreen regionName="○○동" />)
+    rerender(withTrail(<MeScreen regionName="○○동" />))
     expect(screen.queryByRole('dialog')).toBeNull()
 
     await act(async () => {
