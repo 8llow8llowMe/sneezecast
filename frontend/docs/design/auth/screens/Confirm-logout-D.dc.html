@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Confirm-logout-D</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+@font-face{font-family:'Pretendard';src:url(/_blob/9f82cb6d533bded53de5926bad775cf8) format('woff2');font-weight:45 920;font-style:normal;font-display:swap}
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; color: #191F28; font-variant-numeric: tabular-nums; overflow: hidden"><div style="position: absolute; inset: 0"><dc-import name="Settings-D" hint-size="1440px,1560px"></dc-import></div><div style="position: absolute; inset: 0; background: rgba(25, 31, 40, 0.48)"></div><sc-if value="{{is_default}}" hint-placeholder-val="{{ true }}"><div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px"><div role="dialog" aria-modal="true" style="width: 480px; display: flex; flex-direction: column; gap: 14px; padding: 16px 28px 28px 28px; border-radius: 20px; background: #FFFFFF"><h2 style="margin: 4px 0 0 0; font-size: 22px; font-weight: 700">로그아웃할까요?</h2><ul style="display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 16px 18px; border-radius: 12px; background: #F2F4F6; list-style: none"><li style="display: flex; gap: 10px; font-size: 15px; line-height: 1.55; color: #191F28"><span aria-hidden="true" style="flex-shrink: 0; width: 6px; height: 6px; margin-top: 9px; border-radius: 3px; background: #4E5968"></span><span>이 기기에서만 로그아웃돼요.</span></li><li style="display: flex; gap: 10px; font-size: 15px; line-height: 1.55; color: #191F28"><span aria-hidden="true" style="flex-shrink: 0; width: 6px; height: 6px; margin-top: 9px; border-radius: 3px; background: #4E5968"></span><span>다시 보고하려면 로그인해야 해요.</span></li></ul><div style="display: flex; gap: 10px"><button type="button" style="width: 100%; height: 56px; border: none; border-radius: 12px; background: #F2F4F6; color: #191F28; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer">취소</button><button type="button" style="width: 100%; height: 56px; border: none; border-radius: 12px; background: #1F2F57; color: #FFFFFF; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer">로그아웃</button></div></div></div></sc-if></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview": {"width": 1440, "height": 900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var k = this.props.state ?? 'default';
+    return {
+      is_default: k === 'default'
+    };
+  }
+}
+</script>
+</body>
+</html>

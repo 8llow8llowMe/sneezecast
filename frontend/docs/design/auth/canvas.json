@@ -1,0 +1,788 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-01T09:00:00Z"
+  },
+  "title": "우리동네체온계 로그인·가입·계정 시안",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1624,
+      "title": "화면 목록"
+    },
+    "Login.dc.html": {
+      "x": 0,
+      "y": 2344,
+      "w": 390,
+      "h": 844,
+      "title": "S13-1 로그인 방법 선택 · 모바일"
+    },
+    "Login-T.dc.html": {
+      "x": 470,
+      "y": 2344,
+      "w": 834,
+      "h": 1194,
+      "title": "S13-1 로그인 방법 선택 · 태블릿"
+    },
+    "Login-D.dc.html": {
+      "x": 1384,
+      "y": 2344,
+      "w": 1440,
+      "h": 900,
+      "title": "S13-1 로그인 방법 선택 · 데스크톱"
+    },
+    "Login-kakao-fail.dc.html": {
+      "x": 0,
+      "y": 3658,
+      "w": 390,
+      "h": 844,
+      "title": "카카오 로그인 실패 · 모바일"
+    },
+    "Login-kakao-fail-T.dc.html": {
+      "x": 470,
+      "y": 3658,
+      "w": 834,
+      "h": 1194,
+      "title": "카카오 로그인 실패 · 태블릿"
+    },
+    "Login-kakao-fail-D.dc.html": {
+      "x": 1384,
+      "y": 3658,
+      "w": 1440,
+      "h": 900,
+      "title": "카카오 로그인 실패 · 데스크톱"
+    },
+    "Login-kakao-exists.dc.html": {
+      "x": 0,
+      "y": 4972,
+      "w": 390,
+      "h": 844,
+      "title": "카카오 이메일 중복 · 모바일"
+    },
+    "Login-kakao-exists-T.dc.html": {
+      "x": 470,
+      "y": 4972,
+      "w": 834,
+      "h": 1194,
+      "title": "카카오 이메일 중복 · 태블릿"
+    },
+    "Login-kakao-exists-D.dc.html": {
+      "x": 1384,
+      "y": 4972,
+      "w": 1440,
+      "h": 900,
+      "title": "카카오 이메일 중복 · 데스크톱"
+    },
+    "Login-email.dc.html": {
+      "x": 0,
+      "y": 6286,
+      "w": 390,
+      "h": 844,
+      "title": "S13-5 이메일 로그인 · 모바일"
+    },
+    "Login-email-T.dc.html": {
+      "x": 470,
+      "y": 6286,
+      "w": 834,
+      "h": 1194,
+      "title": "S13-5 이메일 로그인 · 태블릿"
+    },
+    "Login-email-D.dc.html": {
+      "x": 1384,
+      "y": 6286,
+      "w": 1440,
+      "h": 900,
+      "title": "S13-5 이메일 로그인 · 데스크톱"
+    },
+    "Password-reset.dc.html": {
+      "x": 0,
+      "y": 7600,
+      "w": 390,
+      "h": 844,
+      "title": "S13-6 새 비밀번호 · 모바일"
+    },
+    "Password-reset-T.dc.html": {
+      "x": 470,
+      "y": 7600,
+      "w": 834,
+      "h": 1194,
+      "title": "S13-6 새 비밀번호 · 태블릿"
+    },
+    "Password-reset-D.dc.html": {
+      "x": 1384,
+      "y": 7600,
+      "w": 1440,
+      "h": 900,
+      "title": "S13-6 새 비밀번호 · 데스크톱"
+    },
+    "State-session-expired.dc.html": {
+      "x": 0,
+      "y": 8914,
+      "w": 390,
+      "h": 844,
+      "title": "공통 로그인 만료 · 모바일"
+    },
+    "State-session-expired-T.dc.html": {
+      "x": 470,
+      "y": 8914,
+      "w": 834,
+      "h": 1194,
+      "title": "공통 로그인 만료 · 태블릿"
+    },
+    "State-session-expired-D.dc.html": {
+      "x": 1384,
+      "y": 8914,
+      "w": 1440,
+      "h": 900,
+      "title": "공통 로그인 만료 · 데스크톱"
+    },
+    "Signup-email.dc.html": {
+      "x": 0,
+      "y": 10828,
+      "w": 390,
+      "h": 844,
+      "title": "S13-2 이메일 입력 · 모바일"
+    },
+    "Signup-email-T.dc.html": {
+      "x": 470,
+      "y": 10828,
+      "w": 834,
+      "h": 1194,
+      "title": "S13-2 이메일 입력 · 태블릿"
+    },
+    "Signup-email-D.dc.html": {
+      "x": 1384,
+      "y": 10828,
+      "w": 1440,
+      "h": 900,
+      "title": "S13-2 이메일 입력 · 데스크톱"
+    },
+    "Signup-code.dc.html": {
+      "x": 0,
+      "y": 12142,
+      "w": 390,
+      "h": 844,
+      "title": "S13-3 인증 코드 입력 · 모바일"
+    },
+    "Signup-code-T.dc.html": {
+      "x": 470,
+      "y": 12142,
+      "w": 834,
+      "h": 1194,
+      "title": "S13-3 인증 코드 입력 · 태블릿"
+    },
+    "Signup-code-D.dc.html": {
+      "x": 1384,
+      "y": 12142,
+      "w": 1440,
+      "h": 900,
+      "title": "S13-3 인증 코드 입력 · 데스크톱"
+    },
+    "Signup-account.dc.html": {
+      "x": 0,
+      "y": 13456,
+      "w": 390,
+      "h": 844,
+      "title": "S13-4 비밀번호 · 닉네임 · 모바일"
+    },
+    "Signup-account-T.dc.html": {
+      "x": 470,
+      "y": 13456,
+      "w": 834,
+      "h": 1194,
+      "title": "S13-4 비밀번호 · 닉네임 · 태블릿"
+    },
+    "Signup-account-D.dc.html": {
+      "x": 1384,
+      "y": 13456,
+      "w": 1440,
+      "h": 900,
+      "title": "S13-4 비밀번호 · 닉네임 · 데스크톱"
+    },
+    "Setup-1.dc.html": {
+      "x": 0,
+      "y": 15370,
+      "w": 390,
+      "h": 844,
+      "title": "S02-1 동네 선택 (1 / 4) · 모바일"
+    },
+    "Setup-1-T.dc.html": {
+      "x": 470,
+      "y": 15370,
+      "w": 834,
+      "h": 1194,
+      "title": "S02-1 동네 선택 (1 / 4) · 태블릿"
+    },
+    "Setup-1-D.dc.html": {
+      "x": 1384,
+      "y": 15370,
+      "w": 1440,
+      "h": 900,
+      "title": "S02-1 동네 선택 (1 / 4) · 데스크톱"
+    },
+    "Setup-1-browse.dc.html": {
+      "x": 0,
+      "y": 16684,
+      "w": 390,
+      "h": 844,
+      "title": "둘러보기용 동네 선택 · 모바일"
+    },
+    "Setup-1-browse-T.dc.html": {
+      "x": 470,
+      "y": 16684,
+      "w": 834,
+      "h": 1194,
+      "title": "둘러보기용 동네 선택 · 태블릿"
+    },
+    "Setup-1-browse-D.dc.html": {
+      "x": 1384,
+      "y": 16684,
+      "w": 1440,
+      "h": 900,
+      "title": "둘러보기용 동네 선택 · 데스크톱"
+    },
+    "Setup-1-empty.dc.html": {
+      "x": 0,
+      "y": 17998,
+      "w": 390,
+      "h": 844,
+      "title": "검색 결과 없음 · 모바일"
+    },
+    "Setup-1-empty-T.dc.html": {
+      "x": 470,
+      "y": 17998,
+      "w": 834,
+      "h": 1194,
+      "title": "검색 결과 없음 · 태블릿"
+    },
+    "Setup-1-empty-D.dc.html": {
+      "x": 1384,
+      "y": 17998,
+      "w": 1440,
+      "h": 900,
+      "title": "검색 결과 없음 · 데스크톱"
+    },
+    "Setup-1-reselect.dc.html": {
+      "x": 0,
+      "y": 19312,
+      "w": 390,
+      "h": 844,
+      "title": "폐지된 동네 다시 고르기 · 모바일"
+    },
+    "Setup-1-reselect-T.dc.html": {
+      "x": 470,
+      "y": 19312,
+      "w": 834,
+      "h": 1194,
+      "title": "폐지된 동네 다시 고르기 · 태블릿"
+    },
+    "Setup-1-reselect-D.dc.html": {
+      "x": 1384,
+      "y": 19312,
+      "w": 1440,
+      "h": 900,
+      "title": "폐지된 동네 다시 고르기 · 데스크톱"
+    },
+    "Setup-2.dc.html": {
+      "x": 0,
+      "y": 20626,
+      "w": 390,
+      "h": 844,
+      "title": "S02-2 성인 확인 (2 / 4) · 모바일"
+    },
+    "Setup-2-T.dc.html": {
+      "x": 470,
+      "y": 20626,
+      "w": 834,
+      "h": 1194,
+      "title": "S02-2 성인 확인 (2 / 4) · 태블릿"
+    },
+    "Setup-2-D.dc.html": {
+      "x": 1384,
+      "y": 20626,
+      "w": 1440,
+      "h": 900,
+      "title": "S02-2 성인 확인 (2 / 4) · 데스크톱"
+    },
+    "Setup-3.dc.html": {
+      "x": 0,
+      "y": 21940,
+      "w": 390,
+      "h": 844,
+      "title": "S02-3 가입 동의 (3 / 4) · 모바일"
+    },
+    "Setup-3-T.dc.html": {
+      "x": 470,
+      "y": 21940,
+      "w": 834,
+      "h": 1194,
+      "title": "S02-3 가입 동의 (3 / 4) · 태블릿"
+    },
+    "Setup-3-D.dc.html": {
+      "x": 1384,
+      "y": 21940,
+      "w": 1440,
+      "h": 900,
+      "title": "S02-3 가입 동의 (3 / 4) · 데스크톱"
+    },
+    "Setup-3-reconsent.dc.html": {
+      "x": 0,
+      "y": 23254,
+      "w": 390,
+      "h": 844,
+      "title": "약관 재동의 · 모바일"
+    },
+    "Setup-3-reconsent-T.dc.html": {
+      "x": 470,
+      "y": 23254,
+      "w": 834,
+      "h": 1194,
+      "title": "약관 재동의 · 태블릿"
+    },
+    "Setup-3-reconsent-D.dc.html": {
+      "x": 1384,
+      "y": 23254,
+      "w": 1440,
+      "h": 900,
+      "title": "약관 재동의 · 데스크톱"
+    },
+    "Setup-4.dc.html": {
+      "x": 0,
+      "y": 24568,
+      "w": 390,
+      "h": 844,
+      "title": "S02-4 증상 보고 동의 (4 / 4) · 모바일"
+    },
+    "Setup-4-T.dc.html": {
+      "x": 470,
+      "y": 24568,
+      "w": 834,
+      "h": 1194,
+      "title": "S02-4 증상 보고 동의 (4 / 4) · 태블릿"
+    },
+    "Setup-4-D.dc.html": {
+      "x": 1384,
+      "y": 24568,
+      "w": 1440,
+      "h": 900,
+      "title": "S02-4 증상 보고 동의 (4 / 4) · 데스크톱"
+    },
+    "Home-guest.dc.html": {
+      "x": 0,
+      "y": 26482,
+      "w": 390,
+      "h": 844,
+      "title": "S03 둘러보기 홈 · 모바일"
+    },
+    "Home-guest-T.dc.html": {
+      "x": 470,
+      "y": 26482,
+      "w": 834,
+      "h": 1194,
+      "title": "S03 둘러보기 홈 · 태블릿"
+    },
+    "Home-guest-D.dc.html": {
+      "x": 1384,
+      "y": 26482,
+      "w": 1440,
+      "h": 900,
+      "title": "S03 둘러보기 홈 · 데스크톱"
+    },
+    "Login-sheet.dc.html": {
+      "x": 0,
+      "y": 27796,
+      "w": 390,
+      "h": 844,
+      "title": "로그인 안내 시트 · 모바일"
+    },
+    "Login-sheet-T.dc.html": {
+      "x": 470,
+      "y": 27796,
+      "w": 834,
+      "h": 1194,
+      "title": "로그인 안내 시트 · 태블릿"
+    },
+    "Login-sheet-D.dc.html": {
+      "x": 1384,
+      "y": 27796,
+      "w": 1440,
+      "h": 900,
+      "title": "로그인 안내 시트 · 데스크톱"
+    },
+    "Home-member.dc.html": {
+      "x": 0,
+      "y": 29110,
+      "w": 390,
+      "h": 844,
+      "title": "회원 홈 (배경용) · 모바일"
+    },
+    "Home-member-T.dc.html": {
+      "x": 470,
+      "y": 29110,
+      "w": 834,
+      "h": 1194,
+      "title": "회원 홈 (배경용) · 태블릿"
+    },
+    "Home-member-D.dc.html": {
+      "x": 1384,
+      "y": 29110,
+      "w": 1440,
+      "h": 900,
+      "title": "회원 홈 (배경용) · 데스크톱"
+    },
+    "Consent-health-sheet.dc.html": {
+      "x": 0,
+      "y": 30424,
+      "w": 390,
+      "h": 844,
+      "title": "증상 보고 동의 시트 · 모바일"
+    },
+    "Consent-health-sheet-T.dc.html": {
+      "x": 470,
+      "y": 30424,
+      "w": 834,
+      "h": 1194,
+      "title": "증상 보고 동의 시트 · 태블릿"
+    },
+    "Consent-health-sheet-D.dc.html": {
+      "x": 1384,
+      "y": 30424,
+      "w": 1440,
+      "h": 900,
+      "title": "증상 보고 동의 시트 · 데스크톱"
+    },
+    "Home-purging.dc.html": {
+      "x": 0,
+      "y": 31738,
+      "w": 390,
+      "h": 844,
+      "title": "동의 철회 직후 홈 · 모바일"
+    },
+    "Home-purging-T.dc.html": {
+      "x": 470,
+      "y": 31738,
+      "w": 834,
+      "h": 1194,
+      "title": "동의 철회 직후 홈 · 태블릿"
+    },
+    "Home-purging-D.dc.html": {
+      "x": 1384,
+      "y": 31738,
+      "w": 1440,
+      "h": 900,
+      "title": "동의 철회 직후 홈 · 데스크톱"
+    },
+    "Settings.dc.html": {
+      "x": 0,
+      "y": 33652,
+      "w": 390,
+      "h": 1640,
+      "title": "S10 내 정보 · 이메일 계정 · 모바일"
+    },
+    "Settings-T.dc.html": {
+      "x": 470,
+      "y": 33652,
+      "w": 834,
+      "h": 1720,
+      "title": "S10 내 정보 · 이메일 계정 · 태블릿"
+    },
+    "Settings-D.dc.html": {
+      "x": 1384,
+      "y": 33652,
+      "w": 1440,
+      "h": 1560,
+      "title": "S10 내 정보 · 이메일 계정 · 데스크톱"
+    },
+    "Settings-kakao.dc.html": {
+      "x": 0,
+      "y": 35492,
+      "w": 390,
+      "h": 1640,
+      "title": "내 정보 · 카카오 계정 · 모바일"
+    },
+    "Settings-kakao-T.dc.html": {
+      "x": 470,
+      "y": 35492,
+      "w": 834,
+      "h": 1720,
+      "title": "내 정보 · 카카오 계정 · 태블릿"
+    },
+    "Settings-kakao-D.dc.html": {
+      "x": 1384,
+      "y": 35492,
+      "w": 1440,
+      "h": 1560,
+      "title": "내 정보 · 카카오 계정 · 데스크톱"
+    },
+    "Settings-guest.dc.html": {
+      "x": 0,
+      "y": 37332,
+      "w": 390,
+      "h": 844,
+      "title": "비로그인 내 정보 · 모바일"
+    },
+    "Settings-guest-T.dc.html": {
+      "x": 470,
+      "y": 37332,
+      "w": 834,
+      "h": 1194,
+      "title": "비로그인 내 정보 · 태블릿"
+    },
+    "Settings-guest-D.dc.html": {
+      "x": 1384,
+      "y": 37332,
+      "w": 1440,
+      "h": 900,
+      "title": "비로그인 내 정보 · 데스크톱"
+    },
+    "Settings-devices.dc.html": {
+      "x": 0,
+      "y": 38646,
+      "w": 390,
+      "h": 844,
+      "title": "로그인한 기기 · 모바일"
+    },
+    "Settings-devices-T.dc.html": {
+      "x": 470,
+      "y": 38646,
+      "w": 834,
+      "h": 1194,
+      "title": "로그인한 기기 · 태블릿"
+    },
+    "Settings-devices-D.dc.html": {
+      "x": 1384,
+      "y": 38646,
+      "w": 1440,
+      "h": 900,
+      "title": "로그인한 기기 · 데스크톱"
+    },
+    "Settings-password.dc.html": {
+      "x": 0,
+      "y": 39960,
+      "w": 390,
+      "h": 844,
+      "title": "비밀번호 변경 · 모바일"
+    },
+    "Settings-password-T.dc.html": {
+      "x": 470,
+      "y": 39960,
+      "w": 834,
+      "h": 1194,
+      "title": "비밀번호 변경 · 태블릿"
+    },
+    "Settings-password-D.dc.html": {
+      "x": 1384,
+      "y": 39960,
+      "w": 1440,
+      "h": 900,
+      "title": "비밀번호 변경 · 데스크톱"
+    },
+    "Confirm-consent-withdraw.dc.html": {
+      "x": 0,
+      "y": 41274,
+      "w": 390,
+      "h": 844,
+      "title": "동의 철회 확인 · 모바일"
+    },
+    "Confirm-consent-withdraw-T.dc.html": {
+      "x": 470,
+      "y": 41274,
+      "w": 834,
+      "h": 1194,
+      "title": "동의 철회 확인 · 태블릿"
+    },
+    "Confirm-consent-withdraw-D.dc.html": {
+      "x": 1384,
+      "y": 41274,
+      "w": 1440,
+      "h": 900,
+      "title": "동의 철회 확인 · 데스크톱"
+    },
+    "Confirm-withdraw.dc.html": {
+      "x": 0,
+      "y": 42588,
+      "w": 390,
+      "h": 844,
+      "title": "탈퇴 확인 · 모바일"
+    },
+    "Confirm-withdraw-T.dc.html": {
+      "x": 470,
+      "y": 42588,
+      "w": 834,
+      "h": 1194,
+      "title": "탈퇴 확인 · 태블릿"
+    },
+    "Confirm-withdraw-D.dc.html": {
+      "x": 1384,
+      "y": 42588,
+      "w": 1440,
+      "h": 900,
+      "title": "탈퇴 확인 · 데스크톱"
+    },
+    "Confirm-logout.dc.html": {
+      "x": 0,
+      "y": 43902,
+      "w": 390,
+      "h": 844,
+      "title": "로그아웃 확인 · 모바일"
+    },
+    "Confirm-logout-T.dc.html": {
+      "x": 470,
+      "y": 43902,
+      "w": 834,
+      "h": 1194,
+      "title": "로그아웃 확인 · 태블릿"
+    },
+    "Confirm-logout-D.dc.html": {
+      "x": 1384,
+      "y": 43902,
+      "w": 1440,
+      "h": 900,
+      "title": "로그아웃 확인 · 데스크톱"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Login.dc.html",
+    "Login-T.dc.html",
+    "Login-D.dc.html",
+    "Login-kakao-fail.dc.html",
+    "Login-kakao-fail-T.dc.html",
+    "Login-kakao-fail-D.dc.html",
+    "Login-kakao-exists.dc.html",
+    "Login-kakao-exists-T.dc.html",
+    "Login-kakao-exists-D.dc.html",
+    "Login-email.dc.html",
+    "Login-email-T.dc.html",
+    "Login-email-D.dc.html",
+    "Password-reset.dc.html",
+    "Password-reset-T.dc.html",
+    "Password-reset-D.dc.html",
+    "State-session-expired.dc.html",
+    "State-session-expired-T.dc.html",
+    "State-session-expired-D.dc.html",
+    "Signup-email.dc.html",
+    "Signup-email-T.dc.html",
+    "Signup-email-D.dc.html",
+    "Signup-code.dc.html",
+    "Signup-code-T.dc.html",
+    "Signup-code-D.dc.html",
+    "Signup-account.dc.html",
+    "Signup-account-T.dc.html",
+    "Signup-account-D.dc.html",
+    "Setup-1.dc.html",
+    "Setup-1-T.dc.html",
+    "Setup-1-D.dc.html",
+    "Setup-1-browse.dc.html",
+    "Setup-1-browse-T.dc.html",
+    "Setup-1-browse-D.dc.html",
+    "Setup-1-empty.dc.html",
+    "Setup-1-empty-T.dc.html",
+    "Setup-1-empty-D.dc.html",
+    "Setup-1-reselect.dc.html",
+    "Setup-1-reselect-T.dc.html",
+    "Setup-1-reselect-D.dc.html",
+    "Setup-2.dc.html",
+    "Setup-2-T.dc.html",
+    "Setup-2-D.dc.html",
+    "Setup-3.dc.html",
+    "Setup-3-T.dc.html",
+    "Setup-3-D.dc.html",
+    "Setup-3-reconsent.dc.html",
+    "Setup-3-reconsent-T.dc.html",
+    "Setup-3-reconsent-D.dc.html",
+    "Setup-4.dc.html",
+    "Setup-4-T.dc.html",
+    "Setup-4-D.dc.html",
+    "Home-guest.dc.html",
+    "Home-guest-T.dc.html",
+    "Home-guest-D.dc.html",
+    "Login-sheet.dc.html",
+    "Login-sheet-T.dc.html",
+    "Login-sheet-D.dc.html",
+    "Home-member.dc.html",
+    "Home-member-T.dc.html",
+    "Home-member-D.dc.html",
+    "Consent-health-sheet.dc.html",
+    "Consent-health-sheet-T.dc.html",
+    "Consent-health-sheet-D.dc.html",
+    "Home-purging.dc.html",
+    "Home-purging-T.dc.html",
+    "Home-purging-D.dc.html",
+    "Settings.dc.html",
+    "Settings-T.dc.html",
+    "Settings-D.dc.html",
+    "Settings-kakao.dc.html",
+    "Settings-kakao-T.dc.html",
+    "Settings-kakao-D.dc.html",
+    "Settings-guest.dc.html",
+    "Settings-guest-T.dc.html",
+    "Settings-guest-D.dc.html",
+    "Settings-devices.dc.html",
+    "Settings-devices-T.dc.html",
+    "Settings-devices-D.dc.html",
+    "Settings-password.dc.html",
+    "Settings-password-T.dc.html",
+    "Settings-password-D.dc.html",
+    "Confirm-consent-withdraw.dc.html",
+    "Confirm-consent-withdraw-T.dc.html",
+    "Confirm-consent-withdraw-D.dc.html",
+    "Confirm-withdraw.dc.html",
+    "Confirm-withdraw-T.dc.html",
+    "Confirm-withdraw-D.dc.html",
+    "Confirm-logout.dc.html",
+    "Confirm-logout-T.dc.html",
+    "Confirm-logout-D.dc.html"
+  ],
+  "notes": {
+    "sec_a": {
+      "x": 0,
+      "y": 2044,
+      "text": "로그인",
+      "kind": "title1",
+      "maxW": 2824
+    },
+    "sec_b": {
+      "x": 0,
+      "y": 10528,
+      "text": "이메일 가입",
+      "kind": "title1",
+      "maxW": 2824
+    },
+    "sec_c": {
+      "x": 0,
+      "y": 15070,
+      "text": "동네 · 동의 (S02 1 / 4 ~ 4 / 4)",
+      "kind": "title1",
+      "maxW": 2824
+    },
+    "sec_d": {
+      "x": 0,
+      "y": 26182,
+      "text": "홈 · 보고 진입",
+      "kind": "title1",
+      "maxW": 2824
+    },
+    "sec_e": {
+      "x": 0,
+      "y": 33352,
+      "text": "내 정보 · 계정 관리",
+      "kind": "title1",
+      "maxW": 2824
+    },
+    "how": {
+      "x": 1520,
+      "y": 0,
+      "w": 420,
+      "text": "같은 디자인 시스템(tokens.json)으로 만든 별도 캔버스예요.\n\n· 상태가 여러 개인 화면은 Tweaks의 state로 오류·변형을 확인해요.\n· 비밀번호 재설정의 이메일·코드 단계는 Signup-email, Signup-code를 제목만 바꿔 써요.\n· 카카오 버튼만 카카오 가이드 색(#FEE500)을 써요."
+    }
+  },
+  "designSystems": []
+}
