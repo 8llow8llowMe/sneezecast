@@ -1,0 +1,14 @@
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+
+# 의존성 · 빌드 캐시
+/node_modules/
+/coverage/
+*.tsbuildinfo
+
+# env — 예시 파일만 커밋한다
+.env
+.env.*
+!.env.example

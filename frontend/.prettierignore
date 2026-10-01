@@ -1,0 +1,10 @@
+.next
+node_modules
+coverage
+pnpm-lock.yaml
+public
+
+# 시안 원본 (Claude Design 내보내기)
+# **prettier 가 건드리면 안 된다.** HTML 재포맷은 inline 요소의 공백을 바꿔 렌더까지 흔들 수 있고,
+# 원본은 디자인 캔버스다. 토큰은 tokens.json 을 읽기만 하고 코드 쪽 정본은 src/styles/tokens.css 다.
+docs/design/
