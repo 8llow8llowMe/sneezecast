@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: mail(preheader=|인증코드 ${code} — 5분 이내에 입력해주세요.|, heading='우리동네체온계 이메일 인증', content=~{::content})}">
+<body>
+<th:block th:fragment="content">
+  <p class="m-text" style="margin:0 0 12px 0; font-size:15px; line-height:24px; color:#15181D;">아래 인증코드를 5분 이내에 입력해주세요.</p>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 0 0;">
+    <tr>
+      <td class="m-code" align="center" style="background-color:#EEF0F3; border-radius:8px; padding:16px;
+                 font-family:Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size:28px; line-height:36px; font-weight:700; letter-spacing:6px; color:#15181D;"
+          th:text="${code}">000000</td>
+    </tr>
+  </table>
+  <p class="m-muted" style="margin:20px 0 0 0; font-size:13px; line-height:20px; color:#596069;">본인이 요청하지 않았다면 이 메일을 무시해주세요.</p>
+</th:block>
+</body>
+</html>

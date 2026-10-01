@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: mail(preheader='이 이메일로는 이미 가입된 계정이 있습니다.', heading='우리동네체온계 회원가입 안내', content=~{::content})}">
+<body>
+<th:block th:fragment="content">
+  <p class="m-text" style="margin:0 0 12px 0; font-size:15px; line-height:24px; color:#15181D;">이 이메일로는 이미 가입된 계정이 있습니다.</p>
+  <p class="m-text" style="margin:0 0 12px 0; font-size:15px; line-height:24px; color:#15181D;">비밀번호를 잊으셨다면 로그인 화면에서 비밀번호 찾기를 이용해주세요.</p>
+  <p class="m-muted" style="margin:20px 0 0 0; font-size:13px; line-height:20px; color:#596069;">본인이 요청하지 않았다면 이 메일을 무시해주세요.</p>
+</th:block>
+</body>
+</html>

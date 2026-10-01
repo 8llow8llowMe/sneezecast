@@ -9,6 +9,22 @@ spring:
     url: ${AUTH_DB_URL}
     username: ${AUTH_DB_USERNAME}
     password: ${AUTH_DB_PASSWORD}
+  # 이메일 인증코드 발송용 SMTP. 계정 · 비밀번호는 기본값이 없다 (Vault auth-service 경로).
+  # 발송은 요청 스레드 밖(authMailTaskExecutor)에서 하고, 접속 · 응답 · 쓰기 timeout 을 5초로 묶는다.
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
   servlet:
     multipart:
       # 파일 한 개 상한은 스토리지 검증(infra.storage.max-file-bytes)과 같은 env 를 쓴다. 기본 1MB 로 두면 5MB 허용 이미지가 서블릿에서 먼저 막힌다.

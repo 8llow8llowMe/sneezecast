@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!--
+  인증 메일 공통 레이아웃. 각 메일은 mail(preheader, heading, content) 로 이 틀을 쓴다.
+  메일 클라이언트 호환 규칙: table 레이아웃, 기본(라이트) 스타일은 전부 인라인, CSS 변수·flex·grid·SVG·웹폰트 금지,
+  동적 값은 th:text 로만 출력한다 (th:utext 금지). <style> 은 다크 모드 덮어쓰기 전용이다.
+  로고 이미지는 아직 없어서 서비스 이름을 글자로 쓴다. 로고가 생기면 인라인(CID) 이미지로 바꾼다.
+-->
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" th:fragment="mail(preheader, heading, content)">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title th:text="${heading}">우리동네체온계</title>
+  <style>
+    @media (prefers-color-scheme: dark) {
+      .m-page { background-color:#202124 !important; }
+      .m-card { background-color:#111418 !important; border-color:#3A3D42 !important; }
+      .m-text { color:#F0F0F0 !important; }
+      .m-muted { color:#B8BCC2 !important; }
+      .m-code { background-color:#26282C !important; color:#F0F0F0 !important; }
+    }
+  </style>
+</head>
+<body class="m-page" style="margin:0; padding:0; background-color:#F5F6F8; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;">
+  <div style="display:none; max-height:0; max-width:0; overflow:hidden; opacity:0; mso-hide:all; font-size:1px; line-height:1px; color:#F5F6F8;"
+       th:text="${preheader}">미리보기 문구</div>
+  <table class="m-page" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F5F6F8;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; width:100%;">
+          <tr>
+            <td class="m-text" align="left" style="padding:0 4px 16px 4px; font-family:Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+                       font-size:16px; line-height:24px; font-weight:700; color:#15181D;">우리동네체온계</td>
+          </tr>
+          <tr>
+            <td class="m-card" style="background-color:#FFFFFF; border:1px solid #E3E5EA; border-radius:12px; padding:32px 24px;
+                       font-family:Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; color:#15181D;">
+              <h1 class="m-text" style="margin:0 0 16px 0; font-size:20px; line-height:28px; font-weight:700; color:#15181D;" th:text="${heading}">제목</h1>
+              <th:block th:replace="${content}"></th:block>
+            </td>
+          </tr>
+          <tr>
+            <td class="m-muted" style="padding:16px 4px 0 4px; font-family:Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+                       font-size:12px; line-height:18px; color:#878D96;">
+              이 메일은 발신 전용입니다. 회신하셔도 답변드릴 수 없습니다.<br>
+              © 우리동네체온계
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

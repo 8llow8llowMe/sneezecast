@@ -2,7 +2,9 @@ package com.sneezecast;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -10,11 +12,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sneezecast.domainlayer.auth.adapter.out.persistence.RedisAccessTokenBlacklistAdapter;
+import com.sneezecast.domainlayer.auth.application.port.out.MailSendPort;
+import com.sneezecast.persistence.util.SnowflakeIdGenerator;
 import com.sneezecast.security.auth.blacklist.AccessTokenBlacklistVerifier;
 import com.sneezecast.security.auth.jwt.JwtAuthProvider;
 import com.sneezecast.security.common.enums.SecurityRole;
 import com.sneezecast.storage.init.StorageBucketInitializer;
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
+import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -29,6 +39,7 @@ import org.springframework.data.redis.connection.RedisNode;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -43,6 +54,7 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>MySQL → H2 인메모리 (드라이버 · URL 만 바꾼다).</li>
  *   <li>Eureka → 클라이언트를 끈다.</li>
  *   <li>Redis → 연결은 첫 명령까지 미뤄지고, 명령을 내는 {@link StringRedisTemplate} 은 mock 으로 바꾼다.</li>
+ *   <li>SMTP → 계정 값만 채우고, {@code JavaMailSender} 는 mock 으로 바꿔 발송 스레드만 본다.</li>
  *   <li>MinIO → 클라이언트 생성은 접속하지 않지만, {@link StorageBucketInitializer} 가 기동 완료 이벤트에서 버킷을 확인하러
  *       접속하므로 mock 으로 바꾼다.</li>
  * </ul>
@@ -72,7 +84,9 @@ import org.springframework.web.bind.annotation.RestController;
     "MINIO_PUBLIC_URL=http://localhost:9000",
     "MINIO_BUCKET=sneezecast-context-test",
     "MINIO_ACCESS_KEY=context-test-access-key",
-    "MINIO_SECRET_KEY=context-test-secret-key"
+    "MINIO_SECRET_KEY=context-test-secret-key",
+    "MAIL_USERNAME=context-test",
+    "MAIL_PASSWORD=context-test-password"
 })
 @AutoConfigureMockMvc
 @Import(AuthServiceApplicationTests.MethodSecurityProbeController.class)
@@ -85,6 +99,9 @@ class AuthServiceApplicationTests {
 
     @MockitoBean(enforceOverride = true)
     private StorageBucketInitializer storageBucketInitializer;
+
+    @MockitoBean(enforceOverride = true)
+    private JavaMailSender javaMailSender;
 
     @Autowired
     private ApplicationContext context;
@@ -101,6 +118,38 @@ class AuthServiceApplicationTests {
         assertThat(context.getBeansOfType(AccessTokenBlacklistVerifier.class).values())
             .singleElement()
             .isInstanceOf(RedisAccessTokenBlacklistAdapter.class);
+    }
+
+    @Test
+    @DisplayName("persistence-core 설정이 켜져 있다 — Snowflake ID · JPAQueryFactory · JPA Auditing. 빠지면 감사 컬럼이 비어 저장이 실패한다")
+    void registersPersistenceCoreBeans() {
+        assertThat(context.getBean(SnowflakeIdGenerator.class).generateId()).isPositive();
+        assertThat(context.containsBean("jpaQueryFactory")).isTrue();
+        assertThat(context.containsBean("jpaAuditingHandler")).isTrue();
+    }
+
+    @Test
+    @DisplayName("기본 applicationTaskExecutor 와 메일 전용 executor 가 따로 있다 — 메일 executor 를 만들어도 Boot 기본 executor 가 사라지지 않는다")
+    void keepsDefaultExecutorBesideMailExecutor() {
+        assertThat(context.getBean("applicationTaskExecutor")).isNotSameAs(context.getBean("authMailTaskExecutor"));
+    }
+
+    @Test
+    @DisplayName("인증 메일은 요청 스레드가 아니라 authMailTaskExecutor 스레드에서 보낸다 (@Async 가 실제로 켜져 있다)")
+    void mailIsSentOnMailExecutorThread() throws Exception {
+        when(javaMailSender.createMimeMessage()).thenAnswer(invocation -> new MimeMessage(Session.getInstance(new Properties())));
+        CountDownLatch sent = new CountDownLatch(1);
+        AtomicReference<String> senderThread = new AtomicReference<>();
+        doAnswer(invocation -> {
+            senderThread.set(Thread.currentThread().getName());
+            sent.countDown();
+            return null;
+        }).when(javaMailSender).send(any(MimeMessage.class));
+
+        context.getBean(MailSendPort.class).sendVerificationCode("user@example.com", "ABCD2345");
+
+        assertThat(sent.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(senderThread.get()).startsWith("auth-mail-worker-").isNotEqualTo(Thread.currentThread().getName());
     }
 
     @Test
