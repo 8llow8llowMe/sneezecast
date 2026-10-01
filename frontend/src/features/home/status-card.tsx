@@ -13,7 +13,14 @@ import type { HomeWeekly } from './types'
  *
  * 시안: Home(모바일 여백 16/20/20 · 안쪽 20) · Tablet(안쪽 24) · Desktop(안쪽 20)
  */
-export function StatusCard({ week }: { week: HomeWeekly }) {
+export function StatusCard({
+  week,
+  onExplain,
+}: {
+  week: HomeWeekly
+  /** 판단 기준 시트를 연다. 수치가 있는 주에만 "왜 이렇게 보나요?" 를 보인다 */
+  onExplain?: () => void
+}) {
   return (
     <section
       aria-label="우리 동네 이번 주 상태"
@@ -50,9 +57,22 @@ export function StatusCard({ week }: { week: HomeWeekly }) {
           </span>
         </div>
       ) : (
-        <p className="text-body-strong font-semibold text-fg">
-          참여 {formatCount(week.participants)}명 · 증상 보고 {week.symptomRate}%
-        </p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-body-strong font-semibold text-fg">
+            참여 {formatCount(week.participants)}명 · 증상 보고 {week.symptomRate}%
+          </p>
+          {onExplain && (
+            // 시안은 보이는 높이 32 다. 터치 영역 44 를 지키면서 카드 높이를 바꾸지 않으려고
+            // 위아래로 6px 씩 넓히고 같은 만큼 바깥 여백을 줄인다
+            <button
+              type="button"
+              onClick={onExplain}
+              className="-my-1.5 min-h-touch shrink-0 cursor-pointer text-sub font-semibold text-brand underline"
+            >
+              왜 이렇게 보나요?
+            </button>
+          )}
+        </div>
       )}
     </section>
   )

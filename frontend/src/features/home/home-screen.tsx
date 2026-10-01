@@ -6,12 +6,14 @@ import { SectionBand } from '@/components/section'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
 
+import { ExplainSheet } from './explain-sheet'
 import { MapPlaceholder } from './map-placeholder'
 import { NoticeSection } from './notice-section'
 import { OfficialPanel, OfficialRow } from './official'
 import { StatusCard } from './status-card'
 import { SymptomTrends } from './symptom-trends'
 import type { HomeWeekly } from './types'
+import { useExplainParam } from './use-explain-param'
 
 /**
  * S03 홈. 폭에 따라 구성이 바뀐다 (시안 Home · Tablet · Desktop).
@@ -27,6 +29,7 @@ import type { HomeWeekly } from './types'
  */
 export function HomeScreen({ week }: { week: HomeWeekly }) {
   const { toast, show, dismiss } = useToast()
+  const explain = useExplainParam()
 
   // 보고(S05) · 동네 바꾸기(S02) · 알림 설정(S10) 화면이 생기면 각각 연결한다
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
@@ -53,7 +56,7 @@ export function HomeScreen({ week }: { week: HomeWeekly }) {
 
       <main className="flex grow flex-col tablet:gap-7 tablet:p-6 desktop:flex-row desktop:gap-8 desktop:px-8">
         <div className="flex flex-col tablet:grid tablet:grid-cols-2 tablet:items-start tablet:gap-7 desktop:order-last desktop:flex desktop:w-105 desktop:shrink-0 desktop:gap-4">
-          <StatusCard week={week} />
+          <StatusCard week={week} onExplain={explain.openExplain} />
 
           <SectionBand className="tablet:hidden" />
           <div className="tablet:hidden">
@@ -86,6 +89,11 @@ export function HomeScreen({ week }: { week: HomeWeekly }) {
         </div>
         <TabBar current="home" />
       </div>
+
+      {/* 자료 부족이면 보일 숫자가 없어 ?explain=1 로 들어와도 열지 않는다 */}
+      {week.status !== 'insufficient' && (
+        <ExplainSheet week={week} open={explain.open} onClose={explain.closeExplain} />
+      )}
 
       <ToastRegion
         toast={toast}

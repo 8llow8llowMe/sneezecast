@@ -17,9 +17,13 @@ const OFFICIAL: OfficialSummary = {
   href: '/official',
 }
 
+/** 시범 운영 초기값 (tokens.json rules.slightDeltaPp · highDeltaPp) */
+const THRESHOLDS = { slightDeltaPp: 3, highDeltaPp: 8 }
+
 const COMMON = {
   regionName: '○○동',
   weekLabel: '11월 3주',
+  weekRangeLabel: '11월 17일~23일',
   updatedLabel: '오늘 09:00 갱신',
   publicThreshold: 100,
   official: OFFICIAL,
@@ -38,6 +42,7 @@ export const HOME_MOCKS: Record<RegionStatus, HomeWeekly> = {
       { key: 'respiratory', trend: 'flat', series: [10, 11, 10, 12, 11, 10, 11] },
       { key: 'gastrointestinal', trend: 'down', series: [12, 11, 10, 10, 9, 9, 8] },
     ],
+    thresholds: THRESHOLDS,
     notice: null,
   },
   slight: {
@@ -52,6 +57,7 @@ export const HOME_MOCKS: Record<RegionStatus, HomeWeekly> = {
       { key: 'respiratory', trend: 'slight', series: [9, 10, 11, 12, 14, 15, 17] },
       { key: 'gastrointestinal', trend: 'flat', series: [10, 10, 11, 10, 11, 10, 11] },
     ],
+    thresholds: THRESHOLDS,
     notice: null,
   },
   high: {
@@ -66,6 +72,7 @@ export const HOME_MOCKS: Record<RegionStatus, HomeWeekly> = {
       { key: 'respiratory', trend: 'high', series: [9, 11, 12, 15, 18, 21, 24] },
       { key: 'gastrointestinal', trend: 'flat', series: [10, 11, 10, 11, 10, 11, 11] },
     ],
+    thresholds: THRESHOLDS,
     notice: {
       publishedLabel: '11월 18일 발행',
       items: ['기침할 때 옷소매로 입과 코 가리기', '손 씻기와 실내 환기 자주 하기'],
