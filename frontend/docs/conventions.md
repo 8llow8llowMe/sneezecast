@@ -31,7 +31,8 @@ frontend/
 ```
 
 - **`lib` · `components` · `types` 는 `features` 를 import 하지 않는다** (ESLint 로 막는다). 의존 방향은 `app → features → components · lib · types` 다.
-- `src/features/`, `src/types/` 는 아직 없다. 처음 쓰는 PR 에서 만든다.
+- `src/types/` 는 아직 없다. 처음 쓰는 PR 에서 만든다.
+- 화면 하나는 `src/features/<도메인>/` 에 데이터 모델(`types.ts`) · 화면 조각 · 조립(`*-screen.tsx`)을 둔다. `app/**/page.tsx` 는 데이터를 구해 조립 컴포넌트에 넘기기만 한다 (예: `features/home`).
 
 ## import
 
@@ -80,7 +81,7 @@ frontend/
 | `StatusGauge`              | 홈 상태 카드                      | `status` — 자료 부족이면 회색 · 점 없음                                                                               |
 | `ProgressBar`              | 홈 자료 부족 상태의 참여 인원     | `value` · `max` · `label` — 참여 인원에만 쓰고 증상 비율에는 쓰지 않는다                                              |
 | `ListRow`                  | 증상별 변화 · 공식 정보 행        | `kind`: data · link / `leading` · `trailing` / `divider`                                                              |
-| `Section` · `SectionBand`  | 홈 섹션과 섹션 사이 8px 띠        | `title`                                                                                                               |
+| `Section` · `SectionBand`  | 홈 섹션과 섹션 사이 8px 띠        | `title` / `layout`: page(화면 폭) · panel(모바일은 화면 여백, 태블릿부터 격자 · 패널 안이라 여백 없음)                |
 | `Modal`                    | 보고 · 판단 기준 · 설치 안내      | `open` · `onClose` · `title` / `step` · `onBack` / `hideHeader` — 모바일 바텀시트, 태블릿 520 · 데스크톱 480 대화상자 |
 | `ToastRegion` · `useToast` | 보고 완료 되돌리기                | `toast` · `onAction` / `show` · `dismiss` (기본 5초)                                                                  |
 | `TabBar`                   | 모바일 · 태블릿 하단              | `current` — 데스크톱에서 숨긴다                                                                                       |
@@ -96,6 +97,9 @@ frontend/
 - 화면 맨 아래 붙는 요소는 홈 인디케이터 영역을 비운다(`pb-safe`, 시트는 `pb-sheet`). 레이아웃이 `viewport-fit=cover` 라 iOS PWA 에서 값이 생긴다.
 
 ## 데이터와 환경변수
+
+- **`자료 부족` 의 수치는 타입에서 막는다.** 화면 데이터 모델은 상태로 갈리는 유니온으로 두고, `insufficient` 쪽에는 증상 비율 · 기준선 · 증상별 변화 필드를 아예 두지 않는다 (`features/home/types.ts`). 화면 코드가 실수로 수치를 그리면 타입 오류가 난다.
+- API 연동 전 화면은 `features/<도메인>/mock.ts` 의 목 데이터로 만든다. 목 데이터의 기본값은 `자료 부족` 처럼 수치를 지어내지 않는 상태로 둔다. 연동 이슈에서 목 데이터를 지운다.
 
 - 화면 코드(`app/`, `src/features/`, `src/components/`)에서 `fetch` 를 직접 부르지 않는다. API 호출은 `src/lib/api/` 로 모은다 (ESLint 로 막는다).
 - 공개 환경변수는 `src/lib/env.client.ts` 에서만 읽는다. `process.env.NEXT_PUBLIC_X` 는 리터럴로 읽어야 빌드 때 치환된다.
