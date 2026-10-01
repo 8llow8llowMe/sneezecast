@@ -24,6 +24,7 @@ const COMMON = {
   regionName: '○○동',
   weekLabel: '11월 3주',
   weekRangeLabel: '11월 17일~23일',
+  reportPeriodLabel: '11월 17일(월)~23일(일)',
   updatedLabel: '오늘 09:00 갱신',
   publicThreshold: 100,
   official: OFFICIAL,

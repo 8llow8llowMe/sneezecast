@@ -12,9 +12,13 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(search),
 }))
 
-/** 닫힌 dialog 는 보조기술 트리에서 빠지므로 태그로 찾는다 */
+/** 닫힌 dialog 는 보조기술 트리에서 빠지므로 제목으로 찾는다 (홈에는 보고 · 판단 기준 두 개가 있다) */
 function explainDialog() {
-  return document.querySelector('dialog')
+  return (
+    [...document.querySelectorAll('dialog')].find(
+      (dialog) => dialog.querySelector('h2')?.textContent === '이렇게 판단했어요',
+    ) ?? null
+  )
 }
 
 describe('HomeScreen', () => {
