@@ -69,6 +69,13 @@ const MAPPING: Record<string, string> = {
   'size.tabBarTablet': '--size-tab-bar-tablet',
   'size.headerDesktop': '--size-header-desktop',
   'size.headerTablet': '--size-header-tablet',
+  'radius.bar': '--rounded-bar',
+  'radius.progress': '--rounded-progress',
+  'border.hairline': '--border-hairline',
+  'border.emphasis': '--border-emphasis',
+  'border.selected': '--border-selected',
+  'opacity.disabled': '--opacity-disabled',
+  'opacity.gaugeInactive': '--opacity-gauge-inactive',
 }
 
 /**
@@ -98,9 +105,12 @@ function cssVar(name: string): string | undefined {
   return match?.[1]?.trim()
 }
 
-/** 비교용 정규화: 색은 소문자, 숫자는 px 를 붙이고, 공백을 지운다 */
-function normalize(value: string | number): string {
-  if (typeof value === 'number') return `${value}px`
+/** 단위 없는 숫자 토큰. 나머지 숫자는 px 다 */
+const UNITLESS = /^opacity\./
+
+/** 비교용 정규화: 색은 소문자, 숫자는 px 를 붙이고(단위 없는 토큰 제외), 공백을 지운다 */
+function normalize(value: string | number, path = ''): string {
+  if (typeof value === 'number') return UNITLESS.test(path) ? String(value) : `${value}px`
   return value.toLowerCase().replace(/\s+/g, '')
 }
 
@@ -117,7 +127,7 @@ describe('tokens.json ↔ tokens.css', () => {
     expect(name, `${path} 매핑 없음`).toBeDefined()
     const actual = cssVar(name ?? '')
     expect(actual, `${name} 가 tokens.css 에 없음`).toBeDefined()
-    expect(normalize(actual ?? '')).toBe(normalize(value))
+    expect(normalize(actual ?? '')).toBe(normalize(value, path))
   })
 
   it('THEME_COLOR 가 color.bg 와 같다', () => {
