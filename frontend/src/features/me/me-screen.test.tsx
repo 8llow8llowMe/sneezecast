@@ -576,3 +576,30 @@ describe('MeScreen 확인 대화상자', () => {
     expect(replaceState).not.toHaveBeenCalled()
   })
 })
+
+describe('MeScreen 다시 들어온 회원', () => {
+  // 레이아웃 가드가 보낼 곳이 있으면 ?confirm= 불일치 정리(원시 history)를 하지 않는다 — Next 가 대기 중인 이동을 버린다
+  it('보낼 곳이 있으면 맞지 않는 ?confirm= 을 주소에서 지우지 않는다', async () => {
+    search = 'mock-auth=member-no-consent&mock-required=terms&confirm=consent-withdraw'
+    window.history.replaceState(null, '', `/me?${search}`)
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    const goBack = vi.spyOn(window.history, 'go')
+    renderMe()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(replaceState).not.toHaveBeenCalled()
+    expect(goBack).not.toHaveBeenCalled()
+  })
+
+  it('보낼 곳이 없으면 전처럼 맞지 않는 ?confirm= 을 지운다', async () => {
+    search = 'mock-auth=member-no-consent&confirm=consent-withdraw'
+    window.history.replaceState(null, '', `/me?${search}`)
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    renderMe()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(replaceState).toHaveBeenCalledTimes(1)
+  })
+})

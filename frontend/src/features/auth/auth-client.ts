@@ -1,4 +1,6 @@
 import { SETUP_REGION_FROM_KAKAO_PATH } from '@/features/onboarding/paths'
+import { ABOLISHED_DISTRICT_EXAMPLE } from '@/features/region/mock'
+import type { District } from '@/features/region/types'
 
 import type { Consent } from './legal'
 
@@ -18,7 +20,8 @@ import type { Consent } from './legal'
  * 모듈 메모리에만 두어 새로고침하면 `guest` 로 돌아간다 — 브라우저 저장소에 남기지 않는다.
  *
  * 내 정보(S10)가 보일 프로필(`MockProfile`)도 같은 세션에 둔다. 로그인 · 가입할 때 채우고 로그아웃 · 탈퇴하면 지운다.
- * 비밀번호 설정(`setupPassword`)에 성공하면 `hasPassword` 를 true 로 바꾼다.
+ * 비밀번호 설정(`setupPassword`)에 성공하면 `hasPassword` 를 true 로 바꾼다. 내 동네 저장(`saveRegion`)에 성공하면 동네를 바꾸고
+ * 폐지 표시를 끄고, 약관 재동의(`agreeTermsReconsent`)에 성공하면 재동의 표시를 끈다.
  * 연동 때 `GET /api/v1/members/me`(백엔드 #58) 응답으로 바꾼다.
  */
 export type MockAuthState = 'guest' | 'member-no-consent' | 'member'
@@ -32,18 +35,50 @@ export const MOCK_AUTH_STATES: readonly MockAuthState[] = ['guest', 'member-no-c
  *
  * `hasPassword` 는 이메일로도 로그인할 수 있는지다. 이메일 가입은 늘 true, 카카오 가입은 비밀번호를 설정하기 전까지 false 다
  * (내 정보의 `비밀번호 변경` / `비밀번호 설정` 이 이 값으로 갈린다). 연동 때 `GET /me` 가 이 값을 주는지 백엔드와 맞춘다.
+ *
+ * 내 동네와 다시 들어올 때 거칠 화면의 조건(`regionAbolished` · `termsReconsentRequired`)도 둔다. 홈 · 내 정보가 이 값으로
+ * 약관 재동의(Setup-3-reconsent) · 동네 다시 고르기(Setup-1-reselect)로 먼저 보낸다(`required-steps.ts`).
+ * 연동 때 이 두 값을 어느 응답이 주는지 백엔드(#59 · #60)와 정한다(docs/design/SCREENS.md 연동 요구사항).
  */
 export type MockProfile = {
   provider: 'email' | 'kakao'
   email: string
   nickname: string
   hasPassword: boolean
+  /** 내 동네(행정동). 목이 모르면(가입 없이 이메일 로그인) null 이다 — 그래도 다시 고르게 하지는 않는다 */
+  region: MemberRegion | null
+  /** 내 동네가 행정구역 개편으로 폐지됐는지. true 면 `region` 은 옛 동네이고, 다시 골라야 보고를 셀 수 있다 */
+  regionAbolished: boolean
+  /** 필수 약관(서비스 이용약관)이 개정돼 다시 동의해야 하는지 */
+  termsReconsentRequired: boolean
 }
+
+/** 회원의 내 동네. 옛 동네를 알릴 때 이름을 쓴다 */
+export type MemberRegion = Pick<District, 'code' | 'name'>
+
+/** 동네 · 재동의 조건이 없는 프로필 값. 로그인 · 가입이 처음 만드는 프로필이 쓴다 */
+const NO_CONDITIONS = {
+  region: null,
+  regionAbolished: false,
+  termsReconsentRequired: false,
+} as const satisfies Pick<MockProfile, 'region' | 'regionAbolished' | 'termsReconsentRequired'>
 
 /** 시안(Settings · Settings-kakao)의 예시 값. 실제 값은 `GET /me` 에서 받는다 */
 export const EXAMPLE_PROFILES: Readonly<Record<MockProfile['provider'], MockProfile>> = {
-  email: { provider: 'email', email: 'dong@example.com', nickname: '동네지기', hasPassword: true },
-  kakao: { provider: 'kakao', email: 'dong@kakao.com', nickname: '동네지기', hasPassword: false },
+  email: {
+    provider: 'email',
+    email: 'dong@example.com',
+    nickname: '동네지기',
+    hasPassword: true,
+    ...NO_CONDITIONS,
+  },
+  kakao: {
+    provider: 'kakao',
+    email: 'dong@kakao.com',
+    nickname: '동네지기',
+    hasPassword: false,
+    ...NO_CONDITIONS,
+  },
 }
 
 let mockSession: MockAuthState = 'guest'
@@ -92,7 +127,11 @@ function sameProfile(a: MockProfile | null, b: MockProfile | null): boolean {
     a.provider === b.provider &&
     a.email === b.email &&
     a.nickname === b.nickname &&
-    a.hasPassword === b.hasPassword
+    a.hasPassword === b.hasPassword &&
+    a.region?.code === b.region?.code &&
+    a.region?.name === b.region?.name &&
+    a.regionAbolished === b.regionAbolished &&
+    a.termsReconsentRequired === b.termsReconsentRequired
   )
 }
 
@@ -113,7 +152,9 @@ export function resetMockSession() {
  * 목에서 오류 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
  * - 이메일 `locked@example.com` → `locked` (로그인 시도가 많아 잠시 막힘)
  * - 비밀번호 `wrong` → `wrong` (이메일 또는 비밀번호가 맞지 않음)
- * - 그 밖 → 성공
+ * - 그 밖 → 성공. 다시 들어올 때 거칠 화면의 조건을 서버가 알려 주는 흉내로, 다음 이메일은 프로필에 조건을 켠다:
+ *   `reconsent@example.com` · `reconsent-fail@example.com` → 약관 재동의, `reselect@example.com` · `reselect-fail@example.com`
+ *   → 동네 폐지(옛 동네는 시안 예시 `○○1동`). `-fail` 은 그 화면의 저장이 실패한다(아래 재동의 · 동네 저장)
  */
 
 export const MOCK_LOCKED_EMAIL = 'locked@example.com'
@@ -131,8 +172,23 @@ export function loginWithEmail(email: string, password: string): Promise<EmailLo
     email: key,
     nickname: mockNicknames.get(key) ?? EXAMPLE_PROFILES.email.nickname,
     hasPassword: true,
+    ...conditionsFor(key),
   })
   return Promise.resolve({ status: 'ok' })
+}
+
+function conditionsFor(
+  email: string,
+): Pick<MockProfile, 'region' | 'regionAbolished' | 'termsReconsentRequired'> {
+  const reconsent = email === MOCK_RECONSENT_EMAIL || email === MOCK_RECONSENT_FAIL_EMAIL
+  const reselect = email === MOCK_RESELECT_EMAIL || email === MOCK_RESELECT_FAIL_EMAIL
+  return {
+    region: reselect
+      ? { code: ABOLISHED_DISTRICT_EXAMPLE.code, name: ABOLISHED_DISTRICT_EXAMPLE.name }
+      : null,
+    regionAbolished: reselect,
+    termsReconsentRequired: reconsent,
+  }
 }
 
 /**
@@ -329,9 +385,24 @@ export function signup(request: SignupRequest): Promise<SignupResult> {
   return Promise.resolve({ status: ok ? 'ok' : 'verification-expired' })
 }
 
-/** 내 동네(행정동 코드) 저장 */
-export function saveRegion(code: string): Promise<void> {
-  void code
+/**
+ * 내 동네 저장. 가입 마무리(S02-3)와 폐지된 동네 다시 고르기(Setup-1-reselect)가 같이 쓴다 — 둘 다 백엔드 #60 의 설정 API 다.
+ * 연동 때 서버에는 코드만 보낸다. 이름은 목 프로필이 내 동네를 들고 있게 받는다.
+ *
+ * 성공하면 화면과 무관하게 목 프로필의 동네를 바꾸고 폐지 표시를 끈다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다).
+ * 프로필이 없으면(`?mock-auth=` 덮어쓰기만 있음) 세션은 그대로다.
+ * 목 재현: 프로필 이메일 `reselect-fail@example.com` 이면 거부한다(그 이메일로 가입해도 S02-3 의 동네 저장이 실패한다).
+ */
+export function saveRegion(district: District): Promise<void> {
+  const failure = rejectIfProfileEmail(MOCK_RESELECT_FAIL_EMAIL, 'save region')
+  if (failure) return failure
+  if (mockProfile) {
+    setMockSession(mockSession, {
+      ...mockProfile,
+      region: { code: district.code, name: district.name },
+      regionAbolished: false,
+    })
+  }
   return Promise.resolve()
 }
 
@@ -340,6 +411,34 @@ export function agreeHealthConsent(consent: Consent): Promise<void> {
   void consent
   // 동의를 보낸 화면이 응답 전에 닫혀도 서버에는 동의가 남는다. 세션 상태도 화면과 무관하게 여기서 바꾼다
   setMockSession('member')
+  return Promise.resolve()
+}
+
+/* ── 약관 재동의 · 동네 다시 고르기 (Setup-3-reconsent · Setup-1-reselect) ───────────────────────────
+ *
+ * 연동 때 바꾼다: 재동의 — 백엔드 #59 의 재동의 API(요청 · 응답 모양은 아직 없다), 동네 다시 저장 — 위 `saveRegion`(#60 설정 API).
+ * 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다 — 화면은 다시 시도하라고 알린다.
+ * 성공하면 화면과 무관하게 목 프로필의 조건을 먼저 끈다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다).
+ *
+ * 목에서 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다). 프로필 이메일로 가린다 — 그 이메일로 이메일 로그인하면
+ * 조건이 켜진 채 홈으로 간다:
+ * - 조건만: `reconsent@example.com`(약관 재동의) · `reselect@example.com`(동네 폐지)
+ * - 저장 실패: `reconsent-fail@example.com` → 재동의 거부, `reselect-fail@example.com` → 동네 저장 거부
+ */
+
+export const MOCK_RECONSENT_EMAIL = 'reconsent@example.com'
+export const MOCK_RECONSENT_FAIL_EMAIL = 'reconsent-fail@example.com'
+export const MOCK_RESELECT_EMAIL = 'reselect@example.com'
+export const MOCK_RESELECT_FAIL_EMAIL = 'reselect-fail@example.com'
+
+/** 개정된 필수 약관에 다시 동의한다. 근거 문서 버전(`legal.ts` 의 지금 버전)을 함께 보낸다 */
+export function agreeTermsReconsent(consent: Consent): Promise<void> {
+  void consent
+  const failure = rejectIfProfileEmail(MOCK_RECONSENT_FAIL_EMAIL, 'terms reconsent')
+  if (failure) return failure
+  if (mockProfile?.termsReconsentRequired) {
+    setMockSession(mockSession, { ...mockProfile, termsReconsentRequired: false })
+  }
   return Promise.resolve()
 }
 

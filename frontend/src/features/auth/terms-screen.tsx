@@ -171,7 +171,7 @@ export function TermsScreen() {
     }
 
     try {
-      await saveRegion(district.code)
+      await saveRegion(district)
     } catch {
       fail('region')
       return

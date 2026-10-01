@@ -1,5 +1,5 @@
-import { DISTRICT_MOCKS } from './mock'
-import type { District } from './types'
+import { DISTRICT_MOCKS, RESELECT_CANDIDATE_MOCKS } from './mock'
+import type { District, ReselectCandidate } from './types'
 
 /**
  * 행정동 찾기. **API 연동 전 목 구현이다.**
@@ -25,4 +25,16 @@ export function searchDistricts(query: string): Promise<District[]> {
 /** 코드로 행정동 하나. 모르는 코드면 null 이다 */
 export function findDistrict(code: string): Promise<District | null> {
   return Promise.resolve(DISTRICT_MOCKS.find((district) => district.code === code) ?? null)
+}
+
+/**
+ * 폐지된 동네(옛 코드)를 다시 고를 후보 (Setup-1-reselect). 모르는 코드면 빈 목록이다 — 화면은 검색으로 고르게 한다.
+ *
+ * **목은 시안 예시 후보만 안다**(`RESELECT_CANDIDATE_MOCKS`). 연동 때 백엔드 #60 의 "폐지된 코드면 재선택 유도" 응답으로 바꾼다 —
+ * 그 응답이 후보를 함께 주는지, 따로 묻는 API 가 있는지는 백엔드와 정한다(docs/design/SCREENS.md 연동 요구사항).
+ */
+export function listSuccessorDistricts(oldCode: string): Promise<ReselectCandidate[]> {
+  const candidates = RESELECT_CANDIDATE_MOCKS[oldCode] ?? []
+  // 화면이 목록을 고쳐도 목 값이 바뀌지 않게 복사해 준다
+  return Promise.resolve(candidates.map((candidate) => ({ ...candidate })))
 }

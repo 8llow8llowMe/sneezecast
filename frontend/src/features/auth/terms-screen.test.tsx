@@ -16,7 +16,14 @@ import {
 import type { District } from '@/features/region/types'
 
 import type * as authClient from './auth-client'
-import { loginWithEmail, saveRegion, sendEmailCode, signup, verifyEmailCode } from './auth-client'
+import {
+  getMockProfile,
+  loginWithEmail,
+  saveRegion,
+  sendEmailCode,
+  signup,
+  verifyEmailCode,
+} from './auth-client'
 import { LoginScreen } from './login-screen'
 import { SignupEmailScreen } from './signup-email-screen'
 import { TermsScreen } from './terms-screen'
@@ -186,7 +193,9 @@ describe('TermsScreen', () => {
       ],
     })
     expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026')
-    expect(saveRegion).toHaveBeenCalledWith('11680640')
+    expect(saveRegion).toHaveBeenCalledWith(DISTRICT)
+    // 로그인한 뒤 저장하므로 목 프로필이 내 동네를 들고 있다(재선택 판단 · 내 정보가 쓴다)
+    expect(getMockProfile()?.region).toEqual({ code: '11680640', name: '역삼1동' })
     const [signedUp] = vi.mocked(signup).mock.invocationCallOrder
     const [loggedIn] = vi.mocked(loginWithEmail).mock.invocationCallOrder
     const [saved] = vi.mocked(saveRegion).mock.invocationCallOrder

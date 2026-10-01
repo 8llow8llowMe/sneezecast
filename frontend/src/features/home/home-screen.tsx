@@ -11,6 +11,8 @@ import { ToastRegion, useToast } from '@/components/toast'
 import { HealthConsentSheet } from '@/features/auth/health-consent-sheet'
 import { LoginSheet } from '@/features/auth/login-sheet'
 import { MOCK_AUTH_PARAM, useMockAuth } from '@/features/auth/use-mock-auth'
+import { useRequiredStepsGate } from '@/features/me/member-gate'
+import { HOME_PATH } from '@/features/onboarding/paths'
 import { REPORT_PARAM, ReportFlow } from '@/features/report/report-flow'
 import type { SubmittedReport } from '@/features/report/types'
 import { useModalParam } from '@/lib/use-modal-param'
@@ -44,6 +46,8 @@ import { useExplainParam } from './use-explain-param'
  *
  * 비회원 홈(Home-guest)은 동네 현황이 같고 보고 버튼 문구가 "로그인하고 보고하기" 다. 모바일은 하단 버튼 위에 한 줄 안내,
  * 태블릿 · 데스크톱은 본문 맨 위에 안내 상자를 둔다. 둘러보기에서 고른 동네(`regionCode`)는 메뉴 링크에 붙여 잃지 않게 한다.
+ *
+ * 다시 들어온 회원에게 약관 재동의 · 동네 다시 고르기 조건이 있으면 그 화면으로 먼저 보낸다(`useRequiredStepsGate`, 내 정보와 같다).
  */
 export function HomeScreen({
   week,
@@ -58,6 +62,8 @@ export function HomeScreen({
   const report = useModalParam(REPORT_PARAM)
   const auth = useMockAuth()
   const guest = auth === 'guest'
+  // 재동의 · 동네 다시 고르기로 보낼 곳. 있으면 아래 보고 진입 정리(원시 history)를 하지 않는다 — 정리가 그 이동을 버리게 한다
+  const requiredTarget = useRequiredStepsGate(HOME_PATH)
   // 이번 주에 보낸 보고. API 연동 전이라 화면을 떠나면 사라진다 — 연동 이슈에서 서버 값으로 바꾼다
   const [submitted, setSubmitted] = useState<SubmittedReport | null>(null)
   const openReport = () => report.open(reportEntryFor(auth))
@@ -71,10 +77,10 @@ export function HomeScreen({
   const reportEntry = guardReportEntry(reportValue, auth) ?? reportValue
   useEffect(() => {
     const fixed = guardReportEntry(reportValue, auth)
-    if (fixed === null) return
+    if (fixed === null || requiredTarget !== null) return
     const timer = setTimeout(() => replaceReport(fixed), 0)
     return () => clearTimeout(timer)
-  }, [reportValue, auth, replaceReport])
+  }, [reportValue, auth, replaceReport, requiredTarget])
 
   // 동네 바꾸기(S02) · 알림 설정(S10) 화면이 생기면 각각 연결한다
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
