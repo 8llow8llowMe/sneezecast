@@ -78,6 +78,7 @@ const MAPPING: Record<string, string> = {
   'opacity.gaugeInactive': '--opacity-gauge-inactive',
   'fontSize.sheetTitle': '--fs-sheet-title',
   'fontSize.dialogTitle': '--fs-dialog-title',
+  'fontSize.dialogBody': '--fs-dialog-body',
   'size.dialogWidthTablet': '--size-dialog-width-tablet',
   'size.dialogWidthDesktop': '--size-dialog-width-desktop',
   'letterSpacing.brand': '--letter-spacing-brand',

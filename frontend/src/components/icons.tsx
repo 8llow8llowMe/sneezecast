@@ -129,3 +129,30 @@ export function UserIcon({ size = 24, strokeWidth = 1.75, ...rest }: IconProps) 
     </Icon>
   )
 }
+
+/**
+ * 보고 완료 (Report-done). 네이비 원 안의 흰 체크, 64px.
+ * 다른 아이콘과 달리 면을 채우므로 색은 글자색이 아니라 토큰 클래스로 고정한다.
+ */
+export function SuccessIcon({ size = 64, ...rest }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+      {...rest}
+    >
+      <circle cx="32" cy="32" r="30" className="fill-brand" />
+      <path
+        d="M20 33l8 8 16-17"
+        className="stroke-bg"
+        strokeWidth={4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}

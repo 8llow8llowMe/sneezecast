@@ -51,6 +51,8 @@
   --fs-tab: 11px;
   --fs-sheet-title: 22px;
   --fs-dialog-title: 24px;
+  /* 대화상자 안 설명 문단 (Report-done-T · -D). 모바일 전체 화면은 17px(section-title) */
+  --fs-dialog-body: 16px;
 
   /* ── 모서리 (tokens.json radius) */
   --rounded-card: 16px;
