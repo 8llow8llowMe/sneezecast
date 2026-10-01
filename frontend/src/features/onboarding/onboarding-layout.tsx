@@ -11,7 +11,8 @@ export const SETUP_STEP_COUNT = 4
 export type OnboardingLayoutProps = {
   /** 몇 번째 단계인지. 없으면 단계 표시를 그리지 않는다 (둘러보기 모드) */
   step?: number | undefined
-  onBack: () => void
+  /** 없으면 뒤로 버튼을 그리지 않는다 (가입을 마친 뒤의 증상 보고 동의 — 되돌아가 다시 가입하지 않게) */
+  onBack?: (() => void) | undefined
   /** 데스크톱 오른쪽 패널의 큰 문구 */
   panelTitle: ReactNode
   /** 화면 아래 버튼 영역 */
@@ -46,7 +47,17 @@ export function OnboardingLayout({
         </span>
 
         <header className="mt-1.5 flex h-11 shrink-0 items-center gap-1 px-page-mobile tablet:mt-0 tablet:px-0 desktop:mt-5">
-          <IconButton label="뒤로" icon={<ChevronLeftIcon />} onClick={onBack} className="-ml-3" />
+          {onBack ? (
+            <IconButton
+              label="뒤로"
+              icon={<ChevronLeftIcon />}
+              onClick={onBack}
+              className="-ml-3"
+            />
+          ) : (
+            // 뒤로 버튼이 없어도 머리줄 높이(44)는 그대로 둔다
+            <span className="size-touch" aria-hidden="true" />
+          )}
           <span className="hidden text-section-title font-extrabold tracking-brand text-brand tablet:inline desktop:hidden">
             우리동네체온계
           </span>

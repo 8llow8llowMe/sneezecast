@@ -44,7 +44,7 @@ describe('AdultScreen', () => {
     expect(next.disabled).toBe(false)
 
     await user.click(next)
-    expect(router.push).toHaveBeenCalledWith('/setup/consent')
+    expect(router.push).toHaveBeenCalledWith('/setup/terms')
   })
 
   it('체크를 다시 풀면 다음이 꺼진다', async () => {

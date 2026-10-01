@@ -22,7 +22,7 @@ import { canGoBackTo, nextTrail } from './onboarding-trail'
  * 레이아웃은 이 화면들 사이를 오가도 다시 그려지지 않아 값이 남는다.
  *
  * **브라우저 저장소에 남기지 않는다** (docs/conventions.md "데이터와 환경변수"). 새로고침하면 사라지고,
- * 다음 단계는 값이 없으면 동네 선택으로 돌려보낸다. 서버 저장은 동의(S02-3) 뒤 연동 이슈에서 붙인다.
+ * 다음 단계는 값이 없으면 앞 단계로 돌려보낸다. 서버에는 가입 동의(S02-3)에서 가입 · 내 동네를 한꺼번에 보낸다.
  */
 /**
  * 이메일 가입(S13-2 ~ S13-4) 중에 모으는 값. **메모리에만 둔다** — 브라우저 저장소 · 주소 · 로그에 남기지 않는다.
@@ -50,6 +50,13 @@ export const EMPTY_SIGNUP: SignupDraft = {
   nickname: '',
 }
 
+/**
+ * 가입 요청 진행 (S02-3). 계정을 만든 뒤 동네 저장이 실패해도 다시 누를 때 가입을 두 번 보내지 않게 나눠 둔다.
+ */
+export type Membership = { accountCreated: boolean; regionSaved: boolean }
+
+export const NO_MEMBERSHIP: Membership = { accountCreated: false, regionSaved: false }
+
 type OnboardingState = {
   district: District | null
   /** 고른 동네. 검색어를 바꾸면 null 로 지운다 */
@@ -61,6 +68,14 @@ type OnboardingState = {
   updateSignup: (patch: Partial<SignupDraft>) => void
   /** 가입 초안을 비운다. `keepEmail` 이면 쓴 이메일만 남긴다(비밀번호 · 토큰 · 보낸 시각은 늘 지운다) */
   resetSignup: (options?: { keepEmail?: boolean }) => void
+  /**
+   * [선택] 주간 보고 알림 받기 (S02-3). 백엔드 알림 동의(`PUSH_NOTIFICATION`)는 푸시와 함께 2단계라
+   * 지금은 여기에만 들고 가입 요청에는 넣지 않는다
+   */
+  notificationOptIn: boolean
+  setNotificationOptIn: (value: boolean) => void
+  membership: Membership
+  updateMembership: (patch: Partial<Membership>) => void
   /**
    * 앞 단계로. 앱 안에서 앞 단계 후보 중 하나를 거쳐 왔으면 기록을 되돌리고(휴대폰 뒤로 가기와 같다),
    * 주소로 바로 들어와 앞 단계 기록이 없으면 첫 후보로 기록을 쌓지 않고 바꿔 간다.
@@ -77,17 +92,28 @@ export function OnboardingProvider({
   children,
   initialDistrict = null,
   initialSignup = EMPTY_SIGNUP,
+  initialAdultConfirmed = false,
+  initialMembership = NO_MEMBERSHIP,
 }: {
   children: ReactNode
   /** 처음 고른 동네. 테스트에서 다음 단계부터 그릴 때 쓴다 — 화면은 늘 비워 시작한다 */
   initialDistrict?: District | null
   /** 처음 가입 값. 테스트에서 다음 단계부터 그릴 때 쓴다 */
   initialSignup?: SignupDraft
+  /** 테스트에서 다음 단계부터 그릴 때 쓴다 */
+  initialAdultConfirmed?: boolean
+  initialMembership?: Membership
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const [district, setDistrict] = useState<District | null>(initialDistrict)
-  const [adultConfirmed, setAdultConfirmed] = useState(false)
+  const [adultConfirmed, setAdultConfirmed] = useState(initialAdultConfirmed)
+  const [notificationOptIn, setNotificationOptIn] = useState(false)
+  const [membership, setMembership] = useState<Membership>(initialMembership)
+  const updateMembership = useCallback(
+    (patch: Partial<Membership>) => setMembership((current) => ({ ...current, ...patch })),
+    [],
+  )
   const [signup, setSignup] = useState<SignupDraft>(initialSignup)
   const updateSignup = useCallback(
     (patch: Partial<SignupDraft>) => setSignup((current) => ({ ...current, ...patch })),
@@ -134,10 +160,25 @@ export function OnboardingProvider({
       signup,
       updateSignup,
       resetSignup,
+      notificationOptIn,
+      setNotificationOptIn,
+      membership,
+      updateMembership,
       goBack,
       replace,
     }),
-    [district, adultConfirmed, signup, updateSignup, resetSignup, goBack, replace],
+    [
+      district,
+      adultConfirmed,
+      signup,
+      updateSignup,
+      resetSignup,
+      notificationOptIn,
+      membership,
+      updateMembership,
+      goBack,
+      replace,
+    ],
   )
 
   return <OnboardingContext value={value}>{children}</OnboardingContext>
