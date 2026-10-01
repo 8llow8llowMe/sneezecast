@@ -28,9 +28,10 @@ vi.mock('./auth-client', async (importOriginal) => {
 
 /** 그만둔 이메일 가입 초안 */
 const ABANDONED: SignupDraft = {
+  method: 'email',
   email: 'dong@example.com',
   codeSentAt: 1,
-  verificationToken: 'mock-verified',
+  verifiedAt: 1,
   password: 'dongne2026',
   nickname: '동네지기',
 }
@@ -112,16 +113,16 @@ describe('LoginScreen', () => {
     expect(router.push).not.toHaveBeenCalled()
   })
 
-  it('들어오면 그만둔 가입의 비밀번호 · 인증 값을 지우고 이메일만 남긴다', () => {
+  it('들어오면 그만둔 가입의 가입 종류 · 인증 · 비밀번호를 지우고 이메일만 남긴다', () => {
     renderLogin(null, ABANDONED)
     expect(draft()).toEqual({ ...EMPTY_SIGNUP, email: 'dong@example.com' })
   })
 
-  it('카카오로 시작하면 가입 초안을 모두 비운다', async () => {
+  it('카카오로 시작하면 가입 초안을 모두 비우고 가입 종류를 카카오로 둔다', async () => {
     renderLogin(null, ABANDONED)
     await userEvent.setup().click(screen.getByRole('button', { name: '카카오로 계속하기' }))
     await waitFor(() => expect(router.push).toHaveBeenCalled())
-    expect(draft()).toEqual(EMPTY_SIGNUP)
+    expect(draft()).toEqual({ ...EMPTY_SIGNUP, method: 'kakao' })
   })
 
   it('카카오를 기다리는 동안 화면을 떠나면 늦은 응답으로 이동하지 않는다', async () => {

@@ -36,11 +36,11 @@ function Probe() {
 }
 const draft = () => JSON.parse(screen.getByTestId('draft').textContent ?? '{}') as SignupDraft
 
-function setup(initial: SignupDraft = EMPTY_SIGNUP) {
+function setup(initial: SignupDraft = EMPTY_SIGNUP, { verificationExpired = false } = {}) {
   const user = userEvent.setup()
   const utils = render(
     <OnboardingProvider initialSignup={initial}>
-      <SignupEmailScreen />
+      <SignupEmailScreen verificationExpired={verificationExpired} />
       <Probe />
     </OnboardingProvider>,
   )
@@ -81,34 +81,59 @@ describe('SignupEmailScreen', () => {
     expect(isOff(submit)).toBe(false)
   })
 
-  it('보내면 인증 코드로 간다', async () => {
+  it('보내면 가입 종류를 이메일로 두고 인증 코드로 간다', async () => {
     const { user, email, submit } = setup()
     await user.type(email, ' dong@example.com ')
     await user.click(submit)
 
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/signup/code'))
     expect(sendEmailCode).toHaveBeenCalledWith('dong@example.com')
+    expect(draft().method).toBe('email')
   })
 
-  it('이미 가입된 이메일이면 이메일로 로그인 링크를 보인다', async () => {
+  it('가입 여부를 드러내지 않는다 — 이미 가입한 이메일도 코드 단계로 가고 로그인 링크가 없다', async () => {
     const { user, email, submit } = setup()
     await user.type(email, 'exists@example.com')
     await user.click(submit)
 
-    expect((await screen.findByRole('alert')).textContent).toBe('이미 가입된 이메일이에요.')
-    expect(screen.getByRole('link', { name: '이메일로 로그인' }).getAttribute('href')).toBe(
-      '/login/email',
-    )
-    expect(isOff(submit)).toBe(true)
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/signup/code'))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('link', { name: '이메일로 로그인' })).toBeNull()
   })
 
-  it('요청이 많으면 잠시 막혔다고 alert 로 알린다', async () => {
+  it('요청이 많으면 남은 시간을 못 박지 않고 잠시 막혔다고 alert 로 알린다', async () => {
     const { user, email, submit } = setup()
     await user.type(email, 'limit@example.com')
     await user.click(submit)
 
-    expect((await screen.findByRole('alert')).textContent).toContain('10분 뒤')
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '코드 요청이 많아 잠시 막혔어요. 조금 뒤 다시 시도해 주세요.',
+    )
     expect(isOff(submit)).toBe(true)
+  })
+
+  it('인증 시간이 지나 돌아왔으면 안내를 alert 로 띄우고 앞서 쓴 이메일을 남긴다', () => {
+    const { email } = setup(
+      { ...EMPTY_SIGNUP, method: 'email', email: 'dong@example.com', nickname: '동네지기' },
+      { verificationExpired: true },
+    )
+    expect(screen.getByRole('alert').textContent).toBe(
+      '인증 시간이 지났어요. 이메일 인증부터 다시 해 주세요.',
+    )
+    expect((email as HTMLInputElement).value).toBe('dong@example.com')
+  })
+
+  it('인증 시간이 지나 왔어도 코드를 새로 보낸 뒤 돌아오면 안내를 다시 띄우지 않는다', () => {
+    setup(
+      { ...EMPTY_SIGNUP, method: 'email', email: 'dong@example.com', codeSentAt: Date.now() },
+      { verificationExpired: true },
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('쿼리가 없으면 인증 만료 안내를 띄우지 않는다', () => {
+    setup()
+    expect(screen.queryByText(/인증 시간이 지났어요/)).toBeNull()
   })
 
   it('보내는 중에는 칸을 고칠 수 없고 두 번 보내지 않는다', async () => {
@@ -136,9 +161,10 @@ describe('SignupEmailScreen', () => {
   it('다른 이메일로 보내면 이메일 · 보낸 시각을 새로 두고 앞선 인증을 지운다', async () => {
     const { user, email, submit } = setup({
       ...EMPTY_SIGNUP,
+      method: 'email',
       email: 'old@example.com',
       codeSentAt: 1,
-      verificationToken: 'mock-verified',
+      verifiedAt: 1,
     })
     await user.clear(email)
     await user.type(email, 'new@example.com')
@@ -146,7 +172,7 @@ describe('SignupEmailScreen', () => {
 
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/signup/code'))
     expect(draft().email).toBe('new@example.com')
-    expect(draft().verificationToken).toBeNull()
+    expect(draft().verifiedAt).toBeNull()
     expect(draft().codeSentAt).toBeGreaterThan(1)
   })
 

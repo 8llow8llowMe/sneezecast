@@ -20,7 +20,7 @@ vi.mock('./auth-client', async (importOriginal) => {
   return { ...actual, agreeHealthConsent: vi.fn(actual.agreeHealthConsent) }
 })
 
-const DONE: Membership = { accountCreated: true, regionSaved: true }
+const DONE: Membership = { accountCreated: true, loggedIn: true, regionSaved: true }
 
 function setup(membership: Membership = DONE) {
   const user = userEvent.setup()
@@ -127,7 +127,7 @@ describe('HealthConsentScreen', () => {
   })
 
   it('가입을 마치지 않았으면 가입 동의로 돌려보낸다', () => {
-    const { container } = setup({ accountCreated: false, regionSaved: false })
+    const { container } = setup({ accountCreated: false, loggedIn: false, regionSaved: false })
     expect(container.textContent).toBe('')
     expect(router.replace).toHaveBeenCalledWith('/setup/terms')
   })

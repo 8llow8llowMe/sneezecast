@@ -1,21 +1,20 @@
 'use client'
 
 import { type FormEvent, useId, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
 import { TextField } from '@/components/text-field'
-import { useOnboarding } from '@/features/onboarding/onboarding-context'
+import { NO_MEMBERSHIP, useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
-import { LOGIN_EMAIL_PATH, LOGIN_PATH, SIGNUP_CODE_PATH } from '@/features/onboarding/paths'
+import { LOGIN_PATH, SIGNUP_CODE_PATH } from '@/features/onboarding/paths'
 import { useActiveRef } from '@/lib/use-active-ref'
 
 import { sendEmailCode } from './auth-client'
 import { isEmailFormat } from './signup-rules'
 
-type Status = 'idle' | 'submitting' | 'invalid' | 'exists' | 'limit' | 'failed'
+type Status = 'idle' | 'submitting' | 'invalid' | 'limit' | 'failed'
 
 /**
  * S13-2 이메일 입력. 단계 표시는 없다.
@@ -24,28 +23,33 @@ type Status = 'idle' | 'submitting' | 'invalid' | 'exists' | 'limit' | 'failed'
  * | --- | --- |
  * | 기본 | 이메일 칸 · "가입과 로그인에만 써요." · 인증 코드 받기 |
  * | invalid | 칸 아래 "이메일 형식을 확인해 주세요." — 보낼 때 판단한다(입력 중에는 띄우지 않는다) |
- * | exists | 칸 아래 "이미 가입된 이메일이에요." + 이메일로 로그인 링크 |
- * | limit | 회색 상자 "코드 요청이 많아 잠시 막혔어요." |
+ * | limit | 회색 상자 "코드 요청이 많아 잠시 막혔어요." — 남은 시간은 서버가 주지 않아 못 박지 않는다 |
+ * | verification-expired | `?reason=verification-expired` 면 회색 상자 "인증 시간이 지났어요." (코드를 새로 보내기 전까지) |
+ *
+ * "이미 가입된 이메일" 상태는 두지 않는다 — 코드 받기는 가입 여부와 무관하게 같은 응답이라(계정 열거 방지,
+ * backend/docs/modules.md "화면 계약") 늘 코드 단계로 간다. 코드 화면이 중립 문구로 알린다.
  *
  * 오류 · 막힘이면 버튼이 꺼지고 칸을 고치면 다시 켜진다. 버튼은 `aria-disabled` 로 꺼서 포커스를 지킨다.
  * "이메일 바꾸기" 로 돌아오면 앞서 쓴 이메일이 그대로 있다.
  *
  * 시안: docs/design/auth/screens/ 의 Signup-email (+ -T · -D)
  */
-export function SignupEmailScreen() {
+export function SignupEmailScreen({
+  verificationExpired = false,
+}: {
+  /** 가입 요청이 인증 만료(`AUTH_007`)로 돌아왔는지 (`?reason=verification-expired`) */
+  verificationExpired?: boolean
+}) {
   const router = useRouter()
-  const { signup, updateSignup, goBack } = useOnboarding()
+  const { signup, updateSignup, updateMembership, goBack } = useOnboarding()
   const active = useActiveRef()
   const formId = useId()
   const [email, setEmail] = useState(signup.email)
   const [status, setStatus] = useState<Status>('idle')
   const submitting = status === 'submitting'
-  const blocked =
-    email.trim() === '' ||
-    submitting ||
-    status === 'invalid' ||
-    status === 'exists' ||
-    status === 'limit'
+  const blocked = email.trim() === '' || submitting || status === 'invalid' || status === 'limit'
+  // 코드를 새로 보낸 뒤 "이메일 바꾸기" 로 돌아오면 주소에 쿼리가 남아 있어도 안내를 다시 띄우지 않는다
+  const showExpired = verificationExpired && signup.codeSentAt === null
 
   function change(value: string) {
     setEmail(value)
@@ -66,8 +70,10 @@ export function SignupEmailScreen() {
       // 기다리는 동안 화면을 떠났으면 늦은 응답을 버린다
       if (!active.current) return
       if (result.status === 'sent') {
-        // 새 이메일 · 새 코드다. 앞선 인증은 무효가 된다
-        updateSignup({ email: value, codeSentAt: Date.now(), verificationToken: null })
+        // 새 이메일 · 새 코드다. 앞선 인증은 무효가 되고 가입 종류는 이메일이다.
+        // 새 가입 시도라 앞선 가입 마무리 진행도 비운다 — 남으면 S02-3 이 이 이메일의 가입을 건너뛴다
+        updateSignup({ method: 'email', email: value, codeSentAt: Date.now(), verifiedAt: null })
+        updateMembership(NO_MEMBERSHIP)
         router.push(SIGNUP_CODE_PATH)
         return
       }
@@ -77,12 +83,7 @@ export function SignupEmailScreen() {
     }
   }
 
-  const error =
-    status === 'invalid'
-      ? '이메일 형식을 확인해 주세요.'
-      : status === 'exists'
-        ? '이미 가입된 이메일이에요.'
-        : undefined
+  const error = status === 'invalid' ? '이메일 형식을 확인해 주세요.' : undefined
 
   return (
     <OnboardingLayout
@@ -121,15 +122,19 @@ export function SignupEmailScreen() {
           onChange={(event) => change(event.target.value)}
           hint={status === 'limit' ? undefined : '가입과 로그인에만 써요.'}
           error={error}
-          messageAction={
-            status === 'exists' ? <Link href={LOGIN_EMAIL_PATH}>이메일로 로그인</Link> : undefined
-          }
         />
+
+        {showExpired && (
+          // 이 화면에 들어오자마자 보이는 상자다. 처음부터 있던 status 영역은 읽히지 않을 수 있어 alert 로 둔다
+          <AlertBox tone="neutral" role="alert">
+            인증 시간이 지났어요. 이메일 인증부터 다시 해 주세요.
+          </AlertBox>
+        )}
 
         {status === 'limit' && (
           // 새로 나타나는 상자라 꼭 읽히게 alert 로 둔다
           <AlertBox tone="neutral" role="alert">
-            코드 요청이 많아 잠시 막혔어요. 10분 뒤 다시 시도해 주세요.
+            코드 요청이 많아 잠시 막혔어요. 조금 뒤 다시 시도해 주세요.
           </AlertBox>
         )}
         {status === 'failed' && (

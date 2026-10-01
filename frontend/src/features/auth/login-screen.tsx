@@ -30,7 +30,7 @@ import type { LoginNotice } from './login-notice'
  */
 export function LoginScreen({ notice }: { notice: LoginNotice | null }) {
   const router = useRouter()
-  const { goBack, resetSignup } = useOnboarding()
+  const { goBack, resetSignup, updateSignup } = useOnboarding()
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const [pending, setPending] = useState(false)
@@ -40,15 +40,17 @@ export function LoginScreen({ notice }: { notice: LoginNotice | null }) {
     if (notice === 'expired') show({ message: '다시 로그인해 주세요' })
   }, [notice, show])
 
-  // 그만둔 이메일 가입의 비밀번호 · 인증 값을 지운다. 이메일 가입으로 다시 갈 수 있어 이메일만 남긴다
+  // 그만둔 가입의 가입 종류 · 인증 · 비밀번호를 지운다. 이메일 가입으로 다시 갈 수 있어 이메일만 남긴다
   useEffect(() => {
     resetSignup({ keepEmail: true })
   }, [resetSignup])
 
   async function continueWithKakao() {
     setPending(true)
-    // 카카오 가입은 이메일 가입 초안을 쓰지 않는다 — 남아 있으면 S02-3 이 이메일 가입으로 잘못 본다
+    // 카카오 가입은 이메일 가입 초안을 쓰지 않는다. 비운 뒤 가입 종류를 카카오로 둔다 — S02-3 이 이 값으로 요청을 고른다.
+    // 연동 때 카카오 콜백은 페이지를 새로 열어 메모리가 비므로, 콜백이 돌아오는 화면에서 다시 'kakao' 로 둬야 한다
     resetSignup()
+    updateSignup({ method: 'kakao' })
     try {
       const { redirectTo } = await startKakaoLogin({ switchAccount: exists })
       if (!active.current) return
