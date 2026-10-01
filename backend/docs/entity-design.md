@@ -21,7 +21,7 @@ member ──1:N── member_consent                   district ◀── batch
 - 공통 감사 컬럼(`created_at`, `updated_at`)은 `persistence-core` `BaseEntity` 가 담당한다 — 아래 표에서 생략한다.
 - **서비스 사이에는 조인이 없다.** auth → surveillance 는 행정동 코드 검증 · 보고 파기 내부 API 로만 연결되고, surveillance 는 회원을 `reporter_key` 로만 안다.
 - 외부 원천 적재 테이블은 `synced_at`(적재 시각)과 upsert 기준 UK 를 갖는다 (재실행 가능 배치).
-- enum 컬럼은 `VARCHAR` + `@Enumerated(STRING)`. 값 목록은 §7.
+- enum 컬럼은 `VARCHAR` + `@Enumerated(STRING)` + **`@JdbcTypeCode(SqlTypes.VARCHAR)`**. 마지막 것이 없으면 Hibernate 6 가 MySQL · H2 에 네이티브 `enum(...)` 타입을 만들어, 값을 하나 추가할 때마다 ALTER 가 필요해진다(dev 의 `ddl-auto: update` 는 기존 컬럼을 고치지 않아 INSERT 가 실패한다). 값 목록은 §7.
 - 테이블별 보관 기간은 §8.
 
 ---
@@ -58,6 +58,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - 인증 코드 · 로그인 시도 횟수 · OAuth state · refresh 토큰 · 세션은 테이블이 아니라 Redis(TTL) 다 ([modules.md](modules.md#serviceauth-service)).
 - 운영자 계정은 따로 두지 않는다. `role` 이 OPERATOR 인 회원이다.
 - **탈퇴 회원 hard delete 는 그 회원의 `report_purge_request` 가 모두 완료된 뒤에만 한다** (§1-5). 회원 행이 먼저 사라지면 `memberId` 를 잃어 `reporter_key` 를 다시 계산할 수 없고, 보고가 52주 동안 남는다.
+- **탈퇴 즉시 같은 이메일로 재가입할 수 있다** (2026-10-01 결정). 탈퇴할 때 `email` 을 다이제스트로 바꿔 원문을 비운다(hondigagae `WithdrawnEmailHasher` 방식) — `uk_member_email` 을 풀어 주면서 회원 행은 보고 파기가 끝날 때까지 남긴다. 보고 파기는 `memberId` 기준이라 영향이 없다. 구현은 #59.
 
 ### 1-2. member_consent — 동의 이력
 

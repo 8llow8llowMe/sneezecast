@@ -180,15 +180,22 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
 |--------|---------------|-----------------|
 | service-discovery | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_PORT` | (경로 없음) |
 | api-gateway | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD`, `AUTH_SERVICE_APP_NAME`, `SURVEILLANCE_SERVICE_APP_NAME` | `API_GATEWAY_PORT` |
-| auth-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `AUTH_SERVICE_APP_NAME`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD` | `AUTH_SERVICE_PORT`, `AUTH_DB_URL`, `AUTH_DB_USERNAME`, `AUTH_DB_PASSWORD`, `JWT_REFRESH_KEY`, `MINIO_ENDPOINT`, `MINIO_PUBLIC_URL`, `MINIO_BUCKET`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` |
+| auth-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `AUTH_SERVICE_APP_NAME`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD` | `AUTH_SERVICE_PORT`, `AUTH_DB_URL`, `AUTH_DB_USERNAME`, `AUTH_DB_PASSWORD`, `JWT_REFRESH_KEY`, `MINIO_ENDPOINT`, `MINIO_PUBLIC_URL`, `MINIO_BUCKET`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MAIL_USERNAME`, `MAIL_PASSWORD` |
 | surveillance-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `SURVEILLANCE_SERVICE_APP_NAME`, `JWT_ACCESS_KEY` | `SURVEILLANCE_SERVICE_PORT`, `SURVEILLANCE_DB_URL`, `SURVEILLANCE_DB_USERNAME`, `SURVEILLANCE_DB_PASSWORD`, `REPORTER_KEY_PEPPER` |
 | batch-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT` | `BATCH_SERVICE_PORT`, `BATCH_DB_URL`, `BATCH_DB_USERNAME`, `BATCH_DB_PASSWORD` |
 
 - `JASYPT_ENCRYPTOR_KEY` 는 쓰지 않는다 (yml 에 자리표시자도 `ENC(...)` 값도 없다).
 - 파이프라인은 키가 **어느 층**에 있는지까지는 보지 않는다(전용 키 제외). 위 표의 층은 Infra 키 표를 따른 것이다.
-- 기본값이 있는 키(`GATEWAY_*_TIMEOUT*`, `JWT_*_EXPIRATION`, `REDIS_KEY_PREFIX`, `MINIO_MAX_FILE_BYTES` 등)는 넣지 않아도
-  된다. compose 가 yml 과 같은 기본값을 넘긴다 — 빈 문자열을 넘기면 yml 기본값이 적용되지 않기 때문이다.
+- 기본값이 있는 키(`GATEWAY_*_TIMEOUT*`, `JWT_*_EXPIRATION`, `REDIS_KEY_PREFIX`, `MINIO_MAX_FILE_BYTES`, auth 의 `MAIL_HOST` · `MAIL_PORT` ·
+  `MAIL_FROM_*` · `LEGAL_*_VERSION` · `AUTH_EMAIL_SEND_*` · `SNOWFLAKE_*` 등)는 넣지 않아도 된다. compose 가 yml 과 같은 기본값을 넘긴다 — 빈 문자열을
+  넘기면 yml 기본값이 적용되지 않기 때문이다.
 - `BATCH_SCHEDULE_ENABLED` 는 batch-service 경로의 Vault 값을 그대로 쓰고, 없으면 compose 가 dev `true` / prod `false` 를 넘긴다.
+- auth 메일: `MAIL_USERNAME` / `MAIL_PASSWORD` 는 SMTP 계정과 앱 비밀번호다(auth 전용, 서비스 경로). `MAIL_HOST` · `MAIL_PORT` 기본값은
+  Gmail(`smtp.gmail.com:587`, STARTTLS)이다. 다른 SMTP 를 쓰면 두 키를 서비스 경로에 넣는다.
+- auth 동의 문서 버전 `LEGAL_TERMS_VERSION` · `LEGAL_PRIVACY_VERSION` · `LEGAL_SENSITIVE_HEALTH_INFO_VERSION` 은 20자 이하이고 비면
+  기동 실패다. 정본은 프론트 legal 상수라, 문서를 개정할 때 프론트 상수와 이 값을 같은 배포에 올린다(entity-design §1-2).
+- auth 이메일 인증 한도 `AUTH_EMAIL_SEND_*`(IP 발송 상한 · 윈도우, 재발송 쿨다운, 코드 수명, 인증 완료 수명, 오입력 허용 횟수, IP 검증 상한 · 윈도우)는
+  기본값(application.yml)으로 충분하다. 바꿀 때만 서비스 경로에 넣는다. 0 이하면 기동 실패, 기간은 ISO-8601(`PT1H`) 형식이다.
 - `TIME_ZONE` 은 Vault 키가 아니다. 비면 `Asia/Seoul` 이다 (compose · Dockerfile).
 - 무작위 비밀값(JWT 키 · pepper · DB 비밀번호)은 `$` · 따옴표가 섞이지 않게 만든다. `openssl rand -base64` 출력은 해당 없다.
 
