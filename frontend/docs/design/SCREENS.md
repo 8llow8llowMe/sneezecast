@@ -10,7 +10,8 @@
 | S13-5 | 이메일 로그인 (auth 캔버스) | Login-email | -T | -D | `/login/email` |
 | S02-1 | 동네 선택 | Setup-1 | Setup-1-T | Setup-1-D | `/setup/region` |
 | S02-2 | 성인 확인 | Setup-2 | Setup-2-T | Setup-2-D | `/setup/adult` |
-| S02-3 | 동의 | Setup-3 | Setup-3-T | Setup-3-D | `/setup/consent` |
+| S02-3 | 가입 동의 (3 / 4, auth 캔버스) | Setup-3 | Setup-3-T | Setup-3-D | `/setup/terms` |
+| S02-4 | 증상 보고 동의 (4 / 4, auth 캔버스) | Setup-4 | Setup-4-T | Setup-4-D | `/setup/health-consent` |
 | S03 | 홈 (평소 수준·조금·많이·자료 부족) | Home-good, Home-normal, Home, Home-pending | Tablet, Home-nodata-T | Desktop, Home-nodata-D | `/` |
 | S04 | 지도 | Map-collapsed, Map-expanded, Map-nodata | Map-expanded-T, Map-nodata-T | Map-expanded-D, Map-nodata-D | `/map?region=` |
 | S05 | 주간 건강 보고 (시트·대화상자) | Report-start, Report-symptom, Report-confirm, Report-edit | 같은 이름 + -T | 같은 이름 + -D | 홈 위 모달 `/?report=start` |
@@ -40,6 +41,13 @@ S09 학부모 그룹은 이번 범위가 아니라 만들지 않습니다.
   - 코드 받기: 이메일 `exists@example.com` → 이미 가입됨(exists), `limit@example.com` → 요청 많음(limit), 형식이 틀리면 invalid(보낼 때 판단)
   - 코드 확인: `000000` → 틀림(남은 시도 3번부터 1씩 줄고 0 이면 locked), `999999` → 잠김(locked), 5분이 지나면 expired, 그 밖 6자리 → 성공
   - 비밀번호 · 닉네임: 8자 미만이거나 영문 · 숫자 중 하나가 없으면 pw-rule, 확인이 다르면 pw-mismatch, 닉네임 2~10자 밖이면 nick-long(다음을 누를 때 판단)
+- 가입 마무리: 성인 확인 `다음` → `/setup/terms`(S02-3) → 가입 요청 · 내 동네 저장 → `/setup/health-consent`(S02-4, 기록을 바꿔 감) → `동의하고 시작하기` 또는 `나중에 할게요` → 홈 `/`(기록을 바꿔 감).
+  - 가입 종류는 Provider 의 인증 값으로 가립니다. 있으면 이메일 가입(비밀번호 포함), 없으면 카카오 가입(동의만). 가입이 되면 비밀번호 · 인증 값을 지웁니다.
+  - 전체 동의는 필수 둘이 켜졌는지를 따릅니다(시안 default 는 선택이 꺼져도 전체 동의가 켜짐). 켜면 선택까지 모두 켜고 끄면 모두 끕니다.
+  - 약관 "보기" 는 본문이 아직 없어 "약관 본문을 준비하고 있어요" 알림만 띄웁니다.
+  - S02-4 는 시안에 뒤로 버튼이 있지만 가입을 마친 뒤라 숨깁니다(가입 동의로 돌아가 다시 가입하지 않게).
+  - 동의 문서 버전은 `features/auth/legal.ts` 가 정본이고 백엔드 `legal.*-version` 을 맞춥니다.
+- 가입 목 재현 입력: 이메일 `signup-fail@example.com` 으로 가입하면 가입 요청이 거부됩니다.
 - 로그인 · 가입 화면의 오른쪽 일러스트도 `public/onboarding/neighborhood.svg` 와 같습니다.
 - 검색 결과 없음은 Setup-1-empty 문구(`‘검색어’과 맞는 행정동이 없어요`)를 따르고, 조사(과/와)는 받침에 맞춰 고릅니다. 불러오지 못함은 시안이 없어 같은 모양에 문구만 바꿨습니다.
 - 데스크톱 오른쪽 일러스트는 Start-T · Start-D · Setup-1/2/3-D 가 모두 같아 `public/onboarding/neighborhood.svg` 하나로 뽑았습니다.
