@@ -50,6 +50,9 @@ backendPipeline.run([
         'MINIO_PUBLIC_URL',
         'MINIO_BUCKET',
         'MINIO_ACCESS_KEY',
-        'MINIO_SECRET_KEY'
+        'MINIO_SECRET_KEY',
+        // 이메일 인증코드 발송 SMTP 계정. auth 전용(Vault {env}/auth-service). host · port · 발신자 표시는 기본값이 있다.
+        'MAIL_USERNAME',
+        'MAIL_PASSWORD'
     ]
 ])

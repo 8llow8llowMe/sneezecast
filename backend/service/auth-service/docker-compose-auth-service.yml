@@ -58,6 +58,30 @@ x-auth-service-environment: &auth_service_environment
   MINIO_MAX_FILE_BYTES: ${MINIO_MAX_FILE_BYTES:-5242880}
   # nginx client_max_body_size(6M)와 짝이다. 바꾸면 Infra 의 api-*.sneezecast.conf 도 함께 바꾼다.
   MULTIPART_MAX_REQUEST_SIZE: ${MULTIPART_MAX_REQUEST_SIZE:-6MB}
+  # 이메일 인증코드 발송 SMTP. 계정 · 비밀번호는 기본값이 없다(파이프라인 필수 키). 나머지 기본값은 application-*.yml 과 같다.
+  MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+  MAIL_PORT: ${MAIL_PORT:-587}
+  MAIL_USERNAME: ${MAIL_USERNAME}
+  MAIL_PASSWORD: ${MAIL_PASSWORD}
+  MAIL_FROM_NAME: ${MAIL_FROM_NAME:-우리동네체온계}
+  # 비면 SMTP 계정에서 발신 주소를 유도한다.
+  MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
+  # 동의 이력에 남길 문서 버전. 정본은 프론트 legal 상수 — 문서를 개정할 때 같은 배포에 함께 올린다. 기본값은 application.yml 과 같다.
+  LEGAL_TERMS_VERSION: ${LEGAL_TERMS_VERSION:-2026-10-01}
+  LEGAL_PRIVACY_VERSION: ${LEGAL_PRIVACY_VERSION:-2026-10-01}
+  LEGAL_SENSITIVE_HEALTH_INFO_VERSION: ${LEGAL_SENSITIVE_HEALTH_INFO_VERSION:-2026-10-01}
+  # 가입용 이메일 인증 한도 · 수명 (auth.email-send.*). 0 이하면 기동 실패. 기본값은 application.yml 과 같다.
+  AUTH_EMAIL_SEND_IP_MAX_COUNT: ${AUTH_EMAIL_SEND_IP_MAX_COUNT:-10}
+  AUTH_EMAIL_SEND_IP_WINDOW: ${AUTH_EMAIL_SEND_IP_WINDOW:-PT1H}
+  AUTH_EMAIL_SEND_RESEND_COOLDOWN: ${AUTH_EMAIL_SEND_RESEND_COOLDOWN:-PT60S}
+  AUTH_EMAIL_SEND_CODE_TTL: ${AUTH_EMAIL_SEND_CODE_TTL:-PT5M}
+  AUTH_EMAIL_SEND_VERIFIED_TTL: ${AUTH_EMAIL_SEND_VERIFIED_TTL:-PT30M}
+  AUTH_EMAIL_SEND_MAX_VERIFY_FAILURES: ${AUTH_EMAIL_SEND_MAX_VERIFY_FAILURES:-5}
+  AUTH_EMAIL_SEND_VERIFY_IP_MAX_COUNT: ${AUTH_EMAIL_SEND_VERIFY_IP_MAX_COUNT:-30}
+  AUTH_EMAIL_SEND_VERIFY_IP_WINDOW: ${AUTH_EMAIL_SEND_VERIFY_IP_WINDOW:-PT1H}
+  # Snowflake ID. 환경당 인스턴스 하나라 기본값(0/0)으로 충분하다. 인스턴스를 늘리면 인스턴스마다 다른 worker-id 를 준다.
+  SNOWFLAKE_DATACENTER_ID: ${SNOWFLAKE_DATACENTER_ID:-0}
+  SNOWFLAKE_WORKER_ID: ${SNOWFLAKE_WORKER_ID:-0}
 
 x-logging: &default-logging
   driver: "json-file"
