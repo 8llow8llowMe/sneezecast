@@ -1,10 +1,15 @@
 'use client'
 
+import { useState } from 'react'
+
 import { AppHeader } from '@/components/app-header'
 import { Button } from '@/components/button'
 import { SectionBand } from '@/components/section'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
+import { REPORT_PARAM, ReportFlow } from '@/features/report/report-flow'
+import type { SubmittedReport } from '@/features/report/types'
+import { useModalParam } from '@/lib/use-modal-param'
 
 import { ExplainSheet } from './explain-sheet'
 import { MapPlaceholder } from './map-placeholder'
@@ -30,8 +35,12 @@ import { useExplainParam } from './use-explain-param'
 export function HomeScreen({ week }: { week: HomeWeekly }) {
   const { toast, show, dismiss } = useToast()
   const explain = useExplainParam()
+  const report = useModalParam(REPORT_PARAM)
+  // 이번 주에 보낸 보고. API 연동 전이라 화면을 떠나면 사라진다 — 연동 이슈에서 서버 값으로 바꾼다
+  const [submitted, setSubmitted] = useState<SubmittedReport | null>(null)
+  const openReport = () => report.open('start')
 
-  // 보고(S05) · 동네 바꾸기(S02) · 알림 설정(S10) 화면이 생기면 각각 연결한다
+  // 동네 바꾸기(S02) · 알림 설정(S10) 화면이 생기면 각각 연결한다
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
 
   return (
@@ -43,7 +52,7 @@ export function HomeScreen({ week }: { week: HomeWeekly }) {
         current="home"
         onRegionClick={() => notReady('동네 바꾸기')}
         onNotificationClick={() => notReady('알림 설정')}
-        onReportClick={() => notReady('건강 보고')}
+        onReportClick={openReport}
       />
 
       <p className="px-page-mobile text-sub text-fg-sub tablet:hidden">
@@ -83,12 +92,19 @@ export function HomeScreen({ week }: { week: HomeWeekly }) {
       {/* 모바일 · 태블릿 하단. 모바일만 보고 버튼이 있고(태블릿 · 데스크톱은 헤더에 있다) 탭바는 데스크톱에서 숨는다 */}
       <div className="sticky bottom-0 bg-bg">
         <div className="border-t border-divider px-page-mobile py-3 tablet:hidden">
-          <Button fullWidth onClick={() => notReady('건강 보고')}>
+          <Button fullWidth onClick={openReport}>
             이번 주 건강 보고하기
           </Button>
         </div>
         <TabBar current="home" />
       </div>
+
+      <ReportFlow
+        week={week}
+        submitted={submitted}
+        onSubmittedChange={setSubmitted}
+        onNotReady={notReady}
+      />
 
       {/* 자료 부족이면 보일 숫자가 없어 ?explain=1 로 들어와도 열지 않는다 */}
       {week.status !== 'insufficient' && (

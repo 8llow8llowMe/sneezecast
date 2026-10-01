@@ -13,8 +13,10 @@ type HomeCommon = {
   regionName: string
   /** 예: "11월 3주" */
   weekLabel: string
-  /** 집계 기간. 예: "11월 17일~23일" (판단 기준 시트) */
+  /** 집계 기간. 예: "11월 17일~23일" (판단 기준 · 보고 확인) */
   weekRangeLabel: string
+  /** 보고 기간. 예: "11월 17일(월)~23일(일)" (보고 시작) */
+  reportPeriodLabel: string
   /** 예: "오늘 09:00 갱신" */
   updatedLabel: string
   /** 이번 주 보고한 사람 수 (건강한 보고 포함 — 지표의 분모) */
