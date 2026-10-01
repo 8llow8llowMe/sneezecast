@@ -76,6 +76,11 @@ const MAPPING: Record<string, string> = {
   'border.selected': '--border-selected',
   'opacity.disabled': '--opacity-disabled',
   'opacity.gaugeInactive': '--opacity-gauge-inactive',
+  'fontSize.sheetTitle': '--fs-sheet-title',
+  'fontSize.dialogTitle': '--fs-dialog-title',
+  'size.dialogWidthTablet': '--size-dialog-width-tablet',
+  'size.dialogWidthDesktop': '--size-dialog-width-desktop',
+  'letterSpacing.brand': '--letter-spacing-brand',
 }
 
 /**
