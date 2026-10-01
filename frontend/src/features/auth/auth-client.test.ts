@@ -2,19 +2,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   agreeHealthConsent,
+  changePassword,
   CODE_MAX_ATTEMPTS,
   EMAIL_VERIFICATION_TTL_SECONDS,
   EXAMPLE_PROFILES,
   getMockProfile,
   getMockSession,
+  listSessions,
   loginWithEmail,
   logout,
   PASSWORD_RESET_TOKEN_TTL_SECONDS,
   resetMockSession,
   resetPassword,
+  revokeOtherSessions,
+  revokeSession,
   saveRegion,
   sendEmailCode,
   sendPasswordResetCode,
+  setupPassword,
   signup,
   startKakaoLogin,
   subscribeMockSession,
@@ -355,6 +360,7 @@ describe('목 프로필 · 로그아웃 · 동의 철회 · 탈퇴', () => {
       provider: 'email',
       email: 'new@example.com',
       nickname: '골목대장',
+      hasPassword: true,
     })
   })
 
@@ -408,6 +414,115 @@ describe('목 프로필 · 로그아웃 · 동의 철회 · 탈퇴', () => {
     await expect(action()).rejects.toThrow()
     expect(getMockSession()).toBe('member')
     expect(getMockProfile()?.email).toBe(email)
+  })
+})
+
+describe('로그인한 기기 (목)', () => {
+  beforeEach(() => resetMockSession())
+
+  it('시안의 예시 기기(이 기기 + 다른 기기 둘)를 준다 — 기기 이름 · 마지막 사용 시각만, IP · 지역은 없다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    const sessions = await listSessions()
+    expect(sessions.map((session) => [session.deviceName, session.current])).toEqual([
+      ['iPhone · Safari', true],
+      ['Mac · Chrome', false],
+      ['Galaxy · 삼성 인터넷', false],
+    ])
+    expect(Object.keys(sessions[0] ?? {}).sort()).toEqual([
+      'current',
+      'deviceName',
+      'id',
+      'lastActiveAt',
+    ])
+  })
+
+  it('받은 목록을 고쳐도 목 서버 목록은 그대로다', async () => {
+    const sessions = await listSessions()
+    sessions.pop()
+    expect(await listSessions()).toHaveLength(3)
+  })
+
+  it('한 기기를 로그아웃하면 목록에서 빠지고, 이미 없는 세션은 끝난 것으로 본다', async () => {
+    await revokeSession('mock-session-mac')
+    expect((await listSessions()).map((session) => session.id)).toEqual([
+      'mock-session-this',
+      'mock-session-galaxy',
+    ])
+    await expect(revokeSession('mock-session-mac')).resolves.toBeUndefined()
+  })
+
+  it('이 기기의 세션은 여기서 로그아웃하지 않는다 (거부)', async () => {
+    await expect(revokeSession('mock-session-this')).rejects.toThrow()
+    expect(await listSessions()).toHaveLength(3)
+  })
+
+  it('다른 기기 모두 로그아웃하면 이 기기만 남는다', async () => {
+    await revokeOtherSessions()
+    expect((await listSessions()).map((session) => session.id)).toEqual(['mock-session-this'])
+  })
+
+  it('비회원이 되면(로그아웃) 목록을 지워 다음 로그인은 예시 목록부터다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    await revokeOtherSessions()
+    await logout()
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    expect(await listSessions()).toHaveLength(3)
+  })
+
+  it('재현 이메일이면 목록 · 로그아웃을 거부하고 목록을 그대로 둔다', async () => {
+    await loginWithEmail('sessions-fail@example.com', 'dongne2026')
+    await expect(listSessions()).rejects.toThrow()
+
+    await loginWithEmail('session-revoke-fail@example.com', 'dongne2026')
+    await expect(revokeSession('mock-session-mac')).rejects.toThrow()
+    await expect(revokeOtherSessions()).rejects.toThrow()
+    expect(await listSessions()).toHaveLength(3)
+  })
+})
+
+describe('비밀번호 변경 · 설정 (목)', () => {
+  const consents = [consentFor('TERMS_OF_SERVICE')]
+
+  beforeEach(() => resetMockSession())
+
+  it('예시 프로필: 이메일 회원은 비밀번호가 있고 카카오 회원은 없다', () => {
+    expect(EXAMPLE_PROFILES.email.hasPassword).toBe(true)
+    expect(EXAMPLE_PROFILES.kakao.hasPassword).toBe(false)
+  })
+
+  it('변경: 현재 비밀번호 wrong 이면 wrong-current, 그 밖에는 성공이다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    expect(await changePassword('wrong', 'newpass2026')).toEqual({ status: 'wrong-current' })
+    expect(await changePassword('dongne2026', 'newpass2026')).toEqual({ status: 'ok' })
+    // 새 비밀번호가 현재와 같아도 막지 않는다(계약에 없음)
+    expect(await changePassword('dongne2026', 'dongne2026')).toEqual({ status: 'ok' })
+  })
+
+  it('설정에 성공하면 카카오 회원 프로필의 hasPassword 가 true 가 된다', async () => {
+    await signup({ kind: 'kakao', consents })
+    const listener = vi.fn()
+    const unsubscribe = subscribeMockSession(listener)
+    await setupPassword('newpass2026')
+    unsubscribe()
+    expect(getMockProfile()).toEqual({ ...EXAMPLE_PROFILES.kakao, hasPassword: true })
+    expect(getMockSession()).toBe('member-no-consent')
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('비회원 세션(덮어쓰기로 연 경우)에서 설정해도 세션을 바꾸지 않는다', async () => {
+    await setupPassword('newpass2026')
+    expect(getMockSession()).toBe('guest')
+    expect(getMockProfile()).toBeNull()
+  })
+
+  it('재현 이메일 · 재현 새 비밀번호면 거부하고 프로필을 그대로 둔다', async () => {
+    await loginWithEmail('password-fail@example.com', 'dongne2026')
+    await expect(changePassword('dongne2026', 'newpass2026')).rejects.toThrow()
+    await expect(changePassword('wrong', 'newpass2026')).rejects.toThrow()
+
+    await signup({ kind: 'kakao', consents })
+    await expect(setupPassword('fail2026')).rejects.toThrow()
+    expect(getMockProfile()?.hasPassword).toBe(false)
   })
 })
 
