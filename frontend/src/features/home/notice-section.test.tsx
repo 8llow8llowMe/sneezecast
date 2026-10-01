@@ -15,7 +15,7 @@ describe('NoticeSection', () => {
     expect(items).toEqual(['1기침할 때 옷소매로 입과 코 가리기', '2손 씻기와 실내 환기 자주 하기'])
     expect(screen.getByText('근거: 질병관리청 예방수칙')).toBeDefined()
     expect(screen.getByRole('link', { name: '안내 전체 보기' }).getAttribute('href')).toBe(
-      '/notice',
+      '/notice/99990100/2025-W47?mock=published',
     )
   })
 

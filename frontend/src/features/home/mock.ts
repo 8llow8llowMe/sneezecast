@@ -79,7 +79,9 @@ export const HOME_MOCKS: Record<RegionStatus, HomeWeekly> = {
       publishedLabel: '11월 18일 발행',
       items: ['기침할 때 옷소매로 입과 코 가리기', '손 씻기와 실내 환기 자주 하기'],
       source: '질병관리청 예방수칙',
-      href: '/notice',
+      // 동네 안내(S07)의 예시 동네(features/notice/mock.ts 의 NOTICE_EXAMPLE_DISTRICT) · 주 · 발행 목 상태.
+      // home 이 notice 모듈을 import 하지 않게 목이라 문자열로 둔다. 연동 때 매핑 계층이 그 동네 코드 · 기준 주로 만든다
+      href: '/notice/99990100/2025-W47?mock=published',
     },
   },
   insufficient: {
