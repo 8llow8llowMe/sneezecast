@@ -23,7 +23,9 @@ describe('TextField', () => {
     expect(input.getAttribute('aria-invalid')).toBe('true')
     expect(input.classList).toContain('border-danger')
     expect(screen.getByRole('alert').textContent).toBe('이메일 형식이 아니에요')
-    expect(input.getAttribute('aria-describedby')).toBe(screen.getByRole('alert').id)
+    expect(document.getElementById(input.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
+      '이메일 형식이 아니에요',
+    )
     // 오류가 도움말을 대신한다
     expect(screen.queryByText('도움말')).toBeNull()
   })
@@ -47,6 +49,28 @@ describe('TextField', () => {
     const ids = screen.getByRole('textbox', { name: '이메일' }).getAttribute('aria-describedby')
     expect(ids?.split(' ')).toHaveLength(2)
     expect(ids?.startsWith('extra ')).toBe(true)
+  })
+
+  it('글자 수를 보이고 최대를 넘으면 빨갛게 보인다', () => {
+    const { rerender } = render(<TextField label="닉네임" counter={{ current: 4, max: 10 }} />)
+    expect(screen.getByText('4/10').classList).toContain('text-fg-sub')
+
+    rerender(<TextField label="닉네임" counter={{ current: 11, max: 10 }} />)
+    expect(screen.getByText('11/10').classList).toContain('text-danger')
+  })
+
+  it('칸 아래 줄 오른쪽에 동작을 두고 칸 안 오른쪽에 덧붙임을 둔다', () => {
+    render(
+      <TextField
+        label="이메일"
+        error="이미 가입된 이메일이에요."
+        messageAction={<a href="/login/email">이메일로 로그인</a>}
+        trailing={<span>4:59</span>}
+      />,
+    )
+    expect(screen.getByRole('link', { name: '이메일로 로그인' })).toBeDefined()
+    expect(screen.getByText('4:59')).toBeDefined()
+    expect(screen.getByRole('textbox', { name: '이메일' }).classList).toContain('pr-16')
   })
 
   it('도움말 · 오류가 없으면 설명을 잇지 않는다', () => {
