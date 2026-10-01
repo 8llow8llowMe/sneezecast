@@ -18,6 +18,7 @@ import type { Consent } from './legal'
  * 모듈 메모리에만 두어 새로고침하면 `guest` 로 돌아간다 — 브라우저 저장소에 남기지 않는다.
  *
  * 내 정보(S10)가 보일 프로필(`MockProfile`)도 같은 세션에 둔다. 로그인 · 가입할 때 채우고 로그아웃 · 탈퇴하면 지운다.
+ * 비밀번호 설정(`setupPassword`)에 성공하면 `hasPassword` 를 true 로 바꾼다.
  * 연동 때 `GET /api/v1/members/me`(백엔드 #58) 응답으로 바꾼다.
  */
 export type MockAuthState = 'guest' | 'member-no-consent' | 'member'
@@ -25,20 +26,30 @@ export type MockAuthState = 'guest' | 'member-no-consent' | 'member'
 export const MOCK_AUTH_STATES: readonly MockAuthState[] = ['guest', 'member-no-consent', 'member']
 
 /**
- * 내 정보에 보일 회원 프로필 (목). 로그인 방법(`provider`) · 이메일 · 닉네임만 둔다 — 이름 · 연락처 · 주소는 받지 않는다.
- * 연동 때 `GET /api/v1/members/me` 응답으로 바꾼다. 카카오 회원의 이메일 · 닉네임과 이메일 로그인의 닉네임은 목이 모르므로
- * 시안의 예시 값(`EXAMPLE_PROFILES`)을 쓴다.
+ * 내 정보에 보일 회원 프로필 (목). 로그인 방법(`provider`) · 이메일 · 닉네임 · 비밀번호가 있는지만 둔다 —
+ * 이름 · 연락처 · 주소는 받지 않는다. 연동 때 `GET /api/v1/members/me` 응답으로 바꾼다. 카카오 회원의 이메일 · 닉네임과
+ * 이메일 로그인의 닉네임은 목이 모르므로 시안의 예시 값(`EXAMPLE_PROFILES`)을 쓴다.
+ *
+ * `hasPassword` 는 이메일로도 로그인할 수 있는지다. 이메일 가입은 늘 true, 카카오 가입은 비밀번호를 설정하기 전까지 false 다
+ * (내 정보의 `비밀번호 변경` / `비밀번호 설정` 이 이 값으로 갈린다). 연동 때 `GET /me` 가 이 값을 주는지 백엔드와 맞춘다.
  */
-export type MockProfile = { provider: 'email' | 'kakao'; email: string; nickname: string }
+export type MockProfile = {
+  provider: 'email' | 'kakao'
+  email: string
+  nickname: string
+  hasPassword: boolean
+}
 
 /** 시안(Settings · Settings-kakao)의 예시 값. 실제 값은 `GET /me` 에서 받는다 */
 export const EXAMPLE_PROFILES: Readonly<Record<MockProfile['provider'], MockProfile>> = {
-  email: { provider: 'email', email: 'dong@example.com', nickname: '동네지기' },
-  kakao: { provider: 'kakao', email: 'dong@kakao.com', nickname: '동네지기' },
+  email: { provider: 'email', email: 'dong@example.com', nickname: '동네지기', hasPassword: true },
+  kakao: { provider: 'kakao', email: 'dong@kakao.com', nickname: '동네지기', hasPassword: false },
 }
 
 let mockSession: MockAuthState = 'guest'
 let mockProfile: MockProfile | null = null
+/** 목 서버의 로그인한 기기 목록. 처음 읽을 때 예시 목록으로 채운다(`listSessions`) */
+let mockDeviceSessions: DeviceSession[] | null = null
 const mockSessionListeners = new Set<() => void>()
 /** 이메일 가입에서 받은 닉네임. 가입 뒤 이어지는 이메일 로그인이 프로필에 쓴다(목 서버가 회원 정보를 들고 있는 흉내) */
 const mockNicknames = new Map<string, string>()
@@ -60,8 +71,12 @@ export function subscribeMockSession(listener: () => void): () => void {
   }
 }
 
-/** 세션을 바꾼다. `profile` 을 넘기지 않으면 프로필은 그대로 두고, `guest` 가 되면 늘 지운다 */
+/**
+ * 세션을 바꾼다. `profile` 을 넘기지 않으면 프로필은 그대로 두고, `guest` 가 되면 늘 지운다.
+ * `guest` 가 되면 목 서버의 로그인한 기기 목록도 지운다 — 다음 로그인은 예시 목록부터 다시 시작한다
+ */
 function setMockSession(next: MockAuthState, profile?: MockProfile) {
+  if (next === 'guest') mockDeviceSessions = null
   const given = next === 'guest' ? null : (profile ?? mockProfile)
   // 같은 값의 프로필이면 이전 객체를 그대로 둔다 — 같은 회원이 다시 로그인해도 다시 그리지 않는다
   const nextProfile = sameProfile(given, mockProfile) ? mockProfile : given
@@ -73,7 +88,12 @@ function setMockSession(next: MockAuthState, profile?: MockProfile) {
 
 function sameProfile(a: MockProfile | null, b: MockProfile | null): boolean {
   if (a === null || b === null) return a === b
-  return a.provider === b.provider && a.email === b.email && a.nickname === b.nickname
+  return (
+    a.provider === b.provider &&
+    a.email === b.email &&
+    a.nickname === b.nickname &&
+    a.hasPassword === b.hasPassword
+  )
 }
 
 /** 테스트에서 목 세션을 처음(`guest`)으로 되돌린다. 화면 코드는 부르지 않는다 */
@@ -110,6 +130,7 @@ export function loginWithEmail(email: string, password: string): Promise<EmailLo
     provider: 'email',
     email: key,
     nickname: mockNicknames.get(key) ?? EXAMPLE_PROFILES.email.nickname,
+    hasPassword: true,
   })
   return Promise.resolve({ status: 'ok' })
 }
@@ -341,7 +362,7 @@ export const MOCK_LOGOUT_FAIL_EMAIL = 'logout-fail@example.com'
 export const MOCK_CONSENT_WITHDRAW_FAIL_EMAIL = 'consent-withdraw-fail@example.com'
 export const MOCK_WITHDRAW_FAIL_EMAIL = 'withdraw-fail@example.com'
 
-function rejectIfProfileEmail(email: string, what: string): Promise<void> | null {
+function rejectIfProfileEmail(email: string, what: string): Promise<never> | null {
   return mockProfile?.email === email ? Promise.reject(new Error(`mock ${what} failure`)) : null
 }
 
@@ -372,6 +393,145 @@ export function withdrawMembership(): Promise<void> {
   const failure = rejectIfProfileEmail(MOCK_WITHDRAW_FAIL_EMAIL, 'withdraw')
   if (failure) return failure
   setMockSession('guest')
+  return Promise.resolve()
+}
+
+/* ── 로그인한 기기 (S10 Settings-devices) ─────────────────────────────────────────────
+ *
+ * 연동 때 바꾼다: 목록 `GET /api/v1/auth/sessions`, 한 기기 로그아웃 `DELETE /api/v1/auth/sessions/{sessionId}`(백엔드 #57).
+ * 응답 모양은 아직 정해지지 않았다 — 화면이 쓰는 것은 아래 `DeviceSession` 의 네 값뿐이다.
+ * **IP · 접속 지역 · 정확한 위치는 받지도 그리지도 않는다**(루트 CLAUDE.md "개인정보"). 기기 이름과 마지막 사용 시각만 쓴다.
+ * "다른 기기에서 모두 로그아웃"(`revokeOtherSessions`)은 #57 에 한 번에 지우는 API 가 없어 백엔드와 정할 점이다
+ * (SCREENS.md 연동 요구사항). 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다.
+ *
+ * 성공하면 화면과 무관하게 목 서버 목록에서 먼저 지운다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다).
+ *
+ * 목에서 실패를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다). 프로필 이메일로 가린다 — 그 이메일로 이메일 로그인한 뒤 연다:
+ * - 목록: `sessions-fail@example.com` → 거부(불러오지 못함)
+ * - 로그아웃(한 기기 · 모두): `session-revoke-fail@example.com` → 거부(목록은 그대로)
+ */
+
+export const MOCK_SESSIONS_FAIL_EMAIL = 'sessions-fail@example.com'
+export const MOCK_SESSION_REVOKE_FAIL_EMAIL = 'session-revoke-fail@example.com'
+
+/** 로그인한 기기(refresh 세션) 하나 */
+export type DeviceSession = {
+  /** 세션 id. 로그아웃할 때 보낸다 */
+  id: string
+  /** 기기 · 브라우저 (예: `Mac · Chrome`). 서버가 로그인할 때의 User-Agent 로 만든다고 가정한다 */
+  deviceName: string
+  /** 마지막으로 쓴 시각 (ISO 8601). 이 기기는 "지금 사용 중" 으로 그려 이 값을 보이지 않는다 */
+  lastActiveAt: string
+  /** 지금 이 기기의 세션인지. 이 기기는 이 화면에서 로그아웃하지 않는다(내 정보의 로그아웃) */
+  current: boolean
+}
+
+/**
+ * 시안(Settings-devices)의 예시 기기. **기기 이름 · 시각은 예시 값이다** — 실제 값은 `GET /sessions` 에서 받는다.
+ * 지금 쓰는 기기가 무엇이든 목의 "이 기기" 는 iPhone · Safari 다.
+ */
+const EXAMPLE_DEVICE_SESSIONS: readonly DeviceSession[] = [
+  {
+    id: 'mock-session-this',
+    deviceName: 'iPhone · Safari',
+    lastActiveAt: '2025-11-21T09:00:00+09:00',
+    current: true,
+  },
+  {
+    id: 'mock-session-mac',
+    deviceName: 'Mac · Chrome',
+    lastActiveAt: '2025-11-20T21:14:00+09:00',
+    current: false,
+  },
+  {
+    id: 'mock-session-galaxy',
+    deviceName: 'Galaxy · 삼성 인터넷',
+    lastActiveAt: '2025-11-02T08:03:00+09:00',
+    current: false,
+  },
+]
+
+function deviceSessions(): DeviceSession[] {
+  mockDeviceSessions ??= EXAMPLE_DEVICE_SESSIONS.map((session) => ({ ...session }))
+  return mockDeviceSessions
+}
+
+export function listSessions(): Promise<DeviceSession[]> {
+  const failure = rejectIfProfileEmail(MOCK_SESSIONS_FAIL_EMAIL, 'list sessions')
+  if (failure) return failure
+  // 화면이 목록을 고쳐도 목 서버 목록이 바뀌지 않게 복사해 준다
+  return Promise.resolve(deviceSessions().map((session) => ({ ...session })))
+}
+
+/**
+ * 다른 기기 하나를 로그아웃한다(그 기기의 refresh 세션 폐기). 이미 없는 세션이면(만료 · 다른 곳에서 지움) 끝난 것으로 본다.
+ * 이 기기의 세션은 받지 않는다(거부) — 이 기기 로그아웃은 `logout` 이다.
+ */
+export function revokeSession(sessionId: string): Promise<void> {
+  const failure = rejectIfProfileEmail(MOCK_SESSION_REVOKE_FAIL_EMAIL, 'revoke session')
+  if (failure) return failure
+  const sessions = deviceSessions()
+  if (sessions.some((session) => session.id === sessionId && session.current)) {
+    return Promise.reject(new Error('mock: the current session is revoked by logout'))
+  }
+  mockDeviceSessions = sessions.filter((session) => session.id !== sessionId)
+  return Promise.resolve()
+}
+
+/** 이 기기를 뺀 모든 기기를 로그아웃한다 */
+export function revokeOtherSessions(): Promise<void> {
+  const failure = rejectIfProfileEmail(MOCK_SESSION_REVOKE_FAIL_EMAIL, 'revoke other sessions')
+  if (failure) return failure
+  mockDeviceSessions = deviceSessions().filter((session) => session.current)
+  return Promise.resolve()
+}
+
+/* ── 비밀번호 변경 · 설정 (S10 Settings-password) ───────────────────────────────────────
+ *
+ * 연동 때 바꾼다: 변경 `POST /api/v1/members/me/password`(현재 비밀번호 + 새 비밀번호), 설정
+ * `POST /api/v1/members/me/password/setup`(카카오 가입자의 첫 비밀번호, 백엔드 #58). 요청 · 응답 모양은 아직 정해지지 않았다.
+ * 규칙(8~20자 · 영문과 숫자 함께 · 공백 없이)은 가입과 같고 서버가 다시 검사한다. 새 비밀번호가 현재와 같아도 막지 않는다(계약에 없음).
+ * 비밀번호는 어디에도 남기지 않는다(로그 · 저장소 · 주소 금지). 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고 실패하면 거부한다.
+ *
+ * 설정에 성공하면 화면과 무관하게 목 프로필의 `hasPassword` 를 true 로 바꾼다 — 내 정보의 행이 `비밀번호 변경` 이 된다.
+ * `?mock-auth=` 덮어쓰기만 있어 세션이 비회원이면 세션은 그대로다(동의 철회와 같다).
+ *
+ * 목에서 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
+ * - 변경: 현재 비밀번호 `wrong` → `wrong-current`(로그인 목과 같은 값)
+ * - 변경 · 설정: 프로필 이메일 `password-fail@example.com` → 거부. 카카오 프로필은 이메일이 예시 값으로 정해져 있어
+ *   설정은 새 비밀번호 `fail2026` 으로도 거부를 재현한다(변경도 같다)
+ */
+
+export const MOCK_PASSWORD_FAIL_EMAIL = 'password-fail@example.com'
+export const MOCK_PASSWORD_FAIL_NEW = 'fail2026'
+
+/** `wrong-current` 는 현재 비밀번호가 맞지 않다는 뜻이다 */
+export type ChangePasswordResult = { status: 'ok' } | { status: 'wrong-current' }
+
+function rejectPasswordFailure(newPassword: string): Promise<never> | null {
+  if (mockProfile?.email === MOCK_PASSWORD_FAIL_EMAIL || newPassword === MOCK_PASSWORD_FAIL_NEW) {
+    return Promise.reject(new Error('mock password failure'))
+  }
+  return null
+}
+
+export function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<ChangePasswordResult> {
+  const failure = rejectPasswordFailure(newPassword)
+  if (failure) return failure
+  if (currentPassword === MOCK_WRONG_PASSWORD) return Promise.resolve({ status: 'wrong-current' })
+  return Promise.resolve({ status: 'ok' })
+}
+
+/** 카카오 가입자의 첫 비밀번호. 정하면 이메일 · 비밀번호로도 로그인할 수 있다 */
+export function setupPassword(newPassword: string): Promise<void> {
+  const failure = rejectPasswordFailure(newPassword)
+  if (failure) return failure
+  if (mockProfile && !mockProfile.hasPassword) {
+    setMockSession(mockSession, { ...mockProfile, hasPassword: true })
+  }
   return Promise.resolve()
 }
 
