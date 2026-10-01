@@ -6,7 +6,7 @@
 
 1. [docs/design-guide.md](docs/design-guide.md) — 범위, 상태 단계, 디자인·문구 규칙, 구현 순서
 2. [docs/design/README.md](docs/design/README.md) — 시안(`.dc.html`) 읽는 법
-3. [docs/design/SCREENS.md](docs/design/SCREENS.md) — 화면 ID ↔ 시안 파일 ↔ 라우트
+3. [docs/design/SCREENS.md](docs/design/SCREENS.md) — 화면 ID ↔ 시안 파일 ↔ 라우트. 로그인 · 가입 · 계정 화면은 [docs/design/auth/README.md](docs/design/auth/README.md) (별도 캔버스, 우선순위 포함)
 4. [docs/conventions.md](docs/conventions.md) — 도구 체인, 디렉터리 구조, import · 스타일 · 환경변수 · 테스트 규칙
 5. [docs/design/tokens.json](docs/design/tokens.json) — 디자인 토큰 원본 (코드 쪽 정본은 `src/styles/tokens.css`)
 6. [docs/api-contract-draft.md](docs/api-contract-draft.md) — API 계약 초안 (백엔드와 맞추기 전)
