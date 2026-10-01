@@ -17,3 +17,16 @@ export type MainNavKey = (typeof MAIN_NAV)[number]['key']
 export function navHref(href: string, search?: string): string {
   return search ? `${href}?${search}` : href
 }
+
+/**
+ * 경로가 어느 주요 메뉴 화면인지. 그 메뉴 아래 경로(`/me/devices`)도 그 메뉴다. 주요 메뉴 밖(로그인 · 첫 진입 등)이면 null 이다.
+ * 라우트 공통 상태(`app/loading.tsx` · `app/error.tsx`)가 탭바 · 헤더 메뉴를 그릴지와 현재 메뉴를 고를 때 쓴다.
+ */
+export function mainNavKeyFor(pathname: string | null): MainNavKey | null {
+  if (pathname === null) return null
+  if (pathname === '/') return 'home'
+  const item = MAIN_NAV.find(
+    ({ href }) => href !== '/' && (pathname === href || pathname.startsWith(`${href}/`)),
+  )
+  return item?.key ?? null
+}
