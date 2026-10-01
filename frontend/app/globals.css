@@ -92,6 +92,7 @@
   --radius-bar: var(--rounded-bar);
   --radius-progress: var(--rounded-progress);
   --radius-checkbox: var(--rounded-checkbox);
+  --radius-skeleton: var(--rounded-skeleton);
 
   /* ── 간격·크기: px-page-mobile, h-band, min-h-touch, h-button … */
   --spacing-page-mobile: var(--space-page-mobile);
