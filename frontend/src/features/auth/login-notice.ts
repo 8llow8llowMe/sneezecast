@@ -34,7 +34,10 @@ export function isResetDone(reason: Param): boolean {
   return first(reason) === 'reset-done'
 }
 
-/** 이메일 가입(S13-2)이 인증 시간이 지나 돌아왔는지 (`?reason=verification-expired`, S02-3 가입 요청의 `AUTH_007`) */
+/**
+ * 이메일 가입(S13-2) · 비밀번호 재설정(S13-6) 이메일 단계가 인증 시간이 지나 돌아왔는지 (`?reason=verification-expired`).
+ * 가입은 S02-3 가입 요청의 `AUTH_007`, 재설정은 새 비밀번호 요청의 인증 만료다
+ */
 export function isVerificationExpired(reason: Param): boolean {
   return first(reason) === 'verification-expired'
 }
