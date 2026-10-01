@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>운영자 검토 · A01–A02</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+@font-face{font-family:'Pretendard';src:url(/_blob/3282625f5699278e7faf26c9cfc91be1) format('woff2');font-weight:45 920;font-style:normal;font-display:swap}
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; background: #FFFFFF; font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; color: #191F28; font-variant-numeric: tabular-nums; overflow: hidden">
+<header style="flex-shrink: 0; display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 32px; border-bottom: 1px solid #E5E8EB">
+<span style="font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: #1F2F57">우리동네체온계</span>
+<span style="display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 999px; background: #FFFFFF; border: 1.5px solid #1F2F57; font-size: 12px; font-weight: 600; color: #1F2F57">운영자</span>
+<span style="flex-grow: 1"></span>
+<button type="button" style="display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border: 1px solid #D1D6DB; border-radius: 10px; background: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; color: #191F28; cursor: pointer">11월 3주<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#191F28" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+</header>
+<div style="flex-grow: 1; display: flex; overflow: hidden">
+<nav aria-label="운영 메뉴" style="flex-shrink: 0; width: 220px; display: flex; flex-direction: column; gap: 4px; padding: 20px 16px; border-right: 1px solid #E5E8EB">
+<a href="#queue" aria-current="page" style="display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 12px; border-radius: 10px; text-decoration: none; font-size: 15px; background: #F2F4F6; font-weight: 700; color: #1F2F57"><span>검토 대기</span><span style="font-size: 13px">4</span></a>
+<a href="#history" style="display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 12px; border-radius: 10px; text-decoration: none; font-size: 15px; font-weight: 500; color: #4E5968"><span>발행 이력</span></a>
+<a href="#rules" style="display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 12px; border-radius: 10px; text-decoration: none; font-size: 15px; font-weight: 500; color: #4E5968"><span>기준 설정</span></a>
+</nav>
+<main style="flex-grow: 1; display: flex; flex-direction: column; gap: 20px; padding: 24px 32px; overflow: hidden">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #191F28">검토 대기</h1>
+<span style="font-size: 14px; color: #4E5968">이번 주 후보 4건 · 후보 기준: 표본 100명 이상에서 기준선 대비 +5%p, 참여 급증, 반복 보고 의심</span>
+</div>
+<div style="flex-grow: 1; display: flex; gap: 24px; overflow: hidden">
+<section style="flex-shrink: 0; width: 540px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; gap: 8px"><button type="button" aria-pressed="true" style="height: 36px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; border: 1.5px solid #1F2F57; background: #1F2F57; color: #FFFFFF">전체 4</button><button type="button" aria-pressed="false" style="height: 36px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid #D1D6DB; background: #FFFFFF; color: #191F28">기준선 변화 2</button><button type="button" aria-pressed="false" style="height: 36px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid #D1D6DB; background: #FFFFFF; color: #191F28">참여 급증 1</button><button type="button" aria-pressed="false" style="height: 36px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid #D1D6DB; background: #FFFFFF; color: #191F28">반복 보고 의심 1</button></div>
+<table style="width: 100%; border-collapse: collapse"><thead><tr><th style="padding: 0 12px; height: 40px; border-bottom: 1px solid #E5E8EB; font-size: 12px; font-weight: 600; color: #4E5968; text-align: left">유형</th><th style="padding: 0 12px; height: 40px; border-bottom: 1px solid #E5E8EB; font-size: 12px; font-weight: 600; color: #4E5968; text-align: left">행정동</th><th style="padding: 0 12px; height: 40px; border-bottom: 1px solid #E5E8EB; font-size: 12px; font-weight: 600; color: #4E5968; text-align: left">참여</th><th style="padding: 0 12px; height: 40px; border-bottom: 1px solid #E5E8EB; font-size: 12px; font-weight: 600; color: #4E5968; text-align: left">증상 보고</th><th style="padding: 0 12px; height: 40px; border-bottom: 1px solid #E5E8EB; font-size: 12px; font-weight: 600; color: #4E5968; text-align: left">기준선 대비</th><th style="padding: 0 12px; height: 40px; border-bottom: 1px solid #E5E8EB; font-size: 12px; font-weight: 600; color: #4E5968; text-align: left">상태</th></tr></thead><tbody><tr style="background: #F2F4F6; box-shadow: inset 3px 0 0 #1F2F57; cursor: pointer"><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left; font-weight: 600">기준선 변화</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">○○1동</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">128명</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">18%</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left; font-weight: 600; color: #C7641A">+9%p</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left"><span style="display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 999px; background: #1F2F57; border: none; font-size: 12px; font-weight: 600; color: #FFFFFF">검토 중</span></td></tr><tr style="background: #FFFFFF;  cursor: pointer"><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left; font-weight: 600">참여 급증</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">○○2동</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">212명</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">7%</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left; font-weight: 600; color: #C7641A">+1%p</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left"><span style="display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 999px; background: #F2F4F6; border: none; font-size: 12px; font-weight: 600; color: #4E5968">대기</span></td></tr><tr style="background: #FFFFFF;  cursor: pointer"><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left; font-weight: 600">반복 보고 의심</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">○○3동</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">64명</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">22%</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left; font-weight: 600; color: #C7641A">+12%p</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left"><span style="display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 999px; background: #F2F4F6; border: none; font-size: 12px; font-weight: 600; color: #4E5968">대기</span></td></tr><tr style="background: #FFFFFF;  cursor: pointer"><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left; font-weight: 600">기준선 변화</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">○○4동</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">104명</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left">14%</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left; font-weight: 600; color: #C7641A">+6%p</td><td style="padding: 0 12px; height: 56px; border-bottom: 1px solid #E5E8EB; font-size: 14px; color: #191F28; text-align: left"><span style="display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 999px; background: #F2F4F6; border: none; font-size: 12px; font-weight: 600; color: #4E5968">대기</span></td></tr></tbody></table>
+<p style="margin: 0; font-size: 13px; line-height: 1.5; color: #4E5968">표본이 100명 미만인 행정동은 후보에 올라오지 않아요. 사용자 화면에는 “자료 부족”으로만 표시돼요.</p>
+</section>
+<section style="flex-grow: 1; display: flex; flex-direction: column; gap: 18px; padding: 24px; border: 1px solid #E5E8EB; border-radius: 16px; overflow: hidden">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 style="margin: 0; font-size: 20px; font-weight: 700; color: #191F28">○○1동 · 기준선 대비 변화</h2>
+<span style="font-size: 14px; color: #4E5968">11월 3주 · 참여 128명 · 증상 보고 18% (기준선 9%) · 발열·기침·인후통</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="position: relative; display: flex; align-items: flex-end; gap: 10px; height: 100px">
+<div style="position: absolute; left: 0; right: 0; bottom: 48px; border-top: 1.5px dashed #6B7684"></div>
+<span style="position: absolute; left: 0; bottom: 52px; padding: 0 4px; background: #FFFFFF; font-size: 12px; color: #4E5968">기준선 9%</span>
+<div style="flex-grow: 1; height: 44px; border-radius: 4px; background: #D1D6DB"></div><div style="flex-grow: 1; height: 46px; border-radius: 4px; background: #D1D6DB"></div><div style="flex-grow: 1; height: 42px; border-radius: 4px; background: #D1D6DB"></div><div style="flex-grow: 1; height: 48px; border-radius: 4px; background: #D1D6DB"></div><div style="flex-grow: 1; height: 50px; border-radius: 4px; background: #D1D6DB"></div><div style="flex-grow: 1; height: 58px; border-radius: 4px; background: #D1D6DB"></div><div style="flex-grow: 1; height: 74px; border-radius: 4px; background: #D1D6DB"></div><div style="flex-grow: 1; height: 96px; border-radius: 4px; background: #F08C2E"></div>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 12px; color: #4E5968"><span>8주 전</span><span style="font-weight: 700; color: #191F28">이번 주</span></div>
+</div>
+<div style="display: flex; gap: 24px">
+<div style="flex-grow: 1; flex-basis: 0; display: flex; flex-direction: column">
+<h3 style="margin: 0 0 4px 0; font-size: 15px; font-weight: 700; color: #191F28">이상 보고 확인</h3>
+<div style="display: flex; justify-content: space-between; align-items: center; min-height: 40px; border-bottom: 1px solid #E5E8EB"><span style="font-size: 14px; color: #4E5968">짧은 시간 몰림</span><span style="font-size: 14px; font-weight: 500; color: #191F28">없음</span></div>
+<div style="display: flex; justify-content: space-between; align-items: center; min-height: 40px; border-bottom: 1px solid #E5E8EB"><span style="font-size: 14px; color: #4E5968">같은 기기 반복 보고</span><span style="font-size: 14px; font-weight: 600; color: #191F28">2건 · 집계 제외</span></div>
+<div style="display: flex; justify-content: space-between; align-items: center; min-height: 40px; border-bottom: 1px solid #E5E8EB"><span style="font-size: 14px; color: #4E5968">이번 주 신규 참여 비율</span><span style="font-size: 14px; font-weight: 500; color: #191F28">12%</span></div>
+</div>
+<div style="flex-grow: 1; flex-basis: 0; display: flex; flex-direction: column">
+<h3 style="margin: 0 0 4px 0; font-size: 15px; font-weight: 700; color: #191F28">발행 전 확인</h3>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 14px; color: #191F28; cursor: pointer"><input type="checkbox" checked="" style="width: 18px; height: 18px; accent-color: #1F2F57">표본 기준(100명 이상) 충족</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 14px; color: #191F28; cursor: pointer"><input type="checkbox" checked="" style="width: 18px; height: 18px; accent-color: #1F2F57">반복·이상 보고 제외 완료</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 14px; color: #191F28; cursor: pointer"><input type="checkbox" style="width: 18px; height: 18px; accent-color: #1F2F57">질병관리청 공식 자료와 충돌 없음</label>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; align-items: baseline"><h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #191F28">안내문 초안 <span style="font-size: 12px; font-weight: 600; color: #4E5968">AI 작성 · 운영자 수정 가능</span></h3><span style="font-size: 12px; color: #4E5968">출처 확인된 집계값과 공식 예방수칙만 사용</span></div>
+<textarea aria-label="안내문 초안" style="height: 88px; padding: 12px 14px; border: 1px solid #D1D6DB; border-radius: 12px; font-family: inherit; font-size: 14px; line-height: 1.55; color: #191F28; resize: none">○○동에서 이번 주 발열·기침 보고가 지난 4주보다 많이 늘었어요(참여 128명 중 18%). 기침할 때는 옷소매로 입과 코를 가려 주세요. 손 씻기와 실내 환기도 자주 해 주세요. 이 정보는 진단이 아닌 참고용이에요.</textarea>
+<span style="font-size: 12px; color: #4E5968">연결된 예방수칙: 기침 예절 · 손 씻기 (질병관리청)</span>
+</div>
+<div style="display: flex; align-items: center; gap: 10px; margin-top: auto">
+<span style="flex-grow: 1; font-size: 13px; color: #4E5968">검토 시작 14:02 · 경과 6분</span>
+<button type="button" style="height: 44px; padding: 0 18px; border: none; border-radius: 12px; background: #F2F4F6; color: #191F28; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer">보류</button>
+<button type="button" style="height: 44px; padding: 0 18px; border: none; border-radius: 12px; background: #F2F4F6; color: #191F28; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer">수정 저장</button>
+<button type="button" style="height: 44px; padding: 0 20px; border: none; border-radius: 12px; background: #1F2F57; color: #FFFFFF; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer">승인하고 발행</button>
+</div>
+</section>
+</div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview": {"width": 1440, "height": 900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

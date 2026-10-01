@@ -1,0 +1,819 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Admin.dc.html": {
+      "h": 900,
+      "title": "A01–A02 운영자 검토",
+      "w": 1440,
+      "x": 1384,
+      "y": 2878
+    },
+    "Desktop.dc.html": {
+      "h": 900,
+      "title": "W01 웹 홈 · 데스크톱 (1440)",
+      "w": 1440,
+      "x": 1384,
+      "y": 1264
+    },
+    "Explain-D.dc.html": {
+      "h": 900,
+      "title": "S11 판단 기준 · 데스크톱",
+      "w": 1440,
+      "x": 1990,
+      "y": 19800
+    },
+    "Explain-T.dc.html": {
+      "h": 1194,
+      "title": "S11 판단 기준 · 태블릿",
+      "w": 834,
+      "x": 1384,
+      "y": 18366
+    },
+    "Explain.dc.html": {
+      "h": 844,
+      "title": "S11 판단 기준 설명",
+      "w": 390,
+      "x": 2350,
+      "y": 0
+    },
+    "Flow.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "시연용 프로토타입 · 주간 보고 흐름",
+      "w": 390,
+      "x": 470,
+      "y": 2878
+    },
+    "Guide-corrected-D.dc.html": {
+      "h": 900,
+      "title": "S07 정정된 안내 · 데스크톱",
+      "w": 1440,
+      "x": 3510,
+      "y": 25868
+    },
+    "Guide-corrected-T.dc.html": {
+      "h": 1194,
+      "title": "S07 정정된 안내 · 태블릿",
+      "w": 834,
+      "x": 2298,
+      "y": 24434
+    },
+    "Guide-corrected.dc.html": {
+      "h": 844,
+      "title": "S07 정정된 안내",
+      "w": 390,
+      "x": 1880,
+      "y": 8110
+    },
+    "Guide-none-D.dc.html": {
+      "h": 900,
+      "title": "S07 안내 없음 · 데스크톱",
+      "w": 1440,
+      "x": 1990,
+      "y": 25868
+    },
+    "Guide-none-T.dc.html": {
+      "h": 1194,
+      "title": "S07 안내 없음 · 태블릿",
+      "w": 834,
+      "x": 1384,
+      "y": 24434
+    },
+    "Guide-none.dc.html": {
+      "h": 844,
+      "title": "S07 안내 없음",
+      "w": 390,
+      "x": 940,
+      "y": 8110
+    },
+    "Guide-published-D.dc.html": {
+      "h": 900,
+      "title": "S07 안내 발행됨 · 데스크톱",
+      "w": 1440,
+      "x": 470,
+      "y": 25868
+    },
+    "Guide-published-T.dc.html": {
+      "h": 1194,
+      "title": "S07 안내 발행됨 · 태블릿",
+      "w": 834,
+      "x": 470,
+      "y": 24434
+    },
+    "Guide-published.dc.html": {
+      "h": 844,
+      "title": "S07 안내 발행됨",
+      "w": 390,
+      "x": 470,
+      "y": 8110
+    },
+    "History.dc.html": {
+      "h": 900,
+      "title": "A03 발행 이력 · 정정·철회",
+      "w": 1440,
+      "x": 470,
+      "y": 10598
+    },
+    "Home-good.dc.html": {
+      "h": 844,
+      "title": "S03 홈 · 평소 수준",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "Home-nodata-D.dc.html": {
+      "h": 900,
+      "title": "S03 홈 · 자료 부족 · 데스크톱",
+      "w": 1440,
+      "x": 470,
+      "y": 19800
+    },
+    "Home-nodata-T.dc.html": {
+      "h": 1194,
+      "title": "S03 홈 · 자료 부족 · 태블릿",
+      "w": 834,
+      "x": 470,
+      "y": 18366
+    },
+    "Home-normal.dc.html": {
+      "h": 844,
+      "title": "S03 홈 · 조금 늘었어요",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "Home-pending.dc.html": {
+      "h": 844,
+      "title": "S03 홈 · 자료 부족",
+      "w": 390,
+      "x": 1880,
+      "y": 0
+    },
+    "Home.dc.html": {
+      "h": 844,
+      "title": "S03 홈 · 많이 늘었어요 (안내 발행)",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "Install-D.dc.html": {
+      "h": 900,
+      "title": "S12 홈 화면 추가 · 데스크톱",
+      "w": 1440,
+      "x": 9590,
+      "y": 16766
+    },
+    "Install-T.dc.html": {
+      "h": 1194,
+      "title": "S12 홈 화면 추가 · 태블릿",
+      "w": 834,
+      "x": 5954,
+      "y": 15332
+    },
+    "Install.dc.html": {
+      "h": 844,
+      "title": "S12 홈 화면 추가 안내",
+      "w": 390,
+      "x": 3290,
+      "y": 5622
+    },
+    "Map-collapsed.dc.html": {
+      "h": 844,
+      "title": "S04 내 동네 (접힘)",
+      "w": 390,
+      "x": 470,
+      "y": 6866
+    },
+    "Map-expanded-D.dc.html": {
+      "h": 900,
+      "title": "S04 지도 · 동 선택 · 데스크톱",
+      "w": 1440,
+      "x": 470,
+      "y": 22834
+    },
+    "Map-expanded-T.dc.html": {
+      "h": 1194,
+      "title": "S04 지도 · 동 선택 · 태블릿",
+      "w": 834,
+      "x": 470,
+      "y": 21400
+    },
+    "Map-expanded.dc.html": {
+      "h": 844,
+      "title": "S04 다른 동 (펼침)",
+      "w": 390,
+      "x": 940,
+      "y": 6866
+    },
+    "Map-nodata-D.dc.html": {
+      "h": 900,
+      "title": "S04 지도 · 자료 부족 동 · 데스크톱",
+      "w": 1440,
+      "x": 1990,
+      "y": 22834
+    },
+    "Map-nodata-T.dc.html": {
+      "h": 1194,
+      "title": "S04 지도 · 자료 부족 동 · 태블릿",
+      "w": 834,
+      "x": 1384,
+      "y": 21400
+    },
+    "Map-nodata.dc.html": {
+      "h": 844,
+      "title": "S04 자료 부족 동",
+      "w": 390,
+      "x": 1410,
+      "y": 6866
+    },
+    "Official-D.dc.html": {
+      "h": 900,
+      "title": "S08 공식 정보 · 데스크톱",
+      "w": 1440,
+      "x": 5030,
+      "y": 25868
+    },
+    "Official-T.dc.html": {
+      "h": 1194,
+      "title": "S08 공식 정보 · 태블릿",
+      "w": 834,
+      "x": 3212,
+      "y": 24434
+    },
+    "Official.dc.html": {
+      "h": 844,
+      "title": "S08 공식 정보",
+      "w": 390,
+      "x": 1410,
+      "y": 8110
+    },
+    "Report-confirm-D.dc.html": {
+      "h": 900,
+      "title": "S05 확인 · 데스크톱",
+      "w": 1440,
+      "x": 3510,
+      "y": 16766
+    },
+    "Report-confirm-T.dc.html": {
+      "h": 1194,
+      "title": "S05 확인 · 태블릿",
+      "w": 834,
+      "x": 2298,
+      "y": 15332
+    },
+    "Report-confirm.dc.html": {
+      "h": 844,
+      "title": "S05 확인",
+      "w": 390,
+      "x": 1410,
+      "y": 5622
+    },
+    "Report-done-D.dc.html": {
+      "h": 900,
+      "title": "S06 보고 완료 · 데스크톱",
+      "w": 1440,
+      "x": 6550,
+      "y": 16766
+    },
+    "Report-done-T.dc.html": {
+      "h": 1194,
+      "title": "S06 보고 완료 · 태블릿",
+      "w": 834,
+      "x": 4126,
+      "y": 15332
+    },
+    "Report-done-ok-D.dc.html": {
+      "h": 900,
+      "title": "S06 되돌리기 · 데스크톱",
+      "w": 1440,
+      "x": 8070,
+      "y": 16766
+    },
+    "Report-done-ok-T.dc.html": {
+      "h": 1194,
+      "title": "S06 되돌리기 · 태블릿",
+      "w": 834,
+      "x": 5040,
+      "y": 15332
+    },
+    "Report-done-ok.dc.html": {
+      "h": 844,
+      "title": "S06 완료 · 되돌리기",
+      "w": 390,
+      "x": 2820,
+      "y": 5622
+    },
+    "Report-done.dc.html": {
+      "h": 844,
+      "title": "S06 보고 완료",
+      "w": 390,
+      "x": 2350,
+      "y": 5622
+    },
+    "Report-edit-D.dc.html": {
+      "h": 900,
+      "title": "S05 같은 주 수정 · 데스크톱",
+      "w": 1440,
+      "x": 5030,
+      "y": 16766
+    },
+    "Report-edit-T.dc.html": {
+      "h": 1194,
+      "title": "S05 같은 주 수정 · 태블릿",
+      "w": 834,
+      "x": 3212,
+      "y": 15332
+    },
+    "Report-edit.dc.html": {
+      "h": 844,
+      "title": "S05 같은 주 수정",
+      "w": 390,
+      "x": 1880,
+      "y": 5622
+    },
+    "Report-start-D.dc.html": {
+      "h": 900,
+      "title": "S05 시작 · 데스크톱",
+      "w": 1440,
+      "x": 470,
+      "y": 16766
+    },
+    "Report-start-T.dc.html": {
+      "h": 1194,
+      "title": "S05 시작 · 태블릿",
+      "w": 834,
+      "x": 470,
+      "y": 15332
+    },
+    "Report-start.dc.html": {
+      "h": 844,
+      "title": "S05 시작",
+      "w": 390,
+      "x": 470,
+      "y": 5622
+    },
+    "Report-symptom-D.dc.html": {
+      "h": 900,
+      "title": "S05 증상군 · 데스크톱",
+      "w": 1440,
+      "x": 1990,
+      "y": 16766
+    },
+    "Report-symptom-T.dc.html": {
+      "h": 1194,
+      "title": "S05 증상군 · 태블릿",
+      "w": 834,
+      "x": 1384,
+      "y": 15332
+    },
+    "Report-symptom.dc.html": {
+      "h": 844,
+      "title": "S05 증상군",
+      "w": 390,
+      "x": 940,
+      "y": 5622
+    },
+    "Settings-D.dc.html": {
+      "h": 900,
+      "title": "S10 내 정보 · 데스크톱",
+      "w": 1440,
+      "x": 470,
+      "y": 28902
+    },
+    "Settings-T.dc.html": {
+      "h": 1194,
+      "title": "S10 내 정보 · 태블릿",
+      "w": 834,
+      "x": 470,
+      "y": 27468
+    },
+    "Settings-nopush-D.dc.html": {
+      "h": 900,
+      "title": "S10 알림 미지원 · 데스크톱",
+      "w": 1440,
+      "x": 1990,
+      "y": 28902
+    },
+    "Settings-nopush-T.dc.html": {
+      "h": 1194,
+      "title": "S10 알림 미지원 · 태블릿",
+      "w": 834,
+      "x": 1384,
+      "y": 27468
+    },
+    "Settings-nopush.dc.html": {
+      "h": 844,
+      "title": "S10 알림 미지원 기기",
+      "w": 390,
+      "x": 940,
+      "y": 9354
+    },
+    "Settings.dc.html": {
+      "h": 844,
+      "title": "S10 내 정보",
+      "w": 390,
+      "x": 470,
+      "y": 9354
+    },
+    "Setup-1-D.dc.html": {
+      "h": 900,
+      "title": "S02 동네 선택 · 데스크톱",
+      "w": 1440,
+      "x": 1990,
+      "y": 13732
+    },
+    "Setup-1-T.dc.html": {
+      "h": 1194,
+      "title": "S02 동네 선택 · 태블릿",
+      "w": 834,
+      "x": 1384,
+      "y": 12298
+    },
+    "Setup-1.dc.html": {
+      "h": 844,
+      "title": "S02 동네 선택 (1/3)",
+      "w": 390,
+      "x": 940,
+      "y": 4378
+    },
+    "Setup-2-D.dc.html": {
+      "h": 900,
+      "title": "S02 성인 확인 · 데스크톱",
+      "w": 1440,
+      "x": 3510,
+      "y": 13732
+    },
+    "Setup-2-T.dc.html": {
+      "h": 1194,
+      "title": "S02 성인 확인 · 태블릿",
+      "w": 834,
+      "x": 2298,
+      "y": 12298
+    },
+    "Setup-2.dc.html": {
+      "h": 844,
+      "title": "S02 성인 확인 (2/3)",
+      "w": 390,
+      "x": 1410,
+      "y": 4378
+    },
+    "Setup-3-D.dc.html": {
+      "h": 900,
+      "title": "S02 동의 · 데스크톱",
+      "w": 1440,
+      "x": 5030,
+      "y": 13732
+    },
+    "Setup-3-T.dc.html": {
+      "h": 1194,
+      "title": "S02 동의 · 태블릿",
+      "w": 834,
+      "x": 3212,
+      "y": 12298
+    },
+    "Setup-3.dc.html": {
+      "h": 844,
+      "title": "S02 동의 (3/3)",
+      "w": 390,
+      "x": 1880,
+      "y": 4378
+    },
+    "Start-D.dc.html": {
+      "h": 900,
+      "title": "S01 시작 · 데스크톱",
+      "w": 1440,
+      "x": 470,
+      "y": 13732
+    },
+    "Start-T.dc.html": {
+      "h": 1194,
+      "title": "S01 시작 · 태블릿",
+      "w": 834,
+      "x": 470,
+      "y": 12298
+    },
+    "Start.dc.html": {
+      "h": 844,
+      "title": "S01 시작",
+      "w": 390,
+      "x": 470,
+      "y": 4378
+    },
+    "State-error-D.dc.html": {
+      "h": 900,
+      "title": "상태 · 오류 · 데스크톱",
+      "w": 1440,
+      "x": 8070,
+      "y": 19800
+    },
+    "State-error-T.dc.html": {
+      "h": 1194,
+      "title": "상태 · 오류 · 태블릿",
+      "w": 834,
+      "x": 5040,
+      "y": 18366
+    },
+    "State-error.dc.html": {
+      "h": 844,
+      "title": "상태 · 오류",
+      "w": 390,
+      "x": 1880,
+      "y": 9354
+    },
+    "State-loading-D.dc.html": {
+      "h": 900,
+      "title": "상태 · 불러오는 중 · 데스크톱",
+      "w": 1440,
+      "x": 6550,
+      "y": 19800
+    },
+    "State-loading-T.dc.html": {
+      "h": 1194,
+      "title": "상태 · 불러오는 중 · 태블릿",
+      "w": 834,
+      "x": 4126,
+      "y": 18366
+    },
+    "State-loading.dc.html": {
+      "h": 844,
+      "title": "상태 · 불러오는 중",
+      "w": 390,
+      "x": 1410,
+      "y": 9354
+    },
+    "State-offline-D.dc.html": {
+      "h": 900,
+      "title": "상태 · 오프라인 · 데스크톱",
+      "w": 1440,
+      "x": 3510,
+      "y": 19800
+    },
+    "State-offline-T.dc.html": {
+      "h": 1194,
+      "title": "상태 · 오프라인 · 태블릿",
+      "w": 834,
+      "x": 2298,
+      "y": 18366
+    },
+    "State-offline.dc.html": {
+      "h": 844,
+      "title": "상태 · 오프라인",
+      "w": 390,
+      "x": 2350,
+      "y": 9354
+    },
+    "State-push-inapp-D.dc.html": {
+      "h": 900,
+      "title": "상태 · 알림 대신 홈 표시 · 데스크톱",
+      "w": 1440,
+      "x": 5030,
+      "y": 19800
+    },
+    "State-push-inapp-T.dc.html": {
+      "h": 1194,
+      "title": "상태 · 알림 대신 홈 표시 · 태블릿",
+      "w": 834,
+      "x": 3212,
+      "y": 18366
+    },
+    "State-push-inapp.dc.html": {
+      "h": 844,
+      "title": "상태 · 알림 대신 홈에 표시",
+      "w": 390,
+      "x": 2820,
+      "y": 9354
+    },
+    "Tablet.dc.html": {
+      "h": 1194,
+      "title": "S03 홈 · 태블릿 (834)",
+      "w": 834,
+      "x": 470,
+      "y": 1264
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-09-29T12:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "flowHow": {
+      "text": "Play로 열어 눌러 보세요.\n1. 홈은 '자료 부족'으로 시작\n2. 이번 주 건강 보고하기 → 증상 없음 또는 증상군 → 보내기\n3. 완료 화면: 보고 수정하기 · 이웃에게 서비스 알리기\n4. 홈과 지도가 '조금 늘었어요'로 바뀜\n오른쪽: 운영자가 검토 후 안내를 발행하는 화면",
+      "w": 380,
+      "x": 900,
+      "y": 2878
+    },
+    "flowTitle": {
+      "kind": "title1",
+      "maxW": 1800,
+      "text": "시연: 주간 보고 → 우리 동 변화 · 운영자 검토",
+      "w": 240,
+      "x": 470,
+      "y": 2578
+    },
+    "homeTitle": {
+      "kind": "title1",
+      "maxW": 1800,
+      "text": "S03 홈 · 변화 상태 4종 (제출 신청서 기준)",
+      "w": 240,
+      "x": 470,
+      "y": -300
+    },
+    "rwd1": {
+      "kind": "title1",
+      "maxW": 4000,
+      "text": "태블릿·데스크톱 · 첫 진입",
+      "w": 240,
+      "x": 470,
+      "y": 11998
+    },
+    "rwd2": {
+      "kind": "title1",
+      "maxW": 4000,
+      "text": "태블릿·데스크톱 · 주간 건강 보고 (시트 → 가운데 대화상자)",
+      "w": 240,
+      "x": 470,
+      "y": 15032
+    },
+    "rwd3": {
+      "kind": "title1",
+      "maxW": 4000,
+      "text": "태블릿·데스크톱 · 홈 상태와 판단 기준",
+      "w": 240,
+      "x": 470,
+      "y": 18066
+    },
+    "rwd4": {
+      "kind": "title1",
+      "maxW": 4000,
+      "text": "태블릿·데스크톱 · 지도",
+      "w": 240,
+      "x": 470,
+      "y": 21100
+    },
+    "rwd5": {
+      "kind": "title1",
+      "maxW": 4000,
+      "text": "태블릿·데스크톱 · 동네 안내·공식 정보",
+      "w": 240,
+      "x": 470,
+      "y": 24134
+    },
+    "rwd6": {
+      "kind": "title1",
+      "maxW": 4000,
+      "text": "태블릿·데스크톱 · 내 정보",
+      "w": 240,
+      "x": 470,
+      "y": 27168
+    },
+    "sec1": {
+      "kind": "title1",
+      "maxW": 2270,
+      "text": "첫 진입 · S01–S02",
+      "w": 240,
+      "x": 470,
+      "y": 4078
+    },
+    "sec2": {
+      "kind": "title1",
+      "maxW": 2270,
+      "text": "주간 건강 보고 · S05–S06",
+      "w": 240,
+      "x": 470,
+      "y": 5322
+    },
+    "sec3": {
+      "kind": "title1",
+      "maxW": 2270,
+      "text": "지도 · S04",
+      "w": 240,
+      "x": 470,
+      "y": 6566
+    },
+    "sec4": {
+      "kind": "title1",
+      "maxW": 2270,
+      "text": "동네 안내 · 공식 정보 · S07–S08",
+      "w": 240,
+      "x": 470,
+      "y": 7810
+    },
+    "sec5": {
+      "kind": "title1",
+      "maxW": 2270,
+      "text": "내 정보 · 공통 상태 · S10",
+      "w": 240,
+      "x": 470,
+      "y": 9054
+    },
+    "sec6": {
+      "kind": "title1",
+      "maxW": 2270,
+      "text": "운영자 · A03 발행 이력",
+      "w": 240,
+      "x": 470,
+      "y": 10298
+    },
+    "sizesTitle": {
+      "kind": "title1",
+      "maxW": 2354,
+      "text": "태블릿 · 데스크톱",
+      "w": 240,
+      "x": 470,
+      "y": 964
+    }
+  },
+  "order": [
+    "Home-good.dc.html",
+    "Home-normal.dc.html",
+    "Home.dc.html",
+    "Home-pending.dc.html",
+    "Tablet.dc.html",
+    "Desktop.dc.html",
+    "Flow.dc.html",
+    "Admin.dc.html",
+    "Start.dc.html",
+    "Setup-1.dc.html",
+    "Setup-2.dc.html",
+    "Setup-3.dc.html",
+    "Report-start.dc.html",
+    "Report-symptom.dc.html",
+    "Report-confirm.dc.html",
+    "Report-edit.dc.html",
+    "Report-done.dc.html",
+    "Map-collapsed.dc.html",
+    "Map-expanded.dc.html",
+    "Map-nodata.dc.html",
+    "Guide-published.dc.html",
+    "Guide-none.dc.html",
+    "Official.dc.html",
+    "Settings.dc.html",
+    "Settings-nopush.dc.html",
+    "State-loading.dc.html",
+    "State-error.dc.html",
+    "State-offline.dc.html",
+    "State-push-inapp.dc.html",
+    "History.dc.html",
+    "Explain.dc.html",
+    "Report-done-ok.dc.html",
+    "Install.dc.html",
+    "Guide-corrected.dc.html",
+    "Start-T.dc.html",
+    "Start-D.dc.html",
+    "Setup-1-T.dc.html",
+    "Setup-1-D.dc.html",
+    "Setup-2-T.dc.html",
+    "Setup-2-D.dc.html",
+    "Setup-3-T.dc.html",
+    "Setup-3-D.dc.html",
+    "Report-start-T.dc.html",
+    "Report-start-D.dc.html",
+    "Report-symptom-T.dc.html",
+    "Report-symptom-D.dc.html",
+    "Report-confirm-T.dc.html",
+    "Report-confirm-D.dc.html",
+    "Report-edit-T.dc.html",
+    "Report-edit-D.dc.html",
+    "Report-done-T.dc.html",
+    "Report-done-D.dc.html",
+    "Report-done-ok-T.dc.html",
+    "Report-done-ok-D.dc.html",
+    "Install-T.dc.html",
+    "Install-D.dc.html",
+    "Home-nodata-T.dc.html",
+    "Home-nodata-D.dc.html",
+    "Explain-T.dc.html",
+    "Explain-D.dc.html",
+    "State-offline-T.dc.html",
+    "State-offline-D.dc.html",
+    "State-push-inapp-T.dc.html",
+    "State-push-inapp-D.dc.html",
+    "State-loading-T.dc.html",
+    "State-loading-D.dc.html",
+    "State-error-T.dc.html",
+    "State-error-D.dc.html",
+    "Map-expanded-T.dc.html",
+    "Map-expanded-D.dc.html",
+    "Map-nodata-T.dc.html",
+    "Map-nodata-D.dc.html",
+    "Guide-published-T.dc.html",
+    "Guide-published-D.dc.html",
+    "Guide-none-T.dc.html",
+    "Guide-none-D.dc.html",
+    "Guide-corrected-T.dc.html",
+    "Guide-corrected-D.dc.html",
+    "Official-T.dc.html",
+    "Official-D.dc.html",
+    "Settings-T.dc.html",
+    "Settings-D.dc.html",
+    "Settings-nopush-T.dc.html",
+    "Settings-nopush-D.dc.html"
+  ],
+  "pages": [],
+  "title": "우리동네체온계 홈 시안"
+}
