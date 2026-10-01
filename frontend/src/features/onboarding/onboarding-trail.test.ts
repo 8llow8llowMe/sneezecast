@@ -21,9 +21,13 @@ describe('nextTrail', () => {
 })
 
 describe('canGoBackTo', () => {
-  it('바로 앞이 그 주소일 때만 되돌릴 수 있다', () => {
-    expect(canGoBackTo(['/start', '/setup/region'], '/start')).toBe(true)
-    expect(canGoBackTo(['/setup/region'], '/start')).toBe(false)
-    expect(canGoBackTo(['/setup/adult', '/setup/region'], '/start')).toBe(false)
+  it('바로 앞이 후보 중 하나일 때만 되돌릴 수 있다', () => {
+    expect(canGoBackTo(['/start', '/setup/region'], ['/start'])).toBe(true)
+    expect(canGoBackTo(['/login', '/setup/region'], ['/login', '/signup/account'])).toBe(true)
+    expect(canGoBackTo(['/signup/account', '/setup/region'], ['/login', '/signup/account'])).toBe(
+      true,
+    )
+    expect(canGoBackTo(['/setup/region'], ['/start'])).toBe(false)
+    expect(canGoBackTo(['/setup/adult', '/setup/region'], ['/start'])).toBe(false)
   })
 })

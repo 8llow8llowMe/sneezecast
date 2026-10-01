@@ -18,12 +18,12 @@ describe('StartScreen', () => {
     )
   })
 
-  it('시작하기는 동네 선택, 둘러보기는 단계 없는 동네 선택으로 간다', async () => {
+  it('시작하기는 로그인, 둘러보기는 단계 없는 동네 선택으로 간다', async () => {
     const user = userEvent.setup()
     render(<StartScreen />)
 
     await user.click(screen.getByRole('button', { name: '시작하기' }))
-    expect(router.push).toHaveBeenLastCalledWith('/setup/region')
+    expect(router.push).toHaveBeenLastCalledWith('/login')
 
     await user.click(screen.getByRole('button', { name: '보고 없이 둘러보기' }))
     expect(router.push).toHaveBeenLastCalledWith('/browse/region')

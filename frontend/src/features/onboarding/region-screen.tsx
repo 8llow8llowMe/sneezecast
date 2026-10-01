@@ -13,7 +13,13 @@ import { withGwaWa } from '@/lib/korean'
 
 import { useOnboarding } from './onboarding-context'
 import { OnboardingLayout } from './onboarding-layout'
-import { browseHomePath, SETUP_ADULT_PATH, START_PATH } from './paths'
+import { browseHomePath, LOGIN_PATH, SETUP_ADULT_PATH, START_PATH } from './paths'
+
+/**
+ * 가입 흐름 동네 선택의 앞 단계. 카카오 신규 회원은 로그인에서 온다.
+ * 이메일 가입(S13-4 `/signup/account`)이 생기면 후보에 더한다. 둘러보기의 앞 단계는 시작 화면이다
+ */
+const SETUP_REGION_PREVIOUS = [LOGIN_PATH] as const
 
 /** 기본(보고하러 가는 길) · 둘러보기 문구 (Setup-1 · Setup-1-browse) */
 const COPY = {
@@ -75,7 +81,7 @@ export function RegionScreen({ browse = false }: RegionScreenProps) {
   return (
     <OnboardingLayout
       step={browse ? undefined : 1}
-      onBack={() => goBack(START_PATH)}
+      onBack={() => goBack(browse ? START_PATH : SETUP_REGION_PREVIOUS)}
       panelTitle={COPY[mode].panelTitle}
       footer={
         <Button fullWidth disabled={!district} onClick={next}>

@@ -17,7 +17,8 @@ import type { District } from '@/features/region/types'
 import { canGoBackTo, nextTrail } from './onboarding-trail'
 
 /**
- * 첫 진입(S01 · S02) 화면이 같이 쓰는 값과 이동. `app/(onboarding)/layout.tsx` 가 /start · /setup/* 를 감싼다.
+ * 첫 진입(S01 · S02 · S13) 화면이 같이 쓰는 값과 이동. `app/(onboarding)/layout.tsx` 가
+ * /start · /login* · /setup/* · /browse/region 을 감싼다.
  * 레이아웃은 이 화면들 사이를 오가도 다시 그려지지 않아 값이 남는다.
  *
  * **브라우저 저장소에 남기지 않는다** (docs/conventions.md "데이터와 환경변수"). 새로고침하면 사라지고,
@@ -30,10 +31,11 @@ type OnboardingState = {
   adultConfirmed: boolean
   setAdultConfirmed: (confirmed: boolean) => void
   /**
-   * 앞 단계로. 앱 안에서 그 단계를 거쳐 왔으면 기록을 되돌리고(휴대폰 뒤로 가기와 같다),
-   * 주소로 바로 들어와 앞 단계 기록이 없으면 기록을 쌓지 않고 바꿔 간다.
+   * 앞 단계로. 앱 안에서 앞 단계 후보 중 하나를 거쳐 왔으면 기록을 되돌리고(휴대폰 뒤로 가기와 같다),
+   * 주소로 바로 들어와 앞 단계 기록이 없으면 첫 후보로 기록을 쌓지 않고 바꿔 간다.
+   * 후보가 여럿인 것은 같은 화면에 여러 길로 오기 때문이다 (동네 선택 ← 로그인 · 이메일 가입).
    */
-  goBack: (previousPath: string) => void
+  goBack: (previousPaths: string | readonly [string, ...string[]]) => void
   /** 기록을 쌓지 않고 간다 (값이 없어 앞 단계로 돌려보낼 때) */
   replace: (path: string) => void
 }
@@ -71,9 +73,10 @@ export function OnboardingProvider({
   )
 
   const goBack = useCallback(
-    (previousPath: string) => {
-      if (canGoBackTo(trail.current, previousPath)) router.back()
-      else replace(previousPath)
+    (previousPaths: string | readonly [string, ...string[]]) => {
+      const candidates = typeof previousPaths === 'string' ? [previousPaths] : previousPaths
+      if (canGoBackTo(trail.current, candidates)) router.back()
+      else replace(candidates[0])
     },
     [router, replace],
   )
