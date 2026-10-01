@@ -101,9 +101,19 @@ class AuthWebControllerTest {
             .andExpect(jsonPath("$.dataHeader.fieldErrors[0].field").value("password"))
             .andExpect(jsonPath("$.dataHeader.fieldErrors[1].code").value("AUTH_107"));
 
-        postJson("/api/v1/auth/signup", VALID_SIGNUP.replace("P@ssw0rd!", "password1234"))
+        postJson("/api/v1/auth/signup", VALID_SIGNUP.replace("P@ssw0rd!", "passwordonly"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_107"));
+        postJson("/api/v1/auth/signup", VALID_SIGNUP.replace("P@ssw0rd!", "12345678"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_107"));
+    }
+
+    @Test
+    @DisplayName("특수문자 없이 영문자 · 숫자만 있는 비밀번호도 받는다 (시안 Signup-account 규칙)")
+    void passwordWithoutSpecialCharacterIsAccepted() throws Exception {
+        postJson("/api/v1/auth/signup", VALID_SIGNUP.replace("P@ssw0rd!", "sneeze2026"))
+            .andExpect(status().isOk());
     }
 
     @Test
@@ -114,6 +124,8 @@ class AuthWebControllerTest {
         postJson("/api/v1/auth/signup", VALID_SIGNUP.replace("User@Example.com", "a".repeat(95) + "@x.com"))
             .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_102"));
         postJson("/api/v1/auth/signup", VALID_SIGNUP.replace(" 재채기탐정 ", "열한글자넘는닉네임입니다"))
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_109"));
+        postJson("/api/v1/auth/signup", VALID_SIGNUP.replace(" 재채기탐정 ", "탐"))
             .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_109"));
     }
 
@@ -160,10 +172,10 @@ class AuthWebControllerTest {
     @DisplayName("검증 요청도 X-Real-IP 를 IP 검증 상한 키로 넘긴다")
     void verifyCodeUsesRealIp() throws Exception {
         mockMvc.perform(post("/api/v1/auth/email/verify-code").contentType(MediaType.APPLICATION_JSON)
-                .header("X-Real-IP", "203.0.113.10").content("{\"email\":\"user@example.com\",\"code\":\"ABCD2345\"}"))
+                .header("X-Real-IP", "203.0.113.10").content("{\"email\":\"user@example.com\",\"code\":\"482913\"}"))
             .andExpect(status().isOk());
 
-        verify(authWebUseCase).verifyEmailVerificationCode("user@example.com", "ABCD2345", "203.0.113.10");
+        verify(authWebUseCase).verifyEmailVerificationCode("user@example.com", "482913", "203.0.113.10");
     }
 
     @Test
@@ -182,7 +194,7 @@ class AuthWebControllerTest {
         postJson("/api/v1/auth/email/verify-code", "{\"email\":\"user@example.com\",\"code\":\" \"}")
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_104"));
-        postJson("/api/v1/auth/email/verify-code", "{\"code\":\"ABCD2345\"}")
+        postJson("/api/v1/auth/email/verify-code", "{\"code\":\"482913\"}")
             .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_101"));
         verifyNoInteractions(authWebUseCase);
     }

@@ -7,7 +7,6 @@ import com.sneezecast.domainlayer.auth.application.port.out.MailSendPort;
 import com.sneezecast.domainlayer.auth.application.service.support.VerificationCodeGenerator;
 import com.sneezecast.domainlayer.member.application.port.out.MemberRepositoryPort;
 import com.sneezecast.global.properties.EmailSendLimitProperties;
-import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -18,8 +17,8 @@ import org.springframework.stereotype.Service;
  *
  * <p><b>가입 여부가 응답으로 새지 않게 한다 (계정 열거 방지).</b> 이미 가입된 이메일에도 미가입과 똑같이 코드를 저장하고(메일로 보내지
  * 않는 무작위 미끼 코드) 실패 카운터를 초기화한다. 그래서 발송 · 검증의 모든 응답(성공 · AUTH_003 · AUTH_004 · AUTH_005 · 쿨다운 ·
- * 상한)이 가입 여부와 무관하게 같다. 가입 여부는 메일함 소유자에게만 안내 메일로 알린다. 미끼 코드를 맞혀(8자 32진, 5회 제한이라 사실상
- * 불가) 인증 완료 표시가 생겨도 가입은 이메일 중복(MEMBER_001)으로 막힌다.
+ * 상한)이 가입 여부와 무관하게 같다. 가입 여부는 메일함 소유자에게만 안내 메일로 알린다. 미끼 코드를 맞혀(6자리 숫자, 5회 제한이라 한 코드당
+ * 5/1,000,000) 인증 완료 표시가 생겨도 가입은 이메일 중복(MEMBER_001)으로 막힌다.
  */
 @Slf4j
 @Service
@@ -68,9 +67,9 @@ public class EmailVerificationProcessor {
         String storedCode = emailVerificationStorePort.findCode(email)
             .orElseThrow(() -> new AuthException(AuthErrorCode.EXPIRED_EMAIL_CODE));
 
-        // 코드는 대문자 · 숫자라, 앞뒤 공백과 소문자 입력은 사용자 실수로 보고 맞춘다.
-        if (!storedCode.equals(code.strip().toUpperCase(Locale.ROOT))) {
-            // 실패가 쌓이면 코드를 무효화해 브루트포스를 막는다 (8자 코드 · 짧은 TTL 이라도 상한 없이는 표면이 열려 있다).
+        // 앞뒤 공백(복사 · 붙여넣기)은 사용자 실수로 보고 맞춘다.
+        if (!storedCode.equals(code.strip())) {
+            // 실패가 쌓이면 코드를 무효화해 브루트포스를 막는다 (6자리 코드 · 짧은 TTL 이라도 상한 없이는 표면이 열려 있다).
             long failures = emailVerificationStorePort.increaseVerifyFailureCount(email, limits.codeTtl());
             if (failures >= limits.maxVerifyFailures()) {
                 emailVerificationStorePort.deleteCode(email);

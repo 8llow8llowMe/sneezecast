@@ -146,7 +146,7 @@ class AuthServiceApplicationTests {
             return null;
         }).when(javaMailSender).send(any(MimeMessage.class));
 
-        context.getBean(MailSendPort.class).sendVerificationCode("user@example.com", "ABCD2345");
+        context.getBean(MailSendPort.class).sendVerificationCode("user@example.com", "482913");
 
         assertThat(sent.await(5, TimeUnit.SECONDS)).isTrue();
         assertThat(senderThread.get()).startsWith("auth-mail-worker-").isNotEqualTo(Thread.currentThread().getName());

@@ -55,14 +55,14 @@ class EmailVerificationProcessorTest {
     }
 
     @Test
-    @DisplayName("미가입 이메일이면 8자 코드를 코드 수명으로 저장하고 같은 코드를 메일로 보낸다")
+    @DisplayName("미가입 이메일이면 6자리 숫자 코드를 코드 수명으로 저장하고 같은 코드를 메일로 보낸다")
     void sendCodeStoresAndMailsCode() {
         processor.sendCode(EMAIL, CLIENT_IP);
 
         ArgumentCaptor<String> mailed = ArgumentCaptor.forClass(String.class);
         verify(mailSendPort).sendVerificationCode(eq(EMAIL), mailed.capture());
         assertThat(store.codes).containsEntry(EMAIL, mailed.getValue());
-        assertThat(mailed.getValue()).matches("[A-HJ-NP-Z2-9]{8}");
+        assertThat(mailed.getValue()).matches("[0-9]{6}");
         assertThat(store.codeTtls).containsEntry(EMAIL, LIMITS.codeTtl());
     }
 
@@ -75,7 +75,7 @@ class EmailVerificationProcessorTest {
 
         verify(mailSendPort).sendAlreadyRegisteredNotice(REGISTERED_EMAIL);
         verify(mailSendPort, never()).sendVerificationCode(anyString(), anyString());
-        assertThat(store.codes.get(REGISTERED_EMAIL)).matches("[A-HJ-NP-Z2-9]{8}");
+        assertThat(store.codes.get(REGISTERED_EMAIL)).matches("[0-9]{6}");
         assertThat(store.codeTtls).containsEntry(REGISTERED_EMAIL, LIMITS.codeTtl());
         assertThat(store.failures).doesNotContainKey(REGISTERED_EMAIL);
     }
@@ -115,12 +115,12 @@ class EmailVerificationProcessorTest {
     }
 
     @Test
-    @DisplayName("코드가 맞으면 인증 완료 표시를 남기고 코드와 실패 횟수를 지운다 — 소문자 · 앞뒤 공백 입력도 맞는 코드다")
+    @DisplayName("코드가 맞으면 인증 완료 표시를 남기고 코드와 실패 횟수를 지운다 — 앞뒤 공백이 붙은 입력도 맞는 코드다")
     void verifyCodeMarksVerified() {
-        store.codes.put(EMAIL, "ABCD2345");
+        store.codes.put(EMAIL, "482913");
         store.failures.put(EMAIL, 2L);
 
-        processor.verifyCode(EMAIL, " abcd2345 ", CLIENT_IP);
+        processor.verifyCode(EMAIL, " 482913 ", CLIENT_IP);
 
         assertThat(store.verified).containsEntry(EMAIL, LIMITS.verifiedTtl());
         assertThat(store.codes).doesNotContainKey(EMAIL);
@@ -130,7 +130,7 @@ class EmailVerificationProcessorTest {
     @Test
     @DisplayName("코드가 없으면(만료 · 요청 이력 없음) AUTH_004 다")
     void expiredCodeIsRejected() {
-        assertThatThrownBy(() -> processor.verifyCode(EMAIL, "ABCD2345", CLIENT_IP))
+        assertThatThrownBy(() -> processor.verifyCode(EMAIL, "482913", CLIENT_IP))
             .isInstanceOfSatisfying(AuthException.class, e -> assertThat(e.getErrorCode()).isEqualTo(AuthErrorCode.EXPIRED_EMAIL_CODE));
         assertThat(store.verified).isEmpty();
     }
@@ -138,10 +138,10 @@ class EmailVerificationProcessorTest {
     @Test
     @DisplayName("IP 검증 상한을 넘으면 코드를 보기 전에 AUTH_010 이다 — 여러 이메일에 걸친 대입을 늦춘다")
     void verifyIpLimitStopsBeforeCodeCheck() {
-        store.codes.put(EMAIL, "ABCD2345");
+        store.codes.put(EMAIL, "482913");
         store.ipVerifyCounts.put(CLIENT_IP, (long) LIMITS.verifyIpMaxCount());
 
-        assertThatThrownBy(() -> processor.verifyCode(EMAIL, "ABCD2345", CLIENT_IP))
+        assertThatThrownBy(() -> processor.verifyCode(EMAIL, "482913", CLIENT_IP))
             .isInstanceOfSatisfying(AuthException.class, e -> assertThat(e.getErrorCode()).isEqualTo(AuthErrorCode.EMAIL_VERIFY_IP_LIMITED));
         assertThat(store.verified).isEmpty();
         assertThat(store.failures).isEmpty();

@@ -16,15 +16,18 @@ public final class AuthValidationMessage {
     public static final String PASSWORD_REQUIRED = "AUTH_105:비밀번호는 필수입니다.";
     // 길이는 @Size(AUTH_106), 문자 구성은 @Pattern(AUTH_107)이 맡는다. 두 메시지가 같은 내용을 겹쳐 말하지 않게 역할을 나눈다.
     public static final String PASSWORD_LENGTH_INVALID = "AUTH_106:비밀번호는 8자 이상 20자 이하여야 합니다.";
-    public static final String PASSWORD_PATTERN_INVALID = "AUTH_107:비밀번호는 공백 없이 영문자, 숫자, 특수문자를 각각 1자 이상 포함해야 합니다.";
+    public static final String PASSWORD_PATTERN_INVALID = "AUTH_107:비밀번호는 공백 없이 영문자와 숫자를 각각 1자 이상 포함해야 합니다.";
     public static final String NICKNAME_REQUIRED = "AUTH_108:닉네임은 필수입니다.";
-    public static final String NICKNAME_LENGTH_INVALID = "AUTH_109:닉네임은 10자 이하여야 합니다.";
+    public static final String NICKNAME_LENGTH_INVALID = "AUTH_109:닉네임은 2자 이상 10자 이하여야 합니다.";
     public static final String TERMS_AGREEMENT_REQUIRED = "AUTH_110:이용약관에 동의해야 가입할 수 있습니다.";
     public static final String PRIVACY_AGREEMENT_REQUIRED = "AUTH_111:개인정보 수집·이용에 동의해야 가입할 수 있습니다.";
     public static final String AGE_OVER_19_REQUIRED = "AUTH_112:만 19세 이상만 가입할 수 있습니다.";
 
-    /** 비밀번호 문자 구성 규칙. 길이는 @Size 가 맡으므로 여기서는 구성만 본다 (같은 의미를 두 제약으로 중복 검사하지 않는다). */
-    public static final String PASSWORD_REGEXP = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[!@#$%^&*()\\-_=+\\[\\]{};:'\",.<>/?\\\\|])\\S+$";
+    /**
+     * 비밀번호 문자 구성 규칙 — 시안(Signup-account "8자 이상 · 영문과 숫자 포함")대로 영문자 · 숫자 필수, 특수문자는 써도 되지만 요구하지 않는다.
+     * 길이는 @Size 가 맡으므로 여기서는 구성만 본다 (같은 의미를 두 제약으로 중복 검사하지 않는다).
+     */
+    public static final String PASSWORD_REGEXP = "^(?=.*[A-Za-z])(?=.*\\d)\\S+$";
 
     private AuthValidationMessage() {
     }
