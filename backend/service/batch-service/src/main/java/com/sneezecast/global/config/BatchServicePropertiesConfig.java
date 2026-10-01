@@ -1,6 +1,7 @@
 package com.sneezecast.global.config;
 
 import com.sneezecast.common.config.JasyptPropertiesConfig;
+import com.sneezecast.global.properties.BatchScheduleProperties;
 import com.sneezecast.global.properties.DistrictImportProperties;
 import com.sneezecast.global.properties.SgisProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -11,7 +12,8 @@ import org.springframework.context.annotation.Import;
 @Import(JasyptPropertiesConfig.class)
 @EnableConfigurationProperties({
     SgisProperties.class,
-    DistrictImportProperties.class
+    DistrictImportProperties.class,
+    BatchScheduleProperties.class
 })
 public class BatchServicePropertiesConfig {
 

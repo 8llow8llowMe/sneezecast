@@ -44,9 +44,14 @@ spring:
 # 판정은 SpEL 이 아니라 @ConditionalOnProperty 조합(ScheduleEnabledCondition)이다.
 # 정확히 "true" 가 아닌 값(빈 문자열 · yes · 1)은 전부 꺼짐으로 본다 — 기동을 막지 않는다.
 # 기본은 꺼짐이고, 프로파일이 기본값을 정한다 (dev 켜짐, prod 꺼짐).
+# 나머지 값(BatchScheduleProperties)은 어느 환경에서든 같은 뜻이라 환경변수로 열지 않는다.
 batch:
   schedule:
     enabled: ${BATCH_SCHEDULE_ENABLED:false}
+    # cron 과 runAt 이 뜻하는 시각은 배포 환경(-Duser.timezone)이 아니라 원천의 갱신 주기에서 나온다. 잘못된 값이면 기동이 실패한다.
+    time-zone: Asia/Seoul
+    # 이 시간을 넘긴 실행 중(STARTING · STARTED · STOPPING) 실행은 죽은 JVM 의 잔재로 보고 겹침 판정에서 뺀다 (ERROR 로그로 남긴다).
+    stale-running-after: 6h
 
 # SGIS 오픈API (districtImportJob). 인증키는 Vault kv/sneezecast/batch 에서 주입한다.
 # 비어 있어도 기동은 성공하고, 잡을 실행할 때 SGIS_CREDENTIALS_MISSING 으로 실패한다.
