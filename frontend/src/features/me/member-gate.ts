@@ -7,7 +7,8 @@ import type { MockAuthState } from '@/features/auth/auth-client'
 import { carriedParams, safeNextPath, stepTarget } from '@/features/auth/required-steps'
 import { useMemberRequirements } from '@/features/auth/use-member-requirements'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
-import { LOGIN_PATH } from '@/features/onboarding/paths'
+import { LOGIN_EXPIRED_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
+import { isSessionExpiring } from '@/lib/session-expiry'
 import { useHydrated } from '@/lib/use-hydrated'
 
 /**
@@ -27,7 +28,8 @@ export function useMemberGate(): Exclude<MockAuthState, 'guest'> | null {
   const guest = hydrated && auth === 'guest'
 
   useEffect(() => {
-    if (guest) router.replace(LOGIN_PATH)
+    // 로그인 만료로 비회원이 됐으면 만료 주소(토스트)로 보낸다. 만료 이동보다 나중에 불려도 같은 곳에 닿는다
+    if (guest) router.replace(isSessionExpiring() ? LOGIN_EXPIRED_PATH : LOGIN_PATH)
   }, [guest, router])
 
   return hydrated && auth !== 'guest' ? auth : null

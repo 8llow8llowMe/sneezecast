@@ -11,6 +11,8 @@ export const START_PATH = '/start'
 export const HOME_PATH = '/'
 /** 로그인 방법 고르기 (S13-1). `?error=kakao-fail|kakao-exists` · `?reason=expired` 로 상태를 받는다 */
 export const LOGIN_PATH = '/login'
+/** 로그인이 만료돼 돌아온 로그인 화면 — "다시 로그인해 주세요" 토스트 (State-session-expired) */
+export const LOGIN_EXPIRED_PATH = `${LOGIN_PATH}?reason=expired`
 /** 이메일 로그인 (S13-5). `?reason=reset-done` 이면 비밀번호를 바꿨다는 안내를 띄운다 */
 export const LOGIN_EMAIL_PATH = '/login/email'
 /**
