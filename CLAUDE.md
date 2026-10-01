@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `backend/` | Spring Cloud MSA + Hexagonal | [`backend/CLAUDE.md`](backend/CLAUDE.md) (빌드 · 테스트 명령 포함) |
 | `frontend/` | 모바일 웹(PWA) · 화면 설계 | [`frontend/CLAUDE.md`](frontend/CLAUDE.md) (시안 · 디자인 규칙 · 명령 포함) |
 
-**CI**: `backend/**` 를 바꾼 PR 과 develop 푸시에서 `backend-ci` 가 전 모듈 `./gradlew check` 를 돌리고 실행된 테스트 건수를 요약에 남긴다. `label` 워크플로가 변경 경로로 PR 라벨(배포 대상)을 붙인다(`.github/labeler.yml`). 저장소가 비공개 무료 플랜이라 브랜치 보호를 걸 수 없으므로 **`backend-ci` 가 빨간불인 PR 은 머지하지 않는다.**
+**CI**: `backend/**` 를 바꾼 PR 과 develop 푸시에서 `backend-ci` 가 전 모듈 `./gradlew check` 를 돌리고 실행된 테스트 건수를 요약에 남긴다. `frontend/**` 를 바꾼 PR 과 develop 푸시에서 `frontend-ci` 가 `qa:verify` 와 같은 검사(format:check → lint → typecheck → test → build)를 돌린다. 문서만 바뀌면 format:check 만 돈다(`scripts/classify-frontend-changes.sh`). `label` 워크플로가 변경 경로로 PR 라벨(배포 대상)을 붙인다(`.github/labeler.yml`, dependabot PR 은 제외). dependabot 이 매주 월요일 프론트엔드 의존성 갱신 PR 을 묶어 올린다. 브랜치 보호가 걸려 있지 않으므로 **`backend-ci` · `frontend-ci` 가 빨간불인 PR 은 머지하지 않는다.**
 
 작업 시작 시 해당 워크스페이스의 엔트리 문서를 먼저 읽는다. 로컬 인프라는 두지 않고 팀 개발 서버에 배포해서 개발한다 (팀 인프라 레포 `8llow8llowMe/Infra`).
 
