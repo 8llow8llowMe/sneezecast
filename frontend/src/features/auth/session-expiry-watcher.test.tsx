@@ -86,4 +86,13 @@ describe('SessionExpiryWatcher', () => {
     expect(router.replace).toHaveBeenCalledWith('/login?reason=expired')
     expect(isSessionExpiring()).toBe(false)
   })
+
+  it('만료 뒤 로그인 화면을 거치지 않고 다시 회원이 돼도 표시를 끈다', async () => {
+    render(<SessionExpiryWatcher />)
+    act(() => notifySessionExpired())
+    expect(isSessionExpiring()).toBe(true)
+
+    await act(() => loginWithEmail('dong@example.com', 'dongne2026'))
+    expect(isSessionExpiring()).toBe(false)
+  })
 })

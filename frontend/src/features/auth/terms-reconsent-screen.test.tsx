@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { OnboardingProvider } from '@/features/onboarding/onboarding-context'
+import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 
 import type * as authClient from './auth-client'
 import {
@@ -17,6 +18,7 @@ import {
   resetMockSession,
 } from './auth-client'
 import { LEGAL_VERSIONS } from './legal'
+import { SessionExpiryWatcher } from './session-expiry-watcher'
 import { TermsReconsentScreen } from './terms-reconsent-screen'
 
 // 테스트에는 Next 라우터가 없다. 주소 쿼리는 이 값으로 흉내 낸다
@@ -287,5 +289,24 @@ describe('TermsReconsentScreen 들어올 수 없을 때', () => {
     render(ui, { container, hydrate: true })
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('바뀐 약관을 확인해 주세요')
     expect(router.replace).not.toHaveBeenCalled()
+  })
+})
+
+describe('TermsReconsentScreen 로그인 만료', () => {
+  it('재동의 화면에서 만료되면 홈으로 덮어쓰지 않고 만료 토스트가 있는 로그인 화면으로만 간다', () => {
+    clearSessionExpiring()
+    render(
+      <OnboardingProvider>
+        <TermsReconsentScreen />
+        <SessionExpiryWatcher />
+      </OnboardingProvider>,
+    )
+    expect(router.replace).not.toHaveBeenCalled()
+
+    // 세션이 비회원이 되어 조건이 사라지면 화면은 다음 곳(홈)으로 보내려 한다 — 만료 중에는 보내지 않아야 한다
+    act(() => notifySessionExpired())
+
+    expect(router.replace.mock.calls).toEqual([['/login?reason=expired']])
+    clearSessionExpiring()
   })
 })
