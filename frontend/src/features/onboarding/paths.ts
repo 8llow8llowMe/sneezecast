@@ -42,6 +42,14 @@ export const SETUP_REGION_PATH = '/setup/region'
 export const FROM_PARAM = 'from'
 export const FROM_KAKAO = 'kakao'
 export const SETUP_REGION_FROM_KAKAO_PATH = `${SETUP_REGION_PATH}?${FROM_PARAM}=${FROM_KAKAO}`
+/**
+ * 폐지된 동네 다시 고르기 (Setup-1-reselect). 동네 선택과 같은 주소에 `?reselect=1` 을 붙인다.
+ * 홈 · 내 정보에 들어온 회원의 동네가 행정구역 개편으로 없어졌으면 보낸다(`features/auth/required-steps.ts`)
+ */
+export const RESELECT_PARAM = 'reselect'
+export const RESELECT_VALUE = '1'
+/** 필수 약관 재동의 (Setup-3-reconsent). 이용약관이 개정됐으면 동네 다시 고르기보다 먼저 보낸다 */
+export const TERMS_RECONSENT_PATH = '/terms/reconsent'
 /** 보고 없이 둘러보기. 동네 선택을 단계 없이 쓴다 (docs/design/auth/README.md 제안 라우트) */
 export const BROWSE_REGION_PATH = '/browse/region'
 export const SETUP_ADULT_PATH = '/setup/adult'

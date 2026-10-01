@@ -1,4 +1,4 @@
-import type { District } from './types'
+import type { District, ReselectCandidate } from './types'
 
 /**
  * 행정동 목 데이터. **예시 값이다.** 코드는 SGIS 형식(8자리)만 맞춘 것이라 실제 경계와 대조하지 않았다.
@@ -23,3 +23,26 @@ export const DISTRICT_MOCKS: readonly District[] = [
   { code: '41135580', name: '정자1동', sigungu: '경기도 성남시 분당구' },
   { code: '41135590', name: '정자2동', sigungu: '경기도 성남시 분당구' },
 ]
+
+/**
+ * 행정구역 개편으로 폐지된 동네 (Setup-1-reselect 시안의 `○○1동`). **시안 예시 값이다** — 이름 · 시군구를 시안 그대로 두고
+ * 코드는 실제 행정동과 겹치지 않게 지어낸 8자리다. 목 회원의 폐지된 동네 · `?mock-required=region` 덮어쓰기가 쓴다.
+ * 검색(`DISTRICT_MOCKS`)에는 넣지 않는다 — 폐지된 동은 고를 수 없다.
+ */
+export const ABOLISHED_DISTRICT_EXAMPLE: District = {
+  code: '99990110',
+  name: '○○1동',
+  sigungu: '○○시 ○○구',
+}
+
+/**
+ * 폐지된 동네 코드 → 다시 고를 후보 (Setup-1-reselect 시안의 세 줄). **시안 예시 값이다.**
+ * 연동 때 백엔드 #60 의 재선택 유도 응답으로 바꾸고 이 값을 지운다.
+ */
+export const RESELECT_CANDIDATE_MOCKS: Readonly<Record<string, readonly ReselectCandidate[]>> = {
+  [ABOLISHED_DISTRICT_EXAMPLE.code]: [
+    { code: '99990111', name: '○○새1동', sigungu: '○○시 ○○구', partOfAbolished: true },
+    { code: '99990112', name: '○○새2동', sigungu: '○○시 ○○구', partOfAbolished: true },
+    { code: '99990120', name: '○○2동', sigungu: '○○시 ○○구', partOfAbolished: false },
+  ],
+}

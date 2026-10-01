@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { findDistrict, searchDistricts } from './region-client'
+import { ABOLISHED_DISTRICT_EXAMPLE } from './mock'
+import { findDistrict, listSuccessorDistricts, searchDistricts } from './region-client'
 
 describe('searchDistricts', () => {
   it('동 이름에 검색어가 들어간 행정동을 돌려준다', async () => {
@@ -43,5 +44,24 @@ describe('findDistrict', () => {
 
   it('모르는 코드면 null 이다', async () => {
     expect(await findDistrict('00000000')).toBeNull()
+  })
+})
+
+describe('listSuccessorDistricts', () => {
+  it('폐지된 동네의 후보를 옛 동네 일부인지와 함께 돌려준다 (시안 예시)', async () => {
+    const found = await listSuccessorDistricts(ABOLISHED_DISTRICT_EXAMPLE.code)
+    expect(found.map(({ name, partOfAbolished }) => [name, partOfAbolished])).toEqual([
+      ['○○새1동', true],
+      ['○○새2동', true],
+      ['○○2동', false],
+    ])
+  })
+
+  it('모르는 코드면 빈 목록이다', async () => {
+    expect(await listSuccessorDistricts('11680640')).toEqual([])
+  })
+
+  it('폐지된 동네는 검색에 나오지 않는다', async () => {
+    expect(await searchDistricts('○○')).toEqual([])
   })
 })

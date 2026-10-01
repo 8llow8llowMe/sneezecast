@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 import type { MockAuthState } from '@/features/auth/auth-client'
+import { carriedParams, safeNextPath, stepTarget } from '@/features/auth/required-steps'
+import { useMemberRequirements } from '@/features/auth/use-member-requirements'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { LOGIN_PATH } from '@/features/onboarding/paths'
 import { useHydrated } from '@/lib/use-hydrated'
@@ -29,4 +31,50 @@ export function useMemberGate(): Exclude<MockAuthState, 'guest'> | null {
   }, [guest, router])
 
   return hydrated && auth !== 'guest' ? auth : null
+}
+
+/**
+ * 다시 들어온 회원이 먼저 거칠 화면(약관 재동의 → 동네 다시 고르기)의 주소. 보낼 곳이 없거나 아직 모르면 null 이다.
+ *
+ * - 비회원은 null 이다. 조건은 `useMemberRequirements`(목 프로필 · `?mock-required=` 덮어쓰기)가 정한다
+ * - `useMemberGate` 처럼 **하이드레이션을 마친 뒤에만** 정한다(첫 그림은 늘 비회원이다)
+ * - 돌아올 곳은 `?next=<nextPath>`(허용 목록 밖이면 홈), 둘러보기 동네 · 목 덮어쓰기 쿼리는 남긴다(`carriedParams`)
+ *
+ * 이동은 하지 않는다. 가드(`useRequiredStepsGate`)와 같은 그림에서 주소 쿼리를 정리하는 화면이 이 값으로 정리를 건너뛴다 —
+ * Next 는 router 내비게이션이 대기 중일 때 `history.replaceState` · `pushState` 가 불리면 그 내비게이션을 버린다(docs/conventions.md).
+ */
+export function useRequiredStepsTarget(nextPath: string): string | null {
+  const searchParams = useSearchParams()
+  const hydrated = useHydrated()
+  const { steps } = useMemberRequirements()
+  return hydrated && steps.length > 0
+    ? stepTarget(steps, safeNextPath(nextPath), carriedParams(searchParams))
+    : null
+}
+
+/**
+ * 다시 들어온 회원을 먼저 거칠 화면으로 보내는 가드. 홈(`/`)과 내 정보(`/me` 와 그 아래)가 같이 쓴다.
+ * 보낼 곳(`useRequiredStepsTarget`)이 있으면 Next 라우터로 기록을 바꿔 간다 — 뒤로 가기로 이 화면에 돌아와도 조건이 남아 있으면 다시 보낸다.
+ *
+ * 보낼 곳을 돌려준다. **보낼 곳이 있으면 같은 그림에서 원시 history 로 주소를 정리하지 않는다** — 정리가 이 이동을 버리게 한다.
+ * 조건이 있는 동안에도 화면은 그대로 그린다(첫 그림은 늘 비회원이라 숨겨도 깜빡인다).
+ */
+export function useRequiredStepsGate(nextPath: string): string | null {
+  const router = useRouter()
+  const target = useRequiredStepsTarget(nextPath)
+
+  useEffect(() => {
+    if (target) router.replace(target)
+  }, [target, router])
+
+  return target
+}
+
+/**
+ * 내 정보 레이아웃(`app/me/layout.tsx`)에 두는 가드. 지금 경로(`/me` · `/me/devices` · `/me/password`)로 돌아온다.
+ * 화면 쪽 주소 정리(내 정보의 `?confirm=`)는 같은 판단(`useRequiredStepsTarget`)으로 보낼 곳이 있는지 본다
+ */
+export function MeRequiredStepsGate(): null {
+  useRequiredStepsGate(usePathname())
+  return null
 }

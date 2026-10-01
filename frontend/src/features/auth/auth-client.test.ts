@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   agreeHealthConsent,
+  agreeTermsReconsent,
   changePassword,
   CODE_MAX_ATTEMPTS,
   EMAIL_VERIFICATION_TTL_SECONDS,
@@ -29,6 +30,8 @@ import {
   withdrawMembership,
 } from './auth-client'
 import { consentFor, LEGAL_VERSIONS } from './legal'
+
+const YEOKSAM1 = { code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구' }
 
 describe('loginWithEmail (목)', () => {
   it('재현용 잠긴 이메일이면 locked 다 (대소문자 · 앞뒤 공백 무시)', async () => {
@@ -168,7 +171,7 @@ describe('signup · saveRegion · agreeHealthConsent (목)', () => {
   })
 
   it('내 동네 저장 · 건강정보 동의는 성공한다', async () => {
-    await expect(saveRegion('11680640')).resolves.toBeUndefined()
+    await expect(saveRegion(YEOKSAM1)).resolves.toBeUndefined()
     await expect(agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))).resolves.toBeUndefined()
   })
 })
@@ -361,6 +364,9 @@ describe('목 프로필 · 로그아웃 · 동의 철회 · 탈퇴', () => {
       email: 'new@example.com',
       nickname: '골목대장',
       hasPassword: true,
+      region: null,
+      regionAbolished: false,
+      termsReconsentRequired: false,
     })
   })
 
@@ -535,5 +541,72 @@ describe('legal', () => {
       'TERMS_OF_SERVICE',
     ])
     expect(consentFor('AGE_OVER_19').documentVersion).toBe(LEGAL_VERSIONS.TERMS_OF_SERVICE)
+  })
+})
+
+describe('약관 재동의 · 동네 다시 저장 (목)', () => {
+  beforeEach(() => resetMockSession())
+
+  it('재현 이메일로 로그인하면 조건이 켜진 프로필이 된다 (옛 동네는 시안 예시)', async () => {
+    await loginWithEmail('Reconsent@example.com', 'dongne2026')
+    expect(getMockProfile()).toMatchObject({
+      termsReconsentRequired: true,
+      regionAbolished: false,
+      region: null,
+    })
+
+    await loginWithEmail('reselect@example.com', 'dongne2026')
+    expect(getMockProfile()).toMatchObject({
+      termsReconsentRequired: false,
+      regionAbolished: true,
+      region: { code: '99990110', name: '○○1동' },
+    })
+  })
+
+  it('그 밖의 이메일은 조건이 없다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    expect(getMockProfile()).toMatchObject({
+      termsReconsentRequired: false,
+      regionAbolished: false,
+    })
+  })
+
+  it('재동의에 성공하면 재동의 표시를 끄고 다른 값은 그대로 둔다', async () => {
+    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    const before = getMockProfile()
+    await expect(agreeTermsReconsent(consentFor('TERMS_OF_SERVICE'))).resolves.toBeUndefined()
+    expect(getMockProfile()).toEqual({ ...before, termsReconsentRequired: false })
+    expect(getMockSession()).toBe('member-no-consent')
+  })
+
+  it('재현 이메일이면 재동의가 거부되고 표시는 그대로다', async () => {
+    await loginWithEmail('reconsent-fail@example.com', 'dongne2026')
+    await expect(agreeTermsReconsent(consentFor('TERMS_OF_SERVICE'))).rejects.toThrow()
+    expect(getMockProfile()?.termsReconsentRequired).toBe(true)
+  })
+
+  it('동네를 저장하면 프로필의 동네를 바꾸고 폐지 표시를 끈다', async () => {
+    await loginWithEmail('reselect@example.com', 'dongne2026')
+    await saveRegion({ code: '99990111', name: '○○새1동', sigungu: '○○시 ○○구' })
+    expect(getMockProfile()).toMatchObject({
+      region: { code: '99990111', name: '○○새1동' },
+      regionAbolished: false,
+    })
+  })
+
+  it('재현 이메일이면 동네 저장이 거부되고 옛 동네 · 폐지 표시는 그대로다', async () => {
+    await loginWithEmail('reselect-fail@example.com', 'dongne2026')
+    await expect(saveRegion(YEOKSAM1)).rejects.toThrow()
+    expect(getMockProfile()).toMatchObject({
+      region: { code: '99990110', name: '○○1동' },
+      regionAbolished: true,
+    })
+  })
+
+  it('프로필이 없으면(덮어쓰기만 있음) 세션을 바꾸지 않는다', async () => {
+    await saveRegion(YEOKSAM1)
+    await agreeTermsReconsent(consentFor('TERMS_OF_SERVICE'))
+    expect(getMockSession()).toBe('guest')
+    expect(getMockProfile()).toBeNull()
   })
 })

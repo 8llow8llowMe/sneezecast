@@ -34,11 +34,13 @@ import {
   ME_DEVICES_PATH,
   ME_NOTICES,
   ME_PASSWORD_PATH,
+  ME_PATH,
   meSearch,
   regionSearch,
   reportHrefFor,
 } from './me-paths'
 import { useMeTrail } from './me-trail'
+import { useRequiredStepsTarget } from './member-gate'
 import { MenuRow, sectionTitleId, SettingsSection, SwitchRow } from './settings-row'
 
 /** 대화상자별 목 API. 성공하면 `auth-client` 가 목 세션을 바꾼다(로그아웃 · 탈퇴 → guest, 동의 철회 → member-no-consent) */
@@ -132,7 +134,10 @@ export function MeScreen({
 
   // 주소로 바로 들어온 값이 회원 상태와 맞지 않으면 주소에서 지운다. 마운트 effect 에서 바로 바꾸면 Next 가 모르므로
   // 이번 그림의 effect 가 끝난 뒤로 미룬다(홈의 보고 진입 정리와 같다). 열림은 위 openKind 가 첫 그림부터 막는다
-  const mismatched = requested !== null && openKind === null
+  // 레이아웃의 가드(`MeRequiredStepsGate`)가 재동의 · 동네 다시 고르기로 보낼 곳이 있으면 정리하지 않는다 — 원시 history 를 바꾸면
+  // 대기 중인 그 이동을 Next 가 버린다(docs/conventions.md). 가드와 같은 판단을 읽는다
+  const requiredTarget = useRequiredStepsTarget(ME_PATH)
+  const mismatched = requested !== null && openKind === null && requiredTarget === null
   const { close: closeConfirmParam } = confirm
   useEffect(() => {
     if (!mismatched) return

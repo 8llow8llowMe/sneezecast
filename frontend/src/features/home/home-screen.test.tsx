@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { renderToString } from 'react-dom/server'
+
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -385,5 +387,72 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     await act(() => loginWithEmail('dong@example.com', 'dongne2026'))
     expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.member })).toHaveLength(2)
     expect(screen.queryByText('로그인하면 이번 주 보고를 할 수 있어요')).toBeNull()
+  })
+})
+
+describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 고르기)', () => {
+  beforeEach(() => {
+    search = ''
+    resetMockSession()
+    router.replace.mockClear()
+    window.history.replaceState(null, '', '/')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('비회원은 조건 덮어쓰기가 있어도 홈에 그대로 둔다', () => {
+    search = 'mock-required=terms,region'
+    render(<HomeScreen week={HOME_MOCKS.normal} />)
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('조건이 있는 회원은 재동의부터 보낸다 (동네 · 덮어쓰기만 남긴다)', () => {
+    search = 'region=11440660&mock-auth=member&mock-required=terms,region&report=start'
+    render(<HomeScreen week={HOME_MOCKS.normal} regionCode="11440660" />)
+    expect(router.replace).toHaveBeenCalledWith(
+      '/terms/reconsent?region=11440660&mock-auth=member&mock-required=terms%2Cregion',
+    )
+  })
+
+  // 원시 history 를 바꾸면 Next 가 대기 중인 router.replace 를 버린다(리뷰에서 프로덕션 빌드로 재현) — 보낼 곳이 있으면 정리하지 않는다
+  it('보고 진입이 맞지 않아도 보낼 곳이 있으면 주소를 정리하지 않고 재동의로만 보낸다', async () => {
+    search = 'mock-auth=member-no-consent&mock-required=terms&report=start'
+    window.history.replaceState(null, '', `/?${search}`)
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    render(<HomeScreen week={HOME_MOCKS.normal} />)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(replaceState).not.toHaveBeenCalled()
+    expect(router.replace).toHaveBeenCalledTimes(1)
+    expect(router.replace).toHaveBeenCalledWith(
+      '/terms/reconsent?mock-auth=member-no-consent&mock-required=terms',
+    )
+  })
+
+  it('하이드레이션으로 열어도 첫 그림(비회원)의 보고 진입 정리가 남지 않는다', async () => {
+    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    search = 'report=start'
+    window.history.replaceState(null, '', `/?${search}`)
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    const ui = <HomeScreen week={HOME_MOCKS.normal} />
+    const container = document.createElement('div')
+    document.body.append(container)
+    container.innerHTML = renderToString(ui)
+    render(ui, { container, hydrate: true })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(replaceState).not.toHaveBeenCalled()
+    expect(router.replace).toHaveBeenCalledTimes(1)
+    expect(router.replace).toHaveBeenCalledWith('/terms/reconsent')
+  })
+
+  it('동네가 폐지된 회원(목 프로필)은 동네 다시 고르기로 보낸다', async () => {
+    await loginWithEmail('reselect@example.com', 'dongne2026')
+    render(<HomeScreen week={HOME_MOCKS.normal} />)
+    expect(router.replace).toHaveBeenCalledWith('/setup/region?reselect=1')
   })
 })
