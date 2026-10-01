@@ -66,9 +66,28 @@ CORS 허용 오리진은 웹 도메인 두 개 + FE 로컬(`http://localhost:*`)
 
 ## Claude Code 에이전트 구성
 
-- 비단순 개발 작업의 진입점은 `/dev-orchestrator` 스킬이다. 작업을 SIMPLE / FEATURE / BUG / REFACTOR / ARCHITECTURE / LARGE_FEATURE 로 분류하고 `.claude/agents/` 의 역할 7종(explorer, crud-implementer, implementer, bug-investigator, reviewer, refactorer, architect)에 모델·effort 를 맞춰 분배한다. 역할·모델 표의 정본은 그 스킬 문서다.
+- 비단순 개발 작업의 진입점은 `/dev-orchestrator` 스킬이다. 작업을 SIMPLE / FEATURE / BUG / REFACTOR / ARCHITECTURE / LARGE_FEATURE 로 분류하고 `.claude/agents/` 의 역할 7종(explorer, crud-implementer, implementer, bug-investigator, reviewer, refactorer, architect)에 모델·effort 를 맞춰 분배한다. 분류 흐름의 정본은 그 스킬 문서, 모델 · effort 의 정본은 역할 파일 frontmatter 다.
 - 역할 파일의 `model` 은 별칭(`fable` / `opus` / `sonnet`)으로 적어 최신 모델을 따라가게 한다. 새 역할에는 `model` 과 `effort` 를 반드시 적고, 읽기 전용 역할은 `tools: Read, Grep, Glob, Bash` 로 쓰기 권한을 막는다.
 - 병렬 실행은 읽기 전용 역할에만, 쓰기 역할은 한 번에 하나만. 하위 에이전트는 커밋·푸시·이슈·PR 을 만들지 않는다.
+
+### 작업별 역할 · 모델 배정
+
+`/dev-orchestrator` 를 부르지 않아도 하위 에이전트를 쓸 때는 이 표로 역할을 고른다. 모델 · effort 는 역할 파일 frontmatter 가 정하므로 **역할만 고르면 배정이 따라온다.**
+
+| 작업 | 역할 | 모델 · effort | 예 |
+|------|------|---------------|----|
+| 고칠 위치 · 호출 흐름 · 영향 범위 찾기 | `explorer` | sonnet · low | "이 API 를 부르는 화면", "이 엔티티를 쓰는 모듈" |
+| 설계 판단이 없는 작은 변경 | `crud-implementer` | sonnet · medium | DTO · 매퍼 · 문구 · 목 데이터 · 설정값 · 문서 동기화 · 작은 테스트 |
+| 기능 구현 · 원인이 확정된 버그 수정 | `implementer` | opus · high | 시안 → 화면 구현, API 엔드포인트, 잡 · 도메인 로직 |
+| 원인이 불명확한 버그 | `bug-investigator` | opus · xhigh | 재현 불안정, 트랜잭션 · 동시성 · 캐시 · 인증 얽힘 |
+| 커밋 · PR 직전 diff 검토 | `reviewer` | opus · high | 구현 역할이 끝낸 뒤, 공개 API · 보안 · 복수 계층 변경 |
+| 동작 보존 리팩토링 | `refactorer` | opus · high | 범위 · 보존할 동작이 정해진 구조 변경 |
+| 되돌리기 비싼 설계 | `architect` | fable · xhigh | 서비스 경계 · 서비스 간 계약 · 보안 · 트랜잭션 구조 |
+
+- 하위 에이전트는 **이 저장소의 역할로만** 부른다. 내장 `general-purpose` · `Explore` · `Plan` 은 역할 파일의 `model` · `effort` 를 따르지 않으므로(세션 설정을 물려받음) 쓰지 않는다. 맞는 역할이 없으면 메인 실행자가 직접 하거나 역할을 새로 만든다.
+- `Agent` 호출에서 `model` 을 덮어쓰지 않는다. 계정에 그 모델이 없을 때만 예외로 덮어쓰고 보고에 적는다.
+- 위임 비용이 더 큰 일(한두 줄 수정, 이미 연 파일의 작은 편집)은 역할을 부르지 않고 메인 실행자가 한다.
+- 역할 · 모델을 바꾸면 역할 파일, `/dev-orchestrator` 스킬 표, 이 표를 함께 고친다.
 
 ## 파일 규칙
 
