@@ -80,6 +80,8 @@
   --rounded-progress: 4px;
   /* 체크 상자 (Setup-2 · Setup-3) */
   --rounded-checkbox: 6px;
+  /* 불러오는 중 자리 표시 막대 (State-loading) */
+  --rounded-skeleton: 6px;
 
   /* ── 간격 (tokens.json space) */
   --space-unit: 8px;

@@ -90,6 +90,7 @@ const MAPPING: Record<string, string> = {
   'fontSize.lead': '--fs-lead',
   'fontSize.bodyLarge': '--fs-body-large',
   'radius.checkbox': '--rounded-checkbox',
+  'radius.skeleton': '--rounded-skeleton',
   'effects.onImageSub': '--on-image-sub',
   'effects.onImageLine': '--on-image-line',
 }
