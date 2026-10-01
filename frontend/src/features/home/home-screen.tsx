@@ -20,7 +20,7 @@ import { useModalParam } from '@/lib/use-modal-param'
 import { ExplainSheet } from './explain-sheet'
 import { MapPlaceholder } from './map-placeholder'
 import { NoticeSection } from './notice-section'
-import { OfficialPanel, OfficialRow } from './official'
+import { officialHref, OfficialPanel, OfficialRow } from './official'
 import { guardReportEntry, REPORT_GATE, reportEntryFor } from './report-gate'
 import { StatusCard } from './status-card'
 import { SymptomTrends } from './symptom-trends'
@@ -104,7 +104,7 @@ export function HomeScreen({
       </p>
 
       <div className="hidden border-b border-divider tablet:block tablet:border-t desktop:border-t-0">
-        <OfficialRow official={week.official} />
+        <OfficialRow official={week.official} navSearch={navSearch} />
       </div>
 
       <main className="flex grow flex-col tablet:gap-7 tablet:p-6 desktop:flex-row desktop:gap-8 desktop:px-8">
@@ -122,7 +122,7 @@ export function HomeScreen({
 
           <SectionBand className="tablet:hidden" />
           <div className="tablet:hidden">
-            <OfficialRow official={week.official} />
+            <OfficialRow official={week.official} navSearch={navSearch} />
           </div>
           <SectionBand className="tablet:hidden" />
 
@@ -130,7 +130,10 @@ export function HomeScreen({
 
           <SectionBand className="tablet:hidden" />
 
-          <NoticeSection notice={week.notice} />
+          <NoticeSection
+            notice={week.notice}
+            officialHref={officialHref(week.official, navSearch)}
+          />
 
           <div className="hidden tablet:block desktop:hidden">
             <OfficialPanel official={week.official} />
