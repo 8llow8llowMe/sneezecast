@@ -24,3 +24,15 @@ export type Consent = { type: ConsentType; documentVersion: string }
 export function consentFor(type: ConsentType): Consent {
   return { type, documentVersion: LEGAL_VERSIONS[type] }
 }
+
+/**
+ * 필수 약관 개정 안내 (Setup-3-reconsent). 재동의 화면이 시행일 · 바뀐 내용을 보이고, 동의는 지금 버전
+ * (`LEGAL_VERSIONS.TERMS_OF_SERVICE`)으로 보낸다.
+ *
+ * **시안 예시 문구다.** 실제로 이용약관을 고칠 때 `TERMS_VERSION` 을 올리고 이 시행일 · 바뀐 내용을 함께 바꾼다.
+ * 시행일은 한국 날짜(`YYYY-MM-DD`)다. 개별 보고 보관 기간 52주는 확정된 값이다(docs/design/auth/README.md).
+ */
+export const TERMS_REVISION = {
+  effectiveDate: '2026-12-01',
+  changes: ['운영자 안내의 정정·철회 절차를 추가했어요.', '개별 보고 보관 기간을 52주로 정했어요.'],
+} as const satisfies { effectiveDate: string; changes: readonly string[] }
