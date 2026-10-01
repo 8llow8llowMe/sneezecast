@@ -1,6 +1,7 @@
 package com.sneezecast;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -11,16 +12,23 @@ import org.quartz.Scheduler;
 import org.quartz.SchedulerMetaData;
 import org.quartz.impl.matchers.GroupMatcher;
 import org.quartz.simpl.RAMJobStore;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersInvalidException;
 import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.support.transaction.ResourcelessTransactionManager;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.batch.JobLauncherApplicationRunner;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.context.WebApplicationContext;
 
 /**
@@ -32,6 +40,7 @@ import org.springframework.web.context.WebApplicationContext;
  *   <li>Eureka → 클라이언트를 끈다.</li>
  *   <li>스케줄 → 끈다. dev 기본값은 켜짐이지만, 적재 잡이 생긴 뒤에도 테스트 컨텍스트가 실제 적재를 시작하면 안 된다.
  *       켜졌을 때의 동작은 {@code QuartzScheduleConfigConditionTest} 가 본다.</li>
+ *   <li>SGIS 인증키 → 주지 않는다. 키가 없어도 기동은 성공해야 한다 (잡 실행 때 실패).</li>
  * </ul>
  */
 @SpringBootTest(properties = {
@@ -63,6 +72,13 @@ class BatchServiceApplicationTests {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JobLauncher jobLauncher;
+
+    @Autowired
+    @Qualifier("districtImportJob")
+    private Job districtImportJob;
 
     @Test
     @DisplayName("Quartz 는 메모리 잡 스토어 · 스레드 1개다 — JDBC 스토어면 surveillance 스키마에 QRTZ_* 가 생기고, 2개 이상이면 적재 잡이 겹친다")
@@ -104,6 +120,24 @@ class BatchServiceApplicationTests {
 
         Integer executions = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM BATCH_JOB_EXECUTION", Integer.class);
         assertThat(executions).isZero();
+    }
+
+    @Test
+    @DisplayName("트랜잭션 매니저는 둘이다 — primary 는 DataSource(JobRepository · 적재 쓰기), tasklet 스텝용은 무자원")
+    void transactionManagersAreSplit() {
+        assertThat(context.getBean(PlatformTransactionManager.class)).isInstanceOf(DataSourceTransactionManager.class);
+        assertThat(context.getBean("transactionManager")).isInstanceOf(DataSourceTransactionManager.class);
+        assertThat(context.getBean("taskletTransactionManager")).isInstanceOf(ResourcelessTransactionManager.class);
+    }
+
+    @Test
+    @DisplayName("districtImportJob 은 SGIS 키 없이도 등록되고, year 없이 실행하면 JobInstance 를 만들기 전에 거절된다")
+    void districtImportJobRejectsMissingYearBeforeCreatingInstance() {
+        assertThatThrownBy(() -> jobLauncher.run(districtImportJob, new JobParameters()))
+            .isInstanceOf(JobParametersInvalidException.class);
+
+        Integer instances = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM BATCH_JOB_INSTANCE", Integer.class);
+        assertThat(instances).isZero();
     }
 
     @Test
