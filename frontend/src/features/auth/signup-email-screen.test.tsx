@@ -58,6 +58,12 @@ describe('SignupEmailScreen', () => {
     vi.mocked(sendEmailCode).mockReset()
   })
 
+  it('가입 문구를 보인다 (재설정과 같은 틀을 쓴다)', () => {
+    setup()
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('이메일을 알려 주세요')
+    expect(screen.queryByText('가입한 이메일을 알려 주세요')).toBeNull()
+  })
+
   it('이메일 자동 완성 값을 쓰고 빈 칸이면 버튼이 꺼져 있다', () => {
     const { email, submit } = setup()
     expect(email.getAttribute('type')).toBe('email')

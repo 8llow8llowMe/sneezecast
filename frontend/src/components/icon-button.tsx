@@ -17,7 +17,7 @@ export type IconButtonProps = Omit<
 /**
  * 아이콘만 있는 버튼 (알림 설정 · 닫기 · 이전 단계). 터치 영역 44×44.
  *
- * 아이콘 색은 글자색을 따른다. 기본은 `text-fg` 다.
+ * 아이콘 색은 글자색을 따른다. 기본은 `text-fg` 다. `aria-disabled` 면 흐리게 보인다.
  */
 export function IconButton({ label, icon, type = 'button', className, ...rest }: IconButtonProps) {
   return (
@@ -26,6 +26,8 @@ export function IconButton({ label, icon, type = 'button', className, ...rest }:
       aria-label={label}
       className={clsx(
         'inline-flex size-touch shrink-0 cursor-pointer items-center justify-center text-fg',
+        // aria-disabled: 포커스를 잃지 않게 꺼진 모양만 보인다(Button 과 같음). 누름은 부르는 쪽이 막는다
+        'aria-disabled:cursor-not-allowed aria-disabled:opacity-disabled',
         className,
       )}
       {...rest}
