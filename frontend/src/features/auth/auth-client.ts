@@ -1,6 +1,50 @@
-import { SETUP_REGION_PATH } from '@/features/onboarding/paths'
+import { SETUP_REGION_FROM_KAKAO_PATH } from '@/features/onboarding/paths'
 
 import type { Consent } from './legal'
+
+/* ── 목 회원 상태 ──────────────────────────────────────────────────────────────────
+ *
+ * 홈이 보고 진입을 나눌 때 쓰는 회원 · 동의 상태다 (docs/design/SCREENS.md "목 회원 상태").
+ * **API 연동 전 목이다.** 연동 때 이 자리를 실제 세션(토큰 · `report:write` scope)으로 바꾸고, 화면은 `useMockAuth` 를
+ * 세션 훅으로 바꾼다.
+ *
+ * - `guest`: 로그인하지 않음 (기본값)
+ * - `member-no-consent`: 회원이지만 건강정보(민감정보) 동의를 하지 않음
+ * - `member`: 회원이고 건강정보 동의를 함 — 보고할 수 있다
+ *
+ * 값을 바꾸는 곳은 이 모듈의 세 함수뿐이다: 카카오 가입 성공(`signup` kind kakao) · 이메일 로그인 성공(`loginWithEmail`)은
+ * `member-no-consent`, 건강정보 동의 성공(`agreeHealthConsent`)은 `member`. 화면 코드는 고치지 않는다.
+ * 모듈 메모리에만 두어 새로고침하면 `guest` 로 돌아간다 — 브라우저 저장소에 남기지 않는다.
+ */
+export type MockAuthState = 'guest' | 'member-no-consent' | 'member'
+
+export const MOCK_AUTH_STATES: readonly MockAuthState[] = ['guest', 'member-no-consent', 'member']
+
+let mockSession: MockAuthState = 'guest'
+const mockSessionListeners = new Set<() => void>()
+
+export function getMockSession(): MockAuthState {
+  return mockSession
+}
+
+/** 목 세션이 바뀔 때 부른다 (`useSyncExternalStore` 의 subscribe). 돌려준 함수로 구독을 끊는다 */
+export function subscribeMockSession(listener: () => void): () => void {
+  mockSessionListeners.add(listener)
+  return () => {
+    mockSessionListeners.delete(listener)
+  }
+}
+
+function setMockSession(next: MockAuthState) {
+  if (mockSession === next) return
+  mockSession = next
+  mockSessionListeners.forEach((listener) => listener())
+}
+
+/** 테스트에서 목 세션을 처음(`guest`)으로 되돌린다. 화면 코드는 부르지 않는다 */
+export function resetMockSession() {
+  setMockSession('guest')
+}
 
 /**
  * 로그인. **API 연동 전 목 구현이다.** 세션 · 토큰 저장은 연동 이슈 범위라 여기서 하지 않는다 — 성공하면 이동만 한다.
@@ -24,14 +68,17 @@ export type EmailLoginResult = { status: 'ok' } | { status: 'wrong' } | { status
 export function loginWithEmail(email: string, password: string): Promise<EmailLoginResult> {
   if (email.trim().toLowerCase() === MOCK_LOCKED_EMAIL) return Promise.resolve({ status: 'locked' })
   if (password === MOCK_WRONG_PASSWORD) return Promise.resolve({ status: 'wrong' })
+  // 목은 동의 여부를 모른다. 연동 때는 서버 세션이 동의 상태를 알려 준다
+  setMockSession('member-no-consent')
   return Promise.resolve({ status: 'ok' })
 }
 
 /**
  * 카카오 로그인을 시작한다. 돌려준 주소로 화면이 이동한다.
  *
- * 목은 신규 회원으로 보고 동네 선택(S02-1)으로 보낸다. 연동 때는 `GET /api/v1/auth/kakao/authorize` 로 브라우저를
- * 보내는 리다이렉트가 되고, 카카오 콜백이 신규 · 기존 회원을 가려 돌려보낸다. 실패하면 `/login?error=kakao-fail`,
+ * 목은 신규 회원으로 보고 동네 선택(S02-1)으로 보낸다 — `?from=kakao` 를 붙여 S02-1 이 가입 종류를 카카오로 둔다
+ * (홈의 로그인 안내 시트처럼 첫 진입 Provider 밖에서 시작해도 이어지게). 연동 때는 `GET /api/v1/auth/kakao/authorize` 로 브라우저를
+ * 보내는 리다이렉트가 되고, 카카오 콜백이 신규 · 기존 회원을 가려 돌려보낸다(신규 회원은 같은 `?from=kakao` 주소). 실패하면 `/login?error=kakao-fail`,
  * 이메일 회원과 겹치면 `/login?error=kakao-exists` 로 온다.
  *
  * `switchAccount` 는 "다른 카카오 계정으로 계속하기" 다 — 연동 때 카카오 계정 고르기 화면을 띄우게 넘긴다.
@@ -41,7 +88,7 @@ export function startKakaoLogin(
 ): Promise<{ redirectTo: string }> {
   // 목에는 카카오 계정 고르기 화면이 없어 switchAccount 를 쓰지 않는다
   void options
-  return Promise.resolve({ redirectTo: SETUP_REGION_PATH })
+  return Promise.resolve({ redirectTo: SETUP_REGION_FROM_KAKAO_PATH })
 }
 
 /* ── 이메일 가입 인증 (S13-2 · S13-3) ───────────────────────────────────────────────
@@ -163,7 +210,11 @@ export type SignupRequest =
 export type SignupResult = { status: 'ok' } | { status: 'verification-expired' }
 
 export function signup(request: SignupRequest): Promise<SignupResult> {
-  if (request.kind === 'kakao') return Promise.resolve({ status: 'ok' })
+  if (request.kind === 'kakao') {
+    // 카카오 가입은 카카오 로그인으로 이미 로그인한 상태다. 이메일 가입은 이어지는 loginWithEmail 이 회원으로 만든다
+    setMockSession('member-no-consent')
+    return Promise.resolve({ status: 'ok' })
+  }
   const key = normalizeEmail(request.email)
   if (key === MOCK_SIGNUP_FAIL_EMAIL) return Promise.reject(new Error('mock signup failure'))
   const verifiedAt = mockVerifiedAt.get(key)
@@ -188,5 +239,7 @@ export function saveRegion(code: string): Promise<void> {
 /** 건강 · 증상 정보(민감정보) 처리 동의. 근거 문서 버전을 함께 보낸다 */
 export function agreeHealthConsent(consent: Consent): Promise<void> {
   void consent
+  // 동의를 보낸 화면이 응답 전에 닫혀도 서버에는 동의가 남는다. 세션 상태도 화면과 무관하게 여기서 바꾼다
+  setMockSession('member')
   return Promise.resolve()
 }

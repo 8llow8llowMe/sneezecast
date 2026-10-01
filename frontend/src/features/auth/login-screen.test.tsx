@@ -81,7 +81,7 @@ describe('LoginScreen', () => {
   it('카카오로 계속하기는 목에서 신규 회원으로 보고 동네 선택으로 간다', async () => {
     renderLogin()
     await userEvent.setup().click(screen.getByRole('button', { name: '카카오로 계속하기' }))
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/setup/region'))
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/setup/region?from=kakao'))
   })
 
   it('카카오를 기다리는 동안 · 이동하는 동안 버튼이 꺼진 채다', async () => {

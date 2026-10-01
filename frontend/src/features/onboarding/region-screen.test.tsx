@@ -7,7 +7,14 @@ import type * as regionClient from '@/features/region/region-client'
 import { searchDistricts } from '@/features/region/region-client'
 import type { District } from '@/features/region/types'
 
-import { OnboardingProvider } from './onboarding-context'
+import {
+  EMPTY_SIGNUP,
+  type Membership,
+  NO_MEMBERSHIP,
+  OnboardingProvider,
+  type SignupDraft,
+  useOnboarding,
+} from './onboarding-context'
 import { RegionScreen } from './region-screen'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
@@ -207,5 +214,82 @@ describe('RegionScreen', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
     expect(router.back).toHaveBeenCalledTimes(1)
     expect(router.replace).not.toHaveBeenCalled()
+  })
+})
+
+describe('RegionScreen 카카오에서 돌아옴 (?from=kakao)', () => {
+  const IN_PROGRESS: Membership = { accountCreated: true, loggedIn: true, regionSaved: false }
+  const EMAIL_DRAFT: SignupDraft = {
+    ...EMPTY_SIGNUP,
+    method: 'email',
+    email: 'dong@example.com',
+    verifiedAt: 1,
+    password: 'dongne2026',
+  }
+
+  function Probe() {
+    const { signup, membership } = useOnboarding()
+    return (
+      <span hidden data-testid="state">
+        {JSON.stringify({ signup, membership })}
+      </span>
+    )
+  }
+  const state = () =>
+    JSON.parse(screen.getByTestId('state').textContent ?? '{}') as {
+      signup: SignupDraft
+      membership: Membership
+    }
+
+  function renderRegion({
+    draft = EMPTY_SIGNUP,
+    membership = NO_MEMBERSHIP,
+    browse = false,
+    fromKakao = true,
+  }: {
+    draft?: SignupDraft
+    membership?: Membership
+    browse?: boolean
+    fromKakao?: boolean
+  } = {}) {
+    render(
+      <OnboardingProvider initialSignup={draft} initialMembership={membership}>
+        <RegionScreen browse={browse} fromKakao={fromKakao} />
+        <Probe />
+      </OnboardingProvider>,
+    )
+  }
+
+  beforeEach(() => {
+    location.pathname = '/setup/region'
+  })
+
+  it('가입 종류가 없으면(홈의 로그인 안내 시트에서 시작) 카카오로 둔다', () => {
+    renderRegion()
+    expect(state().signup).toEqual({ ...EMPTY_SIGNUP, method: 'kakao' })
+  })
+
+  it('이미 카카오면(S13-1 에서 시작 · 뒤로 가기로 다시 옴) 진행 중인 가입을 지우지 않는다', () => {
+    const draft: SignupDraft = { ...EMPTY_SIGNUP, method: 'kakao' }
+    renderRegion({ draft, membership: IN_PROGRESS })
+    expect(state()).toEqual({ signup: draft, membership: IN_PROGRESS })
+  })
+
+  it('다른 가입 종류였다면 새 가입 시도라 초안과 마무리 진행을 비우고 카카오로 둔다', () => {
+    renderRegion({ draft: EMAIL_DRAFT, membership: IN_PROGRESS })
+    expect(state()).toEqual({
+      signup: { ...EMPTY_SIGNUP, method: 'kakao' },
+      membership: NO_MEMBERSHIP,
+    })
+  })
+
+  it('카카오 표시가 없으면 가입 초안을 건드리지 않는다', () => {
+    renderRegion({ draft: EMAIL_DRAFT, membership: IN_PROGRESS, fromKakao: false })
+    expect(state()).toEqual({ signup: EMAIL_DRAFT, membership: IN_PROGRESS })
+  })
+
+  it('둘러보기에서는 ?from=kakao 가 있어도 무시한다', () => {
+    renderRegion({ browse: true })
+    expect(state().signup).toEqual(EMPTY_SIGNUP)
   })
 })

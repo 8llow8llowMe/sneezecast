@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useId, useState } from 'react'
+import { type ReactNode, useEffect, useId, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import clsx from 'clsx'
@@ -56,6 +56,12 @@ const COPY = {
 export type RegionScreenProps = {
   /** 보고 없이 둘러보기(`/browse/region`). 단계 표시 없이 고른 동네의 홈으로 바로 간다 */
   browse?: boolean
+  /**
+   * 카카오 로그인에서 돌아왔다(`/setup/region?from=kakao`). 가입 종류가 아직 카카오가 아니면 가입 초안을 비우고 카카오로 둔다 —
+   * 홈의 로그인 안내 시트처럼 첫 진입 Provider 밖에서 카카오로 시작하면 가입 종류가 없어 S02-3 이 `/login` 으로 돌려보낸다.
+   * 둘러보기에서는 쓰지 않는다
+   */
+  fromKakao?: boolean
 }
 
 /**
@@ -69,11 +75,22 @@ export type RegionScreenProps = {
  * 고른 동네는 OnboardingProvider 가 갖는다. 성인 확인에서 돌아오면 고른 동네 이름으로 다시 검색해 선택을 보인다.
  * 검색어를 고치면 선택을 지운다 — 고른 동네가 목록에서 사라졌는데 버튼만 켜져 있지 않게 한다.
  *
+ * 카카오에서 돌아오면(`fromKakao`) 가입 종류를 카카오로 한 번만 둔다. 이미 카카오면(S13-1 에서 카카오로 시작 · 뒤로 가기로
+ * 다시 옴) 그대로 두어 진행 중인 카카오 가입의 마무리 진행(`membership`)을 지우지 않는다. 다른 가입 종류였다면 새 가입 시도라
+ * `resetSignup` 이 초안과 진행을 함께 비운다(로그인 화면에서 카카오로 시작할 때와 같다).
+ *
  * 시안(정본): docs/design/auth/screens/ 의 Setup-1 · Setup-1-empty · Setup-1-browse (+ -T · -D)
  */
-export function RegionScreen({ browse = false }: RegionScreenProps) {
+export function RegionScreen({ browse = false, fromKakao = false }: RegionScreenProps) {
   const router = useRouter()
-  const { district, setDistrict, goBack } = useOnboarding()
+  const { district, setDistrict, goBack, signup, resetSignup, updateSignup } = useOnboarding()
+
+  const needsKakaoMethod = !browse && fromKakao && signup.method !== 'kakao'
+  useEffect(() => {
+    if (!needsKakaoMethod) return
+    resetSignup()
+    updateSignup({ method: 'kakao' })
+  }, [needsKakaoMethod, resetSignup, updateSignup])
   const [query, setQuery] = useState(district?.name ?? '')
   const search = useDistrictSearch(query)
   const inputId = useId()
