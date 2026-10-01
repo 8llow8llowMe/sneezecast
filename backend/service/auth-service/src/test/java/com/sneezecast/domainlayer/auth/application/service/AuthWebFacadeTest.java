@@ -85,10 +85,10 @@ class AuthWebFacadeTest {
     @DisplayName("인증코드 발송 · 검증은 이메일을 소문자 · trim 으로 정규화해 넘긴다 — 가입 때의 키와 같아야 한다")
     void emailIsNormalizedForVerification() {
         facade.sendEmailVerificationCode("  User@Example.COM ", "203.0.113.10");
-        facade.verifyEmailVerificationCode("USER@example.com", "ABCD2345", "203.0.113.10");
+        facade.verifyEmailVerificationCode("USER@example.com", "482913", "203.0.113.10");
 
         verify(emailVerificationProcessor).sendCode(EMAIL, "203.0.113.10");
-        verify(emailVerificationProcessor).verifyCode(EMAIL, "ABCD2345", "203.0.113.10");
+        verify(emailVerificationProcessor).verifyCode(EMAIL, "482913", "203.0.113.10");
     }
 
     private static AuthGeneralSignupCommand command(String email, String nickname) {

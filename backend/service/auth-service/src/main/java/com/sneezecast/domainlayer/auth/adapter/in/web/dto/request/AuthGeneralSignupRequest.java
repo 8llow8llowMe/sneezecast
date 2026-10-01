@@ -25,15 +25,15 @@ public record AuthGeneralSignupRequest(
     @Email(message = AuthValidationMessage.EMAIL_FORMAT_INVALID)
     String email,
 
-    @Schema(description = "비밀번호 (공백 없이 영문자 · 숫자 · 특수문자 각 1자 이상, 8~20자)", example = "P@ssw0rd!", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "비밀번호 (공백 없이 영문자 · 숫자 각 1자 이상, 8~20자. 특수문자는 선택)", example = "P@ssw0rd!", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank(message = AuthValidationMessage.PASSWORD_REQUIRED)
     @Size(min = 8, max = 20, message = AuthValidationMessage.PASSWORD_LENGTH_INVALID)
     @Pattern(regexp = AuthValidationMessage.PASSWORD_REGEXP, message = AuthValidationMessage.PASSWORD_PATTERN_INVALID)
     String password,
 
-    @Schema(description = "닉네임 (10자 이하). 성명은 받지 않는다", example = "재채기탐정", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "닉네임 (2~10자). 성명은 받지 않는다", example = "재채기탐정", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank(message = AuthValidationMessage.NICKNAME_REQUIRED)
-    @Size(max = 10, message = AuthValidationMessage.NICKNAME_LENGTH_INVALID)
+    @Size(min = 2, max = 10, message = AuthValidationMessage.NICKNAME_LENGTH_INVALID)
     String nickname,
 
     @Schema(description = "이용약관 동의. 필수라 true 가 아니면 가입할 수 없다", example = "true", requiredMode = Schema.RequiredMode.REQUIRED)

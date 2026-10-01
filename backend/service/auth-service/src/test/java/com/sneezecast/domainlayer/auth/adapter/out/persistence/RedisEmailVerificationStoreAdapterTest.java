@@ -41,11 +41,11 @@ class RedisEmailVerificationStoreAdapterTest {
     @Test
     @DisplayName("코드 · 인증 완료 · 쿨다운 키는 {prefix}:auth:{종류}:{이메일} 이고 TTL 을 건다")
     void keysFollowPrefixRuleWithTtl() {
-        adapter.saveCode(EMAIL, "ABCD2345", Duration.ofMinutes(5));
+        adapter.saveCode(EMAIL, "482913", Duration.ofMinutes(5));
         adapter.saveVerified(EMAIL, Duration.ofMinutes(30));
         adapter.tryAcquireCooldown(EMAIL, Duration.ofSeconds(60));
 
-        verify(valueOperations).set("sneezecast:auth:emailVerificationCode:" + EMAIL, "ABCD2345", Duration.ofMinutes(5));
+        verify(valueOperations).set("sneezecast:auth:emailVerificationCode:" + EMAIL, "482913", Duration.ofMinutes(5));
         verify(valueOperations).set("sneezecast:auth:emailVerified:" + EMAIL, "verified", Duration.ofMinutes(30));
         verify(valueOperations).setIfAbsent("sneezecast:auth:emailVerificationCooldown:" + EMAIL, "cooldown", Duration.ofSeconds(60));
     }

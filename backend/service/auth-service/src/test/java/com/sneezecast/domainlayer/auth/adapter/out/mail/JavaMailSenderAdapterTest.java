@@ -40,7 +40,7 @@ class JavaMailSenderAdapterTest {
     @Test
     @DisplayName("인증코드 메일은 수신자 · 제목 · 발신자 표시가 맞고 본문에 코드가 들어간다")
     void sendsVerificationCodeMail() throws Exception {
-        adapter(new AuthMailProperties(null, "no-reply@sneezecast.com")).sendVerificationCode(EMAIL, "ABCD2345");
+        adapter(new AuthMailProperties(null, "no-reply@sneezecast.com")).sendVerificationCode(EMAIL, "482913");
 
         MimeMessage message = sentMessage();
         assertThat(message.getRecipients(Message.RecipientType.TO)).extracting(Object::toString).containsExactly(EMAIL);
@@ -48,7 +48,7 @@ class JavaMailSenderAdapterTest {
         InternetAddress from = (InternetAddress) message.getFrom()[0];
         assertThat(from.getAddress()).isEqualTo("no-reply@sneezecast.com");
         assertThat(from.getPersonal()).isEqualTo(AuthMailProperties.DEFAULT_FROM_NAME);
-        assertThat(message.getContent().toString()).contains("ABCD2345");
+        assertThat(message.getContent().toString()).contains("482913");
     }
 
     @Test
@@ -66,7 +66,7 @@ class JavaMailSenderAdapterTest {
     void swallowsSendFailure() {
         doThrow(new MailSendException("smtp down")).when(javaMailSender).send(any(MimeMessage.class));
 
-        assertThatCode(() -> adapter(new AuthMailProperties(null, null)).sendVerificationCode(EMAIL, "ABCD2345")).doesNotThrowAnyException();
+        assertThatCode(() -> adapter(new AuthMailProperties(null, null)).sendVerificationCode(EMAIL, "482913")).doesNotThrowAnyException();
     }
 
     @Test

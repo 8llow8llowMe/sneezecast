@@ -14,7 +14,7 @@ public record AuthEmailCodeVerifyRequest(
     @Email(message = AuthValidationMessage.EMAIL_FORMAT_INVALID)
     String email,
 
-    @Schema(description = "메일로 받은 인증코드 (대문자 · 숫자 8자)", example = "A3K7MP2X", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "메일로 받은 인증코드 (숫자 6자리)", example = "482913", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank(message = AuthValidationMessage.EMAIL_CODE_REQUIRED)
     String code
 ) {
