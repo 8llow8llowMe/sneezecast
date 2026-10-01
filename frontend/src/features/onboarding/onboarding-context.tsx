@@ -18,7 +18,7 @@ import { canGoBackTo, nextTrail } from './onboarding-trail'
 
 /**
  * 첫 진입(S01 · S02 · S13) 화면이 같이 쓰는 값과 이동. `app/(onboarding)/layout.tsx` 가
- * /start · /login* · /signup/* · /password/reset* · /setup/* · /browse/region 을 감싼다.
+ * /start · /login* · /signup/* · /password/reset* · /setup/* · /browse/region · /terms/* 를 감싼다.
  * 레이아웃은 이 화면들 사이를 오가도 다시 그려지지 않아 값이 남는다.
  *
  * **브라우저 저장소에 남기지 않는다** (docs/conventions.md "데이터와 환경변수"). 새로고침하면 사라지고,
