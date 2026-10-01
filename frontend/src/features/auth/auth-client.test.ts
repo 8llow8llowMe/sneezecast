@@ -4,8 +4,11 @@ import {
   agreeHealthConsent,
   CODE_MAX_ATTEMPTS,
   EMAIL_VERIFICATION_TTL_SECONDS,
+  EXAMPLE_PROFILES,
+  getMockProfile,
   getMockSession,
   loginWithEmail,
+  logout,
   PASSWORD_RESET_TOKEN_TTL_SECONDS,
   resetMockSession,
   resetPassword,
@@ -17,6 +20,8 @@ import {
   subscribeMockSession,
   verifyEmailCode,
   verifyPasswordResetCode,
+  withdrawHealthConsent,
+  withdrawMembership,
 } from './auth-client'
 import { consentFor, LEGAL_VERSIONS } from './legal'
 
@@ -327,6 +332,82 @@ describe('목 회원 상태', () => {
     unsubscribe()
     await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
     expect(listener).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('목 프로필 · 로그아웃 · 동의 철회 · 탈퇴', () => {
+  const consents = [consentFor('TERMS_OF_SERVICE')]
+
+  beforeEach(() => resetMockSession())
+
+  it('이메일 로그인은 입력한 이메일, 가입에서 받은 닉네임으로 프로필을 채운다', async () => {
+    await sendEmailCode('new@example.com')
+    await verifyEmailCode('new@example.com', '482915')
+    await signup({
+      kind: 'email',
+      email: 'new@example.com',
+      password: 'dongne2026',
+      nickname: '골목대장',
+      consents,
+    })
+    await loginWithEmail(' New@Example.com ', 'dongne2026')
+    expect(getMockProfile()).toEqual({
+      provider: 'email',
+      email: 'new@example.com',
+      nickname: '골목대장',
+    })
+  })
+
+  it('가입 없이 로그인하면 닉네임은 예시 값이다', async () => {
+    await loginWithEmail('dong2@example.com', 'dongne2026')
+    expect(getMockProfile()).toEqual({ ...EXAMPLE_PROFILES.email, email: 'dong2@example.com' })
+  })
+
+  it('카카오 가입은 카카오 예시 프로필이고, 건강정보 동의는 프로필을 그대로 둔다', async () => {
+    await signup({ kind: 'kakao', consents })
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+    expect(getMockProfile()).toEqual(EXAMPLE_PROFILES.kakao)
+  })
+
+  it('로그아웃 · 탈퇴하면 비회원이 되고 프로필을 지운다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    await logout()
+    expect(getMockSession()).toBe('guest')
+    expect(getMockProfile()).toBeNull()
+
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    await withdrawMembership()
+    expect(getMockSession()).toBe('guest')
+    expect(getMockProfile()).toBeNull()
+  })
+
+  it('동의 철회하면 미동의 회원이 되고 프로필은 남는다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+    await withdrawHealthConsent()
+    expect(getMockSession()).toBe('member-no-consent')
+    expect(getMockProfile()?.email).toBe('dong@example.com')
+  })
+
+  it('비회원 · 미동의 회원 세션에서 동의 철회해도 세션을 바꾸지 않는다 (덮어쓰기로 연 경우)', async () => {
+    await withdrawHealthConsent()
+    expect(getMockSession()).toBe('guest')
+
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    await withdrawHealthConsent()
+    expect(getMockSession()).toBe('member-no-consent')
+  })
+
+  it.each([
+    ['logout-fail@example.com', logout],
+    ['consent-withdraw-fail@example.com', withdrawHealthConsent],
+    ['withdraw-fail@example.com', withdrawMembership],
+  ] as const)('프로필 이메일이 %s 면 거부하고 세션을 그대로 둔다', async (email, action) => {
+    await loginWithEmail(email, 'dongne2026')
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+    await expect(action()).rejects.toThrow()
+    expect(getMockSession()).toBe('member')
+    expect(getMockProfile()?.email).toBe(email)
   })
 })
 
