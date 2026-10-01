@@ -77,24 +77,27 @@ frontend/
 
 `src/components/` 에 있다. 도메인을 모르고, 시안의 같은 모양이 두 화면 이상에서 나오면 여기로 올린다.
 
-| 컴포넌트                   | 쓰는 곳 (시안)                    | 고르는 값                                                                                                             |
-| -------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `Button`                   | 하단 고정 버튼 · 헤더 · 보고 완료 | `variant`: primary · secondary · text · subtle(회색 글자) / `size`: lg(56) · sm(44) / `fullWidth`                     |
-| `Badge`                    | 공식 정보 행 · 동네 안내 · 지도   | `kind`: official(공식) · citizen(시민 자가보고) · review(운영자 검토)                                                 |
-| `StatusWord`               | 홈 상태 카드                      | `status`                                                                                                              |
-| `StatusGauge`              | 홈 상태 카드                      | `status` — 자료 부족이면 회색 · 점 없음                                                                               |
-| `ProgressBar`              | 홈 자료 부족 상태의 참여 인원     | `value` · `max` · `label` — 참여 인원에만 쓰고 증상 비율에는 쓰지 않는다                                              |
-| `ListRow`                  | 증상별 변화 · 공식 정보 행        | `kind`: data · link / `leading` · `trailing` / `divider`                                                              |
-| `Section` · `SectionBand`  | 홈 섹션과 섹션 사이 8px 띠        | `title` / `layout`: page(화면 폭) · panel(모바일은 화면 여백, 태블릿부터 격자 · 패널 안이라 여백 없음)                |
-| `Modal`                    | 보고 · 판단 기준 · 설치 안내      | `open` · `onClose` · `title` / `step` · `onBack` / `hideHeader` — 모바일 바텀시트, 태블릿 520 · 데스크톱 480 대화상자 |
-| `ToastRegion` · `useToast` | 보고 완료 되돌리기                | `toast` · `onAction` / `show` · `dismiss` (기본 5초)                                                                  |
-| `TabBar`                   | 모바일 · 태블릿 하단              | `current` — 데스크톱에서 숨긴다                                                                                       |
-| `AppHeader`                | 모든 사용자 화면 위               | `regionName` · `current` · 동네 · 알림 · 보고 콜백                                                                    |
-| `IconButton`               | 알림 설정 · 닫기 · 이전 단계      | `label`(필수) · `icon`                                                                                                |
-| `ChoiceButton`             | 보고 선택지                       | `label` · `hint`(설명으로 읽힘) / `selected`(여러 개 고르기 — `aria-pressed`) / `size`: lg(64) · md(56)               |
-| `Callout`                  | 보고 수정 안내 · 홈 상단 알림     | `tone`: info · neutral / `icon`                                                                                       |
-| `Checkbox`                 | 성인 확인 · 동의                  | `checked` · `onChange` · `label` / `size`: lg(17 굵게) · md(15) — 네이티브 체크 상자를 숨기고 모양만 그린다           |
-| 아이콘 (`icons.tsx`)       | 시안의 선 아이콘                  | `size` — 색은 글자색(`currentColor`)을 따른다                                                                         |
+| 컴포넌트                   | 쓰는 곳 (시안)                    | 고르는 값                                                                                                                                                              |
+| -------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Button`                   | 하단 고정 버튼 · 헤더 · 보고 완료 | `variant`: primary · secondary · text · subtle(회색 글자) / `size`: lg(56) · sm(44) / `fullWidth`                                                                      |
+| `Badge`                    | 공식 정보 행 · 동네 안내 · 지도   | `kind`: official(공식) · citizen(시민 자가보고) · review(운영자 검토)                                                                                                  |
+| `StatusWord`               | 홈 상태 카드                      | `status`                                                                                                                                                               |
+| `StatusGauge`              | 홈 상태 카드                      | `status` — 자료 부족이면 회색 · 점 없음                                                                                                                                |
+| `ProgressBar`              | 홈 자료 부족 상태의 참여 인원     | `value` · `max` · `label` — 참여 인원에만 쓰고 증상 비율에는 쓰지 않는다                                                                                               |
+| `ListRow`                  | 증상별 변화 · 공식 정보 행        | `kind`: data · link / `leading` · `trailing` / `divider`                                                                                                               |
+| `Section` · `SectionBand`  | 홈 섹션과 섹션 사이 8px 띠        | `title` / `layout`: page(화면 폭) · panel(모바일은 화면 여백, 태블릿부터 격자 · 패널 안이라 여백 없음)                                                                 |
+| `Modal`                    | 보고 · 판단 기준 · 설치 안내      | `open` · `onClose` · `title` / `step` · `onBack` / `hideHeader` — 모바일 바텀시트, 태블릿 520 · 데스크톱 480 대화상자                                                  |
+| `ToastRegion` · `useToast` | 보고 완료 되돌리기                | `toast` · `onAction` / `show` · `dismiss` (기본 5초)                                                                                                                   |
+| `TabBar`                   | 모바일 · 태블릿 하단              | `current` — 데스크톱에서 숨긴다                                                                                                                                        |
+| `AppHeader`                | 모든 사용자 화면 위               | `regionName` · `current` · 동네 · 알림 · 보고 콜백                                                                                                                     |
+| `IconButton`               | 알림 설정 · 닫기 · 이전 단계      | `label`(필수) · `icon`                                                                                                                                                 |
+| `ChoiceButton`             | 보고 선택지                       | `label` · `hint`(설명으로 읽힘) / `selected`(여러 개 고르기 — `aria-pressed`) / `size`: lg(64) · md(56)                                                                |
+| `Callout`                  | 보고 수정 안내 · 홈 상단 알림     | `tone`: info · neutral / `icon`                                                                                                                                        |
+| `TextField`                | 로그인 · 가입 입력칸              | `label`(위 14) · `hint` · `error`(아래 13, `aria-invalid` · `aria-describedby`) / `type="password"` 면 보기 버튼 — 기본 1px 회색 · 포커스 2px 네이비 · 오류 2px danger |
+| `AlertBox`                 | 로그인 실패 · 안내 · 잠김         | `tone`: danger(`role=alert`) · info · neutral(`role=status`) / `action` — 여러 줄 문장 + 아래 버튼. 한 줄 안내는 `Callout`                                             |
+| `KakaoButton`              | 카카오로 계속하기                 | 높이 56 — 색은 카카오 가이드 값을 이 컴포넌트에만 둔다(토큰 밖 예외, 근거 주석)                                                                                        |
+| `Checkbox`                 | 성인 확인 · 동의                  | `checked` · `onChange` · `label` / `size`: lg(17 굵게) · md(15) — 네이티브 체크 상자를 숨기고 모양만 그린다                                                            |
+| 아이콘 (`icons.tsx`)       | 시안의 선 아이콘                  | `size` — 색은 글자색(`currentColor`)을 따른다                                                                                                                          |
 
 - `className` 은 바깥 배치(여백 · 정렬 · 폭)에만 쓴다. 색 · 크기 · 모서리는 컴포넌트가 고르는 값으로 바꾼다.
 - 개발 서버의 `/dev/components` 에서 전부 볼 수 있다. 시안과 나란히 놓고 비교하는 용도이고 프로덕션에서는 404 다.
