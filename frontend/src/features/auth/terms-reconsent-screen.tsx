@@ -12,6 +12,7 @@ import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { formatMonthDay } from '@/lib/format'
 import { navHref } from '@/lib/nav'
+import { isSessionExpiring } from '@/lib/session-expiry'
 import { useActiveRef } from '@/lib/use-active-ref'
 import { useHydrated } from '@/lib/use-hydrated'
 
@@ -59,7 +60,8 @@ export function TermsReconsentScreen() {
       : null
   useEffect(() => {
     // 동의 · 로그아웃을 마친 뒤의 이동은 그 함수가 한다(조건이 먼저 사라져도 여기서 한 번 더 보내지 않는다)
-    if (redirect && pending === null) replace(redirect)
+    // 로그인 만료로 비회원이 됐으면 만료 이동(session-expiry-watcher)에 맡긴다 — 여기서 홈으로 덮어쓰지 않는다
+    if (redirect && pending === null && !isSessionExpiring()) replace(redirect)
   }, [redirect, pending, replace])
 
   // 보내는 중에는 조건이 먼저 사라져도 이동할 때까지 그대로 그린다

@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { renderToString } from 'react-dom/server'
 
-import { render } from '@testing-library/react'
+import { act, render } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { loginWithEmail, resetMockSession } from '@/features/auth/auth-client'
+import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
+import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 
-import { MeRequiredStepsGate, useRequiredStepsGate } from './member-gate'
+import { MeRequiredStepsGate, useMemberGate, useRequiredStepsGate } from './member-gate'
 
 // 테스트에는 Next 라우터가 없다. 주소 · 경로는 이 값으로 흉내 낸다
 let search = ''
@@ -27,6 +29,7 @@ beforeEach(() => {
   search = ''
   pathname = '/me'
   resetMockSession()
+  clearSessionExpiring()
   router.replace.mockClear()
 })
 
@@ -106,5 +109,38 @@ describe('MeRequiredStepsGate', () => {
     expect(router.replace).toHaveBeenCalledWith(
       '/setup/region?reselect=1&mock-auth=member&mock-required=region',
     )
+  })
+})
+
+/** 회원만 쓰는 계정 화면(로그인한 기기 · 비밀번호)처럼 가드를 쓰는 화면 */
+function DevicesGate() {
+  return <p>{useMemberGate() ?? '가드 대기'}</p>
+}
+
+describe('useMemberGate', () => {
+  beforeEach(() => {
+    pathname = '/me/devices'
+  })
+
+  it('비회원은 로그인으로 보낸다', () => {
+    render(<DevicesGate />)
+    expect(router.replace).toHaveBeenLastCalledWith('/login')
+  })
+
+  it('회원 화면에서 로그인이 만료되면 마지막 이동이 만료 토스트가 있는 로그인 화면이다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    render(
+      <>
+        <DevicesGate />
+        <SessionExpiryWatcher />
+      </>,
+    )
+    expect(router.replace).not.toHaveBeenCalled()
+
+    // 세션이 비회원이 되어 가드도 다시 그려져 로그인으로 보내려 한다 — 만료 이동보다 나중이어도 만료 주소여야 한다
+    act(() => notifySessionExpired())
+
+    expect(router.replace).toHaveBeenLastCalledWith('/login?reason=expired')
+    expect(router.replace).not.toHaveBeenCalledWith('/login')
   })
 })

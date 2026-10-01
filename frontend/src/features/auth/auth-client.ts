@@ -487,6 +487,14 @@ export function withdrawHealthConsent(): Promise<void> {
   return Promise.resolve()
 }
 
+/**
+ * 로그인이 만료돼 세션을 비운다(State-session-expired). 화면 코드는 부르지 않는다 — 만료 알림(`src/lib/session-expiry.ts`)을 받는
+ * `session-expiry-watcher.tsx` 만 부른다. 연동 때는 API 계층이 토큰을 지운 뒤 알리므로 함수 안만 실제 세션 비우기로 바꾼다
+ */
+export function expireMockSession(): void {
+  setMockSession('guest')
+}
+
 /** 회원 탈퇴. 보낸 보고는 바로 지우고 계정은 30일 뒤 지운다(서버). 탈퇴 사유는 받지 않는다 */
 export function withdrawMembership(): Promise<void> {
   const failure = rejectIfProfileEmail(MOCK_WITHDRAW_FAIL_EMAIL, 'withdraw')

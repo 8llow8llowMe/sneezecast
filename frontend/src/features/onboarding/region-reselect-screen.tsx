@@ -19,6 +19,7 @@ import { listSuccessorDistricts } from '@/features/region/region-client'
 import type { District, ReselectCandidate } from '@/features/region/types'
 import { useDistrictSearch } from '@/features/region/use-district-search'
 import { withIGa } from '@/lib/korean'
+import { isSessionExpiring } from '@/lib/session-expiry'
 import { useActiveRef } from '@/lib/use-active-ref'
 import { useHydrated } from '@/lib/use-hydrated'
 
@@ -106,7 +107,8 @@ export function RegionReselectScreen() {
       : null
   useEffect(() => {
     // 저장에 성공한 뒤의 이동은 save 가 한다(조건이 먼저 사라져도 여기서 한 번 더 보내지 않는다)
-    if (redirect && !pending) replace(redirect)
+    // 로그인 만료로 비회원이 됐으면 만료 이동(session-expiry-watcher)에 맡긴다 — 여기서 홈으로 덮어쓰지 않는다
+    if (redirect && !pending && !isSessionExpiring()) replace(redirect)
   }, [redirect, pending, replace])
 
   const candidates = useCandidates(oldRegion?.code ?? null)
