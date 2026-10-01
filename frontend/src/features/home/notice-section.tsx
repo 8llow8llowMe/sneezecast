@@ -9,7 +9,14 @@ import type { PublishedNotice } from './types'
  * 우리 동네 안내 섹션. **운영자가 검토 · 발행한 주에만** 안내를 보인다 (루트 CLAUDE.md "공식 정보와 안내").
  * 발행 전이면 공식 예방수칙으로 이어 준다.
  */
-export function NoticeSection({ notice }: { notice: PublishedNotice | null }) {
+export function NoticeSection({
+  notice,
+  officialHref = '/official',
+}: {
+  notice: PublishedNotice | null
+  /** `공식 예방수칙 보기` 가 갈 곳. 홈은 공식 정보 행과 같은 주소(목 상태 · 둘러보기 동네 포함)를 넘긴다 */
+  officialHref?: string
+}) {
   return (
     <Section title="우리 동네 안내" layout="panel">
       {notice ? (
@@ -38,7 +45,7 @@ export function NoticeSection({ notice }: { notice: PublishedNotice | null }) {
       ) : (
         <div className="flex min-h-12 items-center justify-between gap-3">
           <span className="text-body text-fg-sub">이번 주 발행된 동네 안내가 없어요</span>
-          <Link href="/official" className="shrink-0 text-sub font-semibold text-brand">
+          <Link href={officialHref} className="shrink-0 text-sub font-semibold text-brand">
             공식 예방수칙 보기
           </Link>
         </div>

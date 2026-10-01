@@ -14,7 +14,8 @@ const OFFICIAL: OfficialSummary = {
   disease: '인플루엔자',
   stage: '유행주의보 · 전국',
   basis: '질병관리청 주간 표본감시',
-  href: '/official',
+  // 공식 정보 화면의 목 기본값은 '받은 발표 없음'이다. 이 예시 발표와 같은 화면을 열도록 예시 상태를 고른다
+  href: '/official?mock=published',
 }
 
 /** 시범 운영 초기값 (tokens.json rules.slightDeltaPp · highDeltaPp) */

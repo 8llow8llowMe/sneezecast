@@ -12,11 +12,20 @@ import type { OfficialSummary } from './types'
  * `공식` 배지 · 출처 · 집계 단위 · 기준을 밝혀 따로 그린다 (루트 CLAUDE.md "공식 정보와 안내").
  */
 
-/** 공식 정보 이동 행 (모바일은 띠 사이, 태블릿 · 데스크톱은 헤더 아래) */
-export function OfficialRow({ official }: { official: OfficialSummary }) {
+/**
+ * 공식 정보 이동 행 (모바일은 띠 사이, 태블릿 · 데스크톱은 헤더 아래). S08 공식 정보 화면(`/official`)으로 간다.
+ * `navSearch`(둘러보기 동네 `region=<코드>`)는 메뉴 링크처럼 뒤에 붙여 공식 정보 화면에서도 동네를 잃지 않게 한다.
+ */
+export function OfficialRow({
+  official,
+  navSearch,
+}: {
+  official: OfficialSummary
+  navSearch?: string | undefined
+}) {
   return (
     <Link
-      href={official.href}
+      href={officialHref(official, navSearch)}
       className="block bg-bg px-page-mobile tablet:px-page-tablet desktop:px-page-desktop"
     >
       <ListRow
@@ -43,6 +52,15 @@ export function OfficialPanel({ official }: { official: OfficialSummary }) {
       </p>
     </Section>
   )
+}
+
+/**
+ * 공식 정보 화면 주소. 홈의 두 진입점(공식 정보 행 · 동네 안내의 `공식 예방수칙 보기`)이 같은 주소를 쓴다.
+ * `navSearch` 는 주소 뒤에 붙이고, 주소에 이미 쿼리가 있으면(목 `?mock=`) `&` 로 잇는다
+ */
+export function officialHref(official: OfficialSummary, navSearch?: string): string {
+  if (!navSearch) return official.href
+  return `${official.href}${official.href.includes('?') ? '&' : '?'}${navSearch}`
 }
 
 function OfficialItem({ term, detail }: { term: string; detail: string }) {
