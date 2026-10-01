@@ -1,11 +1,17 @@
+import { HomeScreen } from '@/features/home/home-screen'
+import { pickHomeMock } from '@/features/home/mock'
+
 /**
- * 기본 구성 확인용 빈 홈. S03 홈 화면을 구현할 때 교체한다 (docs/design-guide.md "구현 순서" 2단계).
+ * S03 홈. API 연동 전이라 목 데이터로 그린다.
+ *
+ * `?mock=normal|slight|high|insufficient` 로 상태를 고른다. 기본은 `insufficient`(자료 부족)다 —
+ * 실제 자료가 없는 지금 수치를 지어내 보이지 않는다. API 연동 이슈에서 목 데이터를 걷어낸다.
  */
-export default function HomePage() {
-  return (
-    <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center gap-2 px-page-mobile tablet:px-page-tablet desktop:px-page-desktop">
-      <h1 className="text-screen-title font-bold text-fg">우리동네체온계</h1>
-      <p className="text-body text-fg-sub">화면을 준비하고 있어요.</p>
-    </main>
-  )
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const { mock } = await searchParams
+  return <HomeScreen week={pickHomeMock(mock)} />
 }
