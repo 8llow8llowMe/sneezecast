@@ -6,13 +6,17 @@ import {
   EMAIL_VERIFICATION_TTL_SECONDS,
   getMockSession,
   loginWithEmail,
+  PASSWORD_RESET_TOKEN_TTL_SECONDS,
   resetMockSession,
+  resetPassword,
   saveRegion,
   sendEmailCode,
+  sendPasswordResetCode,
   signup,
   startKakaoLogin,
   subscribeMockSession,
   verifyEmailCode,
+  verifyPasswordResetCode,
 } from './auth-client'
 import { consentFor, LEGAL_VERSIONS } from './legal'
 
@@ -156,6 +160,108 @@ describe('signup · saveRegion · agreeHealthConsent (목)', () => {
   it('내 동네 저장 · 건강정보 동의는 성공한다', async () => {
     await expect(saveRegion('11680640')).resolves.toBeUndefined()
     await expect(agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))).resolves.toBeUndefined()
+  })
+})
+
+describe('비밀번호 재설정 (목)', () => {
+  const consents = [consentFor('TERMS_OF_SERVICE')]
+
+  /** 코드를 받고 맞혀 재설정 토큰을 받는다 */
+  async function tokenFor(email: string): Promise<string> {
+    await sendPasswordResetCode(email)
+    const result = await verifyPasswordResetCode(email, '482915')
+    if (result.status !== 'ok') throw new Error(`토큰을 받지 못했다: ${result.status}`)
+    return result.resetToken
+  }
+
+  afterEach(() => vi.useRealTimers())
+
+  it('코드 받기는 가입과 같은 재현 입력을 쓴다 — 가입 여부를 드러내지 않는다', async () => {
+    expect(await sendPasswordResetCode(' LIMIT@example.com ')).toEqual({ status: 'limit' })
+    expect(await sendPasswordResetCode('never-joined@example.com')).toEqual({ status: 'sent' })
+  })
+
+  it('코드 확인은 가입과 같은 한도다 — 000000 은 4번부터 줄고 5번째에 잠기며 999999 는 잠긴다', async () => {
+    await sendPasswordResetCode('reset-try@example.com')
+    for (const remainingAttempts of [4, 3, 2, 1]) {
+      expect(await verifyPasswordResetCode('reset-try@example.com', '000000')).toEqual({
+        status: 'wrong',
+        remainingAttempts,
+      })
+    }
+    expect(await verifyPasswordResetCode('reset-try@example.com', '000000')).toEqual({
+      status: 'locked',
+    })
+    expect(await verifyPasswordResetCode('reset-try@example.com', '482915')).toEqual({
+      status: 'expired',
+    })
+
+    await sendPasswordResetCode('reset-lock@example.com')
+    expect(await verifyPasswordResetCode('reset-lock@example.com', '999999')).toEqual({
+      status: 'locked',
+    })
+  })
+
+  it('맞히면 일회용 토큰을 주고, 코드는 한 번만 쓴다', async () => {
+    const token = await tokenFor('reset-ok@example.com')
+    expect(token).not.toBe('')
+    expect(await verifyPasswordResetCode('reset-ok@example.com', '482915')).toEqual({
+      status: 'expired',
+    })
+    // 토큰은 맞힐 때마다 새로 준다
+    expect(await tokenFor('reset-ok@example.com')).not.toBe(token)
+  })
+
+  it('토큰으로 바꾸고 토큰을 소비한다 — 같은 토큰으로 두 번 바꾸지 못한다', async () => {
+    const token = await tokenFor('reset-once@example.com')
+    expect(await resetPassword(token, 'newpass2026')).toEqual({ status: 'ok' })
+    expect(await resetPassword(token, 'newpass2027')).toEqual({ status: 'verification-expired' })
+  })
+
+  it('토큰 없이 이메일만으로는 바꾸지 못한다 — 코드를 맞힌 뒤라도 그렇다', async () => {
+    await tokenFor('victim@example.com')
+    expect(await resetPassword('victim@example.com', 'newpass2026')).toEqual({
+      status: 'verification-expired',
+    })
+    expect(await resetPassword('', 'newpass2026')).toEqual({ status: 'verification-expired' })
+  })
+
+  it('가입 인증과 따로다 — 가입 코드 · 인증으로 재설정을, 재설정 인증으로 가입을 마치지 못한다', async () => {
+    await sendEmailCode('both@example.com')
+    // 가입 코드만 보냈으면 재설정 코드는 없다
+    expect(await verifyPasswordResetCode('both@example.com', '482915')).toEqual({
+      status: 'expired',
+    })
+
+    await tokenFor('other@example.com')
+    expect(
+      await signup({
+        kind: 'email',
+        email: 'other@example.com',
+        password: 'dongne2026',
+        nickname: '동네지기',
+        consents,
+      }),
+    ).toEqual({ status: 'verification-expired' })
+  })
+
+  it('토큰은 15분이 지나면 verification-expired 다', async () => {
+    expect(PASSWORD_RESET_TOKEN_TTL_SECONDS).toBe(900)
+    vi.useFakeTimers()
+    const token = await tokenFor('reset-slow@example.com')
+    vi.setSystemTime(Date.now() + 901_000)
+    expect(await resetPassword(token, 'newpass2026')).toEqual({ status: 'verification-expired' })
+  })
+
+  it('재현용 이메일: verify-expired 로 받은 토큰은 늘 만료, reset-fail 로 받은 토큰은 거부(토큰은 남는다)', async () => {
+    const expiredToken = await tokenFor('verify-expired@example.com')
+    expect(await resetPassword(expiredToken, 'newpass2026')).toEqual({
+      status: 'verification-expired',
+    })
+
+    const failToken = await tokenFor('reset-fail@example.com')
+    await expect(resetPassword(failToken, 'newpass2026')).rejects.toThrow()
+    await expect(resetPassword(failToken, 'newpass2026')).rejects.toThrow()
   })
 })
 

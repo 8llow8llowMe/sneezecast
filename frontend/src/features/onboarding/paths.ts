@@ -2,6 +2,7 @@
  * 첫 진입 화면 주소 (docs/design/SCREENS.md S01 · S02 · S13). 화면 사이 이동은 페이지 이동이라 주소 쿼리 모달이 아니다.
  *
  * 흐름: 시작(S01) → 로그인(S13-1) → (카카오 신규 · 이메일 가입 S13-2~4) → 동네 선택(S02-1) → 성인 확인(S02-2) → …
+ * 비밀번호 재설정(S13-6)은 이메일 로그인(S13-5)에서 갈라졌다가 이메일 로그인으로 돌아온다.
  *
  * 로그인 · 가입 경로도 auth 가 아니라 여기 둔다. 첫 진입 흐름(시작 · 로그인 · 가입 · 동네)의 화면이 서로 앞뒤 단계로
  * 이어져 있어, 경로를 한곳에 두어야 흐름을 한눈에 보고 순환 import 없이 서로 가리킬 수 있다.
@@ -21,8 +22,18 @@ export const SIGNUP_EMAIL_PATH = '/signup/email'
 export const SIGNUP_EMAIL_VERIFICATION_EXPIRED_PATH = `${SIGNUP_EMAIL_PATH}?reason=verification-expired`
 export const SIGNUP_CODE_PATH = '/signup/code'
 export const SIGNUP_ACCOUNT_PATH = '/signup/account'
-/** 비밀번호 재설정 (S13-6). 다음 단계에서 만든다 */
+/** 비밀번호를 바꾼 뒤 이메일 로그인 */
+export const LOGIN_EMAIL_RESET_DONE_PATH = `${LOGIN_EMAIL_PATH}?reason=reset-done`
+/**
+ * 비밀번호 재설정 (S13-6): 이메일 → 인증 코드 → 새 비밀번호 → 이메일 로그인(`?reason=reset-done`).
+ * 이메일 로그인(S13-5)의 "비밀번호를 잊었어요" 가 들어오는 곳이다. 단계 표시는 없다.
+ * 이메일 화면은 `?reason=verification-expired` 면 인증 시간이 지났다는 안내를 띄운다
+ */
 export const PASSWORD_RESET_PATH = '/password/reset'
+/** 재설정 요청이 인증 만료로 돌아왔을 때 새 비밀번호 화면이 보내는 곳 */
+export const PASSWORD_RESET_VERIFICATION_EXPIRED_PATH = `${PASSWORD_RESET_PATH}?reason=verification-expired`
+export const PASSWORD_RESET_CODE_PATH = '/password/reset/code'
+export const PASSWORD_RESET_NEW_PATH = '/password/reset/new'
 export const SETUP_REGION_PATH = '/setup/region'
 /**
  * 카카오 로그인에서 돌아온 동네 선택. 첫 진입 Provider 밖(홈의 로그인 안내 시트)에서 카카오로 시작해도 S02-1 이 가입 종류를

@@ -110,8 +110,8 @@ export function startKakaoLogin(
  *   5분이 지났거나 보낸 코드가 없으면(이미 인증에 쓴 코드 · 잠겨 지운 코드 포함) `expired`, 그 밖 6자리 → 성공.
  *   서버처럼 잠기면 코드를 지우므로 잠긴 뒤의 확인은 `expired` 다
  *
- * 목은 서버가 갖는 코드 · 보낸 시각 · 인증 시각과 연동 때 이 모듈이 셀 실패 수를 함께 이 모듈 안(메모리)에 둔다.
- * 화면을 새로 열면 초기화된다.
+ * 목은 서버가 갖는 코드 · 보낸 시각 · 인증 시각과 연동 때 이 모듈이 셀 실패 수를 함께 이 모듈 안(메모리)에 둔다
+ * (`createMockCodeStore` · `signupVerifiedAt`). 화면을 새로 열면 초기화된다.
  */
 
 /** 코드 유효 시간 · 다시 받기 대기 (Signup-code 시안 "5분 안에", "다시 받기 0:42") */
@@ -135,44 +135,86 @@ export type VerifyCodeResult =
   | { status: 'expired' }
   | { status: 'locked' }
 
-const mockCodes = new Map<string, { sentAt: number; remainingAttempts: number }>()
-/** 이메일별 인증을 마친 시각(ms). 서버의 인증 완료 표시를 흉내 낸다 */
-const mockVerifiedAt = new Map<string, number>()
+/** 코드 확인 실패. 가입 인증 · 재설정 인증이 같은 뜻으로 쓴다 */
+export type VerifyCodeFailure = Exclude<VerifyCodeResult, { status: 'ok' }>
+
+/**
+ * 목 서버의 코드 저장소 하나. 서버가 갖는 코드 · 보낸 시각과 연동 때 이 모듈이 셀 실패 수를 둔다.
+ * 가입 인증과 비밀번호 재설정은 서버에서 Redis 키가 다르므로(backend/docs/modules.md) 목도 저장소를 따로 둔다 —
+ * 가입 코드로 재설정 인증을 마치거나 그 반대가 되지 않게 한다. 인증을 마친 뒤 무엇을 남길지(가입은 이메일별 인증 표시,
+ * 재설정은 일회용 토큰)는 쓰는 쪽이 정한다.
+ */
+function createMockCodeStore() {
+  const codes = new Map<string, { sentAt: number; remainingAttempts: number }>()
+
+  function send(email: string): SendCodeResult {
+    const key = normalizeEmail(email)
+    if (key === MOCK_LIMIT_EMAIL) return { status: 'limit' }
+    codes.set(key, { sentAt: Date.now(), remainingAttempts: CODE_MAX_ATTEMPTS })
+    return { status: 'sent' }
+  }
+
+  /** 맞으면 코드를 지우고(서버처럼 한 번만 쓴다) `ok` 다 */
+  function verify(email: string, code: string): VerifyCodeResult {
+    const key = normalizeEmail(email)
+    const sent = codes.get(key)
+    // 보낸 코드가 없으면(이미 쓴 코드 · 잠겨 지운 코드 · 서버가 지운 코드) 만료로 본다 — 다시 받으면 된다
+    if (!sent) return { status: 'expired' }
+    if (Date.now() - sent.sentAt > CODE_TTL_SECONDS * 1000) return { status: 'expired' }
+    if (code === MOCK_LOCKED_CODE) {
+      codes.delete(key)
+      return { status: 'locked' }
+    }
+    if (code === MOCK_WRONG_CODE || !/^\d{6}$/.test(code)) {
+      sent.remainingAttempts -= 1
+      if (sent.remainingAttempts > 0) {
+        return { status: 'wrong', remainingAttempts: sent.remainingAttempts }
+      }
+      // 서버는 잠그면서 코드를 지운다(AUTH_005). 그다음 확인은 만료(AUTH_004)다
+      codes.delete(key)
+      return { status: 'locked' }
+    }
+    codes.delete(key)
+    return { status: 'ok' }
+  }
+
+  return { send, verify }
+}
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
 }
 
+const signupCodes = createMockCodeStore()
+/** 이메일별 가입 인증을 마친 시각(ms). 서버의 인증 완료 표시를 흉내 낸다 */
+const signupVerifiedAt = new Map<string, number>()
+
 export function sendEmailCode(email: string): Promise<SendCodeResult> {
-  const key = normalizeEmail(email)
-  if (key === MOCK_LIMIT_EMAIL) return Promise.resolve({ status: 'limit' })
-  mockCodes.set(key, { sentAt: Date.now(), remainingAttempts: CODE_MAX_ATTEMPTS })
-  return Promise.resolve({ status: 'sent' })
+  return Promise.resolve(signupCodes.send(email))
 }
 
 export function verifyEmailCode(email: string, code: string): Promise<VerifyCodeResult> {
+  const result = signupCodes.verify(email, code)
+  if (result.status === 'ok') signupVerifiedAt.set(normalizeEmail(email), Date.now())
+  return Promise.resolve(result)
+}
+
+/**
+ * 가입 인증 표시를 쓴다. 재현용 만료 이메일 · 인증하지 않음 · 마친 지 30분이 지남이면 false 다.
+ * 서버처럼 쓴 인증 표시는 지운다
+ */
+function consumeSignupVerification(email: string): boolean {
   const key = normalizeEmail(email)
-  const sent = mockCodes.get(key)
-  // 보낸 코드가 없으면(이미 쓴 코드 · 잠겨 지운 코드 · 서버가 지운 코드) 만료로 본다 — 다시 받으면 된다
-  if (!sent) return Promise.resolve({ status: 'expired' })
-  if (Date.now() - sent.sentAt > CODE_TTL_SECONDS * 1000)
-    return Promise.resolve({ status: 'expired' })
-  if (code === MOCK_LOCKED_CODE) {
-    mockCodes.delete(key)
-    return Promise.resolve({ status: 'locked' })
+  const at = signupVerifiedAt.get(key)
+  if (
+    key === MOCK_VERIFY_EXPIRED_EMAIL ||
+    at === undefined ||
+    Date.now() - at > EMAIL_VERIFICATION_TTL_SECONDS * 1000
+  ) {
+    return false
   }
-  if (code === MOCK_WRONG_CODE || !/^\d{6}$/.test(code)) {
-    sent.remainingAttempts -= 1
-    if (sent.remainingAttempts > 0) {
-      return Promise.resolve({ status: 'wrong', remainingAttempts: sent.remainingAttempts })
-    }
-    // 서버는 잠그면서 코드를 지운다(AUTH_005). 그다음 확인은 만료(AUTH_004)다
-    mockCodes.delete(key)
-    return Promise.resolve({ status: 'locked' })
-  }
-  mockCodes.delete(key)
-  mockVerifiedAt.set(key, Date.now())
-  return Promise.resolve({ status: 'ok' })
+  signupVerifiedAt.delete(key)
+  return true
 }
 
 /* ── 가입 · 내 동네 · 건강정보 동의 (S02-3 · S02-4) ─────────────────────────────────
@@ -215,19 +257,13 @@ export function signup(request: SignupRequest): Promise<SignupResult> {
     setMockSession('member-no-consent')
     return Promise.resolve({ status: 'ok' })
   }
-  const key = normalizeEmail(request.email)
-  if (key === MOCK_SIGNUP_FAIL_EMAIL) return Promise.reject(new Error('mock signup failure'))
-  const verifiedAt = mockVerifiedAt.get(key)
-  if (
-    key === MOCK_VERIFY_EXPIRED_EMAIL ||
-    verifiedAt === undefined ||
-    Date.now() - verifiedAt > EMAIL_VERIFICATION_TTL_SECONDS * 1000
-  ) {
-    return Promise.resolve({ status: 'verification-expired' })
+  if (normalizeEmail(request.email) === MOCK_SIGNUP_FAIL_EMAIL) {
+    return Promise.reject(new Error('mock signup failure'))
   }
   // 서버처럼 가입에 쓴 인증 표시는 지운다
-  mockVerifiedAt.delete(key)
-  return Promise.resolve({ status: 'ok' })
+  return Promise.resolve({
+    status: consumeSignupVerification(request.email) ? 'ok' : 'verification-expired',
+  })
 }
 
 /** 내 동네(행정동 코드) 저장 */
@@ -242,4 +278,86 @@ export function agreeHealthConsent(consent: Consent): Promise<void> {
   // 동의를 보낸 화면이 응답 전에 닫혀도 서버에는 동의가 남는다. 세션 상태도 화면과 무관하게 여기서 바꾼다
   setMockSession('member')
   return Promise.resolve()
+}
+
+/* ── 비밀번호 재설정 (S13-6) ────────────────────────────────────────────────────────
+ *
+ * **백엔드 #58 은 구현 전이고 경로만 정해져 있다**: `POST /api/v1/auth/password/reset/send-code` · `POST /api/v1/auth/password/reset`.
+ * 시안이 코드 확인 단계를 따로 두므로 프론트는 다음 모양을 가정한다(docs/api-contract-draft.md "비밀번호 재설정" 제안 1):
+ * 코드 받기 → 코드 확인(**일회용 재설정 토큰을 응답 본문으로 받는다**) → 토큰 + 새 비밀번호로 재설정(토큰을 소비한다).
+ *
+ * 가입처럼 서버가 이메일별 인증 표시를 들고 재설정이 이메일 + 새 비밀번호만 받는 방식은 **쓰지 않는다** — 인증 표시가
+ * 살아 있는 동안 코드를 모르고 이메일만 아는 사람이 비밀번호를 바꿀 수 있다. 재설정 권한은 코드를 맞힌 쪽이 받은 토큰에 묶는다.
+ *
+ * - 코드 받기 · 확인은 **가입 여부와 무관하게 같은 응답**이라고 가정한다(계정 열거 방지 — 가입 인증과 같다). 화면은 늘 코드 단계로 간다
+ * - 코드 한도 · 수명은 가입 인증과 같다(6자리 · 5분 · 다시 받기 60초 · 오입력 5회, 위 상수를 같이 쓴다)
+ * - 남은 시도 횟수는 가입 인증처럼 서버가 주지 않는다고 보고, 연동 때 이 모듈이 이메일별 실패 수를 세어 `remainingAttempts` 를
+ *   채운다. 코드를 다시 받으면(sent) 0 으로 되돌린다
+ * - 재설정 토큰은 한 번만 쓰고 수명은 `PASSWORD_RESET_TOKEN_TTL_SECONDS`(15분)다. 화면은 Provider 메모리에만 들고
+ *   주소 · 로그 · 브라우저 저장소에 남기지 않는다. 연동 때 요청 본문으로만 보낸다
+ * - 새 비밀번호도 로그나 저장소에 남기지 않는다. 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고 실패하면 Promise 를 거부한다
+ *
+ * 목에서 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다). 코드는 가입 인증과 같은 입력을 쓰고 저장소는 따로다:
+ * - 코드 받기: 이메일 `limit@example.com` → `limit`, 그 밖 → 보냄
+ * - 코드 확인: `999999` → `locked`, `000000` → `wrong`(5번째에 `locked`), 5분이 지났거나 보낸 코드가 없으면 `expired`, 그 밖 6자리 → 토큰
+ * - 재설정: 이메일 `verify-expired@example.com` 로 받은 토큰은 늘 `verification-expired`, `reset-fail@example.com` 로 받은 토큰이면
+ *   응답을 받지 못한다(거부, 토큰은 남는다). 그 밖에도 토큰이 없거나 15분이 지났거나 이미 썼으면 `verification-expired` 다
+ */
+
+/** 재설정 토큰 수명(초). 코드를 맞힌 뒤 새 비밀번호를 정할 때까지 쓸 수 있는 시간 */
+export const PASSWORD_RESET_TOKEN_TTL_SECONDS = 900
+
+export const MOCK_RESET_FAIL_EMAIL = 'reset-fail@example.com'
+
+export type PasswordResetVerifyResult =
+  /** 인증 완료. 재설정에 한 번 쓸 토큰을 준다 */
+  { status: 'ok'; resetToken: string } | VerifyCodeFailure
+
+const passwordResetCodes = createMockCodeStore()
+/** 목 서버가 내준 재설정 토큰. 토큰 → 받은 이메일 · 내준 시각 */
+const mockResetTokens = new Map<string, { email: string; issuedAt: number }>()
+let mockResetTokenSeq = 0
+
+export function sendPasswordResetCode(email: string): Promise<SendCodeResult> {
+  return Promise.resolve(passwordResetCodes.send(email))
+}
+
+export function verifyPasswordResetCode(
+  email: string,
+  code: string,
+): Promise<PasswordResetVerifyResult> {
+  const result = passwordResetCodes.verify(email, code)
+  if (result.status !== 'ok') return Promise.resolve(result)
+  // 목 토큰은 맞히기 쉬운 순번이다. 서버는 추측할 수 없는 값을 준다
+  mockResetTokenSeq += 1
+  const resetToken = `mock-reset-${mockResetTokenSeq}`
+  mockResetTokens.set(resetToken, { email: normalizeEmail(email), issuedAt: Date.now() })
+  return Promise.resolve({ status: 'ok', resetToken })
+}
+
+/** `verification-expired` 는 재설정 토큰이 없거나 15분이 지났거나 이미 썼다는 뜻이다. 이메일 단계부터 다시 한다 */
+export type PasswordResetResult = { status: 'ok' } | { status: 'verification-expired' }
+
+export function resetPassword(
+  resetToken: string,
+  newPassword: string,
+): Promise<PasswordResetResult> {
+  // 목은 새 비밀번호를 쓰지 않는다. 규칙(8~20자 · 영문 · 숫자 · 공백 금지)은 서버가 다시 검사한다
+  void newPassword
+  const issued = mockResetTokens.get(resetToken)
+  if (!issued) return Promise.resolve({ status: 'verification-expired' })
+  // 응답을 받지 못한 경우다. 서버가 바꿨는지 모르므로 토큰은 남겨 다시 누를 수 있게 한다
+  if (issued.email === MOCK_RESET_FAIL_EMAIL) {
+    return Promise.reject(new Error('mock password reset failure'))
+  }
+  if (
+    issued.email === MOCK_VERIFY_EXPIRED_EMAIL ||
+    Date.now() - issued.issuedAt > PASSWORD_RESET_TOKEN_TTL_SECONDS * 1000
+  ) {
+    mockResetTokens.delete(resetToken)
+    return Promise.resolve({ status: 'verification-expired' })
+  }
+  // 서버처럼 쓴 토큰은 지운다 — 같은 토큰으로 두 번 바꾸지 못한다
+  mockResetTokens.delete(resetToken)
+  return Promise.resolve({ status: 'ok' })
 }

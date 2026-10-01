@@ -18,7 +18,7 @@ import { canGoBackTo, nextTrail } from './onboarding-trail'
 
 /**
  * 첫 진입(S01 · S02 · S13) 화면이 같이 쓰는 값과 이동. `app/(onboarding)/layout.tsx` 가
- * /start · /login* · /signup/* · /setup/* · /browse/region 을 감싼다.
+ * /start · /login* · /signup/* · /password/reset* · /setup/* · /browse/region 을 감싼다.
  * 레이아웃은 이 화면들 사이를 오가도 다시 그려지지 않아 값이 남는다.
  *
  * **브라우저 저장소에 남기지 않는다** (docs/conventions.md "데이터와 환경변수"). 새로고침하면 사라지고,
@@ -74,6 +74,37 @@ export const NO_MEMBERSHIP: Membership = {
   regionSaved: false,
 }
 
+/**
+ * 비밀번호 재설정(S13-6) 중에 모으는 값. 가입 초안(`signup`)과 섞지 않는다 — 가입 인증과 재설정 인증은 서버에서 따로라
+ * 한쪽 인증으로 다른 쪽 단계를 열면 안 된다. **메모리에만 둔다** — 브라우저 저장소 · 주소 · 로그에 남기지 않는다.
+ * 특히 재설정 토큰은 비밀번호를 바꿀 수 있는 값이라 주소 쿼리 · 콘솔 · 저장소 어디에도 쓰지 않는다.
+ * 새 비밀번호는 여기 두지 않는다. 새 비밀번호 화면 상태에만 두고 요청에 쓴 뒤 버린다.
+ *
+ * 비우는 때:
+ * - 이메일 단계가 코드를 새로 보내면 세 값을 모두 새로 쓴다(앞선 코드 · 토큰은 무효다)
+ * - 코드를 다시 받으면 토큰을 지운다
+ * - 재설정을 마치면 보낸 시각 · 토큰을 지운다. 이메일만 남겨 이어지는 이메일 로그인(S13-5)의 이메일 칸을 채운다
+ * - 재설정이 인증 만료로 돌아오면 보낸 시각 · 토큰을 지운다(이메일 단계부터 다시 한다)
+ * - 이메일 로그인(`/login/email`) · 로그인 방법 선택(`/login`)에 들어오면 이메일만 남기고 지운다 — 그만둔 재설정이다.
+ *   공용 기기에서 앞으로 가기로 새 비밀번호 화면에 다시 들어가지 못하게 한다
+ */
+export type PasswordResetDraft = {
+  email: string
+  /** 인증 코드를 보낸 시각(ms). 보내기 전이면 null */
+  codeSentAt: number | null
+  /**
+   * 코드를 맞히고 받은 일회용 재설정 토큰(수명 15분). 받기 전이면 null. 새 비밀번호 화면은 이 값이 있어야 열린다.
+   * 지났는지 · 썼는지는 재설정 요청에 서버가 답한다(`verification-expired`)
+   */
+  resetToken: string | null
+}
+
+export const EMPTY_PASSWORD_RESET: PasswordResetDraft = {
+  email: '',
+  codeSentAt: null,
+  resetToken: null,
+}
+
 type OnboardingState = {
   district: District | null
   /** 고른 동네. 검색어를 바꾸면 null 로 지운다 */
@@ -88,6 +119,11 @@ type OnboardingState = {
    * (가입 종류 · 인증 시각 · 비밀번호 · 보낸 시각 · 닉네임 · 진행은 늘 지운다)
    */
   resetSignup: (options?: { keepEmail?: boolean }) => void
+  passwordReset: PasswordResetDraft
+  /** 바꿀 값만 넘긴다 */
+  updatePasswordReset: (patch: Partial<PasswordResetDraft>) => void
+  /** 재설정 초안을 비운다. `keepEmail` 이면 쓴 이메일만 남긴다 */
+  clearPasswordReset: (options?: { keepEmail?: boolean }) => void
   /**
    * [선택] 주간 보고 알림 받기 (S02-3). 백엔드 알림 동의(`PUSH_NOTIFICATION`)는 푸시와 함께 2단계라
    * 지금은 여기에만 들고 가입 요청에는 넣지 않는다
@@ -114,6 +150,7 @@ export function OnboardingProvider({
   initialSignup = EMPTY_SIGNUP,
   initialAdultConfirmed = false,
   initialMembership = NO_MEMBERSHIP,
+  initialPasswordReset = EMPTY_PASSWORD_RESET,
 }: {
   children: ReactNode
   /** 처음 고른 동네. 테스트에서 다음 단계부터 그릴 때 쓴다 — 화면은 늘 비워 시작한다 */
@@ -123,6 +160,8 @@ export function OnboardingProvider({
   /** 테스트에서 다음 단계부터 그릴 때 쓴다 */
   initialAdultConfirmed?: boolean
   initialMembership?: Membership
+  /** 테스트에서 다음 단계부터 그릴 때 쓴다 */
+  initialPasswordReset?: PasswordResetDraft
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -144,6 +183,21 @@ export function OnboardingProvider({
     // 진행은 그 가입 시도에만 딸린 값이다. 남으면 다른 계정의 가입을 건너뛴다
     setMembership(NO_MEMBERSHIP)
   }, [])
+
+  const [passwordReset, setPasswordReset] = useState<PasswordResetDraft>(initialPasswordReset)
+  const updatePasswordReset = useCallback(
+    (patch: Partial<PasswordResetDraft>) =>
+      setPasswordReset((current) => ({ ...current, ...patch })),
+    [],
+  )
+  const clearPasswordReset = useCallback(
+    ({ keepEmail = false }: { keepEmail?: boolean } = {}) =>
+      setPasswordReset((current) => ({
+        ...EMPTY_PASSWORD_RESET,
+        email: keepEmail ? current.email : '',
+      })),
+    [],
+  )
 
   // 렌더에 쓰지 않는 이동 기록이라 ref 에 둔다. 주소가 바뀐 뒤(effect)에 갱신한다
   const trail = useRef<string[]>([])
@@ -180,6 +234,9 @@ export function OnboardingProvider({
       signup,
       updateSignup,
       resetSignup,
+      passwordReset,
+      updatePasswordReset,
+      clearPasswordReset,
       notificationOptIn,
       setNotificationOptIn,
       membership,
@@ -193,6 +250,9 @@ export function OnboardingProvider({
       signup,
       updateSignup,
       resetSignup,
+      passwordReset,
+      updatePasswordReset,
+      clearPasswordReset,
       notificationOptIn,
       membership,
       updateMembership,
