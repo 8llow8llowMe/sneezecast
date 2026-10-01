@@ -49,6 +49,8 @@
   --fs-sub: 13px;
   --fs-caption: 12px;
   --fs-tab: 11px;
+  --fs-sheet-title: 22px;
+  --fs-dialog-title: 24px;
 
   /* ── 모서리 (tokens.json radius) */
   --rounded-card: 16px;
@@ -75,6 +77,9 @@
   --size-tab-bar-tablet: 64px;
   --size-header-desktop: 64px;
   --size-header-tablet: 72px;
+  /* 가운데 대화상자 폭 — 시안은 태블릿이 데스크톱보다 넓다 (Report-start-T 520 · -D 480) */
+  --size-dialog-width-tablet: 520px;
+  --size-dialog-width-desktop: 480px;
 
   /* ── 테두리 두께 (tokens.json border) — 구분선 1 / 운영자 검토 배지 1.5 / 선택된 항목 2 */
   --border-hairline: 1px;
@@ -85,4 +90,7 @@
   --opacity-disabled: 0.5;
   /* 상태 게이지에서 현재 단계가 아닌 구간 */
   --opacity-gauge-inactive: 0.28;
+
+  /* ── 자간 (tokens.json letterSpacing) — 데스크톱 헤더의 서비스명 */
+  --letter-spacing-brand: -0.02em;
 }

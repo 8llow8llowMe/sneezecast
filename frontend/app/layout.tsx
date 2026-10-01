@@ -24,6 +24,8 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   themeColor: THEME_COLOR,
+  // 홈 화면에 추가한 PWA 가 화면 끝까지 그리게 한다. 홈 인디케이터 영역은 pb-safe · pb-sheet 가 비운다
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

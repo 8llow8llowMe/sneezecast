@@ -69,6 +69,8 @@
   --text-sub: var(--fs-sub);
   --text-caption: var(--fs-caption);
   --text-tab: var(--fs-tab);
+  --text-sheet-title: var(--fs-sheet-title);
+  --text-dialog-title: var(--fs-dialog-title);
 
   /* ── 모서리: rounded-card, rounded-button … */
   --radius-card: var(--rounded-card);
@@ -92,6 +94,11 @@
   --spacing-tab-bar-tablet: var(--size-tab-bar-tablet);
   --spacing-header-tablet: var(--size-header-tablet);
   --spacing-header-desktop: var(--size-header-desktop);
+  --spacing-dialog-tablet: var(--size-dialog-width-tablet);
+  --spacing-dialog-desktop: var(--size-dialog-width-desktop);
+
+  /* ── 자간: tracking-brand */
+  --tracking-brand: var(--letter-spacing-brand);
 }
 
 /*
@@ -114,7 +121,34 @@
   stroke-opacity: var(--opacity-gauge-inactive);
 }
 
+/*
+  오버레이 · 안전 영역. 함수(calc · env)가 들어간 값은 arbitrary value 로 쓰면 Tailwind 가 조용히 버릴 수 있어
+  (eslint.config.mjs noComplexArbitrary) 이름 있는 유틸리티로 둔다.
+*/
+
+/* 가운데 대화상자 최대 폭 — 시안의 바깥 여백 24px 을 양쪽에 남긴다 */
+@utility max-w-dialog {
+  max-width: calc(100% - 2 * var(--space-page-tablet));
+}
+/* 시트 · 대화상자 최대 높이. 내용이 길면 안에서 스크롤한다 */
+@utility max-h-modal {
+  max-height: calc(100dvh - 2 * var(--space-page-tablet));
+}
+/* 바텀시트 아래 여백 28px + 홈 인디케이터 영역 (viewport-fit=cover 일 때 iOS 에서 0 보다 커진다) */
+@utility pb-sheet {
+  padding-bottom: calc(1.75rem + env(safe-area-inset-bottom));
+}
+/* 탭바처럼 화면 맨 아래 붙는 요소의 홈 인디케이터 영역 */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 @layer base {
+  /* 모달이 열린 동안 뒤 화면이 스크롤되지 않게 한다. 네이티브 <dialog> 는 스크롤을 막지 않는다 */
+  html:has(dialog[open]:modal) {
+    overflow: hidden;
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
     /*
