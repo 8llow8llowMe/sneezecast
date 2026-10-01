@@ -1,14 +1,17 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   agreeHealthConsent,
   CODE_MAX_ATTEMPTS,
   EMAIL_VERIFICATION_TTL_SECONDS,
+  getMockSession,
   loginWithEmail,
+  resetMockSession,
   saveRegion,
   sendEmailCode,
   signup,
   startKakaoLogin,
+  subscribeMockSession,
   verifyEmailCode,
 } from './auth-client'
 import { consentFor, LEGAL_VERSIONS } from './legal'
@@ -28,9 +31,11 @@ describe('loginWithEmail (목)', () => {
 })
 
 describe('startKakaoLogin (목)', () => {
-  it('신규 회원으로 보고 동네 선택으로 보낸다', async () => {
-    expect(await startKakaoLogin()).toEqual({ redirectTo: '/setup/region' })
-    expect(await startKakaoLogin({ switchAccount: true })).toEqual({ redirectTo: '/setup/region' })
+  it('신규 회원으로 보고 카카오에서 왔다는 표시(?from=kakao)를 붙여 동네 선택으로 보낸다', async () => {
+    expect(await startKakaoLogin()).toEqual({ redirectTo: '/setup/region?from=kakao' })
+    expect(await startKakaoLogin({ switchAccount: true })).toEqual({
+      redirectTo: '/setup/region?from=kakao',
+    })
   })
 })
 
@@ -151,6 +156,71 @@ describe('signup · saveRegion · agreeHealthConsent (목)', () => {
   it('내 동네 저장 · 건강정보 동의는 성공한다', async () => {
     await expect(saveRegion('11680640')).resolves.toBeUndefined()
     await expect(agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))).resolves.toBeUndefined()
+  })
+})
+
+describe('목 회원 상태', () => {
+  const consents = [consentFor('TERMS_OF_SERVICE')]
+
+  beforeEach(() => resetMockSession())
+
+  it('처음에는 비회원(guest)이다', () => {
+    expect(getMockSession()).toBe('guest')
+  })
+
+  it('이메일 가입 → 로그인 → 건강정보 동의로 미동의 회원을 거쳐 동의한 회원이 된다', async () => {
+    await sendEmailCode('flow@example.com')
+    await verifyEmailCode('flow@example.com', '482915')
+    await signup({
+      kind: 'email',
+      email: 'flow@example.com',
+      password: 'dongne2026',
+      nickname: '동네지기',
+      consents,
+    })
+    // 가입 응답에는 토큰이 없다. 이어지는 로그인이 회원으로 만든다
+    expect(getMockSession()).toBe('guest')
+
+    await loginWithEmail('flow@example.com', 'dongne2026')
+    expect(getMockSession()).toBe('member-no-consent')
+
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+    expect(getMockSession()).toBe('member')
+  })
+
+  it('카카오 가입이 되면 바로 미동의 회원이다 (카카오 로그인 시작만으로는 바뀌지 않는다)', async () => {
+    await startKakaoLogin()
+    expect(getMockSession()).toBe('guest')
+    await signup({ kind: 'kakao', consents })
+    expect(getMockSession()).toBe('member-no-consent')
+  })
+
+  it('로그인 · 가입이 실패하면 바뀌지 않는다', async () => {
+    await loginWithEmail('dong@example.com', 'wrong')
+    await loginWithEmail('locked@example.com', 'dongne2026')
+    await expect(
+      signup({
+        kind: 'email',
+        email: 'signup-fail@example.com',
+        password: 'dongne2026',
+        nickname: '동네지기',
+        consents,
+      }),
+    ).rejects.toThrow()
+    expect(getMockSession()).toBe('guest')
+  })
+
+  it('바뀔 때만 구독자를 부르고, 구독을 끊으면 더 부르지 않는다', async () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeMockSession(listener)
+
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    unsubscribe()
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+    expect(listener).toHaveBeenCalledTimes(1)
   })
 })
 

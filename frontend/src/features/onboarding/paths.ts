@@ -24,6 +24,13 @@ export const SIGNUP_ACCOUNT_PATH = '/signup/account'
 /** 비밀번호 재설정 (S13-6). 다음 단계에서 만든다 */
 export const PASSWORD_RESET_PATH = '/password/reset'
 export const SETUP_REGION_PATH = '/setup/region'
+/**
+ * 카카오 로그인에서 돌아온 동네 선택. 첫 진입 Provider 밖(홈의 로그인 안내 시트)에서 카카오로 시작해도 S02-1 이 가입 종류를
+ * 카카오로 둘 수 있게 쿼리로 알린다. 목은 `startKakaoLogin` 이 이 주소를 돌려주고, 연동 때는 카카오 신규 회원 콜백이 이 주소로 돌아온다
+ */
+export const FROM_PARAM = 'from'
+export const FROM_KAKAO = 'kakao'
+export const SETUP_REGION_FROM_KAKAO_PATH = `${SETUP_REGION_PATH}?${FROM_PARAM}=${FROM_KAKAO}`
 /** 보고 없이 둘러보기. 동네 선택을 단계 없이 쓴다 (docs/design/auth/README.md 제안 라우트) */
 export const BROWSE_REGION_PATH = '/browse/region'
 export const SETUP_ADULT_PATH = '/setup/adult'

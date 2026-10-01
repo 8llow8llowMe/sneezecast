@@ -318,7 +318,7 @@ describe('TermsScreen', () => {
       show(<LoginScreen notice={null} />)
       expect(state().membership).toEqual(NO_MEMBERSHIP)
       await user.click(screen.getByRole('button', { name: '카카오로 계속하기' }))
-      await waitFor(() => expect(router.push).toHaveBeenCalledWith('/setup/region'))
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith('/setup/region?from=kakao'))
 
       show(<TermsScreen />)
       await agreeAndSubmit(user)
