@@ -21,6 +21,7 @@ import { ExplainSheet } from './explain-sheet'
 import { MapPlaceholder } from './map-placeholder'
 import { NoticeSection } from './notice-section'
 import { officialHref, OfficialPanel, OfficialRow } from './official'
+import { PushInappNotice } from './push-inapp-notice'
 import { guardReportEntry, REPORT_GATE, reportEntryFor } from './report-gate'
 import { StatusCard } from './status-card'
 import { SymptomTrends } from './symptom-trends'
@@ -106,6 +107,8 @@ export function HomeScreen({
       <div className="hidden border-b border-divider tablet:block tablet:border-t desktop:border-t-0">
         <OfficialRow official={week.official} navSearch={navSearch} />
       </div>
+
+      <PushInappNotice week={week} signedIn={!guest} />
 
       <main className="flex grow flex-col tablet:gap-7 tablet:p-6 desktop:flex-row desktop:gap-8 desktop:px-8">
         <div className="flex flex-col tablet:grid tablet:grid-cols-2 tablet:items-start tablet:gap-7 desktop:order-last desktop:flex desktop:w-105 desktop:shrink-0 desktop:gap-4">
