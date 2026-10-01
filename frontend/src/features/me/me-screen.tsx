@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AppHeader } from '@/components/app-header'
 import { Button } from '@/components/button'
@@ -14,10 +14,11 @@ import {
   withdrawMembership,
 } from '@/features/auth/auth-client'
 import { useMockAuth, useMockProfile } from '@/features/auth/use-mock-auth'
-import { REPORT_GATE, reportEntryFor } from '@/features/home/report-gate'
+import { REPORT_GATE } from '@/features/home/report-gate'
 import { REPORT_PARAM } from '@/features/report/report-flow'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useHydrated } from '@/lib/use-hydrated'
 import { useModalParam } from '@/lib/use-modal-param'
 
 import {
@@ -29,6 +30,15 @@ import {
   parseConfirm,
 } from './confirm'
 import { ConfirmDialog } from './confirm-dialog'
+import {
+  ME_DEVICES_PATH,
+  ME_NOTICES,
+  ME_PASSWORD_PATH,
+  meSearch,
+  regionSearch,
+  reportHrefFor,
+} from './me-paths'
+import { useMeTrail } from './me-trail'
 import { MenuRow, sectionTitleId, SettingsSection, SwitchRow } from './settings-row'
 
 /** 대화상자별 목 API. 성공하면 `auth-client` 가 목 세션을 바꾼다(로그아웃 · 탈퇴 → guest, 동의 철회 → member-no-consent) */
@@ -79,7 +89,10 @@ function sectionsFor(auth: MockAuthState): { id: string; label: string }[] {
  * 데스크톱 설정 메뉴의 바로가기는 `#id` 링크가 아니라 버튼이다. 같은 문서 `#` 링크는 Next 가 모르는 기록 항목(state 가 null)을
  * 쌓아, 그 뒤 연 대화상자의 닫기(`history.go(-1)`)가 그 항목으로 돌아가며 첫 닫기에 닫히지 않는다(docs/conventions.md).
  *
- * 아직 없는 화면(로그인한 기기 · 비밀번호 변경 · 내 동네 바꾸기 · 알림 설정 · 안내 본문 등)은 홈처럼 "준비하고 있어요" 알림을 띄운다.
+ * 로그인한 기기(`/me/devices`) · 비밀번호 변경 · 설정(`/me/password`) 행은 그 화면으로 간다. 동네(`region`)와 QA 덮어쓰기
+ * (`mock-auth` · `mock-provider`)를 주소에 남긴다. 비밀번호를 바꾸거나 정하고 돌아오면 계정 화면이 내 정보 레이아웃
+ * (`MeTrailProvider`)에 남긴 알림을 한 번 꺼내 토스트로 띄운다 — 회원일 때만 띄운다.
+ * 아직 없는 화면(내 동네 바꾸기 · 알림 설정 · 안내 본문 등)은 홈처럼 "준비하고 있어요" 알림을 띄운다.
  */
 export function MeScreen({
   regionName,
@@ -91,6 +104,7 @@ export function MeScreen({
   regionCode?: string | null
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const auth = useMockAuth()
@@ -100,7 +114,8 @@ export function MeScreen({
   const [pending, setPending] = useState<ConfirmKind | null>(null)
   const [failed, setFailed] = useState<ConfirmKind | null>(null)
 
-  const navSearch = regionCode ? new URLSearchParams({ region: regionCode }).toString() : undefined
+  const navSearch = regionSearch(regionCode)
+  const accountSearch = meSearch(regionCode, searchParams)
   const withRegion = (extra: Record<string, string>) =>
     new URLSearchParams({ ...(regionCode ? { region: regionCode } : {}), ...extra }).toString()
 
@@ -126,6 +141,17 @@ export function MeScreen({
   }, [mismatched, closeConfirmParam])
 
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
+
+  // 비밀번호를 바꾸거나 정하고 왔으면 계정 화면이 내 정보 레이아웃에 남긴 알림을 한 번 꺼내 띄운다.
+  // 하이드레이션 첫 그림의 회원 상태(늘 guest)로는 판단하지 않는다. 비회원이면 꺼내서 버리기만 한다
+  const hydrated = useHydrated()
+  const signedIn = auth !== 'guest'
+  const { takeNotice } = useMeTrail()
+  useEffect(() => {
+    if (!hydrated) return
+    const notice = takeNotice()
+    if (notice && signedIn) show({ message: ME_NOTICES[notice] })
+  }, [hydrated, signedIn, takeNotice, show])
 
   function openConfirm(kind: ConfirmKind) {
     setFailed(null)
@@ -159,8 +185,7 @@ export function MeScreen({
   }
 
   // 머리줄 보고 버튼: 비회원은 로그인, 회원은 홈의 보고 진입(미동의면 동의 시트, 동의했으면 보고 흐름)
-  const reportHref =
-    auth === 'guest' ? '/login' : `/?${withRegion({ [REPORT_PARAM]: reportEntryFor(auth) })}`
+  const reportHref = reportHrefFor(auth, regionCode)
 
   const sections = sectionsFor(auth)
 
@@ -224,16 +249,20 @@ export function MeScreen({
                         : undefined
                     }
                   />
-                  {profile?.provider === 'kakao' ? (
+                  {/* 아직 비밀번호가 없는 카카오 회원은 설정, 그 밖에는 변경이다. 같은 화면(`/me/password`)이 둘을 맡는다 */}
+                  {profile?.hasPassword === false ? (
                     <MenuRow
                       title="비밀번호 설정"
                       description="이메일로도 로그인할 수 있어요"
-                      onClick={() => notReady('비밀번호 설정')}
+                      href={navHref(ME_PASSWORD_PATH, accountSearch)}
                     />
                   ) : (
-                    <MenuRow title="비밀번호 변경" onClick={() => notReady('비밀번호 변경')} />
+                    <MenuRow
+                      title="비밀번호 변경"
+                      href={navHref(ME_PASSWORD_PATH, accountSearch)}
+                    />
                   )}
-                  <MenuRow title="로그인한 기기" onClick={() => notReady('로그인한 기기')} />
+                  <MenuRow title="로그인한 기기" href={navHref(ME_DEVICES_PATH, accountSearch)} />
                 </SettingsSection>
 
                 <SettingsSection id="me-region" title="내 동네">

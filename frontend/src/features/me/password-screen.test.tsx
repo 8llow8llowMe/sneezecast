@@ -1,0 +1,399 @@
+// @vitest-environment jsdom
+import type { ReactNode } from 'react'
+
+import { act, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type * as authClient from '@/features/auth/auth-client'
+import {
+  changePassword,
+  getMockProfile,
+  loginWithEmail,
+  resetMockSession,
+  setupPassword,
+  signup,
+} from '@/features/auth/auth-client'
+import { consentFor } from '@/features/auth/legal'
+
+import { MeScreen } from './me-screen'
+import { MeTrailProvider } from './me-trail'
+import { PasswordScreen } from './password-screen'
+
+// 테스트에는 Next 라우터가 없다. 주소 · 경로는 이 값으로 흉내 낸다
+let search = ''
+let pathname = '/me/password'
+const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(search),
+  usePathname: () => pathname,
+  useRouter: () => router,
+}))
+
+vi.mock('@/features/auth/auth-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof authClient>()
+  return {
+    ...actual,
+    changePassword: vi.fn(actual.changePassword),
+    setupPassword: vi.fn(actual.setupPassword),
+  }
+})
+
+function withTrail(children: ReactNode) {
+  return <MeTrailProvider>{children}</MeTrailProvider>
+}
+
+function renderPassword(props: { regionCode?: string } = {}) {
+  return render(withTrail(<PasswordScreen regionName="○○동" {...props} />))
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  let reject: () => void = () => {}
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done
+    reject = () => fail(new Error('mock failure'))
+  })
+  return { promise, resolve, reject }
+}
+
+const submitButton = (name = '비밀번호 바꾸기') => screen.getByRole('button', { name })
+
+async function fillChange(
+  user: ReturnType<typeof userEvent.setup>,
+  {
+    current = 'dongne2026',
+    next = 'newpass2026',
+    confirm = next,
+  }: { current?: string; next?: string; confirm?: string } = {},
+) {
+  await user.type(screen.getByLabelText('현재 비밀번호'), current)
+  await user.type(screen.getByLabelText('새 비밀번호'), next)
+  await user.type(screen.getByLabelText('새 비밀번호 확인'), confirm)
+}
+
+beforeEach(async () => {
+  search = ''
+  pathname = '/me/password'
+  resetMockSession()
+  vi.clearAllMocks()
+  await loginWithEmail('dong@example.com', 'dongne2026')
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+describe('PasswordScreen 이메일 회원 — 비밀번호 변경', () => {
+  it('현재 · 새 · 확인 세 칸과 규칙 도움말, 비밀번호를 잊었어요를 보인다', () => {
+    renderPassword()
+
+    expect(screen.getAllByRole('heading', { level: 1, name: '비밀번호 변경' })).toHaveLength(2)
+    expect(screen.getByLabelText('현재 비밀번호').getAttribute('autocomplete')).toBe(
+      'current-password',
+    )
+    expect(screen.getByText('8~20자 · 영문과 숫자 포함 · 띄어쓰기 없이')).toBeDefined()
+    expect(screen.getByLabelText('새 비밀번호 확인')).toBeDefined()
+    // 빈 칸이 있으면 꺼져 있다
+    expect(submitButton().getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('주소로 바로 들어와 바꾸면 칸을 비우고 내 정보로 기록을 바꿔 간다 (동네 · 덮어쓰기는 남기고 알림은 주소에 넣지 않는다)', async () => {
+    search = 'region=11440660&mock-provider=email'
+    renderPassword({ regionCode: '11440660' })
+    const user = userEvent.setup()
+
+    await fillChange(user)
+    await user.click(submitButton())
+    expect(changePassword).toHaveBeenCalledWith('dongne2026', 'newpass2026')
+    expect(router.replace).toHaveBeenCalledWith('/me?region=11440660&mock-provider=email')
+    expect(router.push).not.toHaveBeenCalled()
+    for (const label of ['현재 비밀번호', '새 비밀번호', '새 비밀번호 확인']) {
+      expect(screen.getByLabelText<HTMLInputElement>(label).value).toBe('')
+    }
+  })
+
+  it('비밀번호는 주소 · 목 세션 · 프로필 어디에도 남지 않는다', async () => {
+    renderPassword()
+    const user = userEvent.setup()
+    await fillChange(user, { current: 'secret2026', next: 'hidden2026' })
+    await user.click(submitButton())
+
+    const destination = vi.mocked(router.replace).mock.calls[0]?.[0] ?? ''
+    expect(destination).not.toMatch(/secret2026|hidden2026/)
+    expect(JSON.stringify(getMockProfile())).not.toMatch(/secret2026|hidden2026/)
+    expect(window.location.href).not.toMatch(/secret2026|hidden2026/)
+  })
+
+  it('현재 비밀번호가 맞지 않으면(wrong) 그 칸 아래 알리고 그 칸으로 포커스를 옮긴다 — 고치면 지운다', async () => {
+    renderPassword()
+    const user = userEvent.setup()
+
+    await fillChange(user, { current: 'wrong' })
+    await user.click(submitButton())
+    const current = screen.getByLabelText('현재 비밀번호')
+    expect(current.getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByText('현재 비밀번호가 맞지 않아요.')).toBeDefined()
+    expect(document.activeElement).toBe(current)
+    expect(router.replace).not.toHaveBeenCalled()
+
+    await user.type(current, '1')
+    expect(screen.queryByText('현재 비밀번호가 맞지 않아요.')).toBeNull()
+  })
+
+  it('규칙에 맞지 않으면(rule) 버튼을 누를 때 알리고 보내지 않는다', async () => {
+    renderPassword()
+    const user = userEvent.setup()
+
+    await fillChange(user, { next: 'short1' })
+    await user.click(submitButton())
+    expect(screen.getByText('영문과 숫자를 함께 8~20자로, 띄어쓰기 없이 써 주세요.')).toBeDefined()
+    expect(screen.getByLabelText('새 비밀번호').getAttribute('aria-invalid')).toBe('true')
+    expect(changePassword).not.toHaveBeenCalled()
+    // 오류가 있는 동안 버튼이 꺼진다
+    expect(submitButton().getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('확인이 다르면(mismatch) 알리고, 맞게 고치면 바로 지운다', async () => {
+    renderPassword()
+    const user = userEvent.setup()
+
+    await fillChange(user, { next: 'newpass2026', confirm: 'newpass2027' })
+    await user.click(submitButton())
+    expect(screen.getByText('비밀번호가 서로 달라요.')).toBeDefined()
+    expect(changePassword).not.toHaveBeenCalled()
+
+    const confirm = screen.getByLabelText('새 비밀번호 확인')
+    await user.clear(confirm)
+    await user.type(confirm, 'newpass2026')
+    expect(screen.queryByText('비밀번호가 서로 달라요.')).toBeNull()
+    expect(submitButton().getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('새 비밀번호가 현재와 같아도 막지 않는다 (백엔드 계약에 없음)', async () => {
+    renderPassword()
+    const user = userEvent.setup()
+    await fillChange(user, { current: 'dongne2026', next: 'dongne2026' })
+    await user.click(submitButton())
+    expect(changePassword).toHaveBeenCalledWith('dongne2026', 'dongne2026')
+  })
+
+  it('보내지 못하면(password-fail@example.com) 빨강 상자로 알리고 다시 누를 수 있다', async () => {
+    await loginWithEmail('password-fail@example.com', 'dongne2026')
+    renderPassword()
+    const user = userEvent.setup()
+
+    await fillChange(user)
+    await user.click(submitButton())
+    expect(screen.getByRole('alert').textContent).toContain(
+      '비밀번호를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    )
+    expect(submitButton().getAttribute('aria-disabled')).toBeNull()
+    await user.click(submitButton())
+    expect(changePassword).toHaveBeenCalledTimes(2)
+  })
+
+  it('보내는 중에는 칸 · 버튼 · 뒤로를 꺼 두 번 보내지 않는다', async () => {
+    const pending = deferred<authClient.ChangePasswordResult>()
+    vi.mocked(changePassword).mockReturnValueOnce(pending.promise)
+    renderPassword()
+    const user = userEvent.setup()
+
+    await fillChange(user)
+    await user.click(submitButton())
+    expect(submitButton().getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByLabelText('새 비밀번호').hasAttribute('readonly')).toBe(true)
+    const back = screen.getByRole('button', { name: '뒤로' })
+    expect(back.getAttribute('aria-disabled')).toBe('true')
+    expect(
+      screen.getByRole('button', { name: '내 정보로 돌아가기' }).getAttribute('aria-disabled'),
+    ).toBe('true')
+    expect(
+      screen.getByRole('button', { name: '비밀번호를 잊었어요' }).getAttribute('aria-disabled'),
+    ).toBe('true')
+
+    await user.click(submitButton())
+    await user.click(back)
+    expect(changePassword).toHaveBeenCalledTimes(1)
+    expect(router.back).not.toHaveBeenCalled()
+    expect(router.replace).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve({ status: 'ok' })
+      await pending.promise.catch(() => {})
+    })
+    expect(router.replace).toHaveBeenCalledWith('/me')
+  })
+
+  it('응답 전에 화면을 떠나면 늦은 응답으로 이동하지 않는다', async () => {
+    const pending = deferred<authClient.ChangePasswordResult>()
+    vi.mocked(changePassword).mockReturnValueOnce(pending.promise)
+    const { unmount } = renderPassword()
+    const user = userEvent.setup()
+    await fillChange(user)
+    await user.click(submitButton())
+    unmount()
+
+    await act(async () => {
+      pending.resolve({ status: 'ok' })
+      await pending.promise.catch(() => {})
+    })
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('비밀번호를 잊었어요는 비밀번호 재설정으로 간다', async () => {
+    renderPassword()
+    await userEvent.setup().click(screen.getByRole('button', { name: '비밀번호를 잊었어요' }))
+    expect(router.push).toHaveBeenCalledWith('/password/reset')
+  })
+})
+
+describe('PasswordScreen 카카오 회원 — 비밀번호 설정', () => {
+  const consents = [consentFor('TERMS_OF_SERVICE')]
+
+  beforeEach(async () => {
+    resetMockSession()
+    await signup({ kind: 'kakao', consents })
+  })
+
+  it('현재 비밀번호 칸 없이 설정 제목 · 안내와 두 칸을 보인다', () => {
+    renderPassword()
+
+    expect(screen.getAllByRole('heading', { level: 1, name: '비밀번호 설정' })).toHaveLength(2)
+    expect(screen.getByText('비밀번호를 정하면 이메일로도 로그인할 수 있어요.')).toBeDefined()
+    expect(screen.queryByLabelText('현재 비밀번호')).toBeNull()
+    expect(screen.getByLabelText('비밀번호')).toBeDefined()
+    expect(screen.getByLabelText('비밀번호 확인')).toBeDefined()
+    expect(screen.queryByRole('button', { name: '비밀번호를 잊었어요' })).toBeNull()
+  })
+
+  it('설정하면 프로필이 비밀번호 있음이 되고, 이동할 때까지 화면은 설정 그대로다', async () => {
+    renderPassword()
+    const user = userEvent.setup()
+
+    await user.type(screen.getByLabelText('비밀번호'), 'newpass2026')
+    await user.type(screen.getByLabelText('비밀번호 확인'), 'newpass2026')
+    await user.click(submitButton('비밀번호 설정하기'))
+
+    expect(setupPassword).toHaveBeenCalledWith('newpass2026')
+    expect(getMockProfile()?.hasPassword).toBe(true)
+    expect(router.replace).toHaveBeenCalledWith('/me')
+    // 목 프로필이 바뀌어도 바꾸기 화면으로 뒤집히지 않는다
+    expect(screen.queryByLabelText('현재 비밀번호')).toBeNull()
+    expect(submitButton('비밀번호 설정하기').getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('설정하지 못하면(새 비밀번호 fail2026) 빨강 상자로 알린다', async () => {
+    renderPassword()
+    const user = userEvent.setup()
+
+    await user.type(screen.getByLabelText('비밀번호'), 'fail2026')
+    await user.type(screen.getByLabelText('비밀번호 확인'), 'fail2026')
+    await user.click(submitButton('비밀번호 설정하기'))
+    expect(screen.getByRole('alert').textContent).toContain(
+      '비밀번호를 설정하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    )
+    expect(getMockProfile()?.hasPassword).toBe(false)
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('설정을 마친 카카오 회원은 변경 화면을 본다', async () => {
+    await setupPassword('newpass2026')
+    renderPassword()
+    expect(screen.getByLabelText('현재 비밀번호')).toBeDefined()
+  })
+})
+
+describe('PasswordScreen 회원 가드 · 뒤로 가기', () => {
+  it('비회원이 주소로 들어오면 로그인으로 기록을 바꿔 간다', () => {
+    resetMockSession()
+    const { container } = renderPassword()
+    expect(container.textContent).toBe('')
+    expect(router.replace).toHaveBeenCalledWith('/login')
+  })
+
+  it('주소로 바로 들어왔으면 내 정보로 기록을 바꿔 가고, 앱 안에서 왔으면 기록을 되돌린다', async () => {
+    search = 'region=11440660'
+    const { unmount } = renderPassword({ regionCode: '11440660' })
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.replace).toHaveBeenCalledWith('/me?region=11440660')
+    unmount()
+
+    pathname = '/me'
+    const { rerender } = render(withTrail(<div />))
+    pathname = '/me/password'
+    rerender(withTrail(<PasswordScreen regionName="○○동" />))
+    await user.click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('PasswordScreen → 내 정보 (알림 · 기록)', () => {
+  const meScreen = () => withTrail(<MeScreen regionName="○○동" />)
+  const passwordScreen = () => withTrail(<PasswordScreen regionName="○○동" />)
+
+  async function change(user: ReturnType<typeof userEvent.setup>) {
+    await fillChange(user)
+    await user.click(submitButton())
+  }
+
+  it('내 정보에서 왔으면 성공 뒤 기록을 되돌리고(/me 가 두 번 남지 않음), 내 정보가 알림을 한 번 띄운다', async () => {
+    const user = userEvent.setup()
+    pathname = '/me'
+    const { rerender } = render(meScreen())
+    pathname = '/me/password'
+    rerender(passwordScreen())
+
+    await change(user)
+    expect(router.back).toHaveBeenCalledTimes(1)
+    expect(router.replace).not.toHaveBeenCalled()
+
+    // 기록을 되돌려 내 정보가 다시 그려진다
+    pathname = '/me'
+    rerender(meScreen())
+    expect(screen.getAllByText('비밀번호를 바꿨어요')).toHaveLength(1)
+
+    // 알림은 비워졌다 — 계정 화면에 갔다 돌아와도 다시 뜨지 않는다
+    pathname = '/me/devices'
+    rerender(withTrail(<div />))
+    pathname = '/me'
+    rerender(meScreen())
+    expect(screen.queryByText('비밀번호를 바꿨어요')).toBeNull()
+  })
+
+  it('주소로 바로 들어왔으면 성공 뒤 내 정보로 기록을 바꿔 가고 거기서 알림을 띄운다', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(passwordScreen())
+
+    await change(user)
+    expect(router.replace).toHaveBeenCalledWith('/me')
+    expect(router.back).not.toHaveBeenCalled()
+
+    pathname = '/me'
+    rerender(meScreen())
+    expect(screen.getByText('비밀번호를 바꿨어요').closest('[role="status"]')).not.toBeNull()
+  })
+
+  it('카카오 회원이 설정하면 내 정보가 설정 알림을 띄우고 행이 비밀번호 변경이 된다', async () => {
+    resetMockSession()
+    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] })
+    const user = userEvent.setup()
+    pathname = '/me'
+    const { rerender } = render(meScreen())
+    pathname = '/me/password'
+    rerender(passwordScreen())
+
+    await user.type(screen.getByLabelText('비밀번호'), 'newpass2026')
+    await user.type(screen.getByLabelText('비밀번호 확인'), 'newpass2026')
+    await user.click(submitButton('비밀번호 설정하기'))
+    expect(router.back).toHaveBeenCalledTimes(1)
+
+    pathname = '/me'
+    rerender(meScreen())
+    expect(
+      screen.getByText('비밀번호를 설정했어요. 이제 이메일로도 로그인할 수 있어요'),
+    ).toBeDefined()
+    expect(screen.getByRole('link', { name: '비밀번호 변경' })).toBeDefined()
+  })
+})
