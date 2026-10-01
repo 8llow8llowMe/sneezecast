@@ -1,0 +1,50 @@
+# Dependabot 설정.
+#
+# 이 설정이 없으면 GitHub 은 보안 알림만 쌓고 갱신 PR 을 올리지 않는다.
+#
+# 저장소 규약 연동:
+# - 머지는 rebase and merge 라 브랜치 커밋이 그대로 develop 에 올라간다. 그래서
+#   commit-message.prefix 로 `[FE] chore` 형식을 맞춘다 (루트 CLAUDE.md).
+# - 배포 라벨(`frontend-web`)은 붙이지 않는다. dependabot PR 은 `label` 워크플로도 건너뛴다
+#   (label.yml 주석). 배포 대상은 사람이 PR 을 확인한 뒤 라벨을 달아 정한다.
+# - `labels` 를 적지 않는다. 기본값(`dependencies` · `javascript`)은 Dependabot 이 없으면 만들어 붙인다.
+#   없는 라벨을 직접 적으면 붙이지 못하고 경고만 남는다.
+# - 알림 1 건당 PR 1 개가 되면 감당이 안 되므로 groups 로 묶는다. 메이저를 그룹에서 빼 두면
+#   그룹 밖으로 튕겨 개별 PR 이 쏟아지므로(BossPickSeoul 2026-09-11 사례) 메이저도 별도 그룹으로 묶는다.
+#
+# 백엔드(gradle)는 백엔드 담당과 합의한 뒤 같은 형식으로 더한다.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: '[FE] chore'
+    groups:
+      # 보안 갱신은 한 PR 로 모아 빨리 넘긴다
+      fe-security:
+        applies-to: security-updates
+        patterns:
+          - '*'
+      # 일상 갱신은 한 PR 로 묶는다
+      fe-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+      # 메이저도 묶되 마이너·패치와는 분리한다. breaking change 라 검토 단위가 다르고,
+      # 섞으면 하나가 깨질 때 일상 갱신까지 같이 막힌다
+      fe-major:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        update-types:
+          - major

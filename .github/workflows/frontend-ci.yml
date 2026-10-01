@@ -1,0 +1,98 @@
+name: frontend-ci
+
+# **프론트엔드 PR 에서 `pnpm qa:verify` 와 같은 검사를 돌린다.**
+#
+# CI 통과가 머지 조건이다(루트 CLAUDE.md). 브랜치 보호(required status check)는 걸려 있지 않아
+# 빨간불이어도 머지 버튼은 눌린다. **빨간불 PR 은 머지하지 않는다**는 규칙으로 지킨다.
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'scripts/classify-frontend-changes.sh'
+      - '.github/workflows/frontend-ci.yml'
+  # **develop 에서도 돈다 — 캐시 때문이다.**
+  #
+  # Actions 는 **기본 브랜치 스코프 캐시만 모든 PR 이 상속**한다. `pull_request` 실행이 저장한
+  # 캐시는 `refs/pull/N/merge` 스코프라 그 PR 안에서만 읽힌다. 이 트리거가 없으면 base 스코프
+  # 캐시가 생기지 않아 PR 마다 pnpm store 를 처음부터 받는다.
+  #
+  # 겸사겸사 머지된 develop 자체를 검사한다. `pull_request` 는 머지 **전** 트리를 본다.
+  push:
+    branches:
+      - develop
+    paths:
+      - 'frontend/**'
+      - 'scripts/classify-frontend-changes.sh'
+      - '.github/workflows/frontend-ci.yml'
+
+# 같은 PR 에 새 커밋이 올라오면 이전 실행을 버린다. rebase 를 몇 번 하면 러너에 겹쳐 쌓인다
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 무엇이 바뀌었는지 먼저 가른다. `frontend/` 에서 문서만 바뀐 PR 은 `format:check` 만 돈다.
+  #
+  # **판정 기준은 `scripts/classify-frontend-changes.sh` 한 곳에 있다.**
+  # develop push 는 늘 `code` 다 — base 스코프 캐시를 만들고 머지된 develop 을 검사하는 목적이라
+  # 건너뛰면 안 된다. 판정이 실패하면 `code` 로 본다. 모르는 것을 "안 바뀌었다" 로 읽지 않는다.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      kind: ${{ steps.classify.outputs.kind }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          kind=code
+          if [ "$EVENT_NAME" = "pull_request" ] && git fetch --quiet --depth=1 origin "$BASE_SHA"; then
+            # PR 체크아웃은 base 위에 PR 을 얹은 머지 커밋이라, base 와의 차이가 곧 PR 의 변경이다
+            kind=$(git -c core.quotepath=off diff --name-only "$BASE_SHA" HEAD | sh scripts/classify-frontend-changes.sh) || kind=code
+          fi
+          echo "kind=$kind" | tee -a "$GITHUB_OUTPUT"
+
+  verify:
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      # package.json 이 frontend/ 에 있다. `defaults.run.working-directory` 는 액션 입력에
+      # 적용되지 않으므로 경로를 명시해야 packageManager(pnpm 버전)를 읽는다.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # 문서만 바뀐 PR 도 포맷 검사는 돈다 — `.md` 도 prettier 대상이다
+      - run: pnpm format:check
+      - run: pnpm lint
+        if: needs.changes.outputs.kind == 'code'
+      - run: pnpm typecheck
+        if: needs.changes.outputs.kind == 'code'
+      - run: pnpm test
+        if: needs.changes.outputs.kind == 'code'
+
+      # server/client 경계 오류 등은 빌드에서만 잡히는 것이 많다.
+      # `NEXT_PUBLIC_*` 는 빌드 시점에 인라인되므로 dev 값을 넣어 실제 배포와 같은 조건으로 빌드한다
+      - run: pnpm build
+        if: needs.changes.outputs.kind == 'code'
+        env:
+          NEXT_PUBLIC_SITE_URL: https://dev.sneezecast.com
+          NEXT_PUBLIC_API_BASE_URL: https://api-dev.sneezecast.com
