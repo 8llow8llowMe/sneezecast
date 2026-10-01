@@ -8,11 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 현재 상태
 
-셋업 단계다. 백엔드는 모듈 골격(core · cloud · auth · surveillance · batch)까지 있고 도메인 기능은 아직 없다. 프론트엔드는 없다. 존재하지 않는 명령을 추측해서 돌리지 않는다.
+셋업 단계다. 백엔드는 모듈 골격(core · cloud · auth · surveillance · batch)까지 있고 도메인 기능은 아직 없다. 프론트엔드는 디자인 핸드오프 문서만 있고 코드는 아직 없다. 존재하지 않는 명령을 추측해서 돌리지 않는다.
 
 | 워크스페이스 | 대상 | 엔트리 문서 |
 |--------------|------|-------------|
 | `backend/` | Spring Cloud MSA + Hexagonal | [`backend/CLAUDE.md`](backend/CLAUDE.md) (빌드 · 테스트 명령 포함) |
+| `frontend/` | 모바일 웹(PWA) · 화면 설계 | [`frontend/CLAUDE.md`](frontend/CLAUDE.md) (시안 · 디자인 규칙 · API 초안) |
 
 **CI**: `backend/**` 를 바꾼 PR 과 develop 푸시에서 `backend-ci` 가 전 모듈 `./gradlew check` 를 돌리고 실행된 테스트 건수를 요약에 남긴다. `label` 워크플로가 변경 경로로 PR 라벨(배포 대상)을 붙인다(`.github/labeler.yml`). 저장소가 비공개 무료 플랜이라 브랜치 보호를 걸 수 없으므로 **`backend-ci` 가 빨간불인 PR 은 머지하지 않는다.**
 
