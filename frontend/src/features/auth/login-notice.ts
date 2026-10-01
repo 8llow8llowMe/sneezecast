@@ -33,3 +33,8 @@ export function loginNoticeFrom({
 export function isResetDone(reason: Param): boolean {
   return first(reason) === 'reset-done'
 }
+
+/** 이메일 가입(S13-2)이 인증 시간이 지나 돌아왔는지 (`?reason=verification-expired`, S02-3 가입 요청의 `AUTH_007`) */
+export function isVerificationExpired(reason: Param): boolean {
+  return first(reason) === 'verification-expired'
+}

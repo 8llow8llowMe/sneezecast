@@ -4,6 +4,8 @@
  */
 
 export const PASSWORD_MIN_LENGTH = 8
+/** 백엔드 상한(BCrypt 72바이트 한도 안에 두는 값). 입력칸은 이 길이로 자르지 않는다 — 붙여 넣은 값이 조용히 잘리지 않게 */
+export const PASSWORD_MAX_LENGTH = 20
 export const NICKNAME_MIN_LENGTH = 2
 export const NICKNAME_MAX_LENGTH = 10
 
@@ -12,10 +14,17 @@ export function isEmailFormat(value: string): boolean {
   return /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(value.trim())
 }
 
-/** 8자 이상 · 영문과 숫자를 함께 썼는지 */
+/**
+ * 8~20자 · 영문과 숫자를 함께 · 공백 없이 썼는지 (백엔드 #56 규칙, 특수문자는 선택).
+ * 공백은 띄어쓰기뿐 아니라 탭 · 줄바꿈 · 전각 공백 같은 모든 공백 문자를 막는다.
+ */
 export function passwordProblem(password: string): 'rule' | null {
   const ok =
-    password.length >= PASSWORD_MIN_LENGTH && /[A-Za-z]/.test(password) && /[0-9]/.test(password)
+    password.length >= PASSWORD_MIN_LENGTH &&
+    password.length <= PASSWORD_MAX_LENGTH &&
+    /[A-Za-z]/.test(password) &&
+    /[0-9]/.test(password) &&
+    !/\s/.test(password)
   return ok ? null : 'rule'
 }
 

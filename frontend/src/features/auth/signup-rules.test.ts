@@ -28,6 +28,16 @@ describe('passwordProblem', () => {
     ['abcdefgh', 'rule'],
     ['12345678', 'rule'],
     ['Abcdefg1', null],
+    // 상한 20자
+    ['abcdefghij1234567890', null],
+    ['abcdefghij12345678901', 'rule'],
+    // 공백은 어떤 공백 문자든 막는다
+    ['dongne 2026', 'rule'],
+    ['dongne\t2026', 'rule'],
+    ['dongne\u30002026', 'rule'],
+    [' dongne2026', 'rule'],
+    // 특수문자는 써도 된다
+    ['dongne2026!', null],
   ])('%s → %s', (value, expected) => {
     expect(passwordProblem(value)).toBe(expected)
   })

@@ -22,40 +22,57 @@ import { canGoBackTo, nextTrail } from './onboarding-trail'
  * 레이아웃은 이 화면들 사이를 오가도 다시 그려지지 않아 값이 남는다.
  *
  * **브라우저 저장소에 남기지 않는다** (docs/conventions.md "데이터와 환경변수"). 새로고침하면 사라지고,
- * 다음 단계는 값이 없으면 앞 단계로 돌려보낸다. 서버에는 가입 동의(S02-3)에서 가입 · 내 동네를 한꺼번에 보낸다.
+ * 다음 단계는 값이 없으면 앞 단계로 돌려보낸다. 서버에는 가입 동의(S02-3)에서 가입 · 로그인 · 내 동네 저장을 잇달아 보낸다.
  */
 /**
- * 이메일 가입(S13-2 ~ S13-4) 중에 모으는 값. **메모리에만 둔다** — 브라우저 저장소 · 주소 · 로그에 남기지 않는다.
- * 비밀번호는 가입 요청(S02-3 동의 뒤)에 한 번 보내고 버린다. 그 전에 새로고침하면 처음부터 다시 한다.
+ * 가입(S13-2 ~ S13-4 · S02-3) 중에 모으는 값. **메모리에만 둔다** — 브라우저 저장소 · 주소 · 로그에 남기지 않는다.
+ * 비밀번호는 가입 요청(S02-3 동의 뒤)과 이어지는 로그인에 쓰고, 로그인을 마치면 버린다. 그 전에 새로고침하면 처음부터 다시 한다.
  *
- * 그만둔 초안은 지운다: 로그인 방법 선택(`/login`)에 들어오면 이메일만 남기고, 카카오로 시작하면 전부 비운다.
- * S02-3 에서 가입 종류는 `verificationToken` 유무로 가린다 — 있으면 이메일 가입, 없으면 카카오 가입이다.
- * 위 규칙 덕분에 이메일 가입을 하다 카카오로 바꾸면 토큰이 남지 않는다. 초안을 지우는 곳을 바꿀 때 이 판단이 깨지지 않게 한다.
+ * 가입 종류는 `method` 로 명시한다 — 이메일 화면이 코드를 보내면 `'email'`, 로그인 화면에서 카카오로 시작하면 `'kakao'`.
+ * S02-3 은 이 값으로 요청 종류를 가리고, 모르면(`null`) 로그인 방법 선택으로 돌려보낸다.
+ * 그만둔 초안은 지운다: 로그인 방법 선택(`/login`)에 들어오면 이메일만 남기고(가입 종류도 지운다),
+ * 카카오로 시작하면 전부 비운 뒤 `'kakao'` 로 둔다. 두 경우 모두 `resetSignup` 이 가입 마무리 진행(`Membership`)도 비운다.
  */
 export type SignupDraft = {
+  /** 가입 종류. 아직 고르지 않았으면 null */
+  method: 'email' | 'kakao' | null
   email: string
   /** 인증 코드를 보낸 시각(ms). 남은 시간 · 다시 받기 대기를 이 시각으로 계산한다. 보내기 전이면 null */
   codeSentAt: number | null
-  /** 인증을 마쳤다는 값(목은 아무 뜻 없는 문자열). 마치기 전이면 null */
-  verificationToken: string | null
+  /**
+   * 이메일 인증을 마친 시각(ms). 마치기 전이면 null. 서버가 인증 표시를 30분 들고 있어 토큰은 없다 —
+   * 지났는지는 가입 요청에 서버가 답한다(`verification-expired`)
+   */
+  verifiedAt: number | null
   password: string
   nickname: string
 }
 
 export const EMPTY_SIGNUP: SignupDraft = {
+  method: null,
   email: '',
   codeSentAt: null,
-  verificationToken: null,
+  verifiedAt: null,
   password: '',
   nickname: '',
 }
 
 /**
- * 가입 요청 진행 (S02-3). 계정을 만든 뒤 동네 저장이 실패해도 다시 누를 때 가입을 두 번 보내지 않게 나눠 둔다.
+ * 가입 마무리 진행 (S02-3). 가입 → (이메일 가입만) 로그인 → 내 동네 저장 중 하나가 실패해도
+ * 다시 누를 때 끝난 단계를 다시 보내지 않게 나눠 둔다(가입을 두 번 보내지 않는다).
+ * 카카오 가입은 이미 로그인한 상태라 가입이 되면 `loggedIn` 도 참이다.
+ *
+ * **가입 시도 하나에만 딸린 값이다.** 새 가입 시도가 시작되면 비운다 — `resetSignup`(로그인 방법 선택 진입 ·
+ * 카카오 시작)과 이메일 화면이 코드를 보낼 때. 남아 있으면 다른 계정으로 가입할 때 가입을 건너뛰고
+ * 동네만 저장하거나, 없는 계정으로 로그인을 되풀이한다.
  */
-export type Membership = { accountCreated: boolean; regionSaved: boolean }
+export type Membership = { accountCreated: boolean; loggedIn: boolean; regionSaved: boolean }
 
-export const NO_MEMBERSHIP: Membership = { accountCreated: false, regionSaved: false }
+export const NO_MEMBERSHIP: Membership = {
+  accountCreated: false,
+  loggedIn: false,
+  regionSaved: false,
+}
 
 type OnboardingState = {
   district: District | null
@@ -66,7 +83,10 @@ type OnboardingState = {
   signup: SignupDraft
   /** 바꿀 값만 넘긴다 */
   updateSignup: (patch: Partial<SignupDraft>) => void
-  /** 가입 초안을 비운다. `keepEmail` 이면 쓴 이메일만 남긴다(비밀번호 · 토큰 · 보낸 시각은 늘 지운다) */
+  /**
+   * 새 가입 시도를 위해 가입 초안과 가입 마무리 진행(`membership`)을 비운다. `keepEmail` 이면 쓴 이메일만 남긴다
+   * (가입 종류 · 인증 시각 · 비밀번호 · 보낸 시각 · 닉네임 · 진행은 늘 지운다)
+   */
   resetSignup: (options?: { keepEmail?: boolean }) => void
   /**
    * [선택] 주간 보고 알림 받기 (S02-3). 백엔드 알림 동의(`PUSH_NOTIFICATION`)는 푸시와 함께 2단계라
@@ -119,11 +139,11 @@ export function OnboardingProvider({
     (patch: Partial<SignupDraft>) => setSignup((current) => ({ ...current, ...patch })),
     [],
   )
-  const resetSignup = useCallback(
-    ({ keepEmail = false }: { keepEmail?: boolean } = {}) =>
-      setSignup((current) => ({ ...EMPTY_SIGNUP, email: keepEmail ? current.email : '' })),
-    [],
-  )
+  const resetSignup = useCallback(({ keepEmail = false }: { keepEmail?: boolean } = {}) => {
+    setSignup((current) => ({ ...EMPTY_SIGNUP, email: keepEmail ? current.email : '' }))
+    // 진행은 그 가입 시도에만 딸린 값이다. 남으면 다른 계정의 가입을 건너뛴다
+    setMembership(NO_MEMBERSHIP)
+  }, [])
 
   // 렌더에 쓰지 않는 이동 기록이라 ref 에 둔다. 주소가 바뀐 뒤(effect)에 갱신한다
   const trail = useRef<string[]>([])

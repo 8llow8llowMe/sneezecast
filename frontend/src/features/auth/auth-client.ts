@@ -47,36 +47,50 @@ export function startKakaoLogin(
 /* ── 이메일 가입 인증 (S13-2 · S13-3) ───────────────────────────────────────────────
  *
  * 연동 때 `POST /api/v1/auth/email/send-code` · `POST /api/v1/auth/email/verify-code`(백엔드 #56)로 바꾼다.
+ * 화면 계약(backend/docs/modules.md "화면 계약"):
+ * - 코드 받기는 **가입 여부와 무관하게 같은 응답**이다(계정 열거 방지). 이미 가입된 이메일이면 서버가 코드 대신
+ *   안내 메일을 보낸다 — 화면은 늘 코드 단계로 가고 중립 문구로 알린다
+ * - 코드 확인은 **토큰을 주지 않는다.** 인증 완료 표시는 서버가 이메일별로 30분 들고 있다가 가입 요청 때 확인한다
+ * - 발송 제한(`AUTH_001` 쿨다운 · `AUTH_002` IP 상한)은 남은 시간을 주지 않는다 — 화면은 시간을 못 박지 않는다
+ * - 남은 시도 횟수도 주지 않는다. 틀리면 `AUTH_003`, 5번째로 틀리면 `AUTH_005`(잠김)이고 서버가 코드를 지워
+ *   그다음 확인은 `AUTH_004`(만료)다. 코드를 다시 받으면 서버의 실패 수가 0 이 된다.
+ *   그래서 연동 때 이 모듈이 이메일별 실패 수를 세어 `remainingAttempts`(= `CODE_MAX_ATTEMPTS` - 실패 수)를 채우고,
+ *   `sendEmailCode` 가 `sent` 이면 그 이메일의 실패 수를 0 으로 되돌린다. 화면 쪽 타입(`VerifyCodeResult`)은 그대로다
  *
  * 목에서 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
- * - 코드 받기: 이메일 `exists@example.com` → `exists`, `limit@example.com` → `limit`, 그 밖 → 보냄
+ * - 코드 받기: 이메일 `limit@example.com` → `limit`, 그 밖 → 보냄
  * - 코드 확인: `999999` → `locked`, `000000` → `wrong`(남은 시도가 1씩 준다. 0 이 되면 `locked`),
- *   5분이 지났거나 보낸 코드가 없으면(이미 인증에 쓴 코드 포함) `expired`, 그 밖 6자리 → 성공
+ *   5분이 지났거나 보낸 코드가 없으면(이미 인증에 쓴 코드 · 잠겨 지운 코드 포함) `expired`, 그 밖 6자리 → 성공.
+ *   서버처럼 잠기면 코드를 지우므로 잠긴 뒤의 확인은 `expired` 다
  *
- * 남은 시도 · 보낸 시각은 서버가 갖는 값이라 목도 이 모듈 안(메모리)에만 둔다. 화면을 새로 열면 초기화된다.
+ * 목은 서버가 갖는 코드 · 보낸 시각 · 인증 시각과 연동 때 이 모듈이 셀 실패 수를 함께 이 모듈 안(메모리)에 둔다.
+ * 화면을 새로 열면 초기화된다.
  */
 
 /** 코드 유효 시간 · 다시 받기 대기 (Signup-code 시안 "5분 안에", "다시 받기 0:42") */
 export const CODE_TTL_SECONDS = 300
 export const RESEND_COOLDOWN_SECONDS = 60
-/** 첫 실패 뒤 "남은 시도는 3번이에요" 가 되도록 4번에서 시작한다 */
-export const CODE_MAX_ATTEMPTS = 4
+/** 코드를 틀릴 수 있는 횟수(백엔드 오입력 5회). 첫 실패 뒤 "남은 시도는 4번이에요" 가 된다 */
+export const CODE_MAX_ATTEMPTS = 5
+/** 인증을 마친 뒤 가입 요청까지 쓸 수 있는 시간(백엔드 인증 완료 30분). 지나면 가입이 `verification-expired` 다 */
+export const EMAIL_VERIFICATION_TTL_SECONDS = 1800
 
-export const MOCK_EXISTS_EMAIL = 'exists@example.com'
 export const MOCK_LIMIT_EMAIL = 'limit@example.com'
 export const MOCK_WRONG_CODE = '000000'
 export const MOCK_LOCKED_CODE = '999999'
 
-export type SendCodeResult = { status: 'sent' } | { status: 'exists' } | { status: 'limit' }
+export type SendCodeResult = { status: 'sent' } | { status: 'limit' }
 
 export type VerifyCodeResult =
-  /** 인증 완료. 가입 요청(S02-3)에 함께 보내는 값 — 목은 아무 뜻 없는 문자열이다 */
-  | { status: 'ok'; verificationToken: string }
+  /** 인증 완료. 서버가 인증 표시를 들고 있으므로 돌려주는 값은 없다 */
+  | { status: 'ok' }
   | { status: 'wrong'; remainingAttempts: number }
   | { status: 'expired' }
   | { status: 'locked' }
 
 const mockCodes = new Map<string, { sentAt: number; remainingAttempts: number }>()
+/** 이메일별 인증을 마친 시각(ms). 서버의 인증 완료 표시를 흉내 낸다 */
+const mockVerifiedAt = new Map<string, number>()
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
@@ -84,64 +98,85 @@ function normalizeEmail(email: string): string {
 
 export function sendEmailCode(email: string): Promise<SendCodeResult> {
   const key = normalizeEmail(email)
-  if (key === MOCK_EXISTS_EMAIL) return Promise.resolve({ status: 'exists' })
   if (key === MOCK_LIMIT_EMAIL) return Promise.resolve({ status: 'limit' })
   mockCodes.set(key, { sentAt: Date.now(), remainingAttempts: CODE_MAX_ATTEMPTS })
   return Promise.resolve({ status: 'sent' })
 }
 
 export function verifyEmailCode(email: string, code: string): Promise<VerifyCodeResult> {
-  const sent = mockCodes.get(normalizeEmail(email))
-  // 보낸 코드가 없으면(이미 쓴 코드 · 서버가 지운 코드) 만료로 본다 — 다시 받으면 된다
+  const key = normalizeEmail(email)
+  const sent = mockCodes.get(key)
+  // 보낸 코드가 없으면(이미 쓴 코드 · 잠겨 지운 코드 · 서버가 지운 코드) 만료로 본다 — 다시 받으면 된다
   if (!sent) return Promise.resolve({ status: 'expired' })
-  if (code === MOCK_LOCKED_CODE || sent.remainingAttempts <= 0) {
-    return Promise.resolve({ status: 'locked' })
-  }
   if (Date.now() - sent.sentAt > CODE_TTL_SECONDS * 1000)
     return Promise.resolve({ status: 'expired' })
+  if (code === MOCK_LOCKED_CODE) {
+    mockCodes.delete(key)
+    return Promise.resolve({ status: 'locked' })
+  }
   if (code === MOCK_WRONG_CODE || !/^\d{6}$/.test(code)) {
     sent.remainingAttempts -= 1
-    return Promise.resolve(
-      sent.remainingAttempts <= 0
-        ? { status: 'locked' }
-        : { status: 'wrong', remainingAttempts: sent.remainingAttempts },
-    )
+    if (sent.remainingAttempts > 0) {
+      return Promise.resolve({ status: 'wrong', remainingAttempts: sent.remainingAttempts })
+    }
+    // 서버는 잠그면서 코드를 지운다(AUTH_005). 그다음 확인은 만료(AUTH_004)다
+    mockCodes.delete(key)
+    return Promise.resolve({ status: 'locked' })
   }
-  mockCodes.delete(normalizeEmail(email))
-  return Promise.resolve({ status: 'ok', verificationToken: `mock-verified-${Date.now()}` })
+  mockCodes.delete(key)
+  mockVerifiedAt.set(key, Date.now())
+  return Promise.resolve({ status: 'ok' })
 }
 
 /* ── 가입 · 내 동네 · 건강정보 동의 (S02-3 · S02-4) ─────────────────────────────────
  *
  * 연동 때 바꾼다: 가입 `POST /api/v1/auth/signup`(백엔드 #56), 내 동네 저장(#60), 건강정보 동의(#59).
+ * 가입 응답에는 토큰이 없다 — 이메일 가입은 이어서 `loginWithEmail`(#57)로 로그인한 뒤 동네를 저장한다.
+ * 카카오 가입은 카카오 로그인으로 이미 로그인한 상태라 바로 동네를 저장한다.
  *
- * 목에서 실패를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
- * - 가입: 이메일 `signup-fail@example.com` 으로 가입하면 응답을 받지 못한다(거부)
+ * 목에서 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
+ * - 가입: 이메일 `signup-fail@example.com` 이면 응답을 받지 못한다(거부)
+ * - 가입: 이메일 `verify-expired@example.com` 이면 늘 `verification-expired`(인증 30분이 지남, `AUTH_007`).
+ *   그 밖의 이메일도 인증을 마치지 않았거나 마친 지 30분이 지났으면 `verification-expired` 다
  */
 
 export const MOCK_SIGNUP_FAIL_EMAIL = 'signup-fail@example.com'
+export const MOCK_VERIFY_EXPIRED_EMAIL = 'verify-expired@example.com'
 
 /**
- * 가입 요청. 가입 종류는 인증 값(`verificationToken`) 유무로 가린다 — 있으면 이메일 가입, 없으면 카카오 가입.
+ * 가입 요청. 가입 종류(`kind`)는 화면이 가입 초안의 `method` 로 정한다.
+ * 이메일 가입은 인증을 마친 이메일과 비밀번호 · 닉네임을 보낸다 — 인증 여부는 서버가 이메일로 확인한다.
  * 카카오 가입은 카카오가 이메일 · 닉네임을 주므로 동의만 보낸다.
- * 비밀번호는 이 요청에 한 번 실어 보내고 화면은 바로 지운다(로그 · 저장소 금지).
+ * 비밀번호는 로그나 저장소에 남기지 않는다. 화면은 가입 뒤 로그인까지 마치면 지운다.
  */
 export type SignupRequest =
   | {
       kind: 'email'
       email: string
-      verificationToken: string
       password: string
       nickname: string
       consents: Consent[]
     }
   | { kind: 'kakao'; consents: Consent[] }
 
-export function signup(request: SignupRequest): Promise<void> {
-  if (request.kind === 'email' && normalizeEmail(request.email) === MOCK_SIGNUP_FAIL_EMAIL) {
-    return Promise.reject(new Error('mock signup failure'))
+/** `verification-expired` 는 이메일 인증 표시가 없거나 30분이 지났다는 뜻이다(`AUTH_007`). 이메일 단계부터 다시 한다 */
+export type SignupResult = { status: 'ok' } | { status: 'verification-expired' }
+
+export function signup(request: SignupRequest): Promise<SignupResult> {
+  if (request.kind === 'kakao') return Promise.resolve({ status: 'ok' })
+  const key = normalizeEmail(request.email)
+  if (key === MOCK_SIGNUP_FAIL_EMAIL) return Promise.reject(new Error('mock signup failure'))
+  const verifiedAt = mockVerifiedAt.get(key)
+  if (
+    key === MOCK_VERIFY_EXPIRED_EMAIL ||
+    verifiedAt === undefined ||
+    Date.now() - verifiedAt > EMAIL_VERIFICATION_TTL_SECONDS * 1000
+  ) {
+    return Promise.resolve({ status: 'verification-expired' })
   }
-  return Promise.resolve()
+  // 서버처럼 가입에 쓴 인증 표시는 지운다
+  mockVerifiedAt.delete(key)
+  return Promise.resolve({ status: 'ok' })
 }
 
 /** 내 동네(행정동 코드) 저장 */

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   agreeHealthConsent,
+  CODE_MAX_ATTEMPTS,
+  EMAIL_VERIFICATION_TTL_SECONDS,
   loginWithEmail,
   saveRegion,
   sendEmailCode,
@@ -34,9 +36,10 @@ describe('startKakaoLogin (목)', () => {
 
 describe('sendEmailCode (목)', () => {
   it.each([
-    ['exists@example.com', 'exists'],
     [' LIMIT@example.com ', 'limit'],
     ['dong@example.com', 'sent'],
+    // 가입 여부를 드러내지 않는다 — 이미 가입한 이메일도 같은 응답이다
+    ['exists@example.com', 'sent'],
   ] as const)('%s → %s', async (email, status) => {
     expect(await sendEmailCode(email)).toEqual({ status })
   })
@@ -45,10 +48,9 @@ describe('sendEmailCode (목)', () => {
 describe('verifyEmailCode (목)', () => {
   afterEach(() => vi.useRealTimers())
 
-  it('맞는 6자리면 인증 값을 돌려준다', async () => {
+  it('맞는 6자리면 ok 만 돌려준다(토큰 없음)', async () => {
     await sendEmailCode('dong@example.com')
-    const result = await verifyEmailCode('dong@example.com', '482915')
-    expect(result.status).toBe('ok')
+    expect(await verifyEmailCode('dong@example.com', '482915')).toEqual({ status: 'ok' })
   })
 
   it('보낸 코드가 없거나 이미 인증에 쓴 코드면 expired 다', async () => {
@@ -58,17 +60,24 @@ describe('verifyEmailCode (목)', () => {
     expect(await verifyEmailCode('used@example.com', '482915')).toEqual({ status: 'expired' })
   })
 
-  it('틀릴 때마다 남은 시도가 줄고 0 이면 locked 다', async () => {
+  it('5번까지 틀릴 수 있다 — 남은 시도가 4번부터 줄고 5번째에 locked 다', async () => {
+    expect(CODE_MAX_ATTEMPTS).toBe(5)
+    await sendEmailCode('try@example.com')
+    for (const remainingAttempts of [4, 3, 2, 1]) {
+      expect(await verifyEmailCode('try@example.com', '000000')).toEqual({
+        status: 'wrong',
+        remainingAttempts,
+      })
+    }
+    expect(await verifyEmailCode('try@example.com', '000000')).toEqual({ status: 'locked' })
+    // 서버처럼 잠기면 코드를 지운다 — 맞는 코드를 넣어도 만료다
+    expect(await verifyEmailCode('try@example.com', '482915')).toEqual({ status: 'expired' })
+    // 다시 받으면 실패 수가 처음으로 돌아간다
     await sendEmailCode('try@example.com')
     expect(await verifyEmailCode('try@example.com', '000000')).toEqual({
       status: 'wrong',
-      remainingAttempts: 3,
+      remainingAttempts: 4,
     })
-    await verifyEmailCode('try@example.com', '000000')
-    await verifyEmailCode('try@example.com', '000000')
-    expect(await verifyEmailCode('try@example.com', '000000')).toEqual({ status: 'locked' })
-    // 잠긴 뒤에는 맞는 코드도 받지 않는다
-    expect(await verifyEmailCode('try@example.com', '482915')).toEqual({ status: 'locked' })
   })
 
   it('다시 받으면 남은 시도가 처음으로 돌아간다', async () => {
@@ -77,13 +86,14 @@ describe('verifyEmailCode (목)', () => {
     await sendEmailCode('again@example.com')
     expect(await verifyEmailCode('again@example.com', '000000')).toEqual({
       status: 'wrong',
-      remainingAttempts: 3,
+      remainingAttempts: 4,
     })
   })
 
   it('재현용 잠김 코드면 locked, 5분이 지나면 expired 다', async () => {
     await sendEmailCode('late@example.com')
     expect(await verifyEmailCode('late@example.com', '999999')).toEqual({ status: 'locked' })
+    expect(await verifyEmailCode('late@example.com', '482915')).toEqual({ status: 'expired' })
 
     vi.useFakeTimers()
     await sendEmailCode('late@example.com')
@@ -94,32 +104,48 @@ describe('verifyEmailCode (목)', () => {
 
 describe('signup · saveRegion · agreeHealthConsent (목)', () => {
   const consents = [consentFor('TERMS_OF_SERVICE')]
+  const emailSignup = (email: string) =>
+    signup({ kind: 'email', email, password: 'dongne2026', nickname: '동네지기', consents })
 
-  it('이메일 · 카카오 가입 모두 성공한다', async () => {
-    await expect(
-      signup({
-        kind: 'email',
-        email: 'dong@example.com',
-        verificationToken: 't',
-        password: 'dongne2026',
-        nickname: '동네지기',
-        consents,
-      }),
-    ).resolves.toBeUndefined()
-    await expect(signup({ kind: 'kakao', consents })).resolves.toBeUndefined()
+  async function verify(email: string) {
+    await sendEmailCode(email)
+    await verifyEmailCode(email, '482915')
+  }
+
+  afterEach(() => vi.useRealTimers())
+
+  it('인증을 마친 이메일 가입 · 카카오 가입은 성공한다', async () => {
+    await verify('ok@example.com')
+    expect(await emailSignup(' OK@example.com ')).toEqual({ status: 'ok' })
+    expect(await signup({ kind: 'kakao', consents })).toEqual({ status: 'ok' })
+  })
+
+  it('인증하지 않았거나 인증을 가입에 이미 썼으면 verification-expired 다', async () => {
+    expect(await emailSignup('unverified@example.com')).toEqual({
+      status: 'verification-expired',
+    })
+    await verify('twice@example.com')
+    await emailSignup('twice@example.com')
+    expect(await emailSignup('twice@example.com')).toEqual({ status: 'verification-expired' })
+  })
+
+  it('인증한 지 30분이 지나면 verification-expired 다', async () => {
+    expect(EMAIL_VERIFICATION_TTL_SECONDS).toBe(1800)
+    vi.useFakeTimers()
+    await verify('slow@example.com')
+    vi.setSystemTime(Date.now() + 1_801_000)
+    expect(await emailSignup('slow@example.com')).toEqual({ status: 'verification-expired' })
+  })
+
+  it('재현용 이메일이면 인증했어도 verification-expired 다', async () => {
+    await verify('verify-expired@example.com')
+    expect(await emailSignup('verify-expired@example.com')).toEqual({
+      status: 'verification-expired',
+    })
   })
 
   it('재현용 이메일이면 가입이 거부된다', async () => {
-    await expect(
-      signup({
-        kind: 'email',
-        email: 'signup-fail@example.com',
-        verificationToken: 't',
-        password: 'dongne2026',
-        nickname: '동네지기',
-        consents,
-      }),
-    ).rejects.toThrow()
+    await expect(emailSignup('signup-fail@example.com')).rejects.toThrow()
   })
 
   it('내 동네 저장 · 건강정보 동의는 성공한다', async () => {
