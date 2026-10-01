@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 import clsx from 'clsx'
 
-import { MAIN_NAV, type MainNavKey } from '@/lib/nav'
+import { MAIN_NAV, type MainNavKey, navHref } from '@/lib/nav'
 
 import { Button } from './button'
 import { IconButton } from './icon-button'
@@ -15,6 +15,10 @@ export type AppHeaderProps = {
   onRegionClick: () => void
   onNotificationClick: () => void
   onReportClick: () => void
+  /** 보고 버튼 글자. 기본은 "이번 주 건강 보고하기", 비회원 홈은 "로그인하고 보고하기" (Home-guest 시안) */
+  reportLabel?: string | undefined
+  /** 데스크톱 메뉴 링크 뒤에 붙일 쿼리(앞 `?` 없이). 둘러보기 동네(`region=<코드>`)를 메뉴를 옮겨도 잃지 않게 한다 */
+  navSearch?: string | undefined
   className?: string
 }
 
@@ -27,7 +31,7 @@ export type AppHeaderProps = {
  * | 태블릿 | 72 | 동네 · 알림 · 보고 버튼 |
  * | 데스크톱 | 64 | 서비스명 · 동네 · 메뉴 · 알림 · 보고 버튼, 아래 구분선 |
  *
- * 시안: Home(모바일) · Tablet · Desktop
+ * 시안: Home(모바일) · Tablet · Desktop, 비회원 Home-guest(-T · -D)
  */
 export function AppHeader({
   regionName,
@@ -35,6 +39,8 @@ export function AppHeader({
   onRegionClick,
   onNotificationClick,
   onReportClick,
+  reportLabel = '이번 주 건강 보고하기',
+  navSearch,
   className,
 }: AppHeaderProps) {
   return (
@@ -67,7 +73,7 @@ export function AppHeader({
           return (
             <Link
               key={item.key}
-              href={item.href}
+              href={navHref(item.href, navSearch)}
               aria-current={active ? 'page' : undefined}
               className={clsx(
                 'flex h-11 items-center px-3.5 text-body',
@@ -92,7 +98,7 @@ export function AppHeader({
       */}
       <span className="hidden tablet:contents">
         <Button size="sm" onClick={onReportClick}>
-          이번 주 건강 보고하기
+          {reportLabel}
         </Button>
       </span>
     </header>

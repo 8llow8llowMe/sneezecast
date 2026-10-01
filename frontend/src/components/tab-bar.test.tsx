@@ -14,6 +14,17 @@ describe('TabBar', () => {
     expect(links.map((link) => link.getAttribute('href'))).toEqual(['/', '/map', '/me'])
   })
 
+  it('navSearch 를 모든 링크 뒤에 붙인다 (둘러보기 동네 유지)', () => {
+    render(<TabBar current="home" navSearch="region=1111051500" />)
+    const links = [...screen.getByRole('navigation').querySelectorAll('a')]
+
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/?region=1111051500',
+      '/map?region=1111051500',
+      '/me?region=1111051500',
+    ])
+  })
+
   it('현재 메뉴만 aria-current="page" 이고 네이비 굵은 글자다', () => {
     render(<TabBar current="map" />)
     const current = screen.getByRole('link', { name: '지도' })
