@@ -12,19 +12,44 @@ import type { Consent } from './legal'
  * - `member-no-consent`: 회원이지만 건강정보(민감정보) 동의를 하지 않음
  * - `member`: 회원이고 건강정보 동의를 함 — 보고할 수 있다
  *
- * 값을 바꾸는 곳은 이 모듈의 세 함수뿐이다: 카카오 가입 성공(`signup` kind kakao) · 이메일 로그인 성공(`loginWithEmail`)은
- * `member-no-consent`, 건강정보 동의 성공(`agreeHealthConsent`)은 `member`. 화면 코드는 고치지 않는다.
+ * 값을 바꾸는 곳은 이 모듈의 함수뿐이다: 카카오 가입 성공(`signup` kind kakao) · 이메일 로그인 성공(`loginWithEmail`)은
+ * `member-no-consent`, 건강정보 동의 성공(`agreeHealthConsent`)은 `member`, 동의 철회 성공(`withdrawHealthConsent`)은
+ * `member-no-consent`, 로그아웃 · 탈퇴 성공(`logout` · `withdrawMembership`)은 `guest`. 화면 코드는 고치지 않는다.
  * 모듈 메모리에만 두어 새로고침하면 `guest` 로 돌아간다 — 브라우저 저장소에 남기지 않는다.
+ *
+ * 내 정보(S10)가 보일 프로필(`MockProfile`)도 같은 세션에 둔다. 로그인 · 가입할 때 채우고 로그아웃 · 탈퇴하면 지운다.
+ * 연동 때 `GET /api/v1/members/me`(백엔드 #58) 응답으로 바꾼다.
  */
 export type MockAuthState = 'guest' | 'member-no-consent' | 'member'
 
 export const MOCK_AUTH_STATES: readonly MockAuthState[] = ['guest', 'member-no-consent', 'member']
 
+/**
+ * 내 정보에 보일 회원 프로필 (목). 로그인 방법(`provider`) · 이메일 · 닉네임만 둔다 — 이름 · 연락처 · 주소는 받지 않는다.
+ * 연동 때 `GET /api/v1/members/me` 응답으로 바꾼다. 카카오 회원의 이메일 · 닉네임과 이메일 로그인의 닉네임은 목이 모르므로
+ * 시안의 예시 값(`EXAMPLE_PROFILES`)을 쓴다.
+ */
+export type MockProfile = { provider: 'email' | 'kakao'; email: string; nickname: string }
+
+/** 시안(Settings · Settings-kakao)의 예시 값. 실제 값은 `GET /me` 에서 받는다 */
+export const EXAMPLE_PROFILES: Readonly<Record<MockProfile['provider'], MockProfile>> = {
+  email: { provider: 'email', email: 'dong@example.com', nickname: '동네지기' },
+  kakao: { provider: 'kakao', email: 'dong@kakao.com', nickname: '동네지기' },
+}
+
 let mockSession: MockAuthState = 'guest'
+let mockProfile: MockProfile | null = null
 const mockSessionListeners = new Set<() => void>()
+/** 이메일 가입에서 받은 닉네임. 가입 뒤 이어지는 이메일 로그인이 프로필에 쓴다(목 서버가 회원 정보를 들고 있는 흉내) */
+const mockNicknames = new Map<string, string>()
 
 export function getMockSession(): MockAuthState {
   return mockSession
+}
+
+/** 목 세션의 프로필. 비회원이거나 `?mock-auth=` 덮어쓰기만 있으면 null 이다 */
+export function getMockProfile(): MockProfile | null {
+  return mockProfile
 }
 
 /** 목 세션이 바뀔 때 부른다 (`useSyncExternalStore` 의 subscribe). 돌려준 함수로 구독을 끊는다 */
@@ -35,15 +60,26 @@ export function subscribeMockSession(listener: () => void): () => void {
   }
 }
 
-function setMockSession(next: MockAuthState) {
-  if (mockSession === next) return
+/** 세션을 바꾼다. `profile` 을 넘기지 않으면 프로필은 그대로 두고, `guest` 가 되면 늘 지운다 */
+function setMockSession(next: MockAuthState, profile?: MockProfile) {
+  const given = next === 'guest' ? null : (profile ?? mockProfile)
+  // 같은 값의 프로필이면 이전 객체를 그대로 둔다 — 같은 회원이 다시 로그인해도 다시 그리지 않는다
+  const nextProfile = sameProfile(given, mockProfile) ? mockProfile : given
+  if (mockSession === next && mockProfile === nextProfile) return
   mockSession = next
+  mockProfile = nextProfile
   mockSessionListeners.forEach((listener) => listener())
+}
+
+function sameProfile(a: MockProfile | null, b: MockProfile | null): boolean {
+  if (a === null || b === null) return a === b
+  return a.provider === b.provider && a.email === b.email && a.nickname === b.nickname
 }
 
 /** 테스트에서 목 세션을 처음(`guest`)으로 되돌린다. 화면 코드는 부르지 않는다 */
 export function resetMockSession() {
   setMockSession('guest')
+  mockNicknames.clear()
 }
 
 /**
@@ -69,7 +105,12 @@ export function loginWithEmail(email: string, password: string): Promise<EmailLo
   if (email.trim().toLowerCase() === MOCK_LOCKED_EMAIL) return Promise.resolve({ status: 'locked' })
   if (password === MOCK_WRONG_PASSWORD) return Promise.resolve({ status: 'wrong' })
   // 목은 동의 여부를 모른다. 연동 때는 서버 세션이 동의 상태를 알려 준다
-  setMockSession('member-no-consent')
+  const key = normalizeEmail(email)
+  setMockSession('member-no-consent', {
+    provider: 'email',
+    email: key,
+    nickname: mockNicknames.get(key) ?? EXAMPLE_PROFILES.email.nickname,
+  })
   return Promise.resolve({ status: 'ok' })
 }
 
@@ -253,17 +294,18 @@ export type SignupResult = { status: 'ok' } | { status: 'verification-expired' }
 
 export function signup(request: SignupRequest): Promise<SignupResult> {
   if (request.kind === 'kakao') {
-    // 카카오 가입은 카카오 로그인으로 이미 로그인한 상태다. 이메일 가입은 이어지는 loginWithEmail 이 회원으로 만든다
-    setMockSession('member-no-consent')
+    // 카카오 가입은 카카오 로그인으로 이미 로그인한 상태다. 이메일 가입은 이어지는 loginWithEmail 이 회원으로 만든다.
+    // 카카오가 주는 이메일 · 닉네임은 목이 몰라 예시 값을 쓴다
+    setMockSession('member-no-consent', EXAMPLE_PROFILES.kakao)
     return Promise.resolve({ status: 'ok' })
   }
   if (normalizeEmail(request.email) === MOCK_SIGNUP_FAIL_EMAIL) {
     return Promise.reject(new Error('mock signup failure'))
   }
   // 서버처럼 가입에 쓴 인증 표시는 지운다
-  return Promise.resolve({
-    status: consumeSignupVerification(request.email) ? 'ok' : 'verification-expired',
-  })
+  const ok = consumeSignupVerification(request.email)
+  if (ok) mockNicknames.set(normalizeEmail(request.email), request.nickname)
+  return Promise.resolve({ status: ok ? 'ok' : 'verification-expired' })
 }
 
 /** 내 동네(행정동 코드) 저장 */
@@ -277,6 +319,59 @@ export function agreeHealthConsent(consent: Consent): Promise<void> {
   void consent
   // 동의를 보낸 화면이 응답 전에 닫혀도 서버에는 동의가 남는다. 세션 상태도 화면과 무관하게 여기서 바꾼다
   setMockSession('member')
+  return Promise.resolve()
+}
+
+/* ── 로그아웃 · 건강정보 동의 철회 · 탈퇴 (S10 확인 대화상자) ───────────────────────────────
+ *
+ * 연동 때 바꾼다: 로그아웃 `POST /api/v1/auth/logout`(백엔드 #57 — refresh 세션 폐기 + access token 블랙리스트),
+ * 건강정보 동의 철회(#59 — 원시 보고 파기 요청 + refresh 세션 전부 폐기), 탈퇴 `POST /api/v1/members/me/withdraw`(#59).
+ * 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다 — 화면은 대화상자 안에서 다시 시도하라고 알린다.
+ *
+ * 성공하면 화면과 무관하게 여기서 목 세션을 바꾼다(응답 전에 화면이 닫혀도 서버에는 결과가 남는다):
+ * 로그아웃 · 탈퇴 → `guest`(프로필도 지운다), 동의 철회 → `member-no-consent`(동의한 회원 세션일 때만 — 비회원 세션은 그대로).
+ *
+ * 목에서 실패를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다). 프로필 이메일로 가린다 — 그 이메일로 이메일 로그인한 뒤 연다:
+ * - 로그아웃: `logout-fail@example.com` → 거부(세션은 그대로)
+ * - 동의 철회: `consent-withdraw-fail@example.com` → 거부
+ * - 탈퇴: `withdraw-fail@example.com` → 거부
+ */
+
+export const MOCK_LOGOUT_FAIL_EMAIL = 'logout-fail@example.com'
+export const MOCK_CONSENT_WITHDRAW_FAIL_EMAIL = 'consent-withdraw-fail@example.com'
+export const MOCK_WITHDRAW_FAIL_EMAIL = 'withdraw-fail@example.com'
+
+function rejectIfProfileEmail(email: string, what: string): Promise<void> | null {
+  return mockProfile?.email === email ? Promise.reject(new Error(`mock ${what} failure`)) : null
+}
+
+/** 이 기기에서 로그아웃한다 */
+export function logout(): Promise<void> {
+  const failure = rejectIfProfileEmail(MOCK_LOGOUT_FAIL_EMAIL, 'logout')
+  if (failure) return failure
+  setMockSession('guest')
+  return Promise.resolve()
+}
+
+/**
+ * 건강정보(민감정보) 처리 동의를 철회한다. 서버가 보낸 보고를 모두 지운다(파기 요청).
+ *
+ * 목은 `member-no-consent` 로 둔다. 백엔드 #59 는 철회와 함께 refresh 세션을 모두 폐기하고 요청 기기의 access token 도
+ * 막는다(대화상자 문구 "모든 기기에서 로그아웃돼요") — 연동 때 철회 뒤 세션이 남는지 백엔드와 맞춘다(SCREENS.md 연동 요구사항).
+ */
+export function withdrawHealthConsent(): Promise<void> {
+  const failure = rejectIfProfileEmail(MOCK_CONSENT_WITHDRAW_FAIL_EMAIL, 'consent withdraw')
+  if (failure) return failure
+  // 동의한 회원 세션만 바꾼다. `?mock-auth=member` 덮어쓰기로 비회원 세션에서 철회해도 회원이 되지 않는다
+  if (mockSession === 'member') setMockSession('member-no-consent')
+  return Promise.resolve()
+}
+
+/** 회원 탈퇴. 보낸 보고는 바로 지우고 계정은 30일 뒤 지운다(서버). 탈퇴 사유는 받지 않는다 */
+export function withdrawMembership(): Promise<void> {
+  const failure = rejectIfProfileEmail(MOCK_WITHDRAW_FAIL_EMAIL, 'withdraw')
+  if (failure) return failure
+  setMockSession('guest')
   return Promise.resolve()
 }
 
