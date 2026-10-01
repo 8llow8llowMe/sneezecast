@@ -58,6 +58,13 @@ function TrailProbe() {
   return null
 }
 
+/** 알림 섹션 (제목이 있는 섹션은 이름 있는 region 이 아니라 id 로 찾는다) */
+function notificationSection() {
+  const section = document.getElementById('me-notification')
+  if (!section) throw new Error('알림 섹션이 없다')
+  return section
+}
+
 /** 동의한 회원으로 로그인해 둔다 (목 세션) */
 async function loginAsMember(email = 'dong@example.com') {
   await loginWithEmail(email, 'dongne2026')
@@ -317,8 +324,10 @@ describe('MeScreen 메뉴', () => {
   })
 
   it('알림 스위치는 구독하지 않는다 — 꺼진 채로 준비 중을 알린다', async () => {
-    search = 'mock-auth=member'
+    // jsdom 은 푸시 API 가 없어 미지원으로 보인다. 지원되는 기기를 덮어쓰기로 흉내 낸다
+    search = 'mock-auth=member&mock-push=supported'
     renderMe()
+    expect(screen.queryByText(/알림을 받을 수 없어요/)).toBeNull()
 
     const weekly = screen.getByRole('switch', { name: '주간 보고 요청' })
     expect(weekly.getAttribute('aria-checked')).toBe('false')
@@ -329,6 +338,32 @@ describe('MeScreen 메뉴', () => {
     await userEvent.setup().click(weekly)
     expect(weekly.getAttribute('aria-checked')).toBe('false')
     expect(screen.getByText('알림 설정 화면은 준비하고 있어요')).toBeDefined()
+  })
+
+  it('알림을 받을 수 없는 기기(Settings-nopush)는 알림 섹션에 안내를 두고, 스위치는 눌러도 아무 일이 없다', async () => {
+    search = 'mock-auth=member&mock-push=needs-install&region=11440660'
+    renderMe({ regionCode: '11440660' })
+
+    const section = notificationSection()
+    expect(within(section).getByText('이 기기에서는 알림을 받을 수 없어요')).toBeDefined()
+    expect(
+      within(section)
+        .getByRole('link', { name: '홈 화면에 추가하는 방법 보기' })
+        .getAttribute('href'),
+    ).toBe('/install?region=11440660&mock-auth=member&mock-push=needs-install')
+
+    const weekly = within(section).getByRole('switch', { name: '주간 보고 요청' })
+    await userEvent.setup().click(weekly)
+    expect(weekly.getAttribute('aria-checked')).toBe('false')
+    expect(screen.queryByText('알림 설정 화면은 준비하고 있어요')).toBeNull()
+  })
+
+  it('푸시 API 가 없는 브라우저는 설치 안내 링크 없이 홈 상단 안내만 둔다', () => {
+    search = 'mock-auth=member'
+    renderMe()
+    const section = notificationSection()
+    expect(within(section).getByText('이 브라우저에서는 알림을 받을 수 없어요')).toBeDefined()
+    expect(within(section).queryByRole('link')).toBeNull()
   })
 
   it('로그아웃 · 동의 철회 · 탈퇴 행은 다른 쿼리를 남긴 채 ?confirm= 을 기록에 쌓는다', async () => {

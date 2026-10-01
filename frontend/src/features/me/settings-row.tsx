@@ -123,6 +123,7 @@ export function MenuRow({
  *
  * **PWA 푸시는 2단계 기능이라 아직 구독하지 않는다.** 시안은 켜진 모양이지만 실제로 받지 않는 알림을 켜진 것처럼 보이지 않게
  * 꺼진 모양(`aria-checked=false` · `aria-disabled`, Settings-nopush 의 회색)으로 그리고, 누르면 `onClick` 으로 준비 중을 알린다.
+ * 이 기기에서 알림을 받을 수 없으면(Settings-nopush) `onClick` 을 넘기지 않는다 — 눌러도 아무 일이 없다.
  * 설명(월요일 아침 등)은 `aria-describedby` 로 스위치에 잇는다.
  */
 export function SwitchRow({
@@ -132,7 +133,8 @@ export function SwitchRow({
 }: {
   title: string
   description: string
-  onClick: () => void
+  /** 누르면 부른다. 없으면 눌러도 아무 일이 없다(알림 미지원) */
+  onClick?: (() => void) | undefined
 }) {
   const descriptionId = useId()
   return (
