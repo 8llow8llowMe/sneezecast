@@ -18,3 +18,8 @@ function hasFinalConsonant(word: string): boolean {
 export function withGwaWa(word: string): '과' | '와' {
   return hasFinalConsonant(word) ? '과' : '와'
 }
+
+/** "이/가" 를 받침에 맞춰 고른다. 예: ○○1동 → 이, 역삼2 → 가 */
+export function withIGa(word: string): '이' | '가' {
+  return hasFinalConsonant(word) ? '이' : '가'
+}
