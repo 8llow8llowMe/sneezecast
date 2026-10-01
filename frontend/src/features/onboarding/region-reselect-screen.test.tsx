@@ -12,8 +12,10 @@ import {
   resetMockSession,
   saveRegion,
 } from '@/features/auth/auth-client'
+import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
 import type * as regionClient from '@/features/region/region-client'
 import { listSuccessorDistricts, searchDistricts } from '@/features/region/region-client'
+import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 
 import { OnboardingProvider } from './onboarding-context'
 import { RegionReselectScreen } from './region-reselect-screen'
@@ -284,5 +286,26 @@ describe('RegionReselectScreen 들어올 수 없을 때', () => {
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('동네를 다시 골라 주세요')
     await screen.findByRole('group', { name: '다시 고를 동네 후보' })
     expect(router.replace).not.toHaveBeenCalled()
+  })
+})
+
+describe('RegionReselectScreen 로그인 만료', () => {
+  it('다시 고르기 화면에서 만료되면 홈으로 덮어쓰지 않고 만료 토스트가 있는 로그인 화면으로만 간다', async () => {
+    vi.mocked(listSuccessorDistricts).mockResolvedValue([])
+    clearSessionExpiring()
+    render(
+      <OnboardingProvider>
+        <RegionReselectScreen />
+        <SessionExpiryWatcher />
+      </OnboardingProvider>,
+    )
+    await screen.findByText(/후보 동네가 없어요/)
+    expect(router.replace).not.toHaveBeenCalled()
+
+    // 세션이 비회원이 되어 조건이 사라지면 화면은 다음 곳(홈)으로 보내려 한다 — 만료 중에는 보내지 않아야 한다
+    act(() => notifySessionExpired())
+
+    expect(router.replace.mock.calls).toEqual([['/login?reason=expired']])
+    clearSessionExpiring()
   })
 })

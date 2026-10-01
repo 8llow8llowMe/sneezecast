@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 import { LOGIN_EXPIRED_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { clearSessionExpiring, notifySessionExpired, onSessionExpired } from '@/lib/session-expiry'
 import { useHydrated } from '@/lib/use-hydrated'
 
-import { expireMockSession } from './auth-client'
+import { expireMockSession, getMockSession, subscribeMockSession } from './auth-client'
 
 /**
  * QA 용 로그인 만료 재현 쿼리 (`?mock-session=expired`). 어느 화면이든 열면 바로 만료 흐름을 탄다.
@@ -29,6 +29,7 @@ export const MOCK_SESSION_EXPIRED = 'expired'
  *
  * 세션이 먼저 비회원이 되어 회원 화면의 가드가 같은 때 다른 곳으로 보내려 해도, 가드는 만료 진행 표시(`isSessionExpiring`)를 보고
  * 만료 주소로 보내거나 멈춘다. 표시는 로그인 화면(`/login`)에 닿으면 끈다 — 이미 로그인 화면에서 만료돼도 끈다.
+ * 로그인 화면을 거치지 않고 다시 회원이 돼도(목 세션이 비회원이 아니게 되면) 끈다. `?mock-auth=` 덮어쓰기가 아니라 세션 값을 본다
  *
  * `useSearchParams` 를 읽으므로 레이아웃에서는 `<Suspense>` 로 감싼다(정적 생성이 멈추지 않게).
  */
@@ -53,6 +54,12 @@ export function SessionExpiryWatcher(): null {
   useEffect(() => {
     if (pathname === LOGIN_PATH) clearSessionExpiring()
   }, [pathname, expiredCount])
+
+  // 서버는 목 세션을 몰라 비회원으로 본다(서버에서는 표시도 꺼져 있다)
+  const session = useSyncExternalStore(subscribeMockSession, getMockSession, () => 'guest')
+  useEffect(() => {
+    if (session !== 'guest') clearSessionExpiring()
+  }, [session])
 
   useEffect(() => {
     if (hydrated && mockExpired) notifySessionExpired()
