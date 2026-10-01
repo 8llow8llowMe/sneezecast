@@ -17,6 +17,24 @@ describe('Section', () => {
   })
 })
 
+describe('Section layout', () => {
+  it('panel 은 태블릿부터 여백을 없앤다', () => {
+    const { container, rerender } = render(<Section title="제목">내용</Section>)
+    const section = () => container.firstElementChild as HTMLElement
+
+    expect(section().classList).toContain('tablet:px-page-tablet')
+
+    rerender(
+      <Section title="제목" layout="panel">
+        내용
+      </Section>,
+    )
+    expect(section().classList).toContain('px-page-mobile')
+    expect(section().classList).toContain('tablet:p-0')
+    expect(section().classList).not.toContain('tablet:px-page-tablet')
+  })
+})
+
 describe('SectionBand', () => {
   it('8px 회색 띠이고 보조기술에 읽히지 않는다', () => {
     const { container } = render(<SectionBand />)
