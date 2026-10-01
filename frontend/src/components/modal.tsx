@@ -31,8 +31,41 @@ export type ModalProps = {
    * 숨겨도 Esc · 바깥 누르기로 닫힌다.
    */
   compactSheet?: boolean
+  /**
+   * 모바일 배치.
+   * - sheet: 화면 아래에 붙는 바텀시트 (기본)
+   * - screen: 화면 전체. 아이콘 · 제목 · 내용이 가운데, footer 가 아래에 붙는다 (보고 완료 — Report-done 시안).
+   *   머리줄 · 손잡이가 없고 footer 의 버튼이나 Esc 로 닫는다
+   *
+   * 태블릿 · 데스크톱은 둘 다 가운데 대화상자다.
+   */
+  mobileLayout?: 'sheet' | 'screen'
+  /** 제목 위 아이콘 (보고 완료 체크) */
+  icon?: ReactNode
+  /** 아래 버튼 영역. `screen` 배치의 모바일에서는 화면 아래에 붙는다 */
+  footer?: ReactNode
   children: ReactNode
 }
+
+const LAYOUT = {
+  sheet: {
+    dialog: 'mx-0 mt-auto mb-0 max-h-modal w-full max-w-none rounded-t-sheet',
+    inner: 'flex flex-col gap-4 px-5 pt-2.5 pb-sheet',
+    body: 'flex flex-col gap-4',
+    footer: 'flex flex-col gap-2.5',
+    header: 'flex',
+    title: 'text-sheet-title',
+  },
+  screen: {
+    dialog: 'm-0 h-dvh max-h-none w-full max-w-none',
+    inner: 'flex min-h-full flex-col pt-2.5',
+    body: 'flex grow flex-col justify-center gap-4 px-5',
+    // 되돌리기 토스트를 버튼 바로 위에 띄울 수 있게 기준 위치를 둔다 (Report-done-ok 시안)
+    footer: 'relative flex flex-col gap-2.5 px-5 pt-3 pb-sheet',
+    header: 'hidden tablet:flex',
+    title: 'text-status',
+  },
+} as const
 
 /**
  * 반응형 모달. **모바일은 바텀시트, 태블릿 · 데스크톱은 가운데 대화상자**다 (design-guide.md "디자인 규칙").
@@ -40,7 +73,7 @@ export type ModalProps = {
  * 네이티브 `<dialog>` 의 `showModal()` 을 쓴다. 포커스 가두기 · 뒤 화면 비활성 · Esc 처리를 브라우저가
  * 맡으므로 직접 구현하지 않는다. 열린 동안 뒤 화면 스크롤은 globals.css 가 막는다.
  *
- * 시안: Report-start(시트) · Report-start-T(520) · Report-start-D(480) · Report-symptom(머리줄) · Explain(시트에서만 머리줄 없음)
+ * 시안: Report-start(시트) · Report-start-T(520) · Report-start-D(480) · Report-symptom(머리줄) · Explain(시트에서만 머리줄 없음) · Report-done(모바일 전체 화면)
  */
 export function Modal({
   open,
@@ -49,8 +82,12 @@ export function Modal({
   step,
   onBack,
   compactSheet = false,
+  mobileLayout = 'sheet',
+  icon,
+  footer,
   children,
 }: ModalProps) {
+  const layout = LAYOUT[mobileLayout]
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
@@ -82,29 +119,31 @@ export function Modal({
       onClick={handleClick}
       className={clsx(
         'overflow-y-auto overscroll-contain bg-bg p-0 text-fg backdrop:bg-dim',
-        // 모바일: 화면 아래에 붙는 시트
-        'mx-0 mt-auto mb-0 max-h-modal w-full max-w-none rounded-t-sheet',
-        // 태블릿 · 데스크톱: 가운데 대화상자
-        'tablet:m-auto tablet:w-dialog-tablet tablet:max-w-dialog tablet:rounded-dialog',
+        layout.dialog,
+        // 태블릿 · 데스크톱: 가운데 대화상자. 높이는 auto 가 아니라 fit-content 다 — 모달 dialog 는 위아래가
+        // 0 에 고정돼 있어(브라우저 기본값) auto 면 화면 높이만큼 늘어난다
+        'tablet:m-auto tablet:h-fit tablet:max-h-modal tablet:w-dialog-tablet tablet:max-w-dialog tablet:rounded-dialog',
         'desktop:w-dialog-desktop',
       )}
     >
       <div
         className={clsx(
-          'flex flex-col gap-4 px-5 pt-2.5 pb-sheet',
-          'tablet:gap-3.5 tablet:px-7 tablet:pt-4 tablet:pb-7',
+          layout.inner,
+          'tablet:min-h-0 tablet:gap-3.5 tablet:px-7 tablet:pt-4 tablet:pb-7',
         )}
       >
-        {/* 손잡이 — 시트임을 알리는 장식. 대화상자에서는 숨긴다 */}
-        <div
-          aria-hidden="true"
-          className="h-1 w-10 self-center rounded-bar bg-inactive-bar tablet:hidden"
-        />
+        {/* 손잡이 — 시트임을 알리는 장식. 대화상자 · 전체 화면에서는 숨긴다 */}
+        {mobileLayout === 'sheet' && (
+          <div
+            aria-hidden="true"
+            className="h-1 w-10 self-center rounded-bar bg-inactive-bar tablet:hidden"
+          />
+        )}
 
         <div
           className={clsx(
             'h-11 items-center justify-between',
-            compactSheet ? 'hidden tablet:flex' : 'flex',
+            compactSheet ? 'hidden tablet:flex' : layout.header,
           )}
         >
           {onBack ? (
@@ -121,17 +160,28 @@ export function Modal({
           <IconButton label="닫기" icon={<CloseIcon />} onClick={onClose} className="-mr-3" />
         </div>
 
-        <h2
-          id={titleId}
+        <div
           className={clsx(
-            'text-sheet-title leading-[1.35] font-bold text-fg tablet:text-dialog-title',
-            compactSheet && 'mt-1 tablet:mt-0',
+            layout.body,
+            'tablet:grow-0 tablet:justify-start tablet:gap-3.5 tablet:px-0',
           )}
         >
-          {title}
-        </h2>
+          {icon}
+          <h2
+            id={titleId}
+            className={clsx(
+              'leading-[1.35] font-bold text-fg tablet:text-dialog-title',
+              layout.title,
+              compactSheet && 'mt-1 tablet:mt-0',
+            )}
+          >
+            {title}
+          </h2>
 
-        {children}
+          {children}
+        </div>
+
+        {footer != null && <div className={clsx(layout.footer, 'tablet:p-0')}>{footer}</div>}
       </div>
     </dialog>
   )
