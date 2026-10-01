@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Home-member-T</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+@font-face{font-family:'Pretendard';src:url(/_blob/9f82cb6d533bded53de5926bad775cf8) format('woff2');font-weight:45 920;font-style:normal;font-display:swap}
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 834px; height: 1194px; box-sizing: border-box; display: flex; flex-direction: column; background: #FFFFFF; font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; color: #191F28; font-variant-numeric: tabular-nums; overflow: hidden"><header style="flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 72px; padding: 0 20px 0 12px; border-bottom: 1px solid #E5E8EB"><button type="button" aria-label="동네 바꾸기, 현재 ○○동" style="display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 8px; border: none; background: none; font-family: inherit; font-size: 20px; font-weight: 700; color: #191F28; cursor: pointer"><span>○○동</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#191F28" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button><span style="flex-grow: 1"></span><button type="button" aria-label="알림 설정" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: none; background: none; cursor: pointer"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#191F28" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg></button><button type="button" style="height: 44px; padding: 0 20px; border: none; border-radius: 12px; background: #1F2F57; color: #FFFFFF; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer">이번 주 건강 보고하기</button></header><div style="border-bottom: 1px solid #E5E8EB"><a href="#official" style="flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 24px; text-decoration: none; color: #191F28; background: #FFFFFF">
+<span style="flex-shrink: 0; padding: 3px 8px; border-radius: 999px; background: #1F2F57; color: #FFFFFF; font-size: 12px; font-weight: 700">공식</span>
+<span style="display: flex; flex-direction: column; gap: 1px; flex-grow: 1"><span style="font-size: 15px; font-weight: 500; color: #191F28">전국 인플루엔자 유행주의보</span><span style="font-size: 12px; color: #4E5968">질병관리청 · 전국 · 주간 발표 기준</span></span>
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B7684" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+</a></div><main style="flex-grow: 1; display: flex; flex-direction: column; gap: 24px; padding: 24px; overflow: hidden"><div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px"><section style="display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 24px; border-radius: 16px; background: #F2F4F6">
+<div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 8px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 13px; font-weight: 500; color: #4E5968">우리 동네 이번 주 · 시민 자가보고</span>
+<span style="font-size: 26px; font-weight: 700; line-height: 1.25; color: {{wordColor}}">{{word}}</span>
+</div>
+<svg width="104" height="61" viewBox="0 0 120 70" fill="none" aria-hidden="true">
+<path d="M12 62A48 48 0 0 1 36 20.43" stroke="{{seg1}}" stroke-opacity="{{op1}}" stroke-width="10"></path>
+<path d="M37.5 19.6A48 48 0 0 1 82.5 19.6" stroke="{{seg2}}" stroke-opacity="{{op2}}" stroke-width="10"></path>
+<path d="M84 20.43A48 48 0 0 1 108 62" stroke="{{seg3}}" stroke-opacity="{{op3}}" stroke-width="10"></path>
+<sc-if value="{{showDot}}" hint-placeholder-val="{{ true }}"><circle cx="{{dotX}}" cy="{{dotY}}" r="8" fill="#FFFFFF" stroke="{{wordColor}}" stroke-width="3"></circle></sc-if>
+</svg>
+</div>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.45; color: #191F28">{{desc}}</p>
+<sc-if value="{{hasData}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px"><span style="font-size: 14px; font-weight: 600; color: #191F28">{{meta}}</span><button type="button" onClick="{{openExplain}}" style="flex-shrink: 0; min-height: 32px; padding: 0; border: none; background: none; font-family: inherit; font-size: 13px; font-weight: 600; color: #1F2F57; text-decoration: underline; cursor: pointer">왜 이렇게 보나요?</button></div>
+</sc-if>
+<sc-if value="{{noData}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 600; color: #191F28"><span>우리 동네 자료를 채우는 중</span><span>{{partNow}} / {{partNeed}}명</span></div>
+<div style="height: 8px; border-radius: 4px; background: #E5E8EB; overflow: hidden"><div style="width: {{partPct}}; height: 8px; border-radius: 4px; background: #1F2F57"></div></div>
+<span style="font-size: 13px; line-height: 1.5; color: #4E5968">참여가 공개 기준을 넘으면 증상 변화를 보여드려요</span>
+</div>
+</sc-if>
+</section><section style="display: flex; flex-direction: column; padding: 0">
+<h2 style="margin: 0 0 4px 0; font-size: 17px; font-weight: 700; color: #191F28">증상별 변화</h2>
+<sc-if value="{{hasData}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; align-items: center; justify-content: space-between; min-height: 56px; border-bottom: 1px solid #E5E8EB">
+<span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 600; color: #191F28">발열·기침·인후통</span><span style="font-size: 13px; font-weight: 500; color: {{r1Color}}">{{r1}}</span></span>
+<span style="display: flex; align-items: flex-end; gap: 3px; height: 24px"><sc-for list="{{bars1}}" as="b" hint-placeholder-count="7"><span style="display: block; width: 6px; height: {{b.h}}px; border-radius: 2px; background: {{b.bg}}"></span></sc-for></span>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; min-height: 56px; border-bottom: 1px solid #E5E8EB">
+<span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 600; color: #191F28">구토·설사</span><span style="font-size: 13px; font-weight: 500; color: #4E5968">{{r2}}</span></span>
+<span style="display: flex; align-items: flex-end; gap: 3px; height: 24px"><sc-for list="{{bars2}}" as="b" hint-placeholder-count="7"><span style="display: block; width: 6px; height: {{b.h}}px; border-radius: 2px; background: {{b.bg}}"></span></sc-for></span>
+</div>
+</sc-if>
+<sc-if value="{{noData}}" hint-placeholder-val="{{ false }}">
+<p style="margin: 8px 0 0 0; padding: 16px; border-radius: 12px; border: 1px dashed #D1D6DB; font-size: 14px; line-height: 1.5; color: #4E5968">보고가 충분히 모이면 증상별 변화를 보여드려요. 표본이 적을 때는 수치를 표시하지 않아요.</p>
+</sc-if>
+</section></div><div style="position: relative; flex-grow: 1; min-height: 360px; border-radius: 16px; border: 1px solid #E5E8EB; overflow: hidden"><svg width="100%" height="100%" viewBox="0 0 600 440" preserveAspectRatio="xMidYMid slice" role="img" aria-label="행정동별 변화 지도"><defs><pattern id="hatchA" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#E5E8EB"></rect><line x1="0" y1="0" x2="0" y2="8" stroke="#B0B8C1" stroke-width="2"></line></pattern></defs><rect width="600" height="440" fill="#F2F4F6"></rect><path d="M0.0 0.0 L83.6 0.0 L86.2 93.2 L0.0 75.4 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M83.6 0.0 L174.1 0.0 L184.3 71.8 L86.2 93.2 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M174.1 0.0 L275.8 0.0 L248.5 71.6 L184.3 71.8 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M275.8 0.0 L341.3 0.0 L356.5 95.7 L248.5 71.6 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M341.3 0.0 L428.9 0.0 L408.4 107.3 L356.5 95.7 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M428.9 0.0 L518.1 0.0 L534.7 94.2 L408.4 107.3 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M518.1 0.0 L600.0 0.0 L600.0 92.6 L534.7 94.2 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M0.0 75.4 L86.2 93.2 L64.4 177.1 L0.0 162.3 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M86.2 93.2 L184.3 71.8 L152.0 163.6 L64.4 177.1 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M184.3 71.8 L248.5 71.6 L245.8 157.2 L152.0 163.6 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M248.5 71.6 L356.5 95.7 L341.3 173.6 L245.8 157.2 Z" fill="#F08C2E" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M356.5 95.7 L408.4 107.3 L443.6 176.8 L341.3 173.6 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M408.4 107.3 L534.7 94.2 L520.5 176.0 L443.6 176.8 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M534.7 94.2 L600.0 92.6 L600.0 182.5 L520.5 176.0 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M0.0 162.3 L64.4 177.1 L76.0 283.9 L0.0 262.3 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M64.4 177.1 L152.0 163.6 L193.2 277.6 L76.0 283.9 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M152.0 163.6 L245.8 157.2 L266.3 256.6 L193.2 277.6 Z" fill="#F08C2E" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M245.8 157.2 L341.3 173.6 L331.0 255.6 L266.3 256.6 Z" fill="#F08C2E" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M341.3 173.6 L443.6 176.8 L409.7 274.7 L331.0 255.6 Z" fill="#F08C2E" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M443.6 176.8 L520.5 176.0 L509.9 277.9 L409.7 274.7 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M520.5 176.0 L600.0 182.5 L600.0 259.5 L509.9 277.9 Z" fill="url(#hatchA)" stroke="#FFFFFF" stroke-width="2"></path><path d="M0.0 262.3 L76.0 283.9 L101.0 332.0 L0.0 370.3 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M76.0 283.9 L193.2 277.6 L158.7 368.4 L101.0 332.0 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M193.2 277.6 L266.3 256.6 L255.8 371.2 L158.7 368.4 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M266.3 256.6 L331.0 255.6 L338.3 334.9 L255.8 371.2 Z" fill="#F08C2E" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M331.0 255.6 L409.7 274.7 L434.3 363.1 L338.3 334.9 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M409.7 274.7 L509.9 277.9 L504.2 335.5 L434.3 363.1 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M509.9 277.9 L600.0 259.5 L600.0 345.3 L504.2 335.5 Z" fill="url(#hatchA)" stroke="#FFFFFF" stroke-width="2"></path><path d="M0.0 370.3 L101.0 332.0 L106.1 440.0 L0.0 440.0 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M101.0 332.0 L158.7 368.4 L182.8 440.0 L106.1 440.0 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M158.7 368.4 L255.8 371.2 L240.3 440.0 L182.8 440.0 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M255.8 371.2 L338.3 334.9 L331.7 440.0 L240.3 440.0 Z" fill="#2EA66B" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M338.3 334.9 L434.3 363.1 L411.0 440.0 L331.7 440.0 Z" fill="#3D7EF0" fill-opacity="0.42" stroke="#FFFFFF" stroke-width="2"></path><path d="M434.3 363.1 L504.2 335.5 L494.9 440.0 L411.0 440.0 Z" fill="url(#hatchA)" stroke="#FFFFFF" stroke-width="2"></path><path d="M504.2 335.5 L600.0 345.3 L600.0 440.0 L494.9 440.0 Z" fill="url(#hatchA)" stroke="#FFFFFF" stroke-width="2"></path><path d="M245.8 157.2 L341.3 173.6 L331.0 255.6 L266.3 256.6 Z" fill="none" stroke="#1F2F57" stroke-width="3.5"></path><rect x="266.1" y="197.8" width="60" height="26" rx="13" fill="#1F2F57"></rect><text x="296.1" y="215.8" text-anchor="middle" font-size="13" font-weight="700" fill="#FFFFFF">○○동</text></svg><div style="position: absolute; top: 16px; left: 16px; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 999px; background: #FFFFFF; border: 1px solid #E5E8EB; font-size: 13px; font-weight: 600; color: #191F28"><span style="display: block; width: 8px; height: 8px; border-radius: 4px; background: #6B7684"></span>시민 자가보고 · 11월 3주</div><div style="position: absolute; left: 16px; bottom: 16px; display: flex; gap: 12px; padding: 8px 12px; border-radius: 10px; background: #FFFFFF; border: 1px solid #E5E8EB; font-size: 12px; color: #191F28">
+<span style="display: flex; align-items: center; gap: 5px"><span style="display: block; width: 10px; height: 10px; border-radius: 2px; background: #3D7EF0"></span>평소 수준</span>
+<span style="display: flex; align-items: center; gap: 5px"><span style="display: block; width: 10px; height: 10px; border-radius: 2px; background: #2EA66B"></span>조금 늘었어요</span>
+<span style="display: flex; align-items: center; gap: 5px"><span style="display: block; width: 10px; height: 10px; border-radius: 2px; background: #F08C2E"></span>많이 늘었어요</span>
+<span style="display: flex; align-items: center; gap: 5px"><span style="display: block; width: 10px; height: 10px; border-radius: 2px; background: #B0B8C1"></span>자료 부족</span>
+</div></div></main><nav aria-label="주요 메뉴" style="flex-shrink: 0; display: flex; height: 64px; border-top: 1px solid #E5E8EB; background: #FFFFFF"><a href="#home" aria-current="page" style="flex-grow: 1; flex-basis: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; font-family: inherit; font-size: 11px; cursor: pointer; text-decoration: none; color: #1F2F57; font-weight: 700"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1F2F57" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg><span>홈</span></a><a href="#map" style="flex-grow: 1; flex-basis: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; font-family: inherit; font-size: 11px; cursor: pointer; text-decoration: none; color: #6B7684; font-weight: 500"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7684" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"></path><path d="M9 4v14"></path><path d="M15 6v14"></path></svg><span>지도</span></a><a href="#me" style="flex-grow: 1; flex-basis: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; font-family: inherit; font-size: 11px; cursor: pointer; text-decoration: none; color: #6B7684; font-weight: 500"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7684" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1-4 4.2-6.5 8-6.5s7 2.5 8 6.5"></path></svg><span>내 정보</span></a></nav></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"level": {"editor": "enum", "options": ["평소 수준", "조금 늘었어요", "많이 늘었어요", "자료 부족"], "default": "조금 늘었어요"}, "notice": {"editor": "text", "default": ""}, "$preview": {"width": 834, "height": 1194}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var level = this.props.level ?? '조금 늘었어요';
+    var BLUE = '#3D7EF0', GREEN = '#2EA66B', ORANGE = '#F08C2E', GRAY = '#D1D6DB', MUTED = '#B0B8C1';
+    var looks = {
+      '평소 수준': { wordColor: '#2F6FE0', desc: '지난 4주와 비슷한 수준이에요', meta: '참여 142명 · 증상 보고 6%', active: 1, dot: [18.4, 38], r1: '지난주와 비슷해요', r1Color: '#4E5968', up: false, r2: '조금 줄었어요', h1: [10, 11, 10, 12, 11, 10, 11], h2: [12, 11, 10, 10, 9, 9, 8], published: false },
+      '조금 늘었어요': { wordColor: '#23874F', desc: '발열·기침 보고가 지난주보다 조금 늘었어요', meta: '참여 136명 · 증상 보고 11%', active: 2, dot: [60, 14], r1: '조금 늘었어요', r1Color: '#23874F', up: true, r2: '비슷해요', h1: [9, 10, 11, 12, 14, 15, 17], h2: [10, 10, 11, 10, 11, 10, 11], published: false },
+      '많이 늘었어요': { wordColor: '#C7641A', desc: '발열·기침 보고가 지난 4주보다 많이 늘었어요', meta: '참여 128명 · 증상 보고 18%', active: 3, dot: [101.6, 38], r1: '많이 늘었어요', r1Color: '#C7641A', up: true, r2: '비슷해요', h1: [9, 11, 12, 15, 18, 21, 24], h2: [10, 11, 10, 11, 10, 11, 11], published: true },
+      '자료 부족': { wordColor: '#6B7684', desc: '이번 주 보고가 아직 적어요', meta: '', active: 0, dot: null, r1: '', r1Color: '#4E5968', up: false, r2: '', h1: [], h2: [], published: false }
+    };
+    var look = looks[level] || looks['많이 늘었어요'];
+    var none = look.active === 0;
+    var last = look.up ? (look.active === 2 ? GREEN : ORANGE) : MUTED;
+    var mk = function (hs, c) { return hs.map(function (h, i) { return { h: h, bg: i === hs.length - 1 ? c : GRAY }; }); };
+    var notice = this.props.notice ?? '';
+    return {
+      partNow: 64, partNeed: 100, partPct: '64%', openExplain: function () {},
+      showNotice: notice !== '', notice: notice,
+      word: level, wordColor: look.wordColor, desc: look.desc, meta: look.meta,
+      seg1: none ? GRAY : BLUE, seg2: none ? GRAY : GREEN, seg3: none ? GRAY : ORANGE,
+      op1: none || look.active === 1 ? 1 : 0.28, op2: none || look.active === 2 ? 1 : 0.28, op3: none || look.active === 3 ? 1 : 0.28,
+      showDot: !none, dotX: look.dot ? look.dot[0] : 0, dotY: look.dot ? look.dot[1] : 0,
+      hasData: !none, noData: none, r1: look.r1, r1Color: look.r1Color, r2: look.r2,
+      bars1: mk(look.h1, last), bars2: mk(look.h2, MUTED),
+      published: look.published, notPublished: !look.published
+    };
+  }
+}
+</script>
+</body>
+</html>

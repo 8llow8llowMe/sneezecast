@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Home-purging</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+@font-face{font-family:'Pretendard';src:url(/_blob/9f82cb6d533bded53de5926bad775cf8) format('woff2');font-weight:45 920;font-style:normal;font-display:swap}
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; display: flex; flex-direction: column; background: #FFFFFF; font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; color: #191F28; font-variant-numeric: tabular-nums; overflow: hidden"><main style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden"><div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 8px 0 12px"><button type="button" aria-label="동네 바꾸기, 현재 ○○동" style="display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 8px; border: none; background: none; font-family: inherit; font-size: 20px; font-weight: 700; color: #191F28; cursor: pointer"><span>○○동</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#191F28" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button><button type="button" aria-label="알림 설정" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: none; background: none; cursor: pointer"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#191F28" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg></button></div><div style="padding: 0 20px; font-size: 13px; color: #4E5968">11월 3주 · 오늘 09:00 갱신</div><section style="display: flex; flex-direction: column; gap: 12px; margin: 16px 20px 20px 20px; padding: 20px; border-radius: 16px; background: #F2F4F6">
+<div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 8px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 13px; font-weight: 500; color: #4E5968">우리 동네 이번 주 · 시민 자가보고</span>
+<span style="font-size: 26px; font-weight: 700; line-height: 1.25; color: {{wordColor}}">{{word}}</span>
+</div>
+<svg width="104" height="61" viewBox="0 0 120 70" fill="none" aria-hidden="true">
+<path d="M12 62A48 48 0 0 1 36 20.43" stroke="{{seg1}}" stroke-opacity="{{op1}}" stroke-width="10"></path>
+<path d="M37.5 19.6A48 48 0 0 1 82.5 19.6" stroke="{{seg2}}" stroke-opacity="{{op2}}" stroke-width="10"></path>
+<path d="M84 20.43A48 48 0 0 1 108 62" stroke="{{seg3}}" stroke-opacity="{{op3}}" stroke-width="10"></path>
+<sc-if value="{{showDot}}" hint-placeholder-val="{{ true }}"><circle cx="{{dotX}}" cy="{{dotY}}" r="8" fill="#FFFFFF" stroke="{{wordColor}}" stroke-width="3"></circle></sc-if>
+</svg>
+</div>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.45; color: #191F28">{{desc}}</p>
+<sc-if value="{{hasData}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px"><span style="font-size: 14px; font-weight: 600; color: #191F28">{{meta}}</span><button type="button" onClick="{{openExplain}}" style="flex-shrink: 0; min-height: 32px; padding: 0; border: none; background: none; font-family: inherit; font-size: 13px; font-weight: 600; color: #1F2F57; text-decoration: underline; cursor: pointer">왜 이렇게 보나요?</button></div>
+</sc-if>
+<sc-if value="{{noData}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 600; color: #191F28"><span>우리 동네 자료를 채우는 중</span><span>{{partNow}} / {{partNeed}}명</span></div>
+<div style="height: 8px; border-radius: 4px; background: #E5E8EB; overflow: hidden"><div style="width: {{partPct}}; height: 8px; border-radius: 4px; background: #1F2F57"></div></div>
+<span style="font-size: 13px; line-height: 1.5; color: #4E5968">참여가 공개 기준을 넘으면 증상 변화를 보여드려요</span>
+</div>
+</sc-if>
+</section><div style="height: 8px; flex-shrink: 0; background: #F2F4F6"></div><a href="#official" style="flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 20px; text-decoration: none; color: #191F28; background: #FFFFFF">
+<span style="flex-shrink: 0; padding: 3px 8px; border-radius: 999px; background: #1F2F57; color: #FFFFFF; font-size: 12px; font-weight: 700">공식</span>
+<span style="display: flex; flex-direction: column; gap: 1px; flex-grow: 1"><span style="font-size: 15px; font-weight: 500; color: #191F28">전국 인플루엔자 유행주의보</span><span style="font-size: 12px; color: #4E5968">질병관리청 · 전국 · 주간 발표 기준</span></span>
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B7684" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+</a><div style="height: 8px; flex-shrink: 0; background: #F2F4F6"></div><section style="display: flex; flex-direction: column; padding: 20px 20px 16px 20px">
+<h2 style="margin: 0 0 4px 0; font-size: 17px; font-weight: 700; color: #191F28">증상별 변화</h2>
+<sc-if value="{{hasData}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; align-items: center; justify-content: space-between; min-height: 56px; border-bottom: 1px solid #E5E8EB">
+<span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 600; color: #191F28">발열·기침·인후통</span><span style="font-size: 13px; font-weight: 500; color: {{r1Color}}">{{r1}}</span></span>
+<span style="display: flex; align-items: flex-end; gap: 3px; height: 24px"><sc-for list="{{bars1}}" as="b" hint-placeholder-count="7"><span style="display: block; width: 6px; height: {{b.h}}px; border-radius: 2px; background: {{b.bg}}"></span></sc-for></span>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; min-height: 56px; border-bottom: 1px solid #E5E8EB">
+<span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 600; color: #191F28">구토·설사</span><span style="font-size: 13px; font-weight: 500; color: #4E5968">{{r2}}</span></span>
+<span style="display: flex; align-items: flex-end; gap: 3px; height: 24px"><sc-for list="{{bars2}}" as="b" hint-placeholder-count="7"><span style="display: block; width: 6px; height: {{b.h}}px; border-radius: 2px; background: {{b.bg}}"></span></sc-for></span>
+</div>
+</sc-if>
+<sc-if value="{{noData}}" hint-placeholder-val="{{ false }}">
+<p style="margin: 8px 0 0 0; padding: 16px; border-radius: 12px; border: 1px dashed #D1D6DB; font-size: 14px; line-height: 1.5; color: #4E5968">보고가 충분히 모이면 증상별 변화를 보여드려요. 표본이 적을 때는 수치를 표시하지 않아요.</p>
+</sc-if>
+</section></main><div style="flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px 20px; border-top: 1px solid #E5E8EB; background: #FFFFFF"><div role="status" style="display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-radius: 12px; background: #F2F4F6"><div style="display: flex; gap: 8px; font-size: 14px; font-weight: 500; line-height: 1.55; color: #191F28"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4E5968" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path></svg><span>보고를 지우는 중이에요. 끝나면 다시 동의하고 보고할 수 있어요.</span></div></div><button type="button" aria-disabled="true" style="width: 100%; height: 56px; border: none; border-radius: 12px; background: #F2F4F6; color: #191F28; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer; color: #6B7684">잠시 뒤 다시 보고할 수 있어요</button></div><nav aria-label="주요 메뉴" style="flex-shrink: 0; display: flex; height: 60px; border-top: 1px solid #E5E8EB; background: #FFFFFF"><a href="#home" aria-current="page" style="flex-grow: 1; flex-basis: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; font-family: inherit; font-size: 11px; cursor: pointer; text-decoration: none; color: #1F2F57; font-weight: 700"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1F2F57" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg><span>홈</span></a><a href="#map" style="flex-grow: 1; flex-basis: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; font-family: inherit; font-size: 11px; cursor: pointer; text-decoration: none; color: #6B7684; font-weight: 500"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7684" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"></path><path d="M9 4v14"></path><path d="M15 6v14"></path></svg><span>지도</span></a><a href="#me" style="flex-grow: 1; flex-basis: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; font-family: inherit; font-size: 11px; cursor: pointer; text-decoration: none; color: #6B7684; font-weight: 500"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7684" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1-4 4.2-6.5 8-6.5s7 2.5 8 6.5"></path></svg><span>내 정보</span></a></nav></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"level": {"editor": "enum", "options": ["평소 수준", "조금 늘었어요", "많이 늘었어요", "자료 부족"], "default": "조금 늘었어요"}, "notice": {"editor": "text", "default": ""}, "$preview": {"width": 390, "height": 844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var level = this.props.level ?? '조금 늘었어요';
+    var BLUE = '#3D7EF0', GREEN = '#2EA66B', ORANGE = '#F08C2E', GRAY = '#D1D6DB', MUTED = '#B0B8C1';
+    var looks = {
+      '평소 수준': { wordColor: '#2F6FE0', desc: '지난 4주와 비슷한 수준이에요', meta: '참여 142명 · 증상 보고 6%', active: 1, dot: [18.4, 38], r1: '지난주와 비슷해요', r1Color: '#4E5968', up: false, r2: '조금 줄었어요', h1: [10, 11, 10, 12, 11, 10, 11], h2: [12, 11, 10, 10, 9, 9, 8], published: false },
+      '조금 늘었어요': { wordColor: '#23874F', desc: '발열·기침 보고가 지난주보다 조금 늘었어요', meta: '참여 136명 · 증상 보고 11%', active: 2, dot: [60, 14], r1: '조금 늘었어요', r1Color: '#23874F', up: true, r2: '비슷해요', h1: [9, 10, 11, 12, 14, 15, 17], h2: [10, 10, 11, 10, 11, 10, 11], published: false },
+      '많이 늘었어요': { wordColor: '#C7641A', desc: '발열·기침 보고가 지난 4주보다 많이 늘었어요', meta: '참여 128명 · 증상 보고 18%', active: 3, dot: [101.6, 38], r1: '많이 늘었어요', r1Color: '#C7641A', up: true, r2: '비슷해요', h1: [9, 11, 12, 15, 18, 21, 24], h2: [10, 11, 10, 11, 10, 11, 11], published: true },
+      '자료 부족': { wordColor: '#6B7684', desc: '이번 주 보고가 아직 적어요', meta: '', active: 0, dot: null, r1: '', r1Color: '#4E5968', up: false, r2: '', h1: [], h2: [], published: false }
+    };
+    var look = looks[level] || looks['많이 늘었어요'];
+    var none = look.active === 0;
+    var last = look.up ? (look.active === 2 ? GREEN : ORANGE) : MUTED;
+    var mk = function (hs, c) { return hs.map(function (h, i) { return { h: h, bg: i === hs.length - 1 ? c : GRAY }; }); };
+    var notice = this.props.notice ?? '';
+    return {
+      partNow: 64, partNeed: 100, partPct: '64%', openExplain: function () {},
+      showNotice: notice !== '', notice: notice,
+      word: level, wordColor: look.wordColor, desc: look.desc, meta: look.meta,
+      seg1: none ? GRAY : BLUE, seg2: none ? GRAY : GREEN, seg3: none ? GRAY : ORANGE,
+      op1: none || look.active === 1 ? 1 : 0.28, op2: none || look.active === 2 ? 1 : 0.28, op3: none || look.active === 3 ? 1 : 0.28,
+      showDot: !none, dotX: look.dot ? look.dot[0] : 0, dotY: look.dot ? look.dot[1] : 0,
+      hasData: !none, noData: none, r1: look.r1, r1Color: look.r1Color, r2: look.r2,
+      bars1: mk(look.h1, last), bars2: mk(look.h2, MUTED),
+      published: look.published, notPublished: !look.published
+    };
+  }
+}
+</script>
+</body>
+</html>
