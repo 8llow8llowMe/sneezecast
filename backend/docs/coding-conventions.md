@@ -125,6 +125,8 @@ public record WeeklyReportRequest(
 - 모든 컬럼에 `@Comment`. FK 는 `@Comment("회원 아이디 (FK: member.id)")` 형식으로 대상 테이블을 적는다.
 - 단일 PK 를 우선한다. N:N 은 중간 테이블로 푼다.
 - 엔티티의 PK · FK 는 Wrapper, 카운트 · boolean 은 primitive. 도메인 모델의 PK · FK 는 primitive (nullable 만 Wrapper).
+- **enum 컬럼은 `@Enumerated(EnumType.STRING)` 과 `@JdbcTypeCode(SqlTypes.VARCHAR)` 를 함께** 건다. 앞의 것만 있으면 Hibernate 6 가 MySQL · H2 에 네이티브 `enum(...)` 컬럼을 만들어, 값 추가 때마다 ALTER 가 필요하고 dev 의 `ddl-auto: update` 로는 반영되지 않는다. 엔티티 스키마 테스트로 VARCHAR 인지 고정한다.
+- **Snowflake 로 ID 를 미리 정하는 엔티티는 `Persistable<Long>` 을 구현한다** — `isNew()` = `createdAt == null`. 구현하지 않으면 Spring Data 가 ID 가 있는 엔티티를 기존 행으로 보고 `save` 를 `merge` 로 보내, INSERT 전에 SELECT 가 한 번 더 나가고 **ID 가 겹치면 기존 행을 조용히 덮어쓴다**. 이 판정 때문에 **기존 행 수정은 "조회한 엔티티를 바꿔 변경 감지" 또는 갱신 쿼리로 한다** — 도메인 모델에서 새로 매핑한 엔티티를 `save` 하면 INSERT 로 가서 PK 위반이 난다. (현재 auth 엔티티에 각각 구현, `BaseEntity` 로 올리는 것은 후속 이슈)
 
 ### 8-2. 느슨한 결합 — DB FK 제약을 두지 않는다
 
