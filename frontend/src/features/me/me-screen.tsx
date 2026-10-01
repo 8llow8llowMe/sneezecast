@@ -20,6 +20,7 @@ import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
 import { useHydrated } from '@/lib/use-hydrated'
 import { useModalParam } from '@/lib/use-modal-param'
+import { usePushSupport } from '@/lib/use-push-support'
 
 import {
   CONFIRM_FAILURE,
@@ -41,6 +42,7 @@ import {
 } from './me-paths'
 import { useMeTrail } from './me-trail'
 import { useRequiredStepsTarget } from './member-gate'
+import { PushUnavailable } from './push-unavailable'
 import { MenuRow, sectionTitleId, SettingsSection, SwitchRow } from './settings-row'
 
 /** 대화상자별 목 API. 성공하면 `auth-client` 가 목 세션을 바꾼다(로그아웃 · 탈퇴 → guest, 동의 철회 → member-no-consent) */
@@ -112,6 +114,9 @@ export function MeScreen({
   const auth = useMockAuth()
   const profile = useMockProfile()
   const confirm = useModalParam(CONFIRM_PARAM)
+  // 이 기기에서 알림을 받을 수 없으면(Settings-nopush) 알림 섹션에 안내를 두고 스위치는 눌러도 아무 일이 없다
+  const push = usePushSupport()
+  const pushUnavailable = push === 'needs-install' || push === 'unsupported'
   // 보내는 중인 대화상자. 성공한 뒤 이동할 때까지 그대로 둔다 — 세션이 먼저 바뀌어도 대화상자가 닫히지 않게 한다
   const [pending, setPending] = useState<ConfirmKind | null>(null)
   const [failed, setFailed] = useState<ConfirmKind | null>(null)
@@ -280,15 +285,16 @@ export function MeScreen({
                 </SettingsSection>
 
                 <SettingsSection id="me-notification" title="알림">
+                  <PushUnavailable support={push} regionCode={regionCode} />
                   <SwitchRow
                     title="주간 보고 요청"
                     description="월요일 아침"
-                    onClick={() => notReady('알림 설정')}
+                    onClick={pushUnavailable ? undefined : () => notReady('알림 설정')}
                   />
                   <SwitchRow
                     title="검토를 마친 동네 안내"
                     description="운영자가 발행했을 때"
-                    onClick={() => notReady('알림 설정')}
+                    onClick={pushUnavailable ? undefined : () => notReady('알림 설정')}
                   />
                 </SettingsSection>
 
