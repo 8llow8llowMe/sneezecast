@@ -57,6 +57,8 @@
   --rounded-sheet: 20px;
   --rounded-dialog: 20px;
   --rounded-small: 8px;
+  --rounded-bar: 2px;
+  --rounded-progress: 4px;
 
   /* ── 간격 (tokens.json space) */
   --space-unit: 8px;
@@ -73,4 +75,14 @@
   --size-tab-bar-tablet: 64px;
   --size-header-desktop: 64px;
   --size-header-tablet: 72px;
+
+  /* ── 테두리 두께 (tokens.json border) — 구분선 1 / 운영자 검토 배지 1.5 / 선택된 항목 2 */
+  --border-hairline: 1px;
+  --border-emphasis: 1.5px;
+  --border-selected: 2px;
+
+  /* ── 투명도 (tokens.json opacity) */
+  --opacity-disabled: 0.5;
+  /* 상태 게이지에서 현재 단계가 아닌 구간 */
+  --opacity-gauge-inactive: 0.28;
 }

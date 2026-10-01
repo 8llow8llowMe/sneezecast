@@ -77,6 +77,8 @@
   --radius-sheet: var(--rounded-sheet);
   --radius-dialog: var(--rounded-dialog);
   --radius-small: var(--rounded-small);
+  --radius-bar: var(--rounded-bar);
+  --radius-progress: var(--rounded-progress);
 
   /* ── 간격·크기: px-page-mobile, h-band, min-h-touch, h-button … */
   --spacing-page-mobile: var(--space-page-mobile);
@@ -92,9 +94,35 @@
   --spacing-header-desktop: var(--size-header-desktop);
 }
 
+/*
+  테두리 두께 · 투명도는 Tailwind 테마 이름공간이 없어 이름 있는 유틸리티로 둔다.
+  `disabled:` 같은 변형도 그대로 붙는다.
+*/
+@utility border-hairline {
+  border-width: var(--border-hairline);
+}
+@utility border-emphasis {
+  border-width: var(--border-emphasis);
+}
+@utility border-selected {
+  border-width: var(--border-selected);
+}
+@utility opacity-disabled {
+  opacity: var(--opacity-disabled);
+}
+@utility stroke-opacity-inactive {
+  stroke-opacity: var(--opacity-gauge-inactive);
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    /*
+      Tailwind preflight 는 줄 높이를 1.5 로 둔다. 시안(.dc.html)은 preflight 없이 그려져서
+      줄 높이를 적지 않은 글자는 브라우저 기본값(normal)이다. 시안과 높이를 맞추려고 되돌린다.
+      시안이 줄 높이를 적은 곳(1.25 · 1.45 · 1.5 …)은 컴포넌트에서 leading-* 로 준다.
+    */
+    line-height: normal;
   }
 
   body {
