@@ -18,7 +18,8 @@ export function nextTrail(trail: readonly string[], pathname: string, replaced: 
   return [...trail, pathname]
 }
 
-/** 지금 화면 바로 앞이 `previousPath` 이면 기록을 되돌려 갈 수 있다 */
-export function canGoBackTo(trail: readonly string[], previousPath: string): boolean {
-  return trail.length >= 2 && trail.at(-2) === previousPath
+/** 지금 화면 바로 앞이 앞 단계 후보 중 하나면 기록을 되돌려 갈 수 있다 */
+export function canGoBackTo(trail: readonly string[], previousPaths: readonly string[]): boolean {
+  const before = trail.at(-2)
+  return before !== undefined && trail.length >= 2 && previousPaths.includes(before)
 }

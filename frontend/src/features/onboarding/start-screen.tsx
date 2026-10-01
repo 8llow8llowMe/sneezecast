@@ -7,7 +7,7 @@ import clsx from 'clsx'
 import { Button } from '@/components/button'
 
 import { OnboardingIllustration, OnboardingSidePanel } from './onboarding-panel'
-import { BROWSE_REGION_PATH, SETUP_REGION_PATH } from './paths'
+import { BROWSE_REGION_PATH, LOGIN_PATH } from './paths'
 
 const FEATURES = [
   { term: '10초 보고', description: '이번 주 건강 상태만 골라요' },
@@ -24,7 +24,7 @@ const FEATURES = [
  * | 태블릿 | 위 560 일러스트 위에 서비스명 · 흰 제목 → 소개 3줄 → 아래 버튼 · 안내 한 줄 (Start-T) |
  * | 데스크톱 | 왼쪽 620 콘텐츠 + 오른쪽 일러스트 패널 (Start-D) |
  *
- * 로그인 단계는 시안을 기다리는 중이다. 시안이 오면 "시작하기" 와 동네 선택 사이에 끼운다 (paths.ts).
+ * "시작하기" 는 로그인(S13-1)으로 간다. 보고는 회원만 할 수 있다 — 둘러보기는 로그인 없이 동네를 고른다.
  */
 export function StartScreen() {
   const router = useRouter()
@@ -77,7 +77,7 @@ export function StartScreen() {
         </main>
 
         <div className="sticky bottom-0 flex flex-col gap-2.5 bg-bg px-page-mobile pt-3 pb-sheet tablet:static tablet:mt-auto tablet:gap-2 tablet:px-12 tablet:pt-8 tablet:pb-10 desktop:px-0 desktop:pt-10 desktop:pb-0">
-          <Button fullWidth onClick={() => router.push(SETUP_REGION_PATH)}>
+          <Button fullWidth onClick={() => router.push(LOGIN_PATH)}>
             시작하기
           </Button>
           <Button variant="subtle" onClick={() => router.push(BROWSE_REGION_PATH)}>

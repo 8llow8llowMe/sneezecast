@@ -159,28 +159,45 @@ describe('RegionScreen', () => {
     expect(option.checked).toBe(false)
   })
 
-  it('주소로 바로 들어왔으면 뒤로는 기록을 쌓지 않고 시작 화면으로 바꿔 간다', async () => {
+  it('주소로 바로 들어왔으면 뒤로는 기록을 쌓지 않고 로그인으로 바꿔 간다', async () => {
     const { user } = setup()
     await user.click(screen.getByRole('button', { name: '뒤로' }))
-    expect(router.replace).toHaveBeenCalledWith('/start')
+    expect(router.replace).toHaveBeenCalledWith('/login')
     expect(router.back).not.toHaveBeenCalled()
     expect(router.push).not.toHaveBeenCalled()
   })
 
-  it('시작 화면에서 앱 안 이동으로 왔으면 뒤로는 기록을 되돌린다', async () => {
-    location.pathname = '/start'
-    const user = userEvent.setup()
+  it('둘러보기는 주소로 바로 들어왔으면 시작 화면으로 바꿔 간다', async () => {
+    location.pathname = '/browse/region'
+    const { user } = setup({ browse: true })
+    await user.click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.replace).toHaveBeenCalledWith('/start')
+  })
+
+  /** 앞 화면(`from`)에서 앱 안 이동으로 지금 화면(`to`)에 온 상태로 그린다 */
+  function renderAfterNavigation(from: string, to: string, browse = false) {
+    location.pathname = from
     // 같은 요소 객체를 다시 넘기면 React 가 다시 그리지 않아 매번 새로 만든다
     const tree = () => (
       <OnboardingProvider>
-        <RegionScreen />
+        <RegionScreen browse={browse} />
       </OnboardingProvider>
     )
     const { rerender } = render(tree())
-    location.pathname = '/setup/region'
+    location.pathname = to
     rerender(tree())
+  }
 
-    await user.click(screen.getByRole('button', { name: '뒤로' }))
+  it('로그인에서 앱 안 이동으로 왔으면 뒤로는 기록을 되돌린다', async () => {
+    renderAfterNavigation('/login', '/setup/region')
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).toHaveBeenCalledTimes(1)
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('둘러보기는 시작 화면에서 왔을 때 기록을 되돌린다', async () => {
+    renderAfterNavigation('/start', '/browse/region', true)
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
     expect(router.back).toHaveBeenCalledTimes(1)
     expect(router.replace).not.toHaveBeenCalled()
   })
