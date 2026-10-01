@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -23,7 +23,7 @@ vi.mock('./auth-client', async (importOriginal) => {
 
 function setup(resetDone = false) {
   const user = userEvent.setup()
-  render(
+  const utils = render(
     <OnboardingProvider>
       <LoginEmailScreen resetDone={resetDone} />
     </OnboardingProvider>,
@@ -31,7 +31,7 @@ function setup(resetDone = false) {
   const email = screen.getByRole('textbox', { name: '이메일' })
   const password = screen.getByLabelText('비밀번호', { selector: 'input' })
   const submit = screen.getByRole<HTMLButtonElement>('button', { name: '로그인' })
-  return { user, email, password, submit }
+  return { user, email, password, submit, ...utils }
 }
 
 /** 로그인 버튼은 포커스를 지키려고 disabled 대신 aria-disabled 로 끈다 */
@@ -146,6 +146,20 @@ describe('LoginEmailScreen', () => {
 
     resolve({ status: 'ok' })
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'))
+  })
+
+  it('기다리는 동안 화면을 떠나면 늦은 응답으로 이동하지 않는다', async () => {
+    let resolve: (value: { status: 'ok' }) => void = () => {}
+    vi.mocked(loginWithEmail).mockImplementationOnce(() => new Promise((done) => (resolve = done)))
+    const { user, email, password, submit, unmount } = setup()
+    await fill(user, email, password, 'dong@example.com', 'dongne2026')
+    await user.click(submit)
+    unmount()
+    await act(async () => {
+      resolve({ status: 'ok' })
+      await Promise.resolve()
+    })
+    expect(router.replace).not.toHaveBeenCalled()
   })
 
   it('응답을 받지 못하면 다시 시도하라고 알리고 칸을 고치면 지운다', async () => {
