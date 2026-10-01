@@ -78,10 +78,20 @@ describe('Modal', () => {
     expect(screen.queryByRole('button', { name: '이전 단계' })).toBeNull()
   })
 
-  it('hideHeader 면 머리줄(닫기 버튼)을 그리지 않는다', () => {
-    renderModal({ hideHeader: true })
-    expect(screen.queryByRole('button', { name: '닫기' })).toBeNull()
-    expect(screen.getByRole('heading', { level: 2 })).toBeDefined()
+  it('compactSheet 면 머리줄을 모바일에서만 숨기고 대화상자에서는 보인다', () => {
+    renderModal({ compactSheet: true })
+    const header = screen.getByRole('button', { name: '닫기' }).parentElement
+
+    expect(header?.classList).toContain('hidden')
+    expect(header?.classList).toContain('tablet:flex')
+  })
+
+  it('기본은 머리줄이 모든 폭에서 보인다', () => {
+    renderModal()
+    const header = screen.getByRole('button', { name: '닫기' }).parentElement
+
+    expect(header?.classList).toContain('flex')
+    expect(header?.classList).not.toContain('hidden')
   })
 
   it('모바일은 시트, 태블릿부터 가운데 대화상자 폭을 쓴다', () => {

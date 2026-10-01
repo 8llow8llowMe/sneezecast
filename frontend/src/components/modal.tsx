@@ -25,10 +25,12 @@ export type ModalProps = {
   /** 있으면 머리줄 왼쪽에 이전 단계 버튼을 둔다 */
   onBack?: () => void
   /**
-   * 머리줄(이전 단계 · 단계 표시 · 닫기)을 숨긴다. 판단 기준 시트처럼 읽기만 하는 시트용이다.
+   * **모바일 시트에서만** 머리줄(이전 단계 · 단계 표시 · 닫기)을 숨긴다. 판단 기준처럼 읽고 아래
+   * 확인 버튼으로 닫는 시트용이다 (Explain 시안). 태블릿 · 데스크톱 대화상자는 손잡이가 없어
+   * 닫을 곳이 보여야 하므로 머리줄을 그대로 둔다 (Explain-T · -D 시안).
    * 숨겨도 Esc · 바깥 누르기로 닫힌다.
    */
-  hideHeader?: boolean
+  compactSheet?: boolean
   children: ReactNode
 }
 
@@ -38,7 +40,7 @@ export type ModalProps = {
  * 네이티브 `<dialog>` 의 `showModal()` 을 쓴다. 포커스 가두기 · 뒤 화면 비활성 · Esc 처리를 브라우저가
  * 맡으므로 직접 구현하지 않는다. 열린 동안 뒤 화면 스크롤은 globals.css 가 막는다.
  *
- * 시안: Report-start(시트) · Report-start-T(520) · Report-start-D(480) · Report-symptom(머리줄) · Explain(머리줄 없음)
+ * 시안: Report-start(시트) · Report-start-T(520) · Report-start-D(480) · Report-symptom(머리줄) · Explain(시트에서만 머리줄 없음)
  */
 export function Modal({
   open,
@@ -46,7 +48,7 @@ export function Modal({
   title,
   step,
   onBack,
-  hideHeader = false,
+  compactSheet = false,
   children,
 }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -99,28 +101,31 @@ export function Modal({
           className="h-1 w-10 self-center rounded-bar bg-inactive-bar tablet:hidden"
         />
 
-        {!hideHeader && (
-          <div className="flex h-11 items-center justify-between">
-            {onBack ? (
-              <IconButton
-                label="이전 단계"
-                icon={<ChevronLeftIcon />}
-                onClick={onBack}
-                className="-ml-3"
-              />
-            ) : (
-              <span className="w-11" />
-            )}
-            <span className="text-sub font-semibold text-fg-sub">{step}</span>
-            <IconButton label="닫기" icon={<CloseIcon />} onClick={onClose} className="-mr-3" />
-          </div>
-        )}
+        <div
+          className={clsx(
+            'h-11 items-center justify-between',
+            compactSheet ? 'hidden tablet:flex' : 'flex',
+          )}
+        >
+          {onBack ? (
+            <IconButton
+              label="이전 단계"
+              icon={<ChevronLeftIcon />}
+              onClick={onBack}
+              className="-ml-3"
+            />
+          ) : (
+            <span className="w-11" />
+          )}
+          <span className="text-sub font-semibold text-fg-sub">{step}</span>
+          <IconButton label="닫기" icon={<CloseIcon />} onClick={onClose} className="-mr-3" />
+        </div>
 
         <h2
           id={titleId}
           className={clsx(
             'text-sheet-title leading-[1.35] font-bold text-fg tablet:text-dialog-title',
-            hideHeader && 'mt-1',
+            compactSheet && 'mt-1 tablet:mt-0',
           )}
         >
           {title}
