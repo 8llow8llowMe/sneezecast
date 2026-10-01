@@ -1,0 +1,108 @@
+@import 'tailwindcss';
+@import '../src/styles/tokens.css';
+
+/*
+  Tailwind 기본값을 지우고 토큰만 남긴다 (design-guide.md "디자인 규칙" — 임의 색·그림자 금지).
+  `bg-blue-500`, `shadow-md`, `text-sm` 같은 기본 유틸리티는 만들어지지 않는다.
+  간격(`p-2`, `gap-4`)은 4px 기본 스케일을 그대로 쓴다 — 토큰의 8px 단위와 맞물린다.
+*/
+@theme {
+  --color-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --breakpoint-*: initial;
+
+  /*
+    반응형 경계. 시안 폭(모바일 390 / 태블릿 834 / 데스크톱 1440)은 캔버스 크기라 경계값이 아니다.
+    - tablet 768px: 834 태블릿 시안이 iPad mini(768) 세로부터 적용되도록 그보다 낮게 둔다
+    - desktop 1280px: 1440 시안이 일반 노트북(1280) 폭부터 적용되도록 둔다
+    미디어 쿼리는 CSS 변수를 읽지 못해 tokens.css 가 아니라 여기에 값을 직접 적는다.
+    잠정값이다. 화면 명세서가 경계를 정하면 그 값으로 바꾼다.
+  */
+  --breakpoint-tablet: 48rem;
+  --breakpoint-desktop: 80rem;
+}
+
+/* `@theme inline` 은 사용처에 값을 꽂으므로 tokens.css 의 정의를 그대로 가리킨다 */
+@theme inline {
+  --font-sans:
+    'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+
+  /* ── 색 */
+  --color-fg: var(--fg);
+  --color-fg-sub: var(--fg-sub);
+  --color-fg-muted: var(--fg-muted);
+  --color-divider: var(--divider);
+  --color-section: var(--section);
+  --color-bg: var(--bg);
+  --color-brand: var(--brand);
+  --color-info-bg: var(--info-bg);
+  --color-danger: var(--danger);
+  --color-toast: var(--toast);
+  --color-toast-action: var(--toast-action);
+  --color-skeleton: var(--skeleton);
+  --color-inactive-bar: var(--inactive-bar);
+  --color-muted-bar: var(--muted-bar);
+  --color-dim: var(--dim);
+  --color-image-cover: var(--image-cover);
+
+  /* ── 상태 */
+  --color-status-normal: var(--status-normal-fill);
+  --color-status-normal-text: var(--status-normal-text);
+  --color-status-slight: var(--status-slight-fill);
+  --color-status-slight-text: var(--status-slight-text);
+  --color-status-high: var(--status-high-fill);
+  --color-status-high-text: var(--status-high-text);
+  --color-status-insufficient: var(--status-insufficient-fill);
+  --color-status-insufficient-text: var(--status-insufficient-text);
+
+  /* ── 글자 크기: text-status, text-body … */
+  --text-status: var(--fs-status);
+  --text-status-desktop: var(--fs-status-desktop);
+  --text-screen-title: var(--fs-screen-title);
+  --text-section-title: var(--fs-section-title);
+  --text-body: var(--fs-body);
+  --text-body-strong: var(--fs-body-strong);
+  --text-sub: var(--fs-sub);
+  --text-caption: var(--fs-caption);
+  --text-tab: var(--fs-tab);
+
+  /* ── 모서리: rounded-card, rounded-button … */
+  --radius-card: var(--rounded-card);
+  --radius-button: var(--rounded-button);
+  --radius-chip: var(--rounded-chip);
+  --radius-sheet: var(--rounded-sheet);
+  --radius-dialog: var(--rounded-dialog);
+  --radius-small: var(--rounded-small);
+
+  /* ── 간격·크기: px-page-mobile, h-band, min-h-touch, h-button … */
+  --spacing-page-mobile: var(--space-page-mobile);
+  --spacing-page-tablet: var(--space-page-tablet);
+  --spacing-page-desktop: var(--space-page-desktop);
+  --spacing-band: var(--space-section-band);
+  --spacing-touch: var(--size-touch-min);
+  --spacing-button: var(--size-button-height);
+  --spacing-button-sm: var(--size-button-height-small);
+  --spacing-tab-bar: var(--size-tab-bar-mobile);
+  --spacing-tab-bar-tablet: var(--size-tab-bar-tablet);
+  --spacing-header-tablet: var(--size-header-tablet);
+  --spacing-header-desktop: var(--size-header-desktop);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: var(--fs-body);
+    /* 참여자 수·비율이 갱신될 때 자릿수 폭이 흔들리지 않게 한다 (tokens.json font.numeric) */
+    font-variant-numeric: tabular-nums;
+  }
+}

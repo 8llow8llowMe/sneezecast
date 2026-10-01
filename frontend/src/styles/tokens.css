@@ -1,0 +1,76 @@
+/*
+  디자인 토큰 — 코드 쪽 정본.
+
+  원본은 docs/design/tokens.json 이다. 값을 바꿀 때는 tokens.json 과 이 파일을 함께 고친다.
+  둘이 어긋나면 src/styles/token-sync.test.ts 가 실패한다.
+
+  여기 정의한 변수는 app/globals.css 의 `@theme inline` 이 Tailwind 유틸리티로 이어 준다.
+  화면 코드는 이 변수를 직접 쓰지 않고 유틸리티(`text-fg`, `rounded-card` …)로 쓴다.
+*/
+:root {
+  /* ── 색 (tokens.json color) */
+  --fg: #191f28;
+  --fg-sub: #4e5968;
+  --fg-muted: #6b7684;
+  --divider: #e5e8eb;
+  --section: #f2f4f6;
+  --bg: #ffffff;
+  --brand: #1f2f57;
+  --info-bg: #e8f3ff;
+  --danger: #c0392b;
+  --toast: #191f28;
+  --toast-action: #9ec5ff;
+  --skeleton: #e5e8eb;
+  --inactive-bar: #d1d6db;
+  --muted-bar: #b0b8c1;
+
+  /* ── 상태 (tokens.json status) — 항상 글자 라벨과 함께 쓴다 */
+  --status-normal-fill: #3d7ef0;
+  --status-normal-text: #2f6fe0;
+  --status-slight-fill: #2ea66b;
+  --status-slight-text: #23874f;
+  --status-high-fill: #f08c2e;
+  --status-high-text: #c7641a;
+  /* 자료 부족: 증상 비율·상태색을 그리지 않는다. 참여 진행 막대에만 쓴다 */
+  --status-insufficient-fill: #a2a9b1;
+  --status-insufficient-text: #6b7684;
+
+  /* ── 덮개 (tokens.json effects) */
+  --dim: rgba(25, 31, 40, 0.48);
+  --image-cover: rgba(0, 0, 0, 0.42);
+
+  /* ── 글자 크기 (tokens.json fontSize) */
+  --fs-status: 26px;
+  --fs-status-desktop: 28px;
+  --fs-screen-title: 20px;
+  --fs-section-title: 17px;
+  --fs-body: 15px;
+  --fs-body-strong: 14px;
+  --fs-sub: 13px;
+  --fs-caption: 12px;
+  --fs-tab: 11px;
+
+  /* ── 모서리 (tokens.json radius) */
+  --rounded-card: 16px;
+  --rounded-button: 12px;
+  --rounded-chip: 999px;
+  --rounded-sheet: 20px;
+  --rounded-dialog: 20px;
+  --rounded-small: 8px;
+
+  /* ── 간격 (tokens.json space) */
+  --space-unit: 8px;
+  --space-page-mobile: 20px;
+  --space-page-tablet: 24px;
+  --space-page-desktop: 32px;
+  --space-section-band: 8px;
+
+  /* ── 크기 (tokens.json size) */
+  --size-touch-min: 44px;
+  --size-button-height: 56px;
+  --size-button-height-small: 44px;
+  --size-tab-bar-mobile: 60px;
+  --size-tab-bar-tablet: 64px;
+  --size-header-desktop: 64px;
+  --size-header-tablet: 72px;
+}
