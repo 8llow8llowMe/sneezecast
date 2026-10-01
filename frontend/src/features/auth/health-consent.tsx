@@ -1,3 +1,5 @@
+import clsx from 'clsx'
+
 import { Button } from '@/components/button'
 
 import { ConsentRow } from './consent-row'
@@ -27,14 +29,20 @@ const NOTICE: { term: string; description: string }[] = [
   { term: '모으지 않는 것', description: '이름, 연락처, 정확한 주소, GPS 위치, 자유 입력' },
 ]
 
-/** 고지 표. 위아래 1px 구분선, 왼쪽 항목 104 */
-export function HealthConsentNotice() {
+/**
+ * 고지 표. 위아래 1px 구분선. 화면(Setup-4)은 왼쪽 항목 104 · 글자 14, 시트(`compact`, Consent-health-sheet)는
+ * 폭이 좁아 왼쪽 항목 92 · 글자 13 이다
+ */
+export function HealthConsentNotice({ compact = false }: { compact?: boolean }) {
+  const text = compact ? 'text-sub' : 'text-body-strong'
   return (
     <dl className="flex flex-col border-t border-divider">
       {NOTICE.map((row) => (
         <div key={row.term} className="flex gap-3.5 border-b border-divider py-3">
-          <dt className="w-26 shrink-0 text-body-strong font-bold text-fg">{row.term}</dt>
-          <dd className="text-body-strong leading-[1.55] text-fg">{row.description}</dd>
+          <dt className={clsx('shrink-0 font-bold text-fg', text, compact ? 'w-23' : 'w-26')}>
+            {row.term}
+          </dt>
+          <dd className={clsx('leading-[1.55] text-fg', text)}>{row.description}</dd>
         </div>
       ))}
     </dl>

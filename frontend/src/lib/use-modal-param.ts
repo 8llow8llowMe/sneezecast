@@ -23,7 +23,8 @@ function currentDepth(): number {
  * 새로고침 · 공유해도 같은 화면이 열린다 (docs/conventions.md "데이터와 환경변수").
  *
  * - `open` · `push`: 기록을 하나 쌓는다. 휴대폰 뒤로 가기가 이전 단계로, 첫 단계에서는 닫기로 이어진다
- * - `replace`: 기록을 쌓지 않고 값만 바꾼다. 보낸 뒤 완료 화면처럼 **뒤로 가서 되돌아오면 안 되는 단계**에 쓴다
+ * - `replace`: 기록을 쌓지 않고 값만 바꾼다. 보낸 뒤 완료 화면처럼 **뒤로 가서 되돌아오면 안 되는 단계**에 쓴다.
+ *   `remove` 에 적은 다른 쿼리를 같은 기록 항목에서 함께 지울 수 있다(나머지 쿼리는 그대로 둔다)
  * - `back`: 이전 단계로. 이 훅이 쌓은 기록이 있으면 뒤로 가고(휴대폰 뒤로 가기와 같다), 주소로 바로 들어와
  *   쌓은 기록이 없으면 사이트를 떠나지 않게 `fallback` 단계로 바꾼다
  * - `close`: 이 훅이 쌓은 만큼만 되돌린다. 주소로 바로 들어와 쌓은 기록이 없으면 쿼리만 지운다
@@ -39,8 +40,9 @@ export function useModalParam(name: string) {
   const value = searchParams.get(name)
 
   const urlWith = useCallback(
-    (next: string | null) => {
+    (next: string | null, remove: readonly string[] = []) => {
       const params = new URLSearchParams(searchParams)
+      remove.forEach((key) => params.delete(key))
       if (next === null) params.delete(name)
       else params.set(name, next)
       const query = params.toString()
@@ -57,8 +59,8 @@ export function useModalParam(name: string) {
   )
 
   const replace = useCallback(
-    (next: string) => {
-      window.history.replaceState({ [DEPTH_KEY]: currentDepth() }, '', urlWith(next))
+    (next: string, { remove }: { remove?: readonly string[] } = {}) => {
+      window.history.replaceState({ [DEPTH_KEY]: currentDepth() }, '', urlWith(next, remove))
     },
     [urlWith],
   )

@@ -47,6 +47,17 @@ describe('useModalParam', () => {
     expect(pushState).not.toHaveBeenCalled()
   })
 
+  it('replace 의 remove 는 적은 쿼리만 같은 기록 항목에서 함께 지운다', () => {
+    window.history.replaceState(null, '', '/?mock=high&region=1111051500&mock-auth=member')
+    const { result, rerender } = renderHook(() => useModalParam('report'))
+    act(() => result.current.push('health-consent'))
+    rerender()
+
+    act(() => result.current.replace('start', { remove: ['mock-auth'] }))
+    expect(window.location.search).toBe('?mock=high&region=1111051500&report=start')
+    expect(depth()).toBe(1)
+  })
+
   it('close 는 쌓은 깊이만큼만 되돌린다', () => {
     const go = vi.spyOn(window.history, 'go').mockImplementation(() => {})
     const { result, rerender } = renderHook(() => useModalParam('report'))

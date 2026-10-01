@@ -35,6 +35,22 @@ describe('AppHeader', () => {
     expect(onReportClick).toHaveBeenCalledTimes(1)
   })
 
+  it('보고 버튼 글자를 바꿀 수 있고, 데스크톱 메뉴 링크에 navSearch 를 붙인다 (비회원 홈)', async () => {
+    const { onReportClick } = renderHeader({
+      reportLabel: '로그인하고 보고하기',
+      navSearch: 'region=1111051500',
+    })
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '로그인하고 보고하기' }))
+    expect(onReportClick).toHaveBeenCalledTimes(1)
+    const nav = screen.getByRole('navigation', { name: '주요 메뉴', hidden: true })
+    expect([...nav.querySelectorAll('a')].map((link) => link.getAttribute('href'))).toEqual([
+      '/?region=1111051500',
+      '/map?region=1111051500',
+      '/me?region=1111051500',
+    ])
+  })
+
   it('데스크톱 메뉴는 현재 메뉴에 aria-current 를 단다', () => {
     renderHeader({ current: 'me' })
     const nav = screen.getByRole('navigation', { name: '주요 메뉴', hidden: true })
