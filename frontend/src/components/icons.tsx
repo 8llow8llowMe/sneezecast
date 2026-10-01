@@ -79,6 +79,16 @@ export function CheckIcon({ size = 20, strokeWidth = 2.4, ...rest }: IconProps) 
   )
 }
 
+/** 검색 (동네 선택 검색칸) */
+export function SearchIcon({ size = 20, ...rest }: IconProps) {
+  return (
+    <Icon size={size} {...rest}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-3.5-3.5" />
+    </Icon>
+  )
+}
+
 /** 안내 (Home 상단 알림 줄) */
 export function InfoIcon({ size = 18, ...rest }: IconProps) {
   return (
