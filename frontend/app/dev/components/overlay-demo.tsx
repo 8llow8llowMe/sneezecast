@@ -35,7 +35,7 @@ export function OverlayDemo() {
           보고 2단계 열기 (이전 단계 · 단계 표시)
         </Button>
         <Button variant="secondary" fullWidth onClick={() => setModal('explain')}>
-          판단 기준 시트 열기 (머리줄 없음)
+          판단 기준 시트 열기 (시트만 머리줄 없음)
         </Button>
         <Button
           variant="text"
@@ -84,7 +84,7 @@ export function OverlayDemo() {
         <p className="text-body-strong text-fg-sub">여러 개 고를 수 있어요</p>
       </Modal>
 
-      <Modal open={modal === 'explain'} onClose={close} hideHeader title="이렇게 판단했어요">
+      <Modal open={modal === 'explain'} onClose={close} compactSheet title="이렇게 판단했어요">
         <p className="text-body-strong leading-[1.55] text-fg-sub">
           ○○1동 · 11월 17일~23일 · 시민 자가보고
         </p>
