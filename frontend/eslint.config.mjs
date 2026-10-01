@@ -73,11 +73,15 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'error',
 
       // docs/conventions.md 의 import 5그룹
+      //
+      // simple-import-sort 는 `import type` 의 경로 끝에 `\u0000` 을 붙여 비교한다.
+      // `'^react$'` 만 두면 `import type { ReactNode } from 'react'` 가 첫 묶음에 걸리지 않고
+      // 외부 패키지 묶음으로 떨어져 `clsx` 뒤로 간다. 그래서 끝의 `\u0000` 을 허용한다.
       'simple-import-sort/imports': [
         'error',
         {
           groups: [
-            ['^react$', '^react-dom', '^next$', '^next/'],
+            ['^react\\u0000?$', '^react-dom', '^next\\u0000?$', '^next/'],
             ['^node:'],
             ['^@?\\w'],
             ['^@/'],

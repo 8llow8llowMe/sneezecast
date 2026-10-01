@@ -1,5 +1,5 @@
-import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
+import type { Metadata, Viewport } from 'next'
 
 import { clientEnv } from '@/lib/env.client'
 import { THEME_COLOR } from '@/styles/theme-color'
