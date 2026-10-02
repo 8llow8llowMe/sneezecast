@@ -90,6 +90,19 @@ x-auth-service-environment: &auth_service_environment
   AUTH_SESSION_ROTATION_GRACE: ${AUTH_SESSION_ROTATION_GRACE:-PT10S}
   # 비밀번호 재설정 토큰 수명 (auth.password-reset.token-ttl). 0 이하면 기동 실패. 기본값은 application.yml 과 같다.
   AUTH_PASSWORD_RESET_TOKEN_TTL: ${AUTH_PASSWORD_RESET_TOKEN_TTL:-PT15M}
+  # 카카오 로그인 (oauth.kakao.*). 앱 키 · 시크릿 · 콜백 주소는 기본값이 없다(파이프라인 필수 키, 비거나 공백이면 기동 실패).
+  # redirect URI 는 프론트 콜백 페이지이고 카카오 개발자 콘솔에 등록한 값과 같아야 한다. timeout 기본값은 application.yml 과 같다.
+  KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
+  KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
+  KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+  KAKAO_CONNECT_TIMEOUT: ${KAKAO_CONNECT_TIMEOUT:-PT1S}
+  KAKAO_READ_TIMEOUT: ${KAKAO_READ_TIMEOUT:-PT2S}
+  # 카카오 로그인 state · 가입표 · 연결 확인표 수명과 인가 요청 IP 상한 (auth.oauth.*). 0 이하면 기동 실패. 기본값은 application.yml 과 같다.
+  AUTH_OAUTH_STATE_TTL: ${AUTH_OAUTH_STATE_TTL:-PT10M}
+  AUTH_OAUTH_SIGNUP_TICKET_TTL: ${AUTH_OAUTH_SIGNUP_TICKET_TTL:-PT30M}
+  AUTH_OAUTH_LINK_TICKET_TTL: ${AUTH_OAUTH_LINK_TICKET_TTL:-PT10M}
+  AUTH_OAUTH_AUTHORIZE_IP_MAX_COUNT: ${AUTH_OAUTH_AUTHORIZE_IP_MAX_COUNT:-30}
+  AUTH_OAUTH_AUTHORIZE_IP_WINDOW: ${AUTH_OAUTH_AUTHORIZE_IP_WINDOW:-PT10M}
   # Snowflake ID. 환경당 인스턴스 하나라 기본값(0/0)으로 충분하다. 인스턴스를 늘리면 인스턴스마다 다른 worker-id 를 준다.
   SNOWFLAKE_DATACENTER_ID: ${SNOWFLAKE_DATACENTER_ID:-0}
   SNOWFLAKE_WORKER_ID: ${SNOWFLAKE_WORKER_ID:-0}
