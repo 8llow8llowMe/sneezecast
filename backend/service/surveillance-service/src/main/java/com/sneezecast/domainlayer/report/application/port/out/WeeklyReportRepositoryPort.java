@@ -36,6 +36,7 @@ public interface WeeklyReportRepositoryPort {
 
     /**
      * 같은 주 보고의 행정동 · 증상군을 마지막 요청 값으로 바꾸고 수정 횟수를 1 올린다. 증가는 쿼리 안에서 하므로 동시 수정에서도 사라지지 않는다.
+     * 수정 횟수는 SMALLINT 상한(32767)에서 멈춘다 — 그 뒤 수정도 실패하지 않는다.
      *
      * <p><b>호출자 트랜잭션이 있어야 한다</b> (없으면 {@code IllegalTransactionStateException}). 갱신 뒤 영속성 컨텍스트를 비우므로, 같은
      * 트랜잭션에서 앞서 읽어 둔 엔티티는 분리된다 — 도메인 모델로 옮겨 둔 값은 영향이 없다.

@@ -41,6 +41,9 @@ public class WeeklyReportEntity extends BaseEntity implements Persistable<Long> 
     /** 동시 제출 판정이 이 이름으로 제약 위반을 가린다 ({@code WeeklyReportRepositoryAdapter#insert}). */
     public static final String REPORTER_KEY_ISO_WEEK_UNIQUE_INDEX = "uk_weekly_report_reporter_key_iso_week";
 
+    /** {@code revision_count}(SMALLINT) 상한. 수정 쿼리가 여기서 증가를 멈춘다 — 넘기면 범위 초과로 수정 요청이 500 이 된다. */
+    public static final short MAX_REVISION_COUNT = Short.MAX_VALUE;
+
     @Id
     @Comment("보고 아이디 (Snowflake)")
     private Long id;
