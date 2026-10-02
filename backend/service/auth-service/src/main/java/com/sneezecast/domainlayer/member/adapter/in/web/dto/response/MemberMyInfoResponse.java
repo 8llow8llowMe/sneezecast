@@ -16,10 +16,10 @@ public record MemberMyInfoResponse(
     @Schema(description = "닉네임", example = "재채기탐정")
     String nickname,
 
-    @Schema(description = "가입 방법 EMAIL · KAKAO", example = "EMAIL")
+    @Schema(description = "로그인 방법 EMAIL · KAKAO — 카카오를 연결한 이메일 계정도 KAKAO 다. 비밀번호 로그인 가능 여부는 hasPassword 로 본다", example = "EMAIL")
     String provider,
 
-    @Schema(description = "이메일 + 비밀번호로 로그인할 수 있는지. false 면(소셜 가입) 비밀번호 설정을, true 면 비밀번호 변경을 보여 준다", example = "true")
+    @Schema(description = "이메일 + 비밀번호로 로그인할 수 있는지. true 면 비밀번호 변경을 보여 주고, false 면(카카오로만 로그인) 비밀번호 메뉴를 보여 주지 않는다", example = "true")
     boolean hasPassword,
 
     @Schema(description = "역할 USER · OPERATOR · ADMIN", example = "USER")

@@ -101,17 +101,15 @@ class MemberPasswordProcessorTest {
     }
 
     @Test
-    @DisplayName("변경은 비밀번호가 있는 계정만(없으면 MEMBER_007 409), 설정은 없는 계정만(있으면 MEMBER_008 409)")
+    @DisplayName("변경은 비밀번호가 있는 계정만 — 카카오로만 로그인하는 계정은 MEMBER_007(409) 이고 메시지는 비밀번호가 없다는 안내다")
     void passwordPresenceRules() {
         Member social = Member.builder().id(7L).email("kakao@example.com").password(null).nickname("닉네임").role(SecurityRole.USER)
             .provider(OAuthProvider.KAKAO).status(MemberStatus.ACTIVE).build();
 
-        assertThat(catchThrowableOfType(MemberException.class, () -> processor.requirePasswordSet(social)).getErrorCode())
-            .isEqualTo(MemberErrorCode.PASSWORD_NOT_SET);
+        MemberException exception = catchThrowableOfType(MemberException.class, () -> processor.requirePasswordSet(social));
+        assertThat(exception.getErrorCode()).isEqualTo(MemberErrorCode.PASSWORD_NOT_SET);
+        assertThat(exception.getMessage()).isEqualTo("카카오로 로그인하는 계정은 비밀번호가 없습니다.");
         assertThatCode(() -> processor.requirePasswordSet(MEMBER)).doesNotThrowAnyException();
-        assertThat(catchThrowableOfType(MemberException.class, () -> processor.requirePasswordNotSet(MEMBER)).getErrorCode())
-            .isEqualTo(MemberErrorCode.PASSWORD_ALREADY_SET);
-        assertThatCode(() -> processor.requirePasswordNotSet(social)).doesNotThrowAnyException();
     }
 
     private MemberErrorCode failure(String rawPassword) {

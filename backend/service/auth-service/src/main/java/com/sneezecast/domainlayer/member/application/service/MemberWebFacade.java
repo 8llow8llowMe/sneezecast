@@ -16,9 +16,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 내 정보 · 비밀번호 변경 · 설정 오케스트레이션.
+ * 내 정보 · 비밀번호 변경 오케스트레이션. 카카오로만 로그인하는 회원은 비밀번호가 없고 따로 정하지도 않는다(#61 — 설정 API 를 두지 않는다).
  *
- * <p>내 정보 조회 · 수정은 DB 만 쓰므로 Facade 에 트랜잭션을 건다. 비밀번호 변경 · 설정은 BCrypt(CPU)와 세션 저장소(Redis) 왕복이 섞여 Facade 에
+ * <p>내 정보 조회 · 수정은 DB 만 쓰므로 Facade 에 트랜잭션을 건다. 비밀번호 변경은 BCrypt(CPU)와 세션 저장소(Redis) 왕복이 섞여 Facade 에
  * 걸지 않고, DB 쓰기만 {@link MemberCommandProcessor#changePassword} 로 좁힌다 (architecture-guide §3-1).
  */
 @Slf4j
@@ -54,13 +54,6 @@ public class MemberWebFacade implements MemberWebUseCase {
         Member member = memberQueryProcessor.getActiveMember(memberId);
         memberPasswordProcessor.requirePasswordSet(member);
         memberPasswordProcessor.verifyCurrentPassword(member, currentPassword);
-        replacePassword(memberId, sessionId, newPassword);
-    }
-
-    @Override
-    public void setupPassword(long memberId, String sessionId, String newPassword) {
-        Member member = memberQueryProcessor.getActiveMember(memberId);
-        memberPasswordProcessor.requirePasswordNotSet(member);
         replacePassword(memberId, sessionId, newPassword);
     }
 

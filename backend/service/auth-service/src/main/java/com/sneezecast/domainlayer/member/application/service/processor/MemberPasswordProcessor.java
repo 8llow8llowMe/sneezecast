@@ -10,7 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 /**
- * 비밀번호 변경 · 설정의 규칙 — 어떤 계정이 어느 API 를 쓰는지와 현재 비밀번호 확인(시도 제한 포함).
+ * 비밀번호 변경의 규칙 — 변경할 수 있는 계정인지와 현재 비밀번호 확인(시도 제한 포함).
  *
  * <p>현재 비밀번호 확인 실패 제한은 <b>회원 단위</b>이고 횟수 · 잠금 시간은 로그인과 같은 {@code auth.login.max-failure-count} ·
  * {@code lock-duration}(기본 5회 · 10분)이다. access token 을 손에 넣은 사람이 이 API 로 비밀번호를 대입하지 못하게 한다.
@@ -23,17 +23,10 @@ public class MemberPasswordProcessor {
     private final MemberPasswordAttemptPort memberPasswordAttemptPort;
     private final LoginAttemptProperties limits;
 
-    /** 변경은 비밀번호가 있는 계정만 — 소셜 가입자는 설정 API 를 쓴다. */
+    /** 변경은 비밀번호가 있는 계정만 — 카카오로만 로그인하는 회원은 비밀번호가 없고, 새로 정하는 길도 두지 않는다. */
     public void requirePasswordSet(Member member) {
         if (member.password() == null) {
             throw new MemberException(MemberErrorCode.PASSWORD_NOT_SET);
-        }
-    }
-
-    /** 설정은 비밀번호가 없는 계정만 — 이미 있으면 변경 API 를 쓴다(현재 비밀번호 확인 없이 바꾸는 길을 만들지 않는다). */
-    public void requirePasswordNotSet(Member member) {
-        if (member.password() != null) {
-            throw new MemberException(MemberErrorCode.PASSWORD_ALREADY_SET);
         }
     }
 

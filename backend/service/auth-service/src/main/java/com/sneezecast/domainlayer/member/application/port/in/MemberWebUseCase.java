@@ -15,7 +15,4 @@ public interface MemberWebUseCase {
      * @param sessionId 요청 access 의 세션(sid). null 이면 모든 기기를 로그아웃시킨다
      */
     void changePassword(long memberId, String sessionId, String currentPassword, String newPassword);
-
-    /** 비밀번호가 없는(소셜) 계정에 비밀번호를 정한다. 세션 처리는 {@link #changePassword} 와 같다. */
-    void setupPassword(long memberId, String sessionId, String newPassword);
 }
