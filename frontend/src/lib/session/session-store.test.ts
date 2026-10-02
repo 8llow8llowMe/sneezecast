@@ -11,6 +11,7 @@ import {
   type AuthToken,
   clearSession,
   getSessionSnapshot,
+  refreshSession,
   REISSUE_CONFLICT_RETRY_DELAY_MS,
   REISSUE_PATH,
   resetSessionForTests,
@@ -381,6 +382,47 @@ describe('access token 공급자 · 갈아 끼우기', () => {
 
     await expect(refreshing).resolves.toBe('access-2')
     expect(reissueMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('refreshSession — 회원 요약 다시 맞추기', () => {
+  it('비회원이면 아무 요청도 하지 않는다', async () => {
+    await refreshSession()
+    expect(reissueMock).not.toHaveBeenCalled()
+  })
+
+  it('재발급 한 번으로 요약을 서버 값으로 바꾼다 (보고 권한이 빠졌으면 reportWritable false)', async () => {
+    setSession(token('access-1'))
+    reissueMock.mockResolvedValueOnce(token('access-2', { reportWritable: false }))
+
+    await refreshSession()
+
+    expect(reissueMock).toHaveBeenCalledWith(REISSUE_PATH, { method: 'POST', auth: false })
+    expect(getSessionSnapshot()).toMatchObject({
+      status: 'member',
+      summary: { reportWritable: false },
+    })
+    await expect(resolveAccessToken()).resolves.toBe('access-2')
+  })
+
+  it('일시 장애면 던지지 않고 세션 · 요약을 그대로 둔다', async () => {
+    setSession(token('access-1'))
+    const before = getSessionSnapshot()
+    reissueMock.mockRejectedValueOnce(unavailableError('timeout', 0))
+
+    await expect(refreshSession()).resolves.toBeUndefined()
+    expect(getSessionSnapshot()).toBe(before)
+    expect(expired).not.toHaveBeenCalled()
+  })
+
+  it('재로그인(AUTH_014)이면 재발급처럼 세션을 끝내고 만료를 알린다', async () => {
+    setSession(token('access-1'))
+    reissueMock.mockRejectedValueOnce(apiError('AUTH_014', 401))
+
+    await refreshSession()
+
+    expect(getSessionSnapshot().status).toBe('guest')
+    expect(expired).toHaveBeenCalledTimes(1)
   })
 })
 

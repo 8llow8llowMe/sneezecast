@@ -14,6 +14,7 @@ import {
 
 import {
   getMemberInfoSnapshot,
+  reloadMemberRegion,
   resetMemberInfoForTests,
   retryMemberInfo,
   setMemberRegion,
@@ -227,5 +228,74 @@ describe('회원 정보 저장소', () => {
     setSession(memberToken())
     setMemberRegion('다른 회원', { ...YEOKSAM1 })
     expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'loading' })
+  })
+
+  describe('reloadMemberRegion — 보고가 동네로 거절됐을 때 다시 읽기 (#165)', () => {
+    const ABOLISHED = { ...YEOKSAM1, abolished: true }
+
+    async function readyMember(server: ReturnType<typeof holdRequests>) {
+      setSession(memberToken())
+      await flush()
+      server.reply(INFO, okResponse(myInfoBody()))
+      server.reply(REGION, okResponse(YEOKSAM1))
+      await flush()
+    }
+
+    it('이미 읽은 내 동네를 다시 읽는다 — 읽는 동안 지금 값을 그대로 두고, 폐지로 바뀌면 넣는다', async () => {
+      const server = holdRequests()
+      await readyMember(server)
+
+      reloadMemberRegion()
+      expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'ready', value: YEOKSAM1 })
+      await flush()
+      expect(server.requests()).toEqual([INFO, REGION, REGION])
+
+      server.reply(REGION, okResponse(ABOLISHED))
+      await flush()
+      expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'ready', value: ABOLISHED })
+    })
+
+    it('다시 읽지 못해도 지금 값을 둔다', async () => {
+      const server = holdRequests()
+      await readyMember(server)
+
+      reloadMemberRegion()
+      await flush()
+      server.reply(REGION, errorResponse('REGION_004', 503))
+      await flush()
+      expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'ready', value: YEOKSAM1 })
+    })
+
+    it('여러 번 부르면 마지막 응답만 넣는다', async () => {
+      const server = holdRequests()
+      await readyMember(server)
+
+      reloadMemberRegion()
+      reloadMemberRegion()
+      await flush()
+      server.reply(REGION, okResponse(ABOLISHED))
+      await flush()
+      expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'ready', value: YEOKSAM1 })
+      server.reply(REGION, okResponse(null))
+      await flush()
+      expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'ready', value: null })
+    })
+
+    it('처음 읽는 중이면 보내지 않고, 읽지 못한 상태면 loading 으로 다시 읽는다', async () => {
+      const server = holdRequests()
+      setSession(memberToken())
+      reloadMemberRegion()
+      await flush()
+      expect(server.requests()).toEqual([INFO, REGION])
+
+      server.reply(REGION, errorResponse('REGION_004', 503))
+      await flush()
+      reloadMemberRegion()
+      expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'loading' })
+      await flush()
+      server.reply(REGION, okResponse(YEOKSAM1))
+      await flush()
+      expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'ready', value: YEOKSAM1 })
+    })
   })
 })

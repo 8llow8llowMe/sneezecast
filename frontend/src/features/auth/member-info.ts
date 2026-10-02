@@ -17,7 +17,8 @@ import { fetchMyInfo, fetchMyRegion, type MyInfo, type MyRegion } from './member
  *   재발급(요약이 같거나 재동의 항목만 바뀜)은 다시 읽지 않는다. 비회원이 되면(로그아웃 · 만료 · 다른 탭 로그아웃) 바로 지운다 —
  *   다른 회원의 정보가 남지 않게 한다. 기다리던 응답이 그 뒤에 와도 버린다(`infoSeq` · `regionSeq`)
  * - **한 회원에 한 번만 보낸다(single-flight).** 요청은 `loading` 으로 바뀔 때만 나간다 — 세션 알림이 여러 번 와도, 다시 켜도
- *   (`startMemberInfo`) 같은 회원이면 다시 보내지 않는다. 다시 시도(`retryMemberInfo`)는 실패한 쪽만 다시 보낸다
+ *   (`startMemberInfo`) 같은 회원이면 다시 보내지 않는다. 다시 시도(`retryMemberInfo`)는 실패한 쪽만 다시 보낸다.
+ *   예외는 보고가 동네로 거절됐을 때의 내 동네 다시 읽기(`reloadMemberRegion`, #165)다
  * - **두 요청은 따로 실패한다.** 내 동네는 행정동 서비스 장애면 `REGION_004`(503)이고 내 정보와 무관하다. 각각 `loading` ·
  *   `ready` · `failed` 다
  * - 내 정보가 `MEMBER_004`(토큰은 유효한데 회원 행이 없음 — 탈퇴 뒤 파기)면 세션을 비운다. 사유는 `withdrawn` 이다 —
@@ -114,7 +115,8 @@ function loadInfo(memberId: string): void {
   )
 }
 
-function loadRegion(memberId: string): void {
+/** 내 동네를 읽는다. `keepOnFailure` 면(다시 읽기) 실패해도 지금 값을 그대로 둔다 */
+function loadRegion(memberId: string, keepOnFailure = false): void {
   const sent = regionSeq
   fetchMyRegion().then(
     (region) => {
@@ -123,7 +125,7 @@ function loadRegion(memberId: string): void {
       }
     },
     () => {
-      if (regionSeq === sent) patch(memberId, { region: FAILED })
+      if (regionSeq === sent && !keepOnFailure) patch(memberId, { region: FAILED })
     },
   )
 }
@@ -177,6 +179,26 @@ export function retryMemberInfo(): void {
     regionSeq += 1
     loadRegion(memberId)
   }
+}
+
+/**
+ * 이미 읽은 내 동네를 서버에서 다시 읽는다. 보고가 폐지 · 없는 동네로 거절됐을 때(`REPORT_003` · `002`, #165) 부른다 — 고른 뒤
+ * 폐지됐거나 다른 탭에서 바꿔 이 탭 값이 낡았을 수 있다. 다시 읽은 값이 폐지(`abolished`)면 회원 조건(`sessionRequirements`)이
+ * 동네 다시 고르기로 보낸다.
+ *
+ * - 읽는 동안 지금 값을 그대로 둔다(`loading` 으로 바꾸지 않는다) — 머리줄 동네 이름 · 회원 조건이 깜빡이지 않게 한다.
+ *   다시 읽지 못해도 지금 값을 둔다(더 나은 값을 모른다)
+ * - 여러 번 부르면 마지막 요청의 응답만 넣는다(늦은 응답은 버린다)
+ * - 처음 읽는 중이면 그 응답을 기다린다(보내지 않는다). 읽지 못한 상태면 `retryMemberInfo` 처럼 `loading` 으로 다시 읽는다
+ */
+export function reloadMemberRegion(): void {
+  const current = snapshot
+  if (!current || current.region.status === 'loading') return
+  const { memberId } = current
+  const failed = current.region.status === 'failed'
+  if (failed) patch(memberId, { region: LOADING })
+  regionSeq += 1
+  loadRegion(memberId, !failed)
 }
 
 /**

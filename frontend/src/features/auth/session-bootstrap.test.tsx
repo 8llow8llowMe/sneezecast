@@ -2,6 +2,10 @@
 import { act, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import {
+  getCurrentReportSnapshot,
+  resetCurrentReportForTests,
+} from '@/features/report/current-report'
 import { resolveAccessToken } from '@/lib/api/access-token'
 import { writeBrowserDataSource } from '@/lib/data-source'
 import {
@@ -21,6 +25,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetMemberInfoForTests()
+  resetCurrentReportForTests()
   resetApiSession()
 })
 
@@ -51,6 +56,17 @@ describe('SessionBootstrap', () => {
     expect(getMemberInfoSnapshot()).toMatchObject({ info: { status: 'loading' } })
     act(() => clearSession('logout'))
     expect(getMemberInfoSnapshot()).toBeNull()
+  })
+
+  it('이번 주 보고 저장소를 세션에 잇는다 — 보고할 수 있는 회원이 되면 읽기 시작하고 비회원이 되면 지운다', () => {
+    holdRequests()
+    render(<SessionBootstrap />)
+    act(() => setSession(memberToken({ reportWritable: false })))
+    expect(getCurrentReportSnapshot()).toBeNull()
+    act(() => setSession(memberToken()))
+    expect(getCurrentReportSnapshot()).toMatchObject({ report: { status: 'loading' } })
+    act(() => clearSession('logout'))
+    expect(getCurrentReportSnapshot()).toBeNull()
   })
 
   it('API 계층에 공급자를 끼우고, 해제하면 슬롯을 비운다', async () => {

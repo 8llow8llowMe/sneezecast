@@ -69,3 +69,27 @@ export function formatIsoWeekOfMonth(value: string): string | null {
   const thursday = addDays(isoWeekMonday(parsed), 3)
   return `${thursday.getUTCMonth() + 1}월 ${Math.ceil(thursday.getUTCDate() / 7)}주`
 }
+
+/** 브라우저 시간대와 무관하게 KST 달력 날짜(연 · 월 · 일)를 읽는다 */
+const KST_CALENDAR = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+})
+
+/**
+ * 그 시각이 속한 **KST 기준** ISO 주 (`YYYY-Www`). 백엔드 `ReportWeek` 와 같은 정의다 — 보고 주는 서버가 정하고, 화면은
+ * 받아 둔 보고가 지금 주의 것인지 볼 때만 쓴다(`features/report/current-report.ts`). 월요일 00:00 KST 에 주가 바뀐다.
+ */
+export function kstIsoWeek(instant: Date): string {
+  const parts = KST_CALENDAR.formatToParts(instant)
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((item) => item.type === type)?.value)
+  const date = new Date(Date.UTC(part('year'), part('month') - 1, part('day')))
+  // 그 주의 목요일이 든 해가 ISO 연도다
+  const thursday = addDays(date, 4 - (date.getUTCDay() || 7))
+  const year = thursday.getUTCFullYear()
+  const week = Math.ceil(((thursday.getTime() - Date.UTC(year, 0, 1)) / 86_400_000 + 1) / 7)
+  return `${year}-W${String(week).padStart(2, '0')}`
+}
