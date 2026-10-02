@@ -37,6 +37,7 @@ Claude Design 캔버스 "우리동네체온계 로그인·가입·계정 시안"
 | S10 | 내 정보 (이메일 / 카카오 / 비로그인) | Settings, Settings-kakao, Settings-guest | — | 다음 | `/me` |
 | S10 | 로그인한 기기 | Settings-devices | — | 다음 | `/me/devices` |
 | S10 | 비밀번호 변경 | Settings-password | — | 다음 | `/me/password` |
+| S10 | 내 동네 바꾸기 (#141) | 시안 없음 — Settings-password 구조를 따름 | — | — | `/me/region` |
 | S10 | 확인 대화상자 | Confirm-consent-withdraw, Confirm-withdraw, Confirm-logout | — | 다음 | 모달 |
 | 공통 | 로그인 만료 토스트 | State-session-expired | — | 다음 | → `/login` |
 
