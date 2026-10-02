@@ -56,6 +56,10 @@ auth:
     max-devices: ${AUTH_SESSION_MAX_DEVICES:5}
     # refresh 회전 직후 직전 토큰을 동시 재발급 경합(409)으로 봐주는 시간. 지나서 오면 재사용으로 보고 세션을 폐기한다.
     rotation-grace: ${AUTH_SESSION_ROTATION_GRACE:PT10S}
+  # 비밀번호 재설정. 코드 한도 · 수명은 email-send 를 그대로 쓰고(키만 따로), 여기는 코드를 맞힌 뒤 받는 1회용 토큰의 수명이다.
+  # 0 이하면 기동 실패. compose 가 같은 기본값을 넘긴다.
+  password-reset:
+    token-ttl: ${AUTH_PASSWORD_RESET_TOKEN_TTL:PT15M}
 
 # 가입 동의 이력(member_consent.document_version)에 남길 문서 버전. 20자 이하, 비면 기동 실패.
 # 정본은 프론트 legal 상수다 — 문서를 개정할 때 두 곳을 같은 배포에 올리지 않으면 "무엇에 동의했는가"가 어긋난다.

@@ -13,8 +13,14 @@ import com.sneezecast.redis.properties.enums.RedisMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,7 +39,8 @@ import org.testcontainers.utility.DockerImageName;
 
 /**
  * refresh 세션 Lua 스크립트를 실제 Redis 로 검증한다 — 원자 회전(0/1/2/3) · 저장과 기기 수 밀어내기 · 삭제 때 access 반환 · 목록의 만료 항목 정리.
- * mock 으로는 스크립트가 무엇을 하는지 알 수 없다. 같은 컨테이너로 로그인 IP 카운터의 되돌리기 스크립트({@link RedisLoginAttemptStoreAdapter})도 본다.
+ * mock 으로는 스크립트가 무엇을 하는지 알 수 없다. 같은 컨테이너로 로그인 IP 카운터의 되돌리기 스크립트({@link RedisLoginAttemptStoreAdapter})와 비밀번호
+ * 재설정 토큰의 1회성 소비 스크립트({@link RedisPasswordResetTokenStoreAdapter})도 본다.
  *
  * <p><b>CI 가 아니고 Docker 도 없을 때만 건너뛴다</b>({@link #dockerUnavailableOutsideCi}). {@code @Testcontainers(disabledWithoutDocker = true)} 를
  * 쓰지 않는 이유 — 그 조건은 "Docker 에 붙지 못함" 을 모두 "Docker 없음" 으로 보고 건너뛴다. CI 에서 클라이언트 · 엔진 API 버전이 어긋나 연결이
@@ -252,6 +259,52 @@ class RedisRefreshSessionStoreAdapterIntegrationTest {
 
         assertThat(template.opsForValue().get(key)).isEqualTo("0");
         assertThat(template.getExpire(key)).as("DECR 은 고정 윈도우 TTL 을 지우지 않는다").isPositive();
+    }
+
+    @Test
+    @DisplayName("재설정 토큰은 해시 키로 저장되고(TTL), 소비는 GET+DEL 이 한 번에 일어난다 — 두 번째 소비 · 없는 토큰은 empty 이고 키가 남지 않는다")
+    void passwordResetTokenIsConsumedOnce() {
+        RedisPasswordResetTokenStoreAdapter resetAdapter = new RedisPasswordResetTokenStoreAdapter(template, new RedisProperties(RedisMode.SENTINEL, null,
+            null, "mymaster", null, null, "localhost:26379", "sneezecast", null));
+        String hash = "b".repeat(64);
+        String key = "sneezecast:auth:passwordResetToken:" + hash;
+
+        resetAdapter.saveToken(hash, "user@example.com", Duration.ofMinutes(15));
+        assertThat(template.getExpire(key)).isPositive();
+
+        assertThat(resetAdapter.consumeToken(hash)).hasValue("user@example.com");
+        assertThat(template.hasKey(key)).isFalse();
+        assertThat(resetAdapter.consumeToken(hash)).isEmpty();
+        assertThat(resetAdapter.consumeToken("c".repeat(64))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("같은 재설정 토큰으로 동시에 소비해도 이메일을 받는 쪽은 하나뿐이다")
+    void concurrentConsumptionYieldsSingleWinner() throws Exception {
+        RedisPasswordResetTokenStoreAdapter resetAdapter = new RedisPasswordResetTokenStoreAdapter(template, new RedisProperties(RedisMode.SENTINEL, null,
+            null, "mymaster", null, null, "localhost:26379", "sneezecast", null));
+        String hash = "d".repeat(64);
+        resetAdapter.saveToken(hash, "user@example.com", Duration.ofMinutes(15));
+
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<Boolean>> results = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                results.add(executor.submit(() -> {
+                    start.await();
+                    return resetAdapter.consumeToken(hash).isPresent();
+                }));
+            }
+            start.countDown();
+            int winners = 0;
+            for (Future<Boolean> result : results) {
+                winners += result.get(10, TimeUnit.SECONDS) ? 1 : 0;
+            }
+            assertThat(winners).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private void save(String sessionId, String refreshTokenId, Instant issuedAt) {

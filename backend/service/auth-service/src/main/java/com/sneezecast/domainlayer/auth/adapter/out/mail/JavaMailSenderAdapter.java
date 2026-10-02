@@ -25,6 +25,8 @@ public class JavaMailSenderAdapter implements MailSendPort {
 
     static final String CODE_SUBJECT = "[우리동네체온계] 이메일 인증코드 안내";
     static final String NOTICE_SUBJECT = "[우리동네체온계] 회원가입 안내";
+    static final String PASSWORD_RESET_CODE_SUBJECT = "[우리동네체온계] 비밀번호 재설정 인증코드 안내";
+    static final String PASSWORD_RESET_NOTICE_SUBJECT = "[우리동네체온계] 비밀번호 재설정 안내";
 
     private static final String GMAIL_HOST_SUFFIX = "gmail.com";
     private static final String GMAIL_ADDRESS_SUFFIX = "@gmail.com";
@@ -52,6 +54,18 @@ public class JavaMailSenderAdapter implements MailSendPort {
     @Async("authMailTaskExecutor")
     public void sendAlreadyRegisteredNotice(String email) {
         send(email, NOTICE_SUBJECT, mailTemplateRenderer::renderAlreadyRegistered);
+    }
+
+    @Override
+    @Async("authMailTaskExecutor")
+    public void sendPasswordResetCode(String email, String code) {
+        send(email, PASSWORD_RESET_CODE_SUBJECT, () -> mailTemplateRenderer.renderPasswordResetCode(code));
+    }
+
+    @Override
+    @Async("authMailTaskExecutor")
+    public void sendPasswordResetNoAccountNotice(String email) {
+        send(email, PASSWORD_RESET_NOTICE_SUBJECT, mailTemplateRenderer::renderPasswordResetNoAccount);
     }
 
     // 렌더링도 try 안에서 한다 — 템플릿 오류가 @Async 워커 밖으로 튀지 않고 발송 실패와 같은 경로로 로그만 남는다.

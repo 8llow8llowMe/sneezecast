@@ -1,13 +1,18 @@
 package com.sneezecast.domainlayer.auth.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,7 +29,9 @@ import com.sneezecast.domainlayer.auth.application.exception.AuthErrorCode;
 import com.sneezecast.domainlayer.auth.application.exception.AuthException;
 import com.sneezecast.domainlayer.auth.application.service.processor.EmailVerificationProcessor;
 import com.sneezecast.domainlayer.auth.application.service.processor.GeneralSignupProcessor;
+import com.sneezecast.domainlayer.auth.application.service.processor.PasswordResetProcessor;
 import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
+import com.sneezecast.domainlayer.member.application.service.processor.MemberCommandProcessor;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
 import com.sneezecast.domainlayer.member.domain.enums.MemberStatus;
@@ -49,6 +56,9 @@ class AuthWebFacadeTest {
     private GeneralSignupProcessor generalSignupProcessor;
     private GeneralLoginProcessor generalLoginProcessor;
     private AuthTokenProcessor authTokenProcessor;
+    private AuthSessionProcessor authSessionProcessor;
+    private PasswordResetProcessor passwordResetProcessor;
+    private MemberCommandProcessor memberCommandProcessor;
     private AuthWebFacade facade;
 
     @BeforeEach
@@ -57,8 +67,87 @@ class AuthWebFacadeTest {
         generalSignupProcessor = mock(GeneralSignupProcessor.class);
         generalLoginProcessor = mock(GeneralLoginProcessor.class);
         authTokenProcessor = mock(AuthTokenProcessor.class);
-        facade = new AuthWebFacade(emailVerificationProcessor, generalSignupProcessor, passwordEncoder, generalLoginProcessor, authTokenProcessor,
-            mock(AuthSessionProcessor.class), new AuthPresenter());
+        authSessionProcessor = mock(AuthSessionProcessor.class);
+        passwordResetProcessor = mock(PasswordResetProcessor.class);
+        memberCommandProcessor = mock(MemberCommandProcessor.class);
+        facade = facadeWith(passwordEncoder);
+    }
+
+    private AuthWebFacade facadeWith(PasswordEncoder encoder) {
+        return new AuthWebFacade(emailVerificationProcessor, generalSignupProcessor, encoder, generalLoginProcessor, authTokenProcessor,
+            authSessionProcessor, new AuthPresenter(), passwordResetProcessor, memberCommandProcessor);
+    }
+
+    @Test
+    @DisplayName("재설정은 토큰 소비 → 해시(트랜잭션 밖) → 모든 세션 폐기 → 비밀번호 저장 → 로그인 잠금 해제 순서다")
+    void resetPasswordRevokesAllSessionsBeforeSaving() {
+        Member member = Member.builder().id(42L).email(EMAIL).role(SecurityRole.USER).status(MemberStatus.ACTIVE).build();
+        when(passwordResetProcessor.consumeToken("reset-token", "203.0.113.10")).thenReturn(member);
+
+        facade.resetPassword("reset-token", "Sneeze2026!", "203.0.113.10");
+
+        ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
+        InOrder order = inOrder(passwordResetProcessor, authSessionProcessor, memberCommandProcessor);
+        order.verify(passwordResetProcessor).consumeToken("reset-token", "203.0.113.10");
+        order.verify(authSessionProcessor).revokeAllSessions(42L);
+        order.verify(memberCommandProcessor).changePassword(eq(42L), hash.capture());
+        order.verify(authSessionProcessor).revokeAllSessions(42L);
+        order.verify(passwordResetProcessor).releaseLoginLock(EMAIL);
+        order.verifyNoMoreInteractions();
+        assertThat(passwordEncoder.matches("Sneeze2026!", hash.getValue())).isTrue();
+    }
+
+    @Test
+    @DisplayName("저장 뒤 2차 세션 폐기가 실패해도 재설정은 성공이고 로그인 잠금도 푼다 — 비밀번호는 이미 바뀌었다")
+    void postCommitRevokeFailureIsTolerated() {
+        Member member = Member.builder().id(42L).email(EMAIL).role(SecurityRole.USER).status(MemberStatus.ACTIVE).build();
+        when(passwordResetProcessor.consumeToken("reset-token", "203.0.113.10")).thenReturn(member);
+        doNothing().doThrow(new AuthException(AuthErrorCode.SESSION_STORE_UNAVAILABLE)).when(authSessionProcessor).revokeAllSessions(42L);
+
+        assertThatCode(() -> facade.resetPassword("reset-token", "Sneeze2026!", "203.0.113.10")).doesNotThrowAnyException();
+
+        verify(authSessionProcessor, times(2)).revokeAllSessions(42L);
+        verify(memberCommandProcessor).changePassword(eq(42L), anyString());
+        verify(passwordResetProcessor).releaseLoginLock(EMAIL);
+    }
+
+    @Test
+    @DisplayName("토큰 단계(IP 상한 · 만료)에서 막히면 BCrypt 를 돌리지 않고 세션 · 비밀번호도 건드리지 않는다")
+    void rejectedTokenSkipsHashing() {
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+        AuthWebFacade guarded = facadeWith(encoder);
+        when(passwordResetProcessor.consumeToken(anyString(), anyString())).thenThrow(new AuthException(AuthErrorCode.PASSWORD_RESET_IP_LIMITED));
+
+        assertThatThrownBy(() -> guarded.resetPassword("reset-token", "Sneeze2026!", "203.0.113.10")).isInstanceOf(AuthException.class);
+
+        verify(encoder, never()).encode(any());
+        verify(authSessionProcessor, never()).revokeAllSessions(anyLong());
+        verify(memberCommandProcessor, never()).changePassword(anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("세션 폐기가 실패하면(AUTH_017) 비밀번호를 저장하지 않고 잠금도 풀지 않는다")
+    void sessionRevokeFailureKeepsOldPassword() {
+        Member member = Member.builder().id(42L).email(EMAIL).role(SecurityRole.USER).status(MemberStatus.ACTIVE).build();
+        when(passwordResetProcessor.consumeToken("reset-token", "203.0.113.10")).thenReturn(member);
+        doThrow(new AuthException(AuthErrorCode.SESSION_STORE_UNAVAILABLE)).when(authSessionProcessor).revokeAllSessions(42L);
+
+        assertThatThrownBy(() -> facade.resetPassword("reset-token", "Sneeze2026!", "203.0.113.10"))
+            .isInstanceOfSatisfying(AuthException.class, e -> assertThat(e.getErrorCode()).isEqualTo(AuthErrorCode.SESSION_STORE_UNAVAILABLE));
+
+        verify(memberCommandProcessor, never()).changePassword(anyLong(), anyString());
+        verify(passwordResetProcessor, never()).releaseLoginLock(anyString());
+    }
+
+    @Test
+    @DisplayName("재설정 코드 발송 · 확인은 이메일을 정규화해 넘기고, 확인 응답에 토큰을 싣는다")
+    void resetCodeNormalizesEmail() {
+        when(passwordResetProcessor.verifyCode(EMAIL, "482913", "203.0.113.10")).thenReturn("reset-token");
+
+        facade.sendPasswordResetCode("  User@Example.COM ", "203.0.113.10");
+        assertThat(facade.verifyPasswordResetCode("USER@example.com", "482913", "203.0.113.10").resetToken()).isEqualTo("reset-token");
+
+        verify(passwordResetProcessor).sendCode(EMAIL, "203.0.113.10");
     }
 
     @Test

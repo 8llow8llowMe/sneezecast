@@ -18,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.item.AuthSessionItem;
+import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthPasswordResetTokenResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthSessionsResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthTokenResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.exception.AuthExceptionHandler;
@@ -173,6 +174,23 @@ class AuthWebControllerTest {
             .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_109"));
         postJson("/api/v1/auth/signup", VALID_SIGNUP.replace(" 재채기탐정 ", "탐"))
             .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_109"));
+    }
+
+    @Test
+    @DisplayName("닉네임 길이는 앞뒤 공백을 지운 값으로 잰다 — ' 가 ' 는 AUTH_109 하나, 공백뿐이면 AUTH_108 하나다(길이 오류를 겹쳐 싣지 않는다)")
+    void nicknameLengthIsMeasuredAfterStrip() throws Exception {
+        postJson("/api/v1/auth/signup", VALID_SIGNUP.replace(" 재채기탐정 ", " 가 "))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_109"))
+            .andExpect(jsonPath("$.dataHeader.fieldErrors[0].field").value("nickname"))
+            .andExpect(jsonPath("$.dataHeader.fieldErrors.length()").value(1));
+        postJson("/api/v1/auth/signup", VALID_SIGNUP.replace(" 재채기탐정 ", "   "))
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_108"))
+            .andExpect(jsonPath("$.dataHeader.fieldErrors.length()").value(1));
+        // 원문은 14자지만 지우면 10자 — 상한 안이다.
+        postJson("/api/v1/auth/signup", VALID_SIGNUP.replace(" 재채기탐정 ", "  열글자닉네임입니다요  "))
+            .andExpect(status().isOk());
+        verify(authWebUseCase).generalSignup(any());
     }
 
     @Test
@@ -406,6 +424,71 @@ class AuthWebControllerTest {
             .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
 
         verify(authWebUseCase).revokeOtherSessions(42L, SESSION_ID);
+    }
+
+    @Test
+    @DisplayName("재설정 코드 발송 · 확인은 X-Real-IP 를 상한 키로 넘기고, 확인 응답 본문에 resetToken 을 싣는다")
+    void passwordResetCodeFlow() throws Exception {
+        when(authWebUseCase.verifyPasswordResetCode("user@example.com", "482913", "203.0.113.10")).thenReturn(new AuthPasswordResetTokenResponse("reset-token"));
+
+        mockMvc.perform(post("/api/v1/auth/password/reset/send-code").contentType(MediaType.APPLICATION_JSON).header("X-Real-IP", "203.0.113.10")
+                .content("{\"email\":\"user@example.com\"}"))
+            .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/auth/password/reset/verify-code").contentType(MediaType.APPLICATION_JSON).header("X-Real-IP", "203.0.113.10")
+                .content("{\"email\":\"user@example.com\",\"code\":\"482913\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataBody.resetToken").value("reset-token"));
+
+        verify(authWebUseCase).sendPasswordResetCode("user@example.com", "203.0.113.10");
+    }
+
+    @Test
+    @DisplayName("재설정 코드 요청 검증은 가입 인증과 같은 코드다 — 이메일 형식 AUTH_103 · 코드 누락 AUTH_104")
+    void passwordResetCodeValidation() throws Exception {
+        postJson("/api/v1/auth/password/reset/send-code", "{\"email\":\"not-an-email\"}")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_103"));
+        postJson("/api/v1/auth/password/reset/verify-code", "{\"email\":\"user@example.com\",\"code\":\"\"}")
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_104"));
+        verifyNoInteractions(authWebUseCase);
+    }
+
+    @Test
+    @DisplayName("재설정은 토큰 · 새 비밀번호 · X-Real-IP 를 넘긴다")
+    void resetPassword() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/password/reset").contentType(MediaType.APPLICATION_JSON).header("X-Real-IP", "203.0.113.10")
+                .content("{\"resetToken\":\"reset-token\",\"newPassword\":\"Sneeze2026!\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataHeader.success").value(true));
+
+        verify(authWebUseCase).resetPassword("reset-token", "Sneeze2026!", "203.0.113.10");
+    }
+
+    @Test
+    @DisplayName("재설정 검증 — 토큰 누락 AUTH_115 · 100자 초과 AUTH_116, 새 비밀번호 길이 AUTH_106 · 구성 AUTH_107 이고 유스케이스를 부르지 않는다")
+    void resetPasswordValidation() throws Exception {
+        postJson("/api/v1/auth/password/reset", "{\"newPassword\":\"Sneeze2026!\"}")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_115"));
+        postJson("/api/v1/auth/password/reset", "{\"resetToken\":\"" + "a".repeat(101) + "\",\"newPassword\":\"Sneeze2026!\"}")
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_116"));
+        postJson("/api/v1/auth/password/reset", "{\"resetToken\":\"reset-token\",\"newPassword\":\"short1\"}")
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_106"));
+        postJson("/api/v1/auth/password/reset", "{\"resetToken\":\"reset-token\",\"newPassword\":\"passwordonly\"}")
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_107"));
+        verifyNoInteractions(authWebUseCase);
+    }
+
+    @Test
+    @DisplayName("재설정 실패는 봉투다 — 토큰 만료 400 AUTH_018 · IP 상한 429 AUTH_019 · 세션 저장소 장애 503 AUTH_017")
+    void resetPasswordFailuresAreEnveloped() throws Exception {
+        String body = "{\"resetToken\":\"reset-token\",\"newPassword\":\"Sneeze2026!\"}";
+        for (AuthErrorCode code : List.of(AuthErrorCode.PASSWORD_RESET_EXPIRED, AuthErrorCode.PASSWORD_RESET_IP_LIMITED, AuthErrorCode.SESSION_STORE_UNAVAILABLE)) {
+            doThrow(new AuthException(code)).when(authWebUseCase).resetPassword(any(), any(), any());
+            postJson("/api/v1/auth/password/reset", body)
+                .andExpect(status().is(code.getHttpStatus().value()))
+                .andExpect(jsonPath("$.dataHeader.resultCode").value(code.getCode()));
+        }
     }
 
     private static AuthTokenResponse tokenResponse() {
