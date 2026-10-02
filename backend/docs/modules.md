@@ -65,6 +65,8 @@ backend/
 - 역할 `USER`(일반 회원) / `OPERATOR`(검토·안내 발행) / `ADMIN`(관리자 페이지 — 회원·역할 부여, 운영 설정, 참조 데이터 수동 적재. 운영 API 도 허용), scope claim 해석 (`report:write` — 민감정보 동의를 마친 회원에게만 발급)
   - authority 는 역할 이름 그대로(`ROLE_` 접두어 없음) + scope 마다 `SCOPE_<scope>`. 검사는 `hasAuthority('OPERATOR')`, `hasAuthority(SecurityScope.REPORT_WRITE_AUTHORITY)` 로 한다 — `hasRole(...)` 은 동작하지 않는다.
   - scope 문자열·claim 이름은 `SecurityScope` 한 곳에만 둔다.
+- 인증 주체 `MemberLoginActive` — 회원 ID · 역할 · scope · access jti(블랙리스트 키) · 만료 시각(`expiresAt`, 블랙리스트 TTL 계산용) · 세션 ID(`sid` claim, 없으면 null). refresh 토큰은 `sid` 가 필수이고 jti 는 발급마다 새로 만든다(같은 jti 를 다시 쓰면 iat 가 초 단위라 같은 초에 똑같은 토큰이 나와 회전이 무력화된다).
+- 발급은 `JwtAuthProvider.IssuedToken(value, tokenId, expiresAt)` 을 돌려준다 — 세션에 access jti · 만료를, 회전에 새 refresh jti 를 넘기기 위해서다. claim 이름(`role` · `sid`)은 `JwtClaimNames`, `scope` 는 `SecurityScope` 한 곳에 둔다.
 - 서명 키를 담는 설정 record(`JwtAuthProperties` · `JwtResourceServerProperties`)가 HS512 키 길이(UTF-8 64바이트)를 생성 시점에 검사하고 `toString()` 에서 키를 가린다. 공통 규칙은 `common.jwt.JwtSigningKeys`. 키를 바이트로 바꿀 때는 항상 UTF-8 을 명시한다 — 발급과 검증의 바이트 해석이 어긋나면 모든 토큰이 401 이 된다.
 - 인증·인가 실패를 `Response` 봉투로 쓰는 오류 writer
 
@@ -134,7 +136,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 가입 | `POST /email/send-code` · `POST /email/verify-code` · `POST /signup` |
 | 로그인 | `POST /login` · `GET /{provider}/authorize` · `GET /{provider}/login` · `POST /token/reissue` · `POST /logout` |
 | 비밀번호 | `POST /password/reset/send-code` · `POST /password/reset` · `POST /me/password` (변경) · `POST /me/password/setup` (소셜 가입자 최초 설정) |
-| 세션 | `GET /sessions` · `DELETE /sessions/{sessionId}` |
+| 세션 | `GET /sessions` · `DELETE /sessions/{sessionId}` · `DELETE /sessions` (현재 기기를 뺀 전부) |
 | 내 정보 | `GET /me` · `PATCH /me` · `DELETE /me/profile-image` · `POST /me/withdraw` |
 
 **저장소**
@@ -163,13 +165,35 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 가입: 인증 완료 확인(Redis) → 비밀번호 BCrypt 해시(트랜잭션 밖) → 회원 · 동의 저장(`GeneralSignupProcessor` 트랜잭션) → 커밋 뒤 인증 표시 소비. 필수 동의는 이용약관 · 개인정보 · 만 19세 이상, **건강정보 동의는 별도 필드의 선택 항목**이고 동의했을 때만 행을 남긴다. 문서 버전은 `legal.*-version` 설정값. 동시 가입 중복은 `uk_member_email` 이 막고 `MEMBER_001`(409)로 바뀐다. **가입 응답에는 토큰이 없다** — 이어서 로그인한다.
 - 입력 규칙은 시안 Signup-account 와 같다 — 비밀번호 8~20자 · 영문자와 숫자 필수 · 공백 금지 · 특수문자는 선택(상한 20자는 BCrypt 72바이트 한도 안에 두려는 값), 닉네임 2~10자(앞뒤 공백을 지우고 저장).
 
-**화면 계약** (2026-10-01 결정, 프론트 S13-2~4 · S02-2~4)
+**로그인 · 토큰 · 세션**
+
+- 로그인 시도 제한은 `auth.login.*`(env `AUTH_LOGIN_*`, 기본 이메일당 5회 실패 → 10분 잠금 · IP당 실패 30회/1시간). 이메일 키는 **계정 존재 여부와 무관하게** 세고 잠근다 — 잠금 응답이 "가입된 이메일" 신호가 되지 않게. 잠금 검사는 회원 조회보다 먼저다. **두 카운터는 BCrypt 비교 전에 먼저 올린다** — 실패한 뒤에 올리면 동시에 들어온 수백 요청이 모두 비교를 거쳐 상한이 무력화된다. 비밀번호가 맞으면(탈퇴 · 정지여도) 이메일 카운터는 지우고 IP 카운터는 자기 몫만 되돌린다. 잠글 때 카운터는 지우지 않는다 — 잠금 직전에 확인을 통과한 동시 요청이 1부터 다시 세어 비교까지 가지 않게. 카운터 TTL 은 첫 실패부터 잠금 시간이라 잠금보다 먼저 사라진다. 두 카운터 모두 저장소 장애에 fail-open.
+- 미존재 이메일 · 비밀번호 없는(소셜) 계정 · 비밀번호 불일치는 모두 `AUTH_011` 이고, 미존재 · 비밀번호 없음에도 더미 BCrypt 비교를 돌려 응답 시간을 맞춘다. 탈퇴(`MEMBER_002`) · 정지(`MEMBER_003`)는 **비밀번호가 맞을 때만** 드러낸다.
+- 세션은 로그인 한 번 = 기기 하나다. 세션 ID 는 로그인 때 만들고 **회전해도 유지**하며, refresh JWT 의 jti 만 매번 바뀐다. JWT 의 `sid` claim 이 세션 ID 다(access · refresh 둘 다).
+- Redis 키: `{prefix}:auth:refreshSession:{memberId}:{sessionId}`(HASH — 현재 · 직전 refresh jti, 회전 시각, 기기 이름, 생성 · 마지막 사용 시각, 최근 access jti · 만료) · `{prefix}:auth:refreshSessions:{memberId}`(ZSET, score = 마지막 사용). TTL 은 refresh 만료(기본 14일, 회전마다 갱신). **refresh 토큰 원문은 저장하지 않는다.** 회원당 기기 상한(`auth.session.max-devices`, 기본 5)을 넘으면 가장 오래 안 쓴 세션부터 밀어낸다.
+- 재발급 회전은 Lua 하나로 원자 처리한다 — 제시한 jti 가 현재 jti 면 회전, **직전 jti 이고 회전 직후(`auth.session.rotation-grace`, 기본 10초)면 여러 탭의 동시 재발급으로 보고 세션을 두고 `AUTH_016`(409)**, 그 밖의 옛 jti 는 **재사용(탈취 의심)으로 보고 그 세션을 폐기**하고 `AUTH_015`. 세션이 없거나 refresh 가 만료면 `AUTH_014`.
+- scope 와 재동의 표시는 로그인 · 재발급마다 동의 이력에서 다시 계산한다. `pendingConsents` = 필수 항목(이용약관 · 개인정보 · 만 19세) 중 현재 문서 버전의 유효 동의가 없는 것(문서 개정 → 재동의 유도, 로그인은 막지 않는다). `report:write` 는 **pendingConsents 가 비어 있고 건강정보 동의가 유효할 때만** 싣는다. "미완료 보고 파기 요청이 없을 것" 조건은 `report_purge_request` 와 함께 #59 에서 더한다.
+- 재발급은 회원 상태도 다시 본다. ACTIVE 가 아니면 그 회원의 전 세션을 지운다.
+- 로그아웃은 현재 세션(access `sid`)을 지우고 access jti 를 남은 만료 시간만큼 블랙리스트에 올린다. 세션 폐기(`DELETE /sessions/{id}` · `DELETE /sessions`) · 재사용 감지 · 기기 상한 밀어내기는 그 세션에 저장된 **최근 access jti** 를 블랙리스트에 올려 그 기기를 끊는다. 같은 세션에서 그보다 먼저 발급돼 아직 만료되지 않은 access(여러 탭)는 최대 access TTL(15분) 동안 남는다 — 동의 철회와 같은 허용 범위다([architecture-guide.md](architecture-guide.md)). 로그아웃만 Redis 장애를 관용한다(로그를 남기고 200 + 쿠키 삭제 — 쿠키가 지워지면 그 브라우저의 refresh 는 사라진다).
+- 기기 이름은 `User-Agent` 를 "OS · 브라우저"(예: `iPhone · Safari`)로 줄여 저장한다. **UA 원문과 IP 는 저장하지 않는다.**
+- refresh 토큰은 응답 바디가 아니라 쿠키 `refreshToken`(HttpOnly · Secure · SameSite=Strict · Path=`/api/v1/auth`)으로만 오간다. 웹과 API 는 같은 사이트(`*.sneezecast.com`)라 Strict 로 충분하다. 게이트웨이 · auth 의 CORS 는 `allowCredentials=true` 다.
+- 오류 코드: `AUTH_011` 로그인 실패(401) · `012` 이메일 잠금(429) · `013` IP 상한(429) · `014` refresh 없음 · 만료 · 세션 없음(401, 재로그인) · `015` refresh 위조 · 재사용(401) · `016` 동시 재발급 경합(409, 한 번 재시도) · `017` 세션 저장소 장애(503), 검증 `AUTH_113`(로그인 비밀번호 100자 초과) · `AUTH_114`(sessionId 가 UUID 형식이 아님), `MEMBER_002` 탈퇴 · `MEMBER_003` 정지(403).
+- Lua 스크립트는 다른 세션의 해시 키를 스크립트 안에서 조립한다(밀어내기 · 전체 삭제). Redis 를 Sentinel 로 쓰는 한 문제없지만, Cluster 로 옮기면 회원 단위 해시태그(`{memberId}`)로 키를 묶어야 한다.
+
+**화면 계약** (2026-10-01 결정, 프론트 S13-2~5 · S02-2~4 · S10)
 
 - 이메일 단계(S13-2)에 **"이미 가입된 이메일" 상태를 두지 않는다.** send-code 는 가입 여부와 무관하게 같은 응답이라, 화면은 늘 코드 단계(S13-3)로 넘어가고 "이미 가입한 이메일이면 코드 대신 안내 메일이 가요" 같은 중립 문구를 함께 보여 준다.
 - **가입 요청(`POST /api/v1/auth/signup`)은 동의 단계 뒤에 보낸다.** 개인정보 수집 동의가 수집보다 먼저여야 해서다. 계정 입력(S13-4)은 화면이 들고 있다가 S02-2 성인 확인 · S02-3 가입 동의를 마친 뒤(S02-3 `가입하기`) 동의 값과 함께 한 번에 보낸다. 가입 응답에 토큰이 없으므로 화면은 이어서 로그인(#57)하고 동네를 저장(#60)한다.
 - S02-4 증상 보고 동의는 가입 뒤라 건강정보 동의 API(#59)로 따로 보낸다 — 홈의 동의 시트와 같은 경로다. 가입 요청의 `sensitiveHealthInfoAgreed` 는 비워 두면(false) 된다. S02-3 의 `[선택] 주간 보고 알림` 은 가입 API 에 필드가 없다(푸시 구독 때 따로 받는다).
 - verify-code 는 토큰을 주지 않는다. 인증 완료 표시는 서버(Redis)에 남고 기본 30분이 지나면 사라지므로, 그 뒤 가입 요청은 `AUTH_007` 이 되고 화면은 이메일 단계부터 다시 한다.
 - 발송 제한(`AUTH_001` 쿨다운 60초 · `AUTH_002` IP 상한 1시간 창)은 남은 시간을 응답에 싣지 않는다. 화면 문구는 "잠시 뒤 다시 시도해 주세요" 처럼 시간을 못 박지 않는다.
+- 로그인(S13-5): `AUTH_011` → wrong("이메일 또는 비밀번호가 맞지 않아요"), `AUTH_012` → locked(잠금은 기본 10분 고정이라 시안의 "10분 뒤" 를 쓸 수 있다), `AUTH_013`(IP 상한)은 locked 와 같은 모양에 "잠시 뒤" 문구.
+- 로그인 · 재발급 응답은 `{memberId, role, accessToken, accessTokenExpiresIn(초), pendingConsents, reportWritable}` 이다. access token 은 메모리에만 두고, 만료 전에 `POST /token/reissue` 로 바꾼다(refresh 는 쿠키라 화면이 다루지 않는다 — `fetch` 에 `credentials: 'include'`). `pendingConsents` 가 있으면 약관 재동의 화면(S02-3 reconsent)으로, `reportWritable` 이 false 면 보고 진입에서 증상 보고 동의 시트를 연다.
+- **재발급 요청에는 `Authorization` 헤더를 싣지 않는다.** 게이트웨이와 auth 필터는 경로와 무관하게 헤더가 있으면 access 를 검사하므로, 만료된 access 를 실으면 refresh 가 멀쩡해도 401 `SECURITY_002` 로 끝난다. 공통 HTTP 클라이언트가 Bearer 를 자동으로 붙인다면 재발급 호출만 예외로 뺀다.
+- 로그아웃 · 세션 API 는 access 가 필요하다. access 가 만료됐으면 먼저 재발급하고 부른다. 재발급도 `AUTH_014` · `AUTH_015` 면 세션이 이미 끊긴 것이라 화면만 로그아웃 상태로 바꾼다(남은 쿠키는 쓸모가 없고 다음 로그인 때 덮인다).
+- 재발급 `AUTH_016`(409)은 여러 탭이 동시에 재발급한 경합이다 — 한 번 다시 부르면 된다(브라우저가 이긴 쪽의 새 쿠키를 보낸다). 탭이 셋 이상이거나 응답이 늦게 오면 한 번의 재시도로 부족하거나 늦게 도착한 옛 토큰이 재사용으로 판정될 수 있으니, **탭 사이 재발급을 Web Locks(`navigator.locks`)로 한 번에 하나만** 돌리기를 권한다. 409 가 연달아 오면 재로그인으로 처리한다. `AUTH_014` · `AUTH_015` 는 재로그인(S13-1 `?reason=expired`).
+- 로그인 기기(S10 Settings-devices)는 `GET /sessions` 의 `current` 로 "이 기기" 를 표시하고, "다른 기기에서 모두 로그아웃" 은 `DELETE /sessions` 다.
+- FE 로컬(`http://localhost:*`)에서 dev API 를 부르면 교차 사이트라 SameSite=Strict 쿠키가 실리지 않는다 — 로그인은 되지만 재발급은 안 된다(access 만료 15분 뒤 재로그인). 로컬 개발은 목을 기본으로 한다.
 
 **설정 · 기동 규칙**
 

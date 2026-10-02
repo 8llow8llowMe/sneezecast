@@ -39,6 +39,7 @@
 ```
 
 - 버전은 루트 `build.gradle` 이 정본이다 — Spring Boot 3.4.5, Spring Cloud 2024.0.0 BOM (실행 모듈에만).
+- Redis 통합 테스트(auth 의 Testcontainers `redis:7-alpine`)는 로컬에 Docker 가 없으면 건너뛰고, CI(`CI=true`)에서는 Docker 에 못 붙으면 **실패**한다 — 조용히 건너뛰어 초록불이 되지 않게. Testcontainers 는 Docker Engine 29 대응을 위해 auth-service 에서 1.21.4 로 올려 둔다(Boot BOM 이 1.21 이상이 되면 그 줄을 지운다).
 - 라이브러리 모듈 목록(`libraryModules`)과 실행 모듈 목록(`cloudAppModules`)도 루트 `build.gradle` 에 있다. 모듈을 추가하면 `settings.gradle` 과 함께 여기도 고친다.
 
 ## 파일 인코딩
