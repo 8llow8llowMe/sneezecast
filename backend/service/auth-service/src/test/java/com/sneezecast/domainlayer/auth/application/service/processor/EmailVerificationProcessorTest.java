@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import com.sneezecast.domainlayer.auth.application.exception.AuthErrorCode;
 import com.sneezecast.domainlayer.auth.application.exception.AuthException;
+import com.sneezecast.domainlayer.auth.application.model.EmailCodePurpose;
 import com.sneezecast.domainlayer.auth.application.port.out.EmailVerificationStorePort;
 import com.sneezecast.domainlayer.auth.application.port.out.MailSendPort;
 import com.sneezecast.domainlayer.auth.application.service.support.VerificationCodeGenerator;
@@ -21,12 +22,7 @@ import com.sneezecast.domainlayer.member.application.port.out.MemberRepositoryPo
 import com.sneezecast.global.properties.EmailSendLimitProperties;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,7 +47,8 @@ class EmailVerificationProcessorTest {
         mailSendPort = mock(MailSendPort.class);
         memberRepositoryPort = mock(MemberRepositoryPort.class);
         when(memberRepositoryPort.existsByEmail(REGISTERED_EMAIL)).thenReturn(true);
-        processor = new EmailVerificationProcessor(store, mailSendPort, memberRepositoryPort, LIMITS, new VerificationCodeGenerator());
+        processor = new EmailVerificationProcessor(new EmailCodeProcessor(store, LIMITS, new VerificationCodeGenerator()), store, mailSendPort, memberRepositoryPort,
+            LIMITS);
     }
 
     @Test
@@ -64,6 +61,7 @@ class EmailVerificationProcessorTest {
         assertThat(store.codes).containsEntry(EMAIL, mailed.getValue());
         assertThat(mailed.getValue()).matches("[0-9]{6}");
         assertThat(store.codeTtls).containsEntry(EMAIL, LIMITS.codeTtl());
+        assertThat(store.purposes).as("가입 키만 쓴다 — 재설정 코드 · 카운터를 건드리지 않는다").containsExactly(EmailCodePurpose.SIGNUP);
     }
 
     @Test
@@ -172,8 +170,8 @@ class EmailVerificationProcessorTest {
     void consumeVerifiedSwallowsStoreFailure() {
         EmailVerificationStorePort failingStore = mock(EmailVerificationStorePort.class);
         doThrow(new AuthException(AuthErrorCode.EMAIL_VERIFICATION_UNAVAILABLE)).when(failingStore).deleteVerified(EMAIL);
-        EmailVerificationProcessor failing = new EmailVerificationProcessor(failingStore, mailSendPort, memberRepositoryPort, LIMITS,
-            new VerificationCodeGenerator());
+        EmailVerificationProcessor failing = new EmailVerificationProcessor(new EmailCodeProcessor(failingStore, LIMITS, new VerificationCodeGenerator()),
+            failingStore, mailSendPort, memberRepositoryPort, LIMITS);
 
         assertThatCode(() -> failing.consumeVerified(EMAIL)).doesNotThrowAnyException();
     }
@@ -187,78 +185,5 @@ class EmailVerificationProcessorTest {
             responses.add(exception.getErrorCode().getCode() + ":" + exception.getMessage());
         }
         return responses;
-    }
-
-    /** TTL 은 흉내 내지 않는다 — 만료는 "키가 없다" 로 표현한다. */
-    private static class FakeEmailVerificationStore implements EmailVerificationStorePort {
-
-        private final Map<String, String> codes = new HashMap<>();
-        private final Map<String, Duration> codeTtls = new HashMap<>();
-        private final Map<String, Duration> verified = new HashMap<>();
-        private final Set<String> cooldowns = new HashSet<>();
-        private final Map<String, Long> failures = new HashMap<>();
-        private final Map<String, Long> ipSendCounts = new HashMap<>();
-        private final Map<String, Long> ipVerifyCounts = new HashMap<>();
-
-        @Override
-        public void saveCode(String email, String code, Duration ttl) {
-            codes.put(email, code);
-            codeTtls.put(email, ttl);
-        }
-
-        @Override
-        public Optional<String> findCode(String email) {
-            return Optional.ofNullable(codes.get(email));
-        }
-
-        @Override
-        public void deleteCode(String email) {
-            codes.remove(email);
-        }
-
-        @Override
-        public void saveVerified(String email, Duration ttl) {
-            verified.put(email, ttl);
-        }
-
-        @Override
-        public boolean isVerified(String email) {
-            return verified.containsKey(email);
-        }
-
-        @Override
-        public void deleteVerified(String email) {
-            verified.remove(email);
-        }
-
-        @Override
-        public boolean tryAcquireCooldown(String email, Duration ttl) {
-            return cooldowns.add(email);
-        }
-
-        @Override
-        public long increaseVerifyFailureCount(String email, Duration ttl) {
-            return failures.merge(email, 1L, Long::sum);
-        }
-
-        @Override
-        public void clearVerifyFailures(String email) {
-            failures.remove(email);
-        }
-
-        @Override
-        public long findIpSendCount(String clientIp) {
-            return ipSendCounts.getOrDefault(clientIp, 0L);
-        }
-
-        @Override
-        public long increaseIpSendCount(String clientIp, Duration window) {
-            return ipSendCounts.merge(clientIp, 1L, Long::sum);
-        }
-
-        @Override
-        public long increaseIpVerifyCount(String clientIp, Duration window) {
-            return ipVerifyCounts.merge(clientIp, 1L, Long::sum);
-        }
     }
 }

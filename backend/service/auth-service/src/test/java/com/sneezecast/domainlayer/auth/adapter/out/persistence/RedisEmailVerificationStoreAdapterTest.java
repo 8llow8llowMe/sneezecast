@@ -1,9 +1,12 @@
 package com.sneezecast.domainlayer.auth.adapter.out.persistence;
 
+import static com.sneezecast.domainlayer.auth.application.model.EmailCodePurpose.PASSWORD_RESET;
+import static com.sneezecast.domainlayer.auth.application.model.EmailCodePurpose.SIGNUP;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -41,13 +44,34 @@ class RedisEmailVerificationStoreAdapterTest {
     @Test
     @DisplayName("코드 · 인증 완료 · 쿨다운 키는 {prefix}:auth:{종류}:{이메일} 이고 TTL 을 건다")
     void keysFollowPrefixRuleWithTtl() {
-        adapter.saveCode(EMAIL, "482913", Duration.ofMinutes(5));
+        adapter.saveCode(SIGNUP, EMAIL, "482913", Duration.ofMinutes(5));
         adapter.saveVerified(EMAIL, Duration.ofMinutes(30));
-        adapter.tryAcquireCooldown(EMAIL, Duration.ofSeconds(60));
+        adapter.tryAcquireCooldown(SIGNUP, EMAIL, Duration.ofSeconds(60));
 
         verify(valueOperations).set("sneezecast:auth:emailVerificationCode:" + EMAIL, "482913", Duration.ofMinutes(5));
         verify(valueOperations).set("sneezecast:auth:emailVerified:" + EMAIL, "verified", Duration.ofMinutes(30));
         verify(valueOperations).setIfAbsent("sneezecast:auth:emailVerificationCooldown:" + EMAIL, "cooldown", Duration.ofSeconds(60));
+    }
+
+    @Test
+    @DisplayName("비밀번호 재설정은 가입과 다른 키를 쓴다 — 코드 · 실패 · 쿨다운 · IP 발송 · IP 검증이 모두 passwordReset* 이라 서로를 대신하거나 막지 않는다")
+    void passwordResetUsesSeparateKeys() {
+        when(valueOperations.increment(anyString())).thenReturn(1L);
+
+        adapter.saveCode(PASSWORD_RESET, EMAIL, "482913", Duration.ofMinutes(5));
+        adapter.tryAcquireCooldown(PASSWORD_RESET, EMAIL, Duration.ofSeconds(60));
+        adapter.increaseVerifyFailureCount(PASSWORD_RESET, EMAIL, Duration.ofMinutes(5));
+        adapter.increaseIpSendCount(PASSWORD_RESET, "203.0.113.10", Duration.ofHours(1));
+        adapter.increaseIpVerifyCount(PASSWORD_RESET, "203.0.113.10", Duration.ofHours(1));
+        adapter.findCode(PASSWORD_RESET, EMAIL);
+
+        verify(valueOperations).set("sneezecast:auth:passwordResetCode:" + EMAIL, "482913", Duration.ofMinutes(5));
+        verify(valueOperations).setIfAbsent("sneezecast:auth:passwordResetCooldown:" + EMAIL, "cooldown", Duration.ofSeconds(60));
+        verify(valueOperations).increment("sneezecast:auth:passwordResetFail:" + EMAIL);
+        verify(valueOperations).increment("sneezecast:auth:passwordResetSendIp:203.0.113.10");
+        verify(valueOperations).increment("sneezecast:auth:passwordResetVerifyIp:203.0.113.10");
+        verify(valueOperations).get("sneezecast:auth:passwordResetCode:" + EMAIL);
+        verify(valueOperations, never()).set(startsWith("sneezecast:auth:emailVerification"), anyString(), any(Duration.class));
     }
 
     @Test
@@ -56,7 +80,7 @@ class RedisEmailVerificationStoreAdapterTest {
         String key = "sneezecast:auth:emailVerificationFail:" + EMAIL;
         when(valueOperations.increment(key)).thenReturn(1L);
 
-        assertThat(adapter.increaseVerifyFailureCount(EMAIL, Duration.ofMinutes(5))).isEqualTo(1L);
+        assertThat(adapter.increaseVerifyFailureCount(SIGNUP, EMAIL, Duration.ofMinutes(5))).isEqualTo(1L);
 
         verify(redisTemplate).expire(key, Duration.ofMinutes(5));
     }
@@ -68,7 +92,7 @@ class RedisEmailVerificationStoreAdapterTest {
         when(valueOperations.increment(key)).thenReturn(4L);
         when(redisTemplate.getExpire(key)).thenReturn(-1L);
 
-        assertThat(adapter.increaseIpSendCount("203.0.113.10", Duration.ofHours(1))).isEqualTo(4L);
+        assertThat(adapter.increaseIpSendCount(SIGNUP, "203.0.113.10", Duration.ofHours(1))).isEqualTo(4L);
 
         verify(redisTemplate).expire(key, Duration.ofHours(1));
     }
@@ -80,7 +104,7 @@ class RedisEmailVerificationStoreAdapterTest {
         when(valueOperations.increment(key)).thenReturn(2L);
         when(redisTemplate.getExpire(key)).thenReturn(1200L);
 
-        adapter.increaseIpSendCount("203.0.113.10", Duration.ofHours(1));
+        adapter.increaseIpSendCount(SIGNUP, "203.0.113.10", Duration.ofHours(1));
 
         verify(redisTemplate, never()).expire(anyString(), any(Duration.class));
     }
@@ -90,7 +114,7 @@ class RedisEmailVerificationStoreAdapterTest {
     void ipCounterFailsOpen() {
         when(valueOperations.increment(anyString())).thenThrow(new RedisConnectionFailureException("down"));
 
-        assertThat(adapter.increaseIpSendCount("203.0.113.10", Duration.ofHours(1))).isZero();
+        assertThat(adapter.increaseIpSendCount(SIGNUP, "203.0.113.10", Duration.ofHours(1))).isZero();
     }
 
     @Test
@@ -98,10 +122,10 @@ class RedisEmailVerificationStoreAdapterTest {
     void findIpSendCountDoesNotIncrement() {
         String key = "sneezecast:auth:emailSendIp:203.0.113.10";
         when(valueOperations.get(key)).thenReturn("7");
-        assertThat(adapter.findIpSendCount("203.0.113.10")).isEqualTo(7L);
+        assertThat(adapter.findIpSendCount(SIGNUP, "203.0.113.10")).isEqualTo(7L);
 
         when(valueOperations.get(key)).thenReturn(null);
-        assertThat(adapter.findIpSendCount("203.0.113.10")).isZero();
+        assertThat(adapter.findIpSendCount(SIGNUP, "203.0.113.10")).isZero();
         verify(valueOperations, never()).increment(anyString());
     }
 
@@ -109,14 +133,14 @@ class RedisEmailVerificationStoreAdapterTest {
     @DisplayName("IP 횟수 조회도 Redis 장애에 fail-open 이다 — 0")
     void findIpSendCountFailsOpen() {
         when(valueOperations.get(anyString())).thenThrow(new RedisConnectionFailureException("down"));
-        assertThat(adapter.findIpSendCount("203.0.113.10")).isZero();
+        assertThat(adapter.findIpSendCount(SIGNUP, "203.0.113.10")).isZero();
     }
 
     @Test
     @DisplayName("IP 횟수 값이 숫자가 아니면 0 으로 본다 — 500 으로 새지 않는다")
     void findIpSendCountIgnoresCorruptValue() {
         when(valueOperations.get(anyString())).thenReturn("not-a-number");
-        assertThat(adapter.findIpSendCount("203.0.113.10")).isZero();
+        assertThat(adapter.findIpSendCount(SIGNUP, "203.0.113.10")).isZero();
     }
 
     @Test
@@ -125,7 +149,7 @@ class RedisEmailVerificationStoreAdapterTest {
         String key = "sneezecast:auth:emailVerifyIp:203.0.113.10";
         when(valueOperations.increment(key)).thenReturn(1L);
 
-        assertThat(adapter.increaseIpVerifyCount("203.0.113.10", Duration.ofHours(1))).isEqualTo(1L);
+        assertThat(adapter.increaseIpVerifyCount(SIGNUP, "203.0.113.10", Duration.ofHours(1))).isEqualTo(1L);
 
         verify(redisTemplate).expire(key, Duration.ofHours(1));
     }
@@ -136,7 +160,7 @@ class RedisEmailVerificationStoreAdapterTest {
         when(valueOperations.get(anyString())).thenThrow(new QueryTimeoutException("timeout"));
         when(redisTemplate.hasKey(anyString())).thenThrow(new RedisConnectionFailureException("down"));
 
-        assertThatThrownBy(() -> adapter.findCode(EMAIL))
+        assertThatThrownBy(() -> adapter.findCode(SIGNUP, EMAIL))
             .isInstanceOfSatisfying(AuthException.class, e -> assertThat(e.getErrorCode()).isEqualTo(AuthErrorCode.EMAIL_VERIFICATION_UNAVAILABLE));
         assertThatThrownBy(() -> adapter.isVerified(EMAIL))
             .isInstanceOfSatisfying(AuthException.class, e -> {
