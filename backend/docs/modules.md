@@ -266,7 +266,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 컨텍스트 | 책임 |
 |----------|------|
 | `district` | 행정동 마스터 조회 (읽기 전용, 쓰기는 batch 적재뿐). 공개 `GET /api/v1/districts?query=` — 현행만, 동 이름 · `시도 시군구` 포함 검색, FE 계약상 `dataBody` 는 페이지 없는 배열 최대 20건 · `GET /api/v1/districts/{code}` — 폐지 코드도 `active=false` 로 200. 내부 `GET /internal/v1/districts/{code}` — auth 의 내 동네 코드 검증 |
-| `report` | 주간 건강 보고 upsert. 저장 계층: `weekly_report`(Snowflake PK, `(reporter_key, iso_week)` unique) · `WeeklyReportRepositoryPort`(조회 · insert — UK 위반만 `REPORT_001` · `updateCurrent` — JPQL `revision_count + 1` · 삭제 건수), `SymptomGroup` 비트 마스크, KST ISO 주 `ReportWeek` · `ReportWeekCalculator`(`Clock` 빈). 제출 · 조회 · 취소 API 는 #143 |
+| `report` | 주간 건강 보고 upsert. 저장 계층: `weekly_report`(Snowflake PK, `(reporter_key, iso_week)` unique) · `WeeklyReportRepositoryPort`(조회 · insert — UK 위반만 `REPORT_001` · `updateCurrent` — JPQL `revision_count + 1`, SMALLINT 상한 포화 · 삭제 건수), `SymptomGroup` 비트 마스크, KST ISO 주 `ReportWeek` · `ReportWeekCalculator`(`Clock` 빈). 공개 `PUT · GET · DELETE /api/v1/reports/current` — 본인 이번 주 보고 제출(없으면 insert · 있으면 수정) · 조회(미보고면 `dataBody: null`) · 취소(멱등). 세 API 모두 `hasAuthority(SecurityScope.REPORT_WRITE_AUTHORITY)` (민감정보라 조회도 같은 권한), 주는 경로 · 본문으로 받지 않는다. 행정동 현행 확인은 `ReportDistrictQueryPort` → district 읽기 포트(report 는 district 영속 계층을 import 하지 않는다). 트랜잭션은 Processor 메서드마다 걸고 WebFacade 는 트랜잭션 밖에서 `REPORT_001` 만 잡아 한 번 다시 부른다. 응답에 회원 ID · `reporter_key` · 보고 ID · `revision_count` 를 싣지 않는다 |
 | `aggregate` | 행정동 × 주 집계, 자료 부족 판정, 검토 후보 신호 |
 | `advisory` | 운영자 검토, AI 초안, 승인·수정·발행 이력, 공개 안내 |
 | `official` | 질병관리청 감시 자료 조회 (자가보고와 분리) |

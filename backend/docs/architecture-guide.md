@@ -81,7 +81,7 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 
 | 단계 | 소유 | 방식 |
 |------|------|------|
-| ① 주간 보고 | surveillance `report` | JWT scope `report:write` 확인 → `reporter_key` 계산 → **서버가 KST 현재 시각으로 `iso_week` 를 정한다**(현재 주만 쓸 수 있다) → `(reporter_key, iso_week)` unique upsert. 행정동 코드는 요청이 싣고(FE 가 `member_region` 값을 보낸다) surveillance 가 `district` 로 현행 코드인지 검증해 보고 행에 스냅샷한다 |
+| ① 주간 보고 | surveillance `report` | `PUT /api/v1/reports/current`(조회 `GET` · 취소 `DELETE` 같은 경로). JWT scope `report:write` 확인 → `reporter_key` 계산 → **서버가 KST 현재 시각으로 `iso_week` 를 정한다**(현재 주만 쓸 수 있다) → `(reporter_key, iso_week)` unique upsert. 행정동 코드는 요청이 싣고(FE 가 `member_region` 값을 보낸다) surveillance 가 `district` 로 현행 코드인지 검증해 보고 행에 스냅샷한다 |
 | ② 집계 | `aggregate` | 서비스 내 스케줄러가 현재 주를 `GROUP BY` 로 **재계산**한다 (카운터를 누적하지 않아 멱등). 주 마감 시 확정. 참여자 = distinct `reporter_key`, 비율 = 증상 보고 / 참여자 |
 | ③ 자료 부족 판정 | `aggregate` | 참여자 < 최소 표본 또는 전주 대비 참여자 급변 → `INSUFFICIENT`. 1단계 임계값은 설정값이고 집계 행에 `rule_version` 을 남긴다. 검토 후보(참여 급증·반복 보고)는 1단계에서 운영자 화면이 조회 시 계산하고, 기준선 대비 변화와 후보 적재(`review_signal`)는 2단계다 |
 | ④ 운영자 검토 | `advisory` | `OPERATOR` 역할. **마감됐고 `INSUFFICIENT` 가 아닌 집계로만** 초안을 만든다. 초안에 집계 스냅샷을 복사해 인용값을 고정한다. AI 초안은 스냅샷 수치만 입력으로 넣는 동기 호출 (트랜잭션 밖, timeout 명시) |
