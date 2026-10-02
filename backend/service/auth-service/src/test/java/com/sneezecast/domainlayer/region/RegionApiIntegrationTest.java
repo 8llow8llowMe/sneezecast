@@ -68,7 +68,11 @@ import org.springframework.test.web.servlet.MockMvc;
     "MINIO_ACCESS_KEY=region-test-access-key",
     "MINIO_SECRET_KEY=region-test-secret-key",
     "MAIL_USERNAME=region-test",
-    "MAIL_PASSWORD=region-test-password"
+    "MAIL_PASSWORD=region-test-password",
+    // 카카오 앱 키는 기본값이 없는 필수 설정이라(#61, 비면 기동 실패) 전체 컨텍스트 테스트도 값을 넣는다.
+    "KAKAO_CLIENT_ID=region-test-kakao-client-id",
+    "KAKAO_CLIENT_SECRET=region-test-kakao-client-secret",
+    "KAKAO_REDIRECT_URI=https://dev.sneezecast.com/login/kakao/callback"
 })
 @AutoConfigureMockMvc
 class RegionApiIntegrationTest {
