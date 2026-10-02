@@ -9,16 +9,19 @@ import {
   type SignupDraft,
   useOnboarding,
 } from '@/features/onboarding/onboarding-context'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import type * as authClient from './auth-client'
 import { startKakaoLogin } from './auth-client'
 import type { LoginNotice } from './login-notice'
+import type { LoginReturn } from './login-return'
 import { LoginScreen } from './login-screen'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
+const pathname = vi.hoisted(() => ({ value: '/login' }))
 vi.mock('next/navigation', () => ({
   useRouter: () => router,
-  usePathname: () => '/login',
+  usePathname: () => pathname.value,
 }))
 
 vi.mock('./auth-client', async (importOriginal) => {
@@ -46,10 +49,14 @@ function Probe() {
 }
 const draft = () => JSON.parse(screen.getByTestId('draft').textContent ?? '{}') as SignupDraft
 
-function renderLogin(notice: LoginNotice | null = null, initialSignup: SignupDraft = EMPTY_SIGNUP) {
+function renderLogin(
+  notice: LoginNotice | null = null,
+  initialSignup: SignupDraft = EMPTY_SIGNUP,
+  loginReturn?: LoginReturn,
+) {
   return render(
     <OnboardingProvider initialSignup={initialSignup}>
-      <LoginScreen notice={notice} />
+      <LoginScreen notice={notice} {...(loginReturn ? { loginReturn } : {})} />
       <Probe />
     </OnboardingProvider>,
   )
@@ -204,6 +211,66 @@ describe('LoginScreen', () => {
   it('주소로 바로 들어왔으면 뒤로는 시작 화면으로 바꿔 간다', async () => {
     renderLogin()
     await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.replace).toHaveBeenCalledWith('/start')
+  })
+
+  it('돌아갈 곳(?next=/me)을 이메일 로그인 링크 · 버튼에 이어 넘긴다', async () => {
+    const ret = { next: '/me', region: '11440660' }
+    const { unmount } = renderLogin(null, EMPTY_SIGNUP, ret)
+    expect(screen.getByRole('link', { name: '이메일로 로그인' }).getAttribute('href')).toBe(
+      '/login/email?next=%2Fme&region=11440660',
+    )
+    unmount()
+
+    renderLogin('kakao-exists', EMPTY_SIGNUP, ret)
+    await userEvent.setup().click(screen.getByRole('button', { name: '이메일로 로그인' }))
+    expect(router.push).toHaveBeenCalledWith('/login/email?next=%2Fme&region=11440660')
+  })
+
+  it('돌아갈 곳이 없으면 이메일 로그인 링크에 쿼리가 없다', () => {
+    renderLogin()
+    expect(screen.getByRole('link', { name: '이메일로 로그인' }).getAttribute('href')).toBe(
+      '/login/email',
+    )
+  })
+})
+
+describe('LoginScreen 뒤로 — 앱 안 이동 기록', () => {
+  beforeEach(() => {
+    router.replace.mockClear()
+    router.back.mockClear()
+  })
+
+  /** 앱 안에서 앞 화면(`from`)을 지나 로그인에 온 것처럼 그린다 */
+  function visitLogin(from: string, loginReturn?: LoginReturn) {
+    pathname.value = from
+    const tree = () => (
+      <NavTrailProvider>
+        {pathname.value === '/login' ? (
+          <OnboardingProvider>
+            <LoginScreen notice={null} {...(loginReturn ? { loginReturn } : {})} />
+          </OnboardingProvider>
+        ) : (
+          <div />
+        )}
+      </NavTrailProvider>
+    )
+    const { rerender } = render(tree())
+    pathname.value = '/login'
+    rerender(tree())
+  }
+
+  it('내 정보 가드가 보낸 로그인(?next=/me)이면 앞 화면이 무엇이든 기록을 되돌린다', async () => {
+    visitLogin('/', { next: '/me', region: null })
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).toHaveBeenCalledOnce()
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('돌아갈 곳이 없으면 지금처럼 시작 화면에서 왔을 때만 되돌린다', async () => {
+    visitLogin('/')
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).not.toHaveBeenCalled()
     expect(router.replace).toHaveBeenCalledWith('/start')
   })
 })
