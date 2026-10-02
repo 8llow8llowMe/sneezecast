@@ -208,7 +208,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 
 | 컨텍스트 | 책임 |
 |----------|------|
-| `district` | 행정동 마스터 조회 (공개 API + 코드 검증 내부 API) |
+| `district` | 행정동 마스터 조회 (읽기 전용, 쓰기는 batch 적재뿐). 공개 `GET /api/v1/districts?query=` — 현행만, 동 이름 · `시도 시군구` 포함 검색, FE 계약상 `dataBody` 는 페이지 없는 배열 최대 20건 · `GET /api/v1/districts/{code}` — 폐지 코드도 `active=false` 로 200. 내부 `GET /internal/v1/districts/{code}` — auth 의 내 동네 코드 검증 |
 | `report` | 주간 건강 보고 upsert |
 | `aggregate` | 행정동 × 주 집계, 자료 부족 판정, 검토 후보 신호 |
 | `advisory` | 운영자 검토, AI 초안, 승인·수정·발행 이력, 공개 안내 |
