@@ -31,6 +31,18 @@ export const STATUS_TEXT_CLASS: Record<RegionStatus, string> = {
   insufficient: 'text-status-insufficient-text',
 }
 
+/**
+ * 지도 · 범례의 칠하는 색 (Map-* 시안). 늘 글자 라벨(`STATUS_LABEL`)과 함께 쓴다.
+ *
+ * `자료 부족` 은 상태색이 아니라 회색(`muted-bar`, 시안 범례 #B0B8C1 · 지도는 빗금)이다 — 색으로 위험을 암시하지 않는다.
+ */
+export const STATUS_FILL_CLASS: Record<RegionStatus, string> = {
+  normal: 'bg-status-normal',
+  slight: 'bg-status-slight',
+  high: 'bg-status-high',
+  insufficient: 'bg-muted-bar',
+}
+
 /** 수치·상태색을 보여도 되는가. `자료 부족` 이면 증상 비율·상태색을 숨긴다 (루트 CLAUDE.md) */
 export function isMeasured(status: RegionStatus): status is MeasuredStatus {
   return status !== 'insufficient'
