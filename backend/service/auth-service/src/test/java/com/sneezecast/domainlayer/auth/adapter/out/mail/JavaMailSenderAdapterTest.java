@@ -85,6 +85,27 @@ class JavaMailSenderAdapterTest {
     }
 
     @Test
+    @DisplayName("카카오로만 로그인하는 계정의 재설정 안내 메일은 재설정 안내 제목이고, 코드 없이 카카오로 로그인하라고 알린다")
+    void sendsPasswordResetKakaoAccountNotice() throws Exception {
+        adapter(new AuthMailProperties(null, null)).sendPasswordResetOAuthOnlyNotice(EMAIL);
+
+        MimeMessage message = sentMessage();
+        assertThat(message.getSubject()).isEqualTo(JavaMailSenderAdapter.PASSWORD_RESET_NOTICE_SUBJECT);
+        assertThat(message.getContent().toString()).contains("카카오 로그인으로 가입돼").contains("카카오로 로그인해주세요")
+            .doesNotContain("letter-spacing:6px");
+    }
+
+    @Test
+    @DisplayName("카카오 로그인 연결 통보 메일은 연결 안내 제목이고, 본인이 아니면 알아챌 수 있는 문구가 있다")
+    void sendsOAuthLinkedNotice() throws Exception {
+        adapter(new AuthMailProperties(null, null)).sendOAuthLinkedNotice(EMAIL);
+
+        MimeMessage message = sentMessage();
+        assertThat(message.getSubject()).isEqualTo(JavaMailSenderAdapter.OAUTH_LINKED_SUBJECT);
+        assertThat(message.getContent().toString()).contains("카카오 로그인이 연결되었습니다").contains("본인이 연결하지 않았다면");
+    }
+
+    @Test
     @DisplayName("SMTP 발송 실패는 호출자에게 올리지 않는다 — 비동기 워커에서 로그로만 남는다")
     void swallowsSendFailure() {
         doThrow(new MailSendException("smtp down")).when(javaMailSender).send(any(MimeMessage.class));

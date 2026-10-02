@@ -19,7 +19,9 @@ import com.sneezecast.domainlayer.auth.adapter.in.web.dto.item.AuthSessionItem;
 import com.sneezecast.domainlayer.auth.adapter.out.persistence.RedisAccessTokenBlacklistAdapter;
 import com.sneezecast.domainlayer.auth.application.port.out.MailSendPort;
 import com.sneezecast.global.properties.AuthSessionProperties;
+import com.sneezecast.global.properties.KakaoOAuthProperties;
 import com.sneezecast.global.properties.LoginAttemptProperties;
+import com.sneezecast.global.properties.OAuthLoginProperties;
 import com.sneezecast.global.properties.PasswordResetProperties;
 import com.sneezecast.persistence.util.SnowflakeIdGenerator;
 import com.sneezecast.security.auth.blacklist.AccessTokenBlacklistVerifier;
@@ -30,6 +32,7 @@ import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -59,6 +62,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /**
  * 기본 프로파일(dev)로 컨텍스트가 뜨고, security-core 필터 체인이 블랙리스트 어댑터를 실제로 물고 도는지 본다.
@@ -100,7 +104,10 @@ import org.springframework.web.bind.annotation.RestController;
     "MINIO_ACCESS_KEY=context-test-access-key",
     "MINIO_SECRET_KEY=context-test-secret-key",
     "MAIL_USERNAME=context-test",
-    "MAIL_PASSWORD=context-test-password"
+    "MAIL_PASSWORD=context-test-password",
+    "KAKAO_CLIENT_ID=context-test-kakao-client-id",
+    "KAKAO_CLIENT_SECRET=context-test-kakao-client-secret",
+    "KAKAO_REDIRECT_URI=https://dev.sneezecast.com/login/kakao/callback"
 })
 @AutoConfigureMockMvc
 @Import(AuthServiceApplicationTests.MethodSecurityProbeController.class)
@@ -274,9 +281,8 @@ class AuthServiceApplicationTests {
     @CsvSource(delimiter = '|', value = {
         "GET | /api/v1/members/me | ",
         "PATCH | /api/v1/members/me | {\"nickname\":\"재채기탐정\"}",
-        "POST | /api/v1/members/me/password | {\"currentPassword\":\"P@ssw0rd!\",\"newPassword\":\"Sneeze2026!\"}",
-        "POST | /api/v1/members/me/password/setup | {\"newPassword\":\"Sneeze2026!\"}"})
-    @DisplayName("내 정보 · 비밀번호 변경 · 설정 API 는 토큰이 없으면 401 SECURITY_001 봉투다 — @PreAuthorize 가 실제로 걸려 있다")
+        "POST | /api/v1/members/me/password | {\"currentPassword\":\"P@ssw0rd!\",\"newPassword\":\"Sneeze2026!\"}"})
+    @DisplayName("내 정보 · 비밀번호 변경 API 는 토큰이 없으면 401 SECURITY_001 봉투다 — @PreAuthorize 가 실제로 걸려 있다")
     void memberApisRequireAuthentication(String method, String path, String body) throws Exception {
         MockHttpServletRequestBuilder request = switch (method) {
             case "POST" -> post(path);
@@ -309,6 +315,43 @@ class AuthServiceApplicationTests {
                 .content("{\"nickname\":\"탐\"}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_102"));
+    }
+
+    @Test
+    @DisplayName("카카오 로그인 API 는 인증 없이 열려 있다 — 토큰 없이 불러도 401 이 아니라 요청 검증(AUTH_117) · 확인표 없음(AUTH_026)까지 간다")
+    void kakaoLoginApisArePublic() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/kakao/login").contentType(MediaType.APPLICATION_JSON).content("{\"state\":\"s\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_117"));
+        mockMvc.perform(post("/api/v1/auth/kakao/link"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_026"));
+    }
+
+    @Test
+    @DisplayName("비밀번호 최초 설정 API 는 매핑돼 있지 않다 (#61 에서 없앴다 — 카카오 회원은 비밀번호가 필요 없다)")
+    void passwordSetupIsNotMapped() {
+        List<String> patterns = context.getBean("requestMappingHandlerMapping", RequestMappingHandlerMapping.class).getHandlerMethods().keySet().stream()
+            .flatMap(info -> info.getPatternValues().stream())
+            .toList();
+        assertThat(patterns)
+            .contains("/api/v1/members/me/password", "/api/v1/auth/kakao/login")
+            .doesNotContain("/api/v1/members/me/password/setup");
+    }
+
+    @Test
+    @DisplayName("카카오 로그인 설정의 기본값이 바인딩된다 — 카카오 주소 · timeout 1초/2초 · state 10분 · 가입표 30분 · 연결 확인표 10분 · 인가 IP 30회/10분")
+    void bindsKakaoOAuthDefaults() {
+        KakaoOAuthProperties kakao = context.getBean(KakaoOAuthProperties.class);
+        assertThat(kakao.clientId()).isEqualTo("context-test-kakao-client-id");
+        assertThat(kakao.redirectUri()).isEqualTo("https://dev.sneezecast.com/login/kakao/callback");
+        assertThat(kakao.authorizeUri()).isEqualTo("https://kauth.kakao.com/oauth/authorize");
+        assertThat(kakao.tokenUri()).isEqualTo("https://kauth.kakao.com/oauth/token");
+        assertThat(kakao.userInfoUri()).isEqualTo("https://kapi.kakao.com/v2/user/me");
+        assertThat(kakao.connectTimeout()).isEqualTo(Duration.ofSeconds(1));
+        assertThat(kakao.readTimeout()).isEqualTo(Duration.ofSeconds(2));
+        assertThat(context.getBean(OAuthLoginProperties.class))
+            .isEqualTo(new OAuthLoginProperties(Duration.ofMinutes(10), Duration.ofMinutes(30), Duration.ofMinutes(10), 30, Duration.ofMinutes(10)));
     }
 
     @Test

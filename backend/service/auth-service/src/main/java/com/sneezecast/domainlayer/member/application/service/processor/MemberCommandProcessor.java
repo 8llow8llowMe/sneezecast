@@ -3,6 +3,7 @@ package com.sneezecast.domainlayer.member.application.service.processor;
 import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.port.out.MemberRepositoryPort;
+import com.sneezecast.domainlayer.member.domain.enums.OAuthProvider;
 import com.sneezecast.domainlayer.member.domain.model.Member;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -30,5 +31,14 @@ public class MemberCommandProcessor {
     @Transactional
     public void changePassword(long memberId, String encodedPassword) {
         memberRepositoryPort.updatePassword(memberId, encodedPassword).orElseThrow(() -> new MemberException(MemberErrorCode.MEMBER_NOT_FOUND));
+    }
+
+    /**
+     * 소셜 로그인 제공자를 연결한다(비밀번호는 그대로). 연결해도 되는 계정인지(상태 · 이미 연결됨)는 호출자가 같은 트랜잭션 안에서 먼저 확인한다 — 이 처리기는
+     * auth 의 오류 코드를 모른다(member → auth 의존 금지).
+     */
+    @Transactional
+    public Member changeProvider(long memberId, OAuthProvider provider) {
+        return memberRepositoryPort.updateProvider(memberId, provider).orElseThrow(() -> new MemberException(MemberErrorCode.MEMBER_NOT_FOUND));
     }
 }

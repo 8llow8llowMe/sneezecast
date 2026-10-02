@@ -15,4 +15,13 @@ public interface MailSendPort {
 
     /** 가입된 계정이 없는 이메일로 재설정을 요청한 경우. 가입 여부는 응답이 아니라 메일함 소유자에게만 알린다. */
     void sendPasswordResetNoAccountNotice(String email);
+
+    /**
+     * 비밀번호가 없는(카카오로만 로그인하는) 계정의 이메일로 재설정을 요청한 경우 — 코드 대신 "카카오로 로그인해 주세요" 안내를 보낸다. 계정 종류는 응답이
+     * 아니라 메일함 소유자에게만 알린다.
+     */
+    void sendPasswordResetOAuthOnlyNotice(String email);
+
+    /** 이메일 계정에 카카오 로그인이 연결된 사실을 알린다 — 본인이 하지 않았으면 바로 알아챌 수 있게 한다. */
+    void sendOAuthLinkedNotice(String email);
 }

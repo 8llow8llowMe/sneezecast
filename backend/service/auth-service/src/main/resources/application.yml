@@ -70,6 +70,33 @@ auth:
   # 0 이하면 기동 실패. compose 가 같은 기본값을 넘긴다.
   password-reset:
     token-ttl: ${AUTH_PASSWORD_RESET_TOKEN_TTL:PT15M}
+  # 카카오 로그인의 일회용 값 수명. 쿠키 Max-Age 도 같은 값이다. 0 이하면 기동 실패. compose 가 같은 기본값을 넘긴다.
+  oauth:
+    # 인가 요청 state — 이 안에 카카오 동의 화면을 마치고 돌아와야 한다.
+    state-ttl: ${AUTH_OAUTH_STATE_TTL:PT10M}
+    # 신규 가입표 — 동네 · 성인 확인 · 가입 동의 화면을 거치는 시간.
+    signup-ticket-ttl: ${AUTH_OAUTH_SIGNUP_TICKET_TTL:PT30M}
+    # 기존 이메일 계정에 카카오 로그인을 연결할지 묻는 확인표.
+    link-ticket-ttl: ${AUTH_OAUTH_LINK_TICKET_TTL:PT10M}
+    # 인가 주소(state) 발급의 IP 상한 — 인증 없이 부르는 API 라 state 키로 Redis 를 채우지 못하게 한다. 넘으면 AUTH_028(429). 저장소 장애에는 fail-open.
+    authorize-ip-max-count: ${AUTH_OAUTH_AUTHORIZE_IP_MAX_COUNT:30}
+    authorize-ip-window: ${AUTH_OAUTH_AUTHORIZE_IP_WINDOW:PT10M}
+
+# 카카오 로그인. 앱 키 · 시크릿 · 콜백 주소는 기본값이 없다(Vault auth-service 경로, 비거나 공백이면 기동 실패).
+# 콜백 주소는 프론트 콜백 페이지(예: https://dev.sneezecast.com/login/kakao/callback)이고 카카오 개발자 콘솔에 등록한 값과 같아야 한다.
+# 동의 항목은 account_email · profile_nickname 만 받는다(프로필 이미지는 받지 않는다 — 최소 수집).
+oauth:
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID}
+    client-secret: ${KAKAO_CLIENT_SECRET}
+    redirect-uri: ${KAKAO_REDIRECT_URI}
+    authorize-uri: https://kauth.kakao.com/oauth/authorize
+    token-uri: https://kauth.kakao.com/oauth/token
+    user-info-uri: https://kapi.kakao.com/v2/user/me
+    # 로그인 요청 경로에 있으므로 짧게 둔다 (coding-conventions §9 — 모든 외부 호출에 timeout). 로그인 한 번에 두 번(토큰 · 사용자 정보) 부르므로
+    # 최악 합계(연결 + 응답) × 2 가 게이트웨이 response-timeout(10초)보다 넉넉히 짧아야 한다.
+    connect-timeout: ${KAKAO_CONNECT_TIMEOUT:PT1S}
+    read-timeout: ${KAKAO_READ_TIMEOUT:PT2S}
 
 # 가입 동의 이력(member_consent.document_version)에 남길 문서 버전. 20자 이하, 비면 기동 실패.
 # 정본은 프론트 legal 상수다 — 문서를 개정할 때 두 곳을 같은 배포에 올리지 않으면 "무엇에 동의했는가"가 어긋난다.

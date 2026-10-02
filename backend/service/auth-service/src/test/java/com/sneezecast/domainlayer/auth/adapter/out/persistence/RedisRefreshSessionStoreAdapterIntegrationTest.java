@@ -3,11 +3,14 @@ package com.sneezecast.domainlayer.auth.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sneezecast.domainlayer.auth.application.model.NewRefreshSession;
+import com.sneezecast.domainlayer.auth.application.model.OAuthLinkTicket;
+import com.sneezecast.domainlayer.auth.application.model.OAuthSignupTicket;
 import com.sneezecast.domainlayer.auth.application.model.RefreshRotation;
 import com.sneezecast.domainlayer.auth.application.model.RefreshRotationResult;
 import com.sneezecast.domainlayer.auth.application.model.RefreshRotationResult.Outcome;
 import com.sneezecast.domainlayer.auth.application.model.SessionAccessToken;
 import com.sneezecast.domainlayer.auth.application.port.out.query.RefreshSessionQueryResult;
+import com.sneezecast.domainlayer.member.domain.enums.OAuthProvider;
 import com.sneezecast.redis.properties.RedisProperties;
 import com.sneezecast.redis.properties.enums.RedisMode;
 import java.time.Duration;
@@ -294,6 +297,70 @@ class RedisRefreshSessionStoreAdapterIntegrationTest {
                 results.add(executor.submit(() -> {
                     start.await();
                     return resetAdapter.consumeToken(hash).isPresent();
+                }));
+            }
+            start.countDown();
+            int winners = 0;
+            for (Future<Boolean> result : results) {
+                winners += result.get(10, TimeUnit.SECONDS) ? 1 : 0;
+            }
+            assertThat(winners).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("카카오 state · 가입표 · 연결 확인표는 TTL 로 저장되고 GET+DEL 로 한 번만 꺼낸다 — 두 번째 소비 · 없는 값은 empty, 키가 남지 않는다")
+    void oauthValuesAreConsumedOnce() {
+        RedisOAuthLoginStoreAdapter oauthAdapter = new RedisOAuthLoginStoreAdapter(template, new RedisProperties(RedisMode.SENTINEL, null, null,
+            "mymaster", null, null, "localhost:26379", "sneezecast", null));
+        String hash = "e".repeat(64);
+        OAuthSignupTicket signupTicket = new OAuthSignupTicket(OAuthProvider.KAKAO, "user@example.com", "재채기😀탐정");
+
+        oauthAdapter.saveState("state-1", OAuthProvider.KAKAO, Duration.ofMinutes(10));
+        oauthAdapter.saveSignupTicket(hash, signupTicket, Duration.ofMinutes(30));
+        oauthAdapter.saveLinkTicket(hash, new OAuthLinkTicket(MEMBER_ID, OAuthProvider.KAKAO), Duration.ofMinutes(10));
+        assertThat(template.getExpire("sneezecast:auth:oauthState:state-1")).isPositive();
+        assertThat(template.getExpire("sneezecast:auth:oauthSignupTicket:" + hash)).isPositive();
+        assertThat(template.getExpire("sneezecast:auth:oauthLinkTicket:" + hash)).isPositive();
+
+        assertThat(oauthAdapter.consumeState("state-1")).hasValue(OAuthProvider.KAKAO);
+        assertThat(oauthAdapter.consumeState("state-1")).isEmpty();
+        assertThat(oauthAdapter.consumeSignupTicket(hash)).hasValue(signupTicket);
+        assertThat(oauthAdapter.consumeSignupTicket(hash)).isEmpty();
+        assertThat(oauthAdapter.consumeLinkTicket(hash)).hasValue(new OAuthLinkTicket(MEMBER_ID, OAuthProvider.KAKAO));
+        assertThat(oauthAdapter.consumeLinkTicket(hash)).isEmpty();
+        assertThat(oauthAdapter.consumeState("never-issued")).isEmpty();
+        assertThat(template.keys("sneezecast:auth:oauth*")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("카카오 인가 IP 카운터는 1씩 오르고 첫 증가부터 창 길이 TTL 이 걸린다")
+    void oauthAuthorizeIpCounterHasTtl() {
+        RedisOAuthLoginStoreAdapter oauthAdapter = new RedisOAuthLoginStoreAdapter(template, new RedisProperties(RedisMode.SENTINEL, null, null,
+            "mymaster", null, null, "localhost:26379", "sneezecast", null));
+
+        assertThat(oauthAdapter.increaseAuthorizeIpCount("203.0.113.10", Duration.ofMinutes(10))).isEqualTo(1L);
+        assertThat(oauthAdapter.increaseAuthorizeIpCount("203.0.113.10", Duration.ofMinutes(10))).isEqualTo(2L);
+        assertThat(template.getExpire("sneezecast:auth:oauthAuthorizeIp:203.0.113.10")).isPositive();
+    }
+
+    @Test
+    @DisplayName("같은 state 로 동시에 소비해도 받는 쪽은 하나뿐이다 (콜백 이중 제출 · 재전송)")
+    void concurrentStateConsumptionYieldsSingleWinner() throws Exception {
+        RedisOAuthLoginStoreAdapter oauthAdapter = new RedisOAuthLoginStoreAdapter(template, new RedisProperties(RedisMode.SENTINEL, null, null,
+            "mymaster", null, null, "localhost:26379", "sneezecast", null));
+        oauthAdapter.saveState("state-race", OAuthProvider.KAKAO, Duration.ofMinutes(10));
+
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<Boolean>> results = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                results.add(executor.submit(() -> {
+                    start.await();
+                    return oauthAdapter.consumeState("state-race").isPresent();
                 }));
             }
             start.countDown();

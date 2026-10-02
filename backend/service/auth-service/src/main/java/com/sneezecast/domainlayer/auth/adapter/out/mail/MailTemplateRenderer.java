@@ -39,6 +39,14 @@ public class MailTemplateRenderer {
         return render("password-reset-no-account", Map.of());
     }
 
+    public String renderPasswordResetKakaoAccount() {
+        return render("password-reset-kakao-account", Map.of());
+    }
+
+    public String renderOAuthLinked() {
+        return render("oauth-linked", Map.of());
+    }
+
     private String render(String templateName, Map<String, Object> variables) {
         Context context = new Context(Locale.KOREAN);
         context.setVariables(variables);
