@@ -16,8 +16,11 @@ export type SubmittedReport = {
   reportedLabel: string
 }
 
-/** 보고 흐름 단계. 주소 `?report=` 값과 같다 */
-export const REPORT_STEPS = ['start', 'symptom', 'confirm', 'done'] as const
+/**
+ * 보고 흐름 단계. 주소 `?report=` 값과 같다.
+ * `share` 는 완료 화면 위에 연 함께 채우기 공유 시트다(#151) — 완료 다음 단계라 같은 쿼리에 둔다(`report-flow.tsx`)
+ */
+export const REPORT_STEPS = ['start', 'symptom', 'confirm', 'done', 'share'] as const
 export type ReportStep = (typeof REPORT_STEPS)[number]
 
 /** 보고 흐름이 화면에 보이는 이번 주 정보 */

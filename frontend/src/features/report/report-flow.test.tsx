@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { clientEnv } from '@/lib/env.client'
 
 import { cancelReport, getSubmittedReport, submitReport } from './report-client'
 import { ReportFlow, resolveStep } from './report-flow'
@@ -18,10 +20,14 @@ const WEEK = {
   reportPeriodLabel: '11월 17일(월)~23일(일)',
 }
 
-const onNotReady = vi.fn()
-
-function Harness({ regionCode = null }: { regionCode?: string | null }) {
-  return <ReportFlow week={WEEK} regionCode={regionCode} onNotReady={onNotReady} />
+function Harness({
+  regionCode = null,
+  reportRegionCode = null,
+}: {
+  regionCode?: string | null
+  reportRegionCode?: string | null
+}) {
+  return <ReportFlow week={WEEK} regionCode={regionCode} reportRegionCode={reportRegionCode} />
 }
 
 /** 11월 19일에 이번 주 보고를 이미 보낸 상태로 둔다 (목 report-client) */
@@ -33,13 +39,20 @@ async function sentOnNov19(answer: ReportAnswer) {
 }
 
 /** 주소를 바꾸는 동작 뒤에 다시 그린다 (Next 는 pushState 마다 다시 그린다) */
-async function setup(initial: ReportAnswer | null = null, regionCode: string | null = null) {
+async function setup(
+  initial: ReportAnswer | null = null,
+  regionCode: string | null = null,
+  reportRegionCode: string | null = null,
+) {
   if (initial) await sentOnNov19(initial)
   const user = userEvent.setup()
-  const utils = render(<Harness regionCode={regionCode} />)
-  const refresh = () => utils.rerender(<Harness regionCode={regionCode} />)
+  const tree = () => <Harness regionCode={regionCode} reportRegionCode={reportRegionCode} />
+  const utils = render(tree())
+  const refresh = () => utils.rerender(tree())
   return { user, refresh, ...utils }
 }
+
+const STEP_START_TITLE = '지난 7일 동안 건강은 어땠나요?'
 
 function title() {
   return document.querySelector('dialog[open] h2')?.textContent
@@ -53,14 +66,41 @@ function submittedAnswer() {
 
 const INSTALL_ROW = /다음 주 월요일에 알려드릴까요/
 
+const SHARE_BUTTON = '우리 동네 자료 함께 채우기'
+const SHARE_TITLE = '이렇게 공유돼요'
+
+/** 열린 공유 시트. 완료 대화상자 위에 하나 더 열린다 */
+function shareSheet() {
+  return [...document.querySelectorAll('dialog[open]')].find(
+    (dialog) => dialog.querySelector('h2')?.textContent === SHARE_TITLE,
+  ) as HTMLElement | undefined
+}
+
+/**
+ * 공유 시트의 링크. 시안에 링크 칸이 없어 링크 복사로 클립보드에 쓴 값을 읽는다.
+ * user-event 는 setup 때 navigator.clipboard 를 바꾸므로 그 뒤에 끼운다
+ */
+async function copiedLink(user: ReturnType<typeof userEvent.setup>) {
+  const sheet = shareSheet()
+  if (!sheet) return null
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(window.navigator, 'clipboard', {
+    value: { writeText },
+    configurable: true,
+    writable: true,
+  })
+  await user.click(within(sheet).getByRole('button', { name: '링크 복사' }))
+  return writeText.mock.calls[0]?.[0] as string | undefined
+}
+
 describe('ReportFlow', () => {
   beforeEach(async () => {
     window.history.replaceState(null, '', '/?report=start')
     await cancelReport()
-    onNotReady.mockClear()
   })
 
   afterEach(() => {
+    Reflect.deleteProperty(window.navigator, 'clipboard')
     vi.restoreAllMocks()
   })
 
@@ -193,9 +233,7 @@ describe('ReportFlow', () => {
 
   it('다른 동네를 둘러보는 중이면 시작 단계에 보고 동네를 알리고, 확인 단계의 동네 앞에 "보고 동네" 를 붙인다', async () => {
     const user = userEvent.setup()
-    const tree = () => (
-      <ReportFlow week={WEEK} regionCode="11440660" reportingElsewhere onNotReady={onNotReady} />
-    )
+    const tree = () => <ReportFlow week={WEEK} regionCode="11440660" reportingElsewhere />
     const { rerender } = render(tree())
     expect(
       screen.getByText('보고는 내 동네 ○○1동 기준이에요. 둘러보는 동네와 달라요.'),
@@ -209,13 +247,73 @@ describe('ReportFlow', () => {
     expect(screen.getByText('11월 17일~23일 · 보고 동네 ○○1동')).toBeDefined()
   })
 
-  it('아직 없는 화면(함께 채우기)은 onNotReady 로 알린다', async () => {
-    const { user, refresh } = await setup({ kind: 'none' })
-    window.history.replaceState(null, '', '/?report=done')
+  it('함께 채우기는 기록을 쌓아 완료 화면 위에 공유 시트를 연다 — 링크는 보고 동네다', async () => {
+    const { user, refresh } = await setup({ kind: 'none' }, '11110515', '11440660')
+    window.history.replaceState({ sneezecastModalDepth: 1 }, '', '/?report=done&region=11110515')
+    refresh()
+    const pushState = vi.spyOn(window.history, 'pushState')
+
+    await user.click(screen.getByRole('button', { name: SHARE_BUTTON }))
     refresh()
 
-    await user.click(screen.getByRole('button', { name: '우리 동네 자료 함께 채우기' }))
-    expect(onNotReady).toHaveBeenCalledWith('함께 채우기')
+    expect(pushState).toHaveBeenCalledOnce()
+    expect(window.location.search).toBe('?report=share&region=11110515')
+    // 아래 완료 대화상자는 그대로다
+    expect(title()).toBe('이번 주 보고를 받았어요')
+    expect(shareSheet()).toBeDefined()
+    expect(await copiedLink(user)).toBe(`${clientEnv.siteUrl}/?region=11440660`)
+  })
+
+  it('보고 동네를 모르면 둘러보기 동네, 그것도 없으면 동네 없는 홈 링크다', async () => {
+    window.history.replaceState(null, '', '/?report=share')
+    const { user, unmount } = await setup({ kind: 'none' }, '11110515')
+    expect(await copiedLink(user)).toBe(`${clientEnv.siteUrl}/?region=11110515`)
+
+    unmount()
+    render(<Harness />)
+    expect(await copiedLink(user)).toBe(`${clientEnv.siteUrl}/`)
+  })
+
+  it('공유 시트의 닫기는 뒤로 가기로 완료 화면에 돌아간다', async () => {
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {
+      window.history.replaceState({ sneezecastModalDepth: 1 }, '', '/?report=done')
+    })
+    const { user, refresh } = await setup({ kind: 'none' })
+    window.history.replaceState({ sneezecastModalDepth: 2 }, '', '/?report=share')
+    refresh()
+
+    const sheet = shareSheet()
+    if (!sheet) throw new Error('공유 시트가 열려 있지 않다')
+    await user.click(within(sheet).getByRole('button', { name: '닫기' }))
+    refresh()
+
+    expect(back).toHaveBeenCalledOnce()
+    expect(window.location.search).toBe('?report=done')
+    expect(shareSheet()).toBeUndefined()
+    expect(title()).toBe('이번 주 보고를 받았어요')
+  })
+
+  it('주소로 바로 연 공유 시트(쌓은 기록 없음)의 닫기는 사이트를 떠나지 않고 완료로 바꾼다', async () => {
+    const back = vi.spyOn(window.history, 'back')
+    const { user, refresh } = await setup({ kind: 'none' })
+    window.history.replaceState(null, '', '/?report=share')
+    refresh()
+
+    const sheet = shareSheet()
+    if (!sheet) throw new Error('공유 시트가 열려 있지 않다')
+    await user.click(within(sheet).getByRole('button', { name: '닫기' }))
+    refresh()
+
+    expect(back).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?report=done')
+    expect(shareSheet()).toBeUndefined()
+  })
+
+  it('보낸 보고 없이 주소로 공유 시트를 열면 시작 단계로 풀린다', () => {
+    window.history.replaceState(null, '', '/?report=share')
+    render(<Harness reportRegionCode="11440660" />)
+    expect(title()).toBe(STEP_START_TITLE)
+    expect(shareSheet()).toBeUndefined()
   })
 
   it('홈 화면 앱이어야 알림을 받는 기기는 완료 화면에서 설치 안내로 잇는다 — 동네 · 덮어쓰기를 남긴다', async () => {
@@ -236,7 +334,6 @@ describe('ReportFlow', () => {
     // jsdom 은 링크 이동을 하지 않는다. 누름 처리만 확인한다
     link.addEventListener('click', (event) => event.preventDefault())
     await user.click(link)
-    expect(onNotReady).not.toHaveBeenCalled()
   })
 
   it.each(['supported', 'unsupported'])(
@@ -277,10 +374,10 @@ describe('resolveStep', () => {
     expect(resolveStep('confirm', { ...none, hasSelection: true })).toBe('confirm')
   })
 
-  it('보낸 보고 없이 완료로 들어오면 시작으로 돌려보낸다', () => {
-    expect(resolveStep('done', none)).toBe('start')
+  it.each(['done', 'share'])('보낸 보고 없이 %s 로 들어오면 시작으로 돌려보낸다', (value) => {
+    expect(resolveStep(value, none)).toBe('start')
     expect(
-      resolveStep('done', { ...none, submitted: { answer: { kind: 'none' }, reportedLabel: '' } }),
-    ).toBe('done')
+      resolveStep(value, { ...none, submitted: { answer: { kind: 'none' }, reportedLabel: '' } }),
+    ).toBe(value)
   })
 })
