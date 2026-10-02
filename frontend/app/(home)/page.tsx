@@ -1,6 +1,7 @@
 import { HomeScreen } from '@/features/home/home-screen'
 import { pickHomeMock } from '@/features/home/mock'
 import { districtFromParam } from '@/features/region/region-param'
+import { readServerDataSource } from '@/lib/data-source.server'
 
 /**
  * S03 홈. API 연동 전이라 목 데이터로 그린다.
@@ -26,7 +27,8 @@ export default async function HomePage({
 }) {
   const { mock, region } = await searchParams
   const week = pickHomeMock(mock)
-  const district = await districtFromParam(region)
+  const source = await readServerDataSource()
+  const district = await districtFromParam(region, source)
   const receivedAt = new Date().toISOString()
   return (
     <HomeScreen

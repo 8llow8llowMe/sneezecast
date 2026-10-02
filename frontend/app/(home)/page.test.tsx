@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import HomePage from './page'
 
+// 테스트에는 요청이 없어 `cookies()` 를 부를 수 없다 — 출처는 목으로 둔다
+vi.mock('@/lib/data-source.server', () => ({ readServerDataSource: () => Promise.resolve('mock') }))
+
 describe('HomePage', () => {
   afterEach(() => {
     vi.useRealTimers()

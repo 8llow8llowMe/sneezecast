@@ -5,6 +5,7 @@ import { getRegionNotice } from '@/features/notice/notice-client'
 import { NoticeScreen } from '@/features/notice/notice-screen'
 import { parseNoticeRoute } from '@/features/notice/paths'
 import { districtFromParam } from '@/features/region/region-param'
+import { readServerDataSource } from '@/lib/data-source.server'
 
 export const metadata: Metadata = { title: '동네 안내' }
 
@@ -28,8 +29,9 @@ export default async function NoticePage({
   const route = parseNoticeRoute(region, week)
   if (!route) notFound()
   const { mock, region: browseRegion } = await searchParams
-  const data = await getRegionNotice(route.regionCode, route.isoWeek, mock)
+  const source = await readServerDataSource()
+  const data = await getRegionNotice(route.regionCode, route.isoWeek, source, mock)
   if (!data) notFound()
-  const browse = await districtFromParam(browseRegion)
+  const browse = await districtFromParam(browseRegion, source)
   return <NoticeScreen data={data} regionCode={browse?.code ?? null} />
 }

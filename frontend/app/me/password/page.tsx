@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { pickHomeMock } from '@/features/home/mock'
 import { PasswordScreen } from '@/features/me/password-screen'
 import { districtFromParam } from '@/features/region/region-param'
+import { readServerDataSource } from '@/lib/data-source.server'
 
 export const metadata: Metadata = { title: '비밀번호' }
 
@@ -17,7 +18,8 @@ export default async function MePasswordPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { region } = await searchParams
-  const district = await districtFromParam(region)
+  const source = await readServerDataSource()
+  const district = await districtFromParam(region, source)
   return (
     <PasswordScreen
       regionName={district?.name ?? pickHomeMock(undefined).regionName}

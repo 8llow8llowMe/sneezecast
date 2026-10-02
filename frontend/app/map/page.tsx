@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { MapScreen } from '@/features/map/map-screen'
 import { pickMapMock } from '@/features/map/mock'
 import { districtFromParam } from '@/features/region/region-param'
+import { readServerDataSource } from '@/lib/data-source.server'
 
 export const metadata: Metadata = { title: '지도' }
 
@@ -20,6 +21,7 @@ export default async function MapPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { mock, region } = await searchParams
-  const district = await districtFromParam(region)
+  const source = await readServerDataSource()
+  const district = await districtFromParam(region, source)
   return <MapScreen map={pickMapMock(mock, district)} regionCode={district?.code ?? null} />
 }
