@@ -260,7 +260,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 | 컬럼 | 타입 | Null | 원천 필드 | 설명 |
 |------|------|------|-----------|------|
-| id | BIGINT | N | — | PK. SGIS 코드를 숫자로 바꾼 값 (batch 가 결정적으로 만든다 — batch 는 Snowflake 를 쓰지 않는다, hondigagae `PlaceIdFactory` 와 같은 이유) |
+| id | BIGINT | N | — | PK. SGIS 코드를 숫자로 바꾼 값 (batch 가 결정적으로 만든다 — district 는 Snowflake 를 쓰지 않는다, hondigagae `PlaceIdFactory` 와 같은 이유) |
 | code | VARCHAR(8) | N | adm_cd | SGIS 읍면동 코드 8자리. **`uk_district_code`** |
 | name | VARCHAR(50) | N | adm_nm 마지막 토큰 | 읍면동 이름 (예: 가락1동). `adm_nm` 은 전체 주소(`서울특별시 송파구 가락1동`)라 마지막 토큰만 쓴다 |
 | sido_code | VARCHAR(2) | N | adm_cd 앞 2자리 | SGIS 시도 코드 |
@@ -340,11 +340,12 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | row_count | INT | N | 파싱한 원천 행 수 |
 | imported_count | INT | N | upsert 한 행 수 |
 | status | VARCHAR(20) | N | `IngestStatus` — IMPORTED / FAILED |
-| error_code | VARCHAR(50) | Y | 실패 코드 (예: `SENTINEL_SCHEMA_CHANGED`) |
+| error_code | VARCHAR(50) | Y | 실패 코드 — 잡 ErrorCode 의 `code` 값 (예: 쓰기 실패 `OFFICIAL_INGEST_003`). 로그 · 예외 메시지의 `[코드]` 와 같아 함께 찾을 수 있다 |
 | run_started_at | TIMESTAMP | N | 실행 시작 시각 (JobParameter `runAt`) |
 
 - 인덱스: `idx_official_source_snapshot_request_key_created_at` (조건별 최신 실행)
 - FAILED 행은 원천 데이터를 쓰지 않는다. 실패해도 기존 `official_surveillance` 값은 그대로다.
+- 쓰기 순서: 한 트랜잭션에서 IMPORTED 행 INSERT → `official_surveillance` upsert(`source_snapshot_id` = 그 행). 실패하면 둘 다 롤백하고 별도 트랜잭션으로 FAILED 행을 남긴다 (batch `OfficialIngestProcessor`, [modules.md](modules.md#servicebatch-service)).
 
 ---
 
