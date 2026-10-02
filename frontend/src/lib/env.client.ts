@@ -20,4 +20,9 @@ export const clientEnv = {
   siteUrl: normalizeBaseUrl(process.env.NEXT_PUBLIC_SITE_URL, LOCAL_SITE_URL),
   /** 게이트웨이 주소. 로컬 개발도 팀 dev 게이트웨이를 쓴다 (CORS 가 localhost 를 허용한다) */
   apiBaseUrl: normalizeBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL, DEV_API_BASE_URL),
+  /**
+   * 데이터 출처 기본값(`api` | `mock`). 해석 · 기본값 · 운영 고정은 `src/lib/data-source.ts` 가 맡는다 — 여기서는 읽기만 한다.
+   * 없으면 빈 문자열이다.
+   */
+  dataSource: process.env.NEXT_PUBLIC_DATA_SOURCE?.trim() ?? '',
 } as const
