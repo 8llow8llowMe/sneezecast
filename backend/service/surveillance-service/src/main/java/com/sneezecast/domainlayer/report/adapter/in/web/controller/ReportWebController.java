@@ -42,7 +42,7 @@ public class ReportWebController {
         (같은 주는 한 번만 셉니다). 증상이 없으면 `symptomGroups: []` 로 보냅니다 — 증상 없음도 정상 보고입니다.
 
         **인증 필요: Authorization 헤더, 건강정보 동의(scope `report:write`).** 토큰이 없으면 SECURITY_001(401), 동의 전이면 SECURITY_006(403).
-        **필수: districtCode(숫자 8자리) · symptomGroups(배열, null 불가).** 비었으면 REPORT_101, 형식이 틀리면 REPORT_102, symptomGroups 가 없으면
+        **필수: districtCode(숫자 8자리) · symptomGroups(배열, null 불가).** districtCode 가 없으면(null) REPORT_101, 빈 값 · 형식 오류는 REPORT_102, symptomGroups 가 없으면
         REPORT_103, 원소가 null 이면 REPORT_104, 같은 값이 두 번이면 REPORT_105, 알 수 없는 값이면 REPORT_100(400) 입니다.
         없는 행정동은 REPORT_002, 폐지된 행정동은 REPORT_003(400) — 동네를 다시 고르게 합니다.
         같은 주 보고가 동시에 처리돼 서버가 다시 시도해도 지면 REPORT_001(409) — 잠시 뒤 같은 요청을 다시 보내면 됩니다.

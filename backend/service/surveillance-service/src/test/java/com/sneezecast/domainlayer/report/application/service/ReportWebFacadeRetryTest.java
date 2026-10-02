@@ -19,6 +19,7 @@ import com.sneezecast.domainlayer.report.application.port.in.ReportWebUseCase;
 import com.sneezecast.domainlayer.report.application.port.out.WeeklyReportRepositoryPort;
 import com.sneezecast.domainlayer.report.application.service.processor.ReportCommandProcessor;
 import com.sneezecast.domainlayer.report.domain.enums.SymptomGroup;
+import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,8 +27,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.AopTestUtils;
@@ -43,6 +48,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * <p>spy 빈은 컨텍스트 구성을 바꾸므로 공용 H2 컨텍스트({@code SurveillanceH2TestSupport})와 DB 를 나눈다 — 같은 인메모리 DB 를 두 컨텍스트가
  * create-drop 하지 않게.
  */
+@ExtendWith(OutputCaptureExtension.class)
 @SpringBootTest(properties = {
     "spring.profiles.active=dev",
     "eureka.client.enabled=false",
@@ -79,6 +85,10 @@ class ReportWebFacadeRetryTest {
     @MockitoSpyBean
     private ReportCommandProcessor reportCommandProcessorBean;
 
+    // 프록시가 없는 빈이라 주입된 spy 에 바로 stub · verify 한다.
+    @MockitoSpyBean
+    private ReportWeekCalculator reportWeekCalculator;
+
     // 주입된 빈은 트랜잭션 프록시이고 spy 는 그 안쪽 대상이다. 프록시로 stub · verify 하면 트랜잭션 advice 가 먼저 돌아(MANDATORY 위반 · 빈 트랜잭션)
     // 실제 호출처럼 동작하므로, stub · verify 는 안쪽 spy 에 한다. 운영 코드의 호출은 여전히 프록시를 거친다.
     private WeeklyReportRepositoryPort weeklyReportRepositoryPort;
@@ -97,9 +107,9 @@ class ReportWebFacadeRetryTest {
 
     @Test
     @DisplayName("첫 insert 가 unique 에서 지면(REPORT_001) 새 트랜잭션으로 한 번 다시 불러 수정 경로로 저장한다 — 행 1개, 수정 횟수 1")
-    void lostFirstInsertIsRetriedAsUpdate() {
+    void lostFirstInsertIsRetriedAsUpdate(CapturedOutput output) {
         submit(YEOKSAM_1);
-        clearInvocations(weeklyReportRepositoryPort, reportCommandProcessor);
+        clearInvocations(weeklyReportRepositoryPort, reportCommandProcessor, reportWeekCalculator);
         doReturn(Optional.empty()).doCallRealMethod().when(weeklyReportRepositoryPort).findByReporterKeyAndIsoWeek(any(), any());
         List<String> writeTransactions = recordWriteTransactions();
 
@@ -107,7 +117,7 @@ class ReportWebFacadeRetryTest {
 
         assertThat(response.districtCode()).isEqualTo(GARAK_1);
         assertThat(response.symptomGroups()).extracting(CodeNameDescriptionMetadata::code).containsExactly("RESPIRATORY");
-        verify(reportCommandProcessor, times(2)).submit(any(), any(), any());
+        assertRetriedOnceInSameWeek();
         verify(weeklyReportRepositoryPort, times(1)).insert(any());
         verify(weeklyReportRepositoryPort, times(1)).updateCurrent(any(), any(), any(), any());
         assertThat(writeTransactions).containsExactly("insert:write", "updateCurrent:write");
@@ -115,24 +125,26 @@ class ReportWebFacadeRetryTest {
         assertThat(row()).containsEntry("DISTRICT_CODE", GARAK_1);
         assertThat(number(row(), "REVISION_COUNT")).isEqualTo(1);
         assertThat(number(row(), "SYMPTOM_MASK")).isEqualTo(1);
+        assertNoReporterKeyIn(output);
     }
 
     @Test
     @DisplayName("다시 불러도 지면 REPORT_001 이 그대로 나간다 — UnexpectedRollbackException 이 아니고, 이긴 쪽 행은 그대로다")
-    void secondLossIsConflict() {
+    void secondLossIsConflict(CapturedOutput output) {
         submit(YEOKSAM_1);
-        clearInvocations(weeklyReportRepositoryPort, reportCommandProcessor);
+        clearInvocations(weeklyReportRepositoryPort, reportCommandProcessor, reportWeekCalculator);
         doReturn(Optional.empty()).when(weeklyReportRepositoryPort).findByReporterKeyAndIsoWeek(any(), any());
 
         assertThatThrownBy(() -> submit(GARAK_1, SymptomGroup.ENTERIC))
             .isInstanceOfSatisfying(ReportException.class, e -> assertThat(e.getErrorCode()).isEqualTo(ReportErrorCode.CONCURRENT_SUBMISSION));
 
-        verify(reportCommandProcessor, times(2)).submit(any(), any(), any());
+        assertRetriedOnceInSameWeek();
         verify(weeklyReportRepositoryPort, times(2)).insert(any());
         assertThat(rowCount()).isEqualTo(1);
         assertThat(row()).containsEntry("DISTRICT_CODE", YEOKSAM_1);
         assertThat(number(row(), "REVISION_COUNT")).isZero();
         assertThat(number(row(), "SYMPTOM_MASK")).isZero();
+        assertNoReporterKeyIn(output);
     }
 
     @Test
@@ -187,6 +199,19 @@ class ReportWebFacadeRetryTest {
 
         assertThat(writeTransactions).containsExactly("insert:write", "deleteByReporterKeyAndIsoWeek:write", "deleteByReporterKeyAndIsoWeek:write");
         assertThat(rowCount()).isZero();
+    }
+
+    /** Processor 를 정확히 두 번 불렀고, 두 번 모두 같은 주다 — 보고 주는 첫 시도 전에 한 번만 정한다(재시도가 주 경계를 넘어도 같은 주에 쓴다). */
+    private void assertRetriedOnceInSameWeek() {
+        ArgumentCaptor<ReportWeek> weeks = ArgumentCaptor.forClass(ReportWeek.class);
+        verify(reportCommandProcessor, times(2)).submit(any(), weeks.capture(), any());
+        assertThat(weeks.getAllValues()).hasSize(2).containsOnly(weeks.getAllValues().getFirst());
+        verify(reportWeekCalculator, times(1)).currentWeek();
+    }
+
+    /** 재시도 로그 · Hibernate SQL 오류 로그 어디에도 가명 키(와 회원 ID)가 남지 않는다. */
+    private void assertNoReporterKeyIn(CapturedOutput output) {
+        assertThat(output.getAll()).doesNotContain(reporterKeyGenerator.reporterKey(MEMBER_ID)).doesNotContain(Long.toString(MEMBER_ID));
     }
 
     /** 쓰기 포트 호출마다 그 시점의 트랜잭션 상태를 남긴다 — 트랜잭션이 없거나 읽기 전용이면 {@code :none} · {@code :read-only}. */

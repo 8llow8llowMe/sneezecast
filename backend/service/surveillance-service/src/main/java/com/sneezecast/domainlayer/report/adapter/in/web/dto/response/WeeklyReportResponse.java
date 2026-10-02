@@ -29,4 +29,9 @@ public record WeeklyReportResponse(
     Instant updatedAt
 ) {
 
+    /** 증상(민감정보)을 로그에 흘리지 않는다. */
+    @Override
+    public String toString() {
+        return "WeeklyReportResponse[isoWeek=" + isoWeek + ", districtCode=" + districtCode + ", symptomGroups=****]";
+    }
 }
