@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 import { AlertBox } from '@/components/alert-box'
 import { AppHeader } from '@/components/app-header'
@@ -15,7 +15,6 @@ import { MOCK_AUTH_PARAM, useMockAuth } from '@/features/auth/use-mock-auth'
 import { useRequiredStepsGate } from '@/features/me/member-gate'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { REPORT_PARAM, ReportFlow } from '@/features/report/report-flow'
-import type { SubmittedReport } from '@/features/report/types'
 import { useModalParam } from '@/lib/use-modal-param'
 import { useOnline } from '@/lib/use-online'
 
@@ -77,8 +76,6 @@ export function HomeScreen({
   const guest = auth === 'guest'
   // 재동의 · 동네 다시 고르기로 보낼 곳. 있으면 아래 보고 진입 정리(원시 history)를 하지 않는다 — 정리가 그 이동을 버리게 한다
   const requiredTarget = useRequiredStepsGate(HOME_PATH)
-  // 이번 주에 보낸 보고. API 연동 전이라 화면을 떠나면 사라진다 — 연동 이슈에서 서버 값으로 바꾼다
-  const [submitted, setSubmitted] = useState<SubmittedReport | null>(null)
   const openReport = () => report.open(reportEntryFor(auth))
   const navSearch = regionCode ? new URLSearchParams({ region: regionCode }).toString() : undefined
 
@@ -191,12 +188,7 @@ export function HomeScreen({
 
       {/* 보고 흐름과 보낸 보고는 동의한 회원만 쓴다 */}
       {auth === 'member' && (
-        <ReportFlow
-          week={week}
-          submitted={submitted}
-          onSubmittedChange={setSubmitted}
-          onNotReady={notReady}
-        />
+        <ReportFlow week={week} regionCode={regionCode} onNotReady={notReady} />
       )}
 
       {/* 자료 부족이면 보일 숫자가 없어 ?explain=1 로 들어와도 열지 않는다 */}
