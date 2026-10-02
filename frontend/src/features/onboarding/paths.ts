@@ -9,8 +9,18 @@
  */
 export const START_PATH = '/start'
 export const HOME_PATH = '/'
-/** 로그인 방법 고르기 (S13-1). `?error=kakao-fail|kakao-exists` · `?reason=expired` 로 상태를 받는다 */
+/** 로그인 방법 고르기 (S13-1). `?error=kakao-fail`(+ `&kakao=<사유>`) · `?reason=expired` 로 상태를 받는다 */
 export const LOGIN_PATH = '/login'
+/**
+ * 카카오 콜백 (#167). 카카오 인가 화면이 `code` · `state`(또는 `error`)를 붙여 돌아오는 곳 — 백엔드 `KAKAO_REDIRECT_URI` 와 같다.
+ * 화면은 값을 읽자마자 주소에서 지우고 `POST /api/v1/auth/kakao/login` 결과로 갈라 보낸다(`kakao-callback-screen.tsx`)
+ */
+export const KAKAO_CALLBACK_PATH = '/login/kakao/callback'
+/**
+ * 카카오 계정 연결 확인 (#167, 시안 Login-kakao-exists 자리). 카카오 이메일로 가입한 이메일 계정이 있을 때(`LINK_REQUIRED`) 온다.
+ * 가린 이메일은 첫 진입 Provider 메모리로만 받고, 없으면(새로고침 · 바로 들어옴) 로그인 방법 고르기로 돌려보낸다
+ */
+export const KAKAO_LINK_PATH = '/login/kakao/link'
 /** 로그인이 만료돼 돌아온 로그인 화면 — "다시 로그인해 주세요" 토스트 (State-session-expired) */
 export const LOGIN_EXPIRED_PATH = `${LOGIN_PATH}?reason=expired`
 /** 이메일 로그인 (S13-5). `?reason=reset-done` 이면 비밀번호를 바꿨다는 안내를 띄운다 */
@@ -39,7 +49,8 @@ export const PASSWORD_RESET_NEW_PATH = '/password/reset/new'
 export const SETUP_REGION_PATH = '/setup/region'
 /**
  * 카카오 로그인에서 돌아온 동네 선택. 첫 진입 Provider 밖(홈의 로그인 안내 시트)에서 카카오로 시작해도 S02-1 이 가입 종류를
- * 카카오로 둘 수 있게 쿼리로 알린다. 목은 `startKakaoLogin` 이 이 주소를 돌려주고, 연동 때는 카카오 신규 회원 콜백이 이 주소로 돌아온다
+ * 카카오로 둘 수 있게 쿼리로 알린다. 목은 `startKakaoLogin` 이 이 주소를 돌려주고, 실데이터는 카카오 콜백이 신규 회원(`SIGNUP_REQUIRED`)을
+ * 이 주소로 보낸다 — 카카오를 다녀오면 페이지를 새로 열어 Provider 가 비므로 이 표시가 가입 종류를 되살린다
  */
 export const FROM_PARAM = 'from'
 export const FROM_KAKAO = 'kakao'
