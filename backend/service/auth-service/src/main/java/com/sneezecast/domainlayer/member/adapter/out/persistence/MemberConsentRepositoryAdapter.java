@@ -23,4 +23,11 @@ public class MemberConsentRepositoryAdapter implements MemberConsentRepositoryPo
             .toList();
         memberConsentRepository.saveAll(entities);
     }
+
+    @Override
+    public List<MemberConsent> findAllByMemberId(long memberId) {
+        return memberConsentRepository.findAllByMemberId(memberId).stream()
+            .map(memberConsentMapper::toDomainFromEntity)
+            .toList();
+    }
 }

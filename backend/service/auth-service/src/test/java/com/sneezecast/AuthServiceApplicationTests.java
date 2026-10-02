@@ -7,12 +7,18 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sneezecast.domainlayer.auth.adapter.in.web.dto.item.AuthSessionItem;
 import com.sneezecast.domainlayer.auth.adapter.out.persistence.RedisAccessTokenBlacklistAdapter;
 import com.sneezecast.domainlayer.auth.application.port.out.MailSendPort;
+import com.sneezecast.global.properties.AuthSessionProperties;
+import com.sneezecast.global.properties.LoginAttemptProperties;
 import com.sneezecast.persistence.util.SnowflakeIdGenerator;
 import com.sneezecast.security.auth.blacklist.AccessTokenBlacklistVerifier;
 import com.sneezecast.security.auth.jwt.JwtAuthProvider;
@@ -20,6 +26,8 @@ import com.sneezecast.security.common.enums.SecurityRole;
 import com.sneezecast.storage.init.StorageBucketInitializer;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -27,6 +35,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -43,6 +53,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -237,12 +248,52 @@ class AuthServiceApplicationTests {
             .andExpect(jsonPath("$.dataHeader.resultCode").value("SECURITY_008"));
     }
 
+    @ParameterizedTest(name = "{0} {1}")
+    @CsvSource({"POST, /api/v1/auth/logout", "GET, /api/v1/auth/sessions", "DELETE, /api/v1/auth/sessions",
+        "DELETE, /api/v1/auth/sessions/3f2a9c11-0e4b-4a1f-9c3d-0b8e2f7a5d61"})
+    @DisplayName("로그아웃 · 세션 API 는 토큰이 없으면 401 SECURITY_001 봉투다 — @PreAuthorize 가 실제로 걸려 있다")
+    void sessionApisRequireAuthentication(String method, String path) throws Exception {
+        MockHttpServletRequestBuilder request = switch (method) {
+            case "POST" -> post(path);
+            case "DELETE" -> delete(path);
+            default -> get(path);
+        };
+
+        mockMvc.perform(request)
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("SECURITY_001"));
+    }
+
+    @Test
+    @DisplayName("토큰 재발급은 인증 없이 열려 있고, 쿠키가 없으면 SECURITY_001 이 아니라 AUTH_014 다")
+    void reissueIsPublicAndRequiresCookie() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/token/reissue"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_014"));
+    }
+
+    @Test
+    @DisplayName("응답 시각(Instant)은 숫자 타임스탬프가 아니라 ISO-8601 UTC 문자열로 나간다 — 앱의 ObjectMapper 기준")
+    void instantsAreSerializedAsIsoStrings() throws Exception {
+        String json = context.getBean(ObjectMapper.class).writeValueAsString(AuthSessionItem.builder().sessionId("s")
+            .createdAt(Instant.parse("2026-10-01T00:30:00Z")).lastUsedAt(Instant.parse("2026-10-01T05:12:00Z")).build());
+
+        assertThat(json).contains("\"createdAt\":\"2026-10-01T00:30:00Z\"").contains("\"lastUsedAt\":\"2026-10-01T05:12:00Z\"");
+    }
+
+    @Test
+    @DisplayName("로그인 시도 제한 · 세션 설정의 기본값이 바인딩된다 (5회 · 10분 · IP 30회/1시간 · 기기 5대 · 유예 10초)")
+    void bindsLoginAndSessionDefaults() {
+        assertThat(context.getBean(LoginAttemptProperties.class)).isEqualTo(new LoginAttemptProperties(5, Duration.ofMinutes(10), 30, Duration.ofHours(1)));
+        assertThat(context.getBean(AuthSessionProperties.class)).isEqualTo(new AuthSessionProperties(5, Duration.ofSeconds(10)));
+    }
+
     private String bearer() {
         return bearer(SecurityRole.USER);
     }
 
     private String bearer(SecurityRole role) {
-        return "Bearer " + jwtAuthProvider.issueAccessToken(1L, role, Set.of());
+        return "Bearer " + jwtAuthProvider.issueAccessToken(1L, role, Set.of(), null).value();
     }
 
     /** 메서드 보안 확인용. 테스트 소스에만 있고 {@code @Import} 로만 올라간다. */

@@ -183,6 +183,36 @@ class MemberPersistenceSchemaTest {
         assertThat(memberConsentRepository.findAll()).allSatisfy(entity -> assertThat(entity.getCreatedAt()).isNotNull());
     }
 
+    @Test
+    @DisplayName("이메일 · ID 로 회원을 찾는다 — 상태와 무관하게 돌려주고, 없으면 empty")
+    void findsMemberByEmailAndId() {
+        memberRepositoryAdapter.save(member(5L, "login@example.com"));
+
+        assertThat(memberRepositoryAdapter.findByEmail("login@example.com")).hasValueSatisfying(found -> {
+            assertThat(found.id()).isEqualTo(5L);
+            assertThat(found.password()).isEqualTo("{bcrypt}hash");
+            assertThat(found.status()).isEqualTo(MemberStatus.ACTIVE);
+        });
+        assertThat(memberRepositoryAdapter.findById(5L)).map(Member::email).hasValue("login@example.com");
+        assertThat(memberRepositoryAdapter.findByEmail("none@example.com")).isEmpty();
+        assertThat(memberRepositoryAdapter.findById(6L)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("회원의 동의 이력을 항목 · 철회와 무관하게 모두 읽는다 — 다른 회원의 행은 섞이지 않는다")
+    void findsAllConsentsOfMember() {
+        LocalDateTime agreedAt = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
+        memberConsentRepositoryAdapter.saveAll(List.of(
+            consent(30L, ConsentType.TERMS_OF_SERVICE, "2026-10-01", agreedAt),
+            consent(31L, ConsentType.SENSITIVE_HEALTH_INFO, "2026-10-01", agreedAt),
+            MemberConsent.builder().id(32L).memberId(100L).type(ConsentType.TERMS_OF_SERVICE).documentVersion("2026-10-01").agreedAt(agreedAt).build()));
+        memberConsentRepository.flush();
+
+        assertThat(memberConsentRepositoryAdapter.findAllByMemberId(99L))
+            .extracting(MemberConsent::id, MemberConsent::type, MemberConsent::agreedAt)
+            .containsExactlyInAnyOrder(tuple(30L, ConsentType.TERMS_OF_SERVICE, agreedAt), tuple(31L, ConsentType.SENSITIVE_HEALTH_INFO, agreedAt));
+    }
+
     private Map<String, List<String>> indexes(String table, boolean unique) throws SQLException {
         Map<String, List<String>> indexes = new LinkedHashMap<>();
         try (Connection connection = dataSource.getConnection();

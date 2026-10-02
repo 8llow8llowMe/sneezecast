@@ -42,6 +42,20 @@ auth:
     # IP 당 검증 요청 상한 — 여러 이메일에 걸친 코드 대입을 늦춘다. 저장소 장애에는 fail-open.
     verify-ip-max-count: ${AUTH_EMAIL_SEND_VERIFY_IP_MAX_COUNT:30}
     verify-ip-window: ${AUTH_EMAIL_SEND_VERIFY_IP_WINDOW:PT1H}
+  # 이메일 로그인 실패 제한. 0 이하면 기동 실패. compose 가 같은 기본값을 넘긴다. 둘 다 저장소 장애에는 fail-open.
+  login:
+    # 같은 이메일로 이 횟수째 실패하면 lock-duration 동안 잠근다 (가입 여부와 무관하게 이메일 키로). 실패 카운터 수명도 lock-duration 이다.
+    max-failure-count: ${AUTH_LOGIN_MAX_FAILURE_COUNT:5}
+    lock-duration: ${AUTH_LOGIN_LOCK_DURATION:PT10M}
+    # 한 IP 의 실패가 ip-window 안에 이 횟수에 닿으면 그 IP 의 다음 로그인 시도를 막는다.
+    ip-max-failure-count: ${AUTH_LOGIN_IP_MAX_FAILURE_COUNT:30}
+    ip-window: ${AUTH_LOGIN_IP_WINDOW:PT1H}
+  # 로그인 세션(기기). 0 이하면 기동 실패. compose 가 같은 기본값을 넘긴다.
+  session:
+    # 회원당 동시 로그인 기기 수. 넘으면 마지막 사용이 가장 오래된 기기부터 밀어낸다.
+    max-devices: ${AUTH_SESSION_MAX_DEVICES:5}
+    # refresh 회전 직후 직전 토큰을 동시 재발급 경합(409)으로 봐주는 시간. 지나서 오면 재사용으로 보고 세션을 폐기한다.
+    rotation-grace: ${AUTH_SESSION_ROTATION_GRACE:PT10S}
 
 # 가입 동의 이력(member_consent.document_version)에 남길 문서 버전. 20자 이하, 비면 기동 실패.
 # 정본은 프론트 legal 상수다 — 문서를 개정할 때 두 곳을 같은 배포에 올리지 않으면 "무엇에 동의했는가"가 어긋난다.
