@@ -1,6 +1,7 @@
 package com.sneezecast.domainlayer.member.application.port.out;
 
 import com.sneezecast.domainlayer.member.domain.model.Member;
+import java.util.Optional;
 
 public interface MemberRepositoryPort {
 
@@ -14,4 +15,9 @@ public interface MemberRepositoryPort {
 
     /** 상태와 무관하게 이메일을 쓰는 회원 행이 있는지 본다 (탈퇴 회원도 파기 전까지는 이메일을 점유한다). */
     boolean existsByEmail(String email);
+
+    /** 정규화한 이메일로 회원을 찾는다. 상태와 무관하다 — 상태 판정은 호출자가 한다. */
+    Optional<Member> findByEmail(String email);
+
+    Optional<Member> findById(long memberId);
 }

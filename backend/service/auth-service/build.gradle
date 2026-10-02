@@ -1,4 +1,8 @@
 // 공통 의존성(actuator · prometheus · Spring Cloud BOM)은 루트 build.gradle 의 cloudAppModules 가 처리한다.
+
+// Spring Boot 3.4.5 BOM 의 Testcontainers 1.20.6 은 Docker Engine 29(최소 API 1.44)에 붙지 못한다. BOM 버전 속성을 이 모듈에서만 덮어
+// 1.21.x 로 올린다 — 다른 모듈은 Testcontainers 를 쓰지 않는다. Spring Boot 를 올려 BOM 이 1.21 이상이 되면 이 줄을 지운다.
+ext['testcontainers.version'] = '1.21.4'
 dependencies {
     implementation project(':core:common-core')
     implementation project(':core:persistence-core')
@@ -27,4 +31,7 @@ dependencies {
 
     // 컨텍스트 로딩 테스트(AuthServiceApplicationTests)가 실제 MySQL 없이 JPA 까지 조립해 본다.
     testRuntimeOnly 'com.h2database:h2'
+    // refresh 세션 Lua 스크립트를 실제 Redis 로 검증한다(RedisRefreshSessionStoreAdapterIntegrationTest). 버전은 위 testcontainers.version.
+    // CI 가 아니고 Docker 도 없을 때(로컬 Windows)만 그 테스트를 건너뛴다 — CI(GitHub Actions ubuntu)에서 Docker 에 못 붙으면 실패한다.
+    testImplementation 'org.testcontainers:junit-jupiter'
 }

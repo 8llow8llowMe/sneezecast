@@ -8,6 +8,7 @@ import com.sneezecast.domainlayer.member.application.mapper.MemberMapper;
 import com.sneezecast.domainlayer.member.application.port.out.MemberRepositoryPort;
 import com.sneezecast.domainlayer.member.domain.model.Member;
 import java.util.Locale;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
@@ -41,6 +42,16 @@ public class MemberRepositoryAdapter implements MemberRepositoryPort {
     @Override
     public boolean existsByEmail(String email) {
         return memberRepository.existsByEmail(email);
+    }
+
+    @Override
+    public Optional<Member> findByEmail(String email) {
+        return memberRepository.findByEmail(email).map(memberMapper::toDomainFromEntity);
+    }
+
+    @Override
+    public Optional<Member> findById(long memberId) {
+        return memberRepository.findById(memberId).map(memberMapper::toDomainFromEntity);
     }
 
     /** MySQL 은 {@code for key 'member.uk_member_email'}, H2 는 {@code PUBLIC.UK_MEMBER_EMAIL ...} 로 싣는다 — 대소문자를 무시하고 본다. */

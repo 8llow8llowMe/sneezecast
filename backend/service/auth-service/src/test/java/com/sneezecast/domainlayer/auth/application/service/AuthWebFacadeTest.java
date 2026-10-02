@@ -9,14 +9,28 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthTokenResponse;
+import com.sneezecast.domainlayer.auth.application.command.AuthGeneralLoginCommand;
 import com.sneezecast.domainlayer.auth.application.command.AuthGeneralSignupCommand;
+import com.sneezecast.domainlayer.auth.application.info.AuthCookieResult;
+import com.sneezecast.domainlayer.auth.application.info.AuthTokenInfo;
+import com.sneezecast.domainlayer.auth.application.service.presenter.AuthPresenter;
+import com.sneezecast.domainlayer.auth.application.service.processor.AuthSessionProcessor;
+import com.sneezecast.domainlayer.auth.application.service.processor.AuthTokenProcessor;
+import com.sneezecast.domainlayer.auth.application.service.processor.GeneralLoginProcessor;
 import com.sneezecast.domainlayer.auth.application.exception.AuthErrorCode;
 import com.sneezecast.domainlayer.auth.application.exception.AuthException;
 import com.sneezecast.domainlayer.auth.application.service.processor.EmailVerificationProcessor;
 import com.sneezecast.domainlayer.auth.application.service.processor.GeneralSignupProcessor;
 import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
+import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
+import com.sneezecast.domainlayer.member.domain.enums.MemberStatus;
+import com.sneezecast.domainlayer.member.domain.model.Member;
+import com.sneezecast.security.common.enums.SecurityRole;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,13 +47,18 @@ class AuthWebFacadeTest {
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
     private EmailVerificationProcessor emailVerificationProcessor;
     private GeneralSignupProcessor generalSignupProcessor;
+    private GeneralLoginProcessor generalLoginProcessor;
+    private AuthTokenProcessor authTokenProcessor;
     private AuthWebFacade facade;
 
     @BeforeEach
     void setUp() {
         emailVerificationProcessor = mock(EmailVerificationProcessor.class);
         generalSignupProcessor = mock(GeneralSignupProcessor.class);
-        facade = new AuthWebFacade(emailVerificationProcessor, generalSignupProcessor, passwordEncoder);
+        generalLoginProcessor = mock(GeneralLoginProcessor.class);
+        authTokenProcessor = mock(AuthTokenProcessor.class);
+        facade = new AuthWebFacade(emailVerificationProcessor, generalSignupProcessor, passwordEncoder, generalLoginProcessor, authTokenProcessor,
+            mock(AuthSessionProcessor.class), new AuthPresenter());
     }
 
     @Test
@@ -89,6 +108,27 @@ class AuthWebFacadeTest {
 
         verify(emailVerificationProcessor).sendCode(EMAIL, "203.0.113.10");
         verify(emailVerificationProcessor).verifyCode(EMAIL, "482913", "203.0.113.10");
+    }
+
+    @Test
+    @DisplayName("로그인은 정규화한 이메일로 자격을 확인하고, 응답은 ID 를 문자열로 · enum 을 이름으로 바꾸며 refresh 는 쿠키 값으로 따로 넘긴다")
+    void loginNormalizesEmailAndSplitsRefreshToken() {
+        Member member = Member.builder().id(1843956734582784L).email(EMAIL).role(SecurityRole.USER).status(MemberStatus.ACTIVE).build();
+        when(generalLoginProcessor.authenticate(EMAIL, PASSWORD, "203.0.113.10")).thenReturn(member);
+        when(authTokenProcessor.issue(member, "iPhone · Safari")).thenReturn(AuthTokenInfo.builder()
+            .memberId(member.id()).role(SecurityRole.USER).accessToken("access").accessTokenExpiresIn(900).refreshToken("refresh")
+            .pendingConsents(List.of(ConsentType.PRIVACY_POLICY)).reportWritable(false).build());
+
+        AuthCookieResult<AuthTokenResponse> result = facade.generalLogin(AuthGeneralLoginCommand.builder()
+            .email("  User@Example.COM ").password(PASSWORD).clientIp("203.0.113.10").deviceLabel("iPhone · Safari").build());
+
+        assertThat(result.refreshToken()).isEqualTo("refresh");
+        assertThat(result.response().memberId()).isEqualTo("1843956734582784");
+        assertThat(result.response().role()).isEqualTo("USER");
+        assertThat(result.response().accessToken()).isEqualTo("access");
+        assertThat(result.response().accessTokenExpiresIn()).isEqualTo(900);
+        assertThat(result.response().pendingConsents()).containsExactly("PRIVACY_POLICY");
+        assertThat(result.response().reportWritable()).isFalse();
     }
 
     private static AuthGeneralSignupCommand command(String email, String nickname) {
