@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { ME_DEVICES_PATH, ME_PASSWORD_PATH, ME_PATH } from '@/features/me/me-paths'
+import { ME_DEVICES_PATH, ME_PASSWORD_PATH, ME_PATH, ME_REGION_PATH } from '@/features/me/me-paths'
 
 import {
   agreeTermsReconsent,
@@ -96,10 +96,10 @@ describe('memberRequirements', () => {
 
 describe('safeNextPath (오픈 리다이렉트 방지)', () => {
   it('허용 목록은 홈 · 내 정보 화면이고 me-paths 와 같다', () => {
-    expect(NEXT_PATHS).toEqual(['/', ME_PATH, ME_DEVICES_PATH, ME_PASSWORD_PATH])
+    expect(NEXT_PATHS).toEqual(['/', ME_PATH, ME_DEVICES_PATH, ME_PASSWORD_PATH, ME_REGION_PATH])
   })
 
-  it.each(['/', '/me', '/me/devices', '/me/password'])('%s 는 그대로다', (path) => {
+  it.each(['/', '/me', '/me/devices', '/me/password', '/me/region'])('%s 는 그대로다', (path) => {
     expect(safeNextPath(path)).toBe(path)
   })
 

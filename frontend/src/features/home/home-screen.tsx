@@ -14,7 +14,9 @@ import { LoginSheet } from '@/features/auth/login-sheet'
 import { MOCK_AUTH_PARAM, useMockAuth } from '@/features/auth/use-mock-auth'
 import { takeHomeNotice } from '@/features/me/leave-notice'
 import { useRequiredStepsGate } from '@/features/me/member-gate'
+import { useMemberRegion } from '@/features/me/member-region'
 import { HOME_PATH } from '@/features/onboarding/paths'
+import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { REPORT_PARAM, ReportFlow } from '@/features/report/report-flow'
 import { useModalParam } from '@/lib/use-modal-param'
 import { useOnline } from '@/lib/use-online'
@@ -52,14 +54,19 @@ import { useExplainParam } from './use-explain-param'
  *
  * 다시 들어온 회원에게 약관 재동의 · 동네 다시 고르기 조건이 있으면 그 화면으로 먼저 보낸다(`useRequiredStepsGate`, 내 정보와 같다).
  *
+ * **둘러보기 동네와 내 동네**(#141): 동네 현황은 둘러보기 동네(`?region=`)가 있으면 그 동네, 없으면 회원의 내 동네(목 프로필)다.
+ * 머리줄 동네 이름은 둘러볼 동네 고르기(`/browse/region?next=/`)로 가 둘러보기 동네만 바꾼다. 보고는 늘 내 동네로 하므로 보고 흐름에는
+ * 내 동네 이름을 넘기고, 다른 동네를 둘러보는 중이면 보고 흐름이 보고 동네를 따로 밝힌다.
+ *
  * 홈 상단 안내 줄(모바일 주차 줄 아래, 태블릿 · 데스크톱 공식 정보 행 아래)에는 오프라인 띠(State-offline) → 알림 대체 안내
  * (State-push-inapp) 순서로 놓는다. 연결이 끊겼다는 건 아래 모든 정보(알림 대체 안내 포함)가 받아 둔 그대로라는 뜻이라 먼저 읽힌다.
  */
 export function HomeScreen({
-  week,
+  week: data,
   regionCode = null,
   receivedAt = null,
 }: {
+  /** 이번 주 동네 현황. 이름은 둘러보기 동네(있을 때) · 목 예시다 — 둘러보기 동네가 없으면 회원의 내 동네 이름으로 덮는다 */
   week: HomeWeekly
   /** 둘러보기(`?region=`)로 고른 행정동 코드. `app/(home)/page.tsx` 가 아는 코드일 때만 넘긴다 */
   regionCode?: string | null
@@ -71,6 +78,13 @@ export function HomeScreen({
 }) {
   const { toast, show, dismiss } = useToast()
   const online = useOnline()
+  const memberRegion = useMemberRegion()
+  // 보이는 동네: 둘러보기 동네가 있으면 그 동네, 없으면 내 동네. 보고는 늘 내 동네다(모르면 보이는 동네 그대로)
+  const week = regionCode || !memberRegion ? data : { ...data, regionName: memberRegion.name }
+  const reportWeek = memberRegion ? { ...data, regionName: memberRegion.name } : week
+  const reportingElsewhere =
+    memberRegion !== null && regionCode !== null && regionCode !== memberRegion.code
+  const openBrowseRegion = useBrowseRegion(HOME_PATH, regionCode)
   const explain = useExplainParam()
   const report = useModalParam(REPORT_PARAM)
   const auth = useMockAuth()
@@ -101,7 +115,7 @@ export function HomeScreen({
     if (notice) show({ message: notice })
   }, [show])
 
-  // 동네 바꾸기(S02) · 알림 설정(S10) 화면이 생기면 각각 연결한다
+  // 알림 설정(S10) 화면이 생기면 연결한다
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
 
   return (
@@ -111,7 +125,7 @@ export function HomeScreen({
       <AppHeader
         regionName={week.regionName}
         current="home"
-        onRegionClick={() => notReady('동네 바꾸기')}
+        onRegionClick={openBrowseRegion}
         onNotificationClick={guest ? undefined : () => notReady('알림 설정')}
         onReportClick={openReport}
         reportLabel={guest ? '로그인하고 보고하기' : undefined}
@@ -201,7 +215,12 @@ export function HomeScreen({
 
       {/* 보고 흐름과 보낸 보고는 동의한 회원만 쓴다 */}
       {auth === 'member' && (
-        <ReportFlow week={week} regionCode={regionCode} onNotReady={notReady} />
+        <ReportFlow
+          week={reportWeek}
+          regionCode={regionCode}
+          reportingElsewhere={reportingElsewhere}
+          onNotReady={notReady}
+        />
       )}
 
       {/* 자료 부족이면 보일 숫자가 없어 ?explain=1 로 들어와도 열지 않는다 */}

@@ -11,7 +11,9 @@ import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
+import { useShownRegionName } from '@/features/me/member-region'
 import { HOME_PATH } from '@/features/onboarding/paths'
+import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { navHref } from '@/lib/nav'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
@@ -36,7 +38,8 @@ const TITLE = '질병관리청 발표'
  *   기준 주는 모바일이 주차("47주"), 태블릿 · 데스크톱이 기간("11월 17일~23일")이다(시안대로).
  * - 받은 발표가 없으면(`empty`) 단계 · 요약 · 원문 보기 대신 "아직 받은 발표가 없어요" 를 보인다(시안 없음).
  * - 뒤로: 앱 안에서 거쳐 왔으면(홈 · 동네 안내 등 어느 화면이든) 기록을 되돌리고, 주소로 바로 들어왔으면 홈으로 기록을 바꿔 간다(`useNavTrail`).
- * - 머리줄 보고 버튼은 내 정보와 같이 회원 상태로 갈 곳을 고른다(`reportHrefFor`). 동네 · 알림은 "준비하고 있어요" 알림이다.
+ * - 머리줄 보고 버튼은 내 정보와 같이 회원 상태로 갈 곳을 고른다(`reportHrefFor`). 알림은 "준비하고 있어요" 알림이다.
+ * - 머리줄 동네 이름은 둘러보기 동네(없으면 회원의 내 동네)이고, 누르면 둘러볼 동네 고르기(`?next=/official`)로 간다(#141).
  */
 export function OfficialScreen({
   official,
@@ -54,6 +57,8 @@ export function OfficialScreen({
   const auth = useMockAuth()
   const { toast, show, dismiss } = useToast()
   const navSearch = regionSearch(regionCode)
+  const shownRegionName = useShownRegionName(regionName, regionCode)
+  const openBrowseRegion = useBrowseRegion(OFFICIAL_PATH, regionCode)
   const reportLabel = auth === 'guest' ? '로그인하고 보고하기' : '이번 주 건강 보고하기'
 
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
@@ -67,9 +72,9 @@ export function OfficialScreen({
       {/* 데스크톱 머리줄은 홈과 같다. AppHeader 의 flex 와 다투지 않게 감싸는 요소로 숨긴다 */}
       <div className="hidden desktop:block">
         <AppHeader
-          regionName={regionName}
+          regionName={shownRegionName}
           current="home"
-          onRegionClick={() => notReady('동네 바꾸기')}
+          onRegionClick={openBrowseRegion}
           onNotificationClick={notify}
           onReportClick={openReport}
           reportLabel={reportLabel}

@@ -14,6 +14,7 @@ import {
 } from '@/features/auth/auth-client'
 import { useMockAuth, useMockProfile } from '@/features/auth/use-mock-auth'
 import { REPORT_GATE } from '@/features/home/report-gate'
+import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { REPORT_PARAM } from '@/features/report/report-flow'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
@@ -37,12 +38,14 @@ import {
   ME_NOTICES,
   ME_PASSWORD_PATH,
   ME_PATH,
+  ME_REGION_PATH,
   meSearch,
   regionSearch,
   reportHrefFor,
 } from './me-paths'
 import { useMeTrail } from './me-trail'
 import { useMemberGate, useRequiredStepsTarget } from './member-gate'
+import { useMemberRegion, useShownRegionName } from './member-region'
 import { PushUnavailable } from './push-unavailable'
 import { MenuRow, sectionTitleId, SettingsSection, SwitchRow } from './settings-row'
 
@@ -91,16 +94,19 @@ function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label
  * 데스크톱 설정 메뉴의 바로가기는 `#id` 링크가 아니라 버튼이다. 같은 문서 `#` 링크는 Next 가 모르는 기록 항목(state 가 null)을
  * 쌓아, 그 뒤 연 대화상자의 닫기(`history.go(-1)`)가 그 항목으로 돌아가며 첫 닫기에 닫히지 않는다(docs/conventions.md).
  *
- * 로그인한 기기(`/me/devices`) · 비밀번호 변경 · 설정(`/me/password`) 행은 그 화면으로 간다. 동네(`region`)와 QA 덮어쓰기
+ * 로그인한 기기(`/me/devices`) · 비밀번호 변경 · 설정(`/me/password`) · 보고 동네(`/me/region`) 행은 그 화면으로 간다. 동네(`region`)와 QA 덮어쓰기
  * (`mock-auth` · `mock-provider`)를 주소에 남긴다. 비밀번호를 바꾸거나 정하고 돌아오면 계정 화면이 내 정보 레이아웃
- * (`MeTrailProvider`)에 남긴 알림을 한 번 꺼내 토스트로 띄운다 — 회원일 때만 띄운다.
- * 아직 없는 화면(내 동네 바꾸기 · 알림 설정 · 안내 본문 등)은 홈처럼 "준비하고 있어요" 알림을 띄운다.
+ * (`MeTrailProvider`)에 남긴 알림을 한 번 꺼내 토스트로 띄운다 — 회원일 때만 띄운다(내 동네를 바꾸고 와도 같다).
+ * 아직 없는 화면(관심 동네 · 알림 설정 · 안내 본문 등)은 홈처럼 "준비하고 있어요" 알림을 띄운다.
+ *
+ * **보고 동네 행은 늘 회원의 내 동네**다(#141). 머리줄 동네 이름은 둘러보기 동네(`?region=`)가 있으면 그 동네, 없으면 내 동네이고
+ * 누르면 둘러볼 동네 고르기(`/browse/region?next=/me`)로 간다 — 내 동네는 바꾸지 않는다. 내 동네를 모르면 행의 값을 비운다.
  */
 export function MeScreen({
   regionName,
   regionCode = null,
 }: {
-  /** 보고 · 둘러보는 동네 이름. 목이라 홈과 같은 값이다 — 연동 때 `GET /me` 의 내 동네로 바꾼다 */
+  /** 머리줄 동네 이름(서버가 준 둘러보기 동네 · 목 예시). 둘러보기 동네가 없으면 회원의 내 동네로 덮는다(`useShownRegionName`) */
   regionName: string
   /** 둘러보기(`?region=`)로 고른 행정동 코드. 탭바 · 메뉴 · 이동 주소에 붙여 잃지 않게 한다 */
   regionCode?: string | null
@@ -121,6 +127,9 @@ export function MeScreen({
   const [failed, setFailed] = useState<ConfirmKind | null>(null)
   // 비회원이면 로그인으로 보낸다(돌아올 곳 /me). 보내는 중(로그아웃 · 탈퇴 · 동의 철회 성공 뒤 홈으로 가는 중)에는 멈춘다
   const member = useMemberGate({ next: ME_PATH, paused: pending !== null })
+  const memberRegion = useMemberRegion()
+  const shownRegionName = useShownRegionName(regionName, regionCode)
+  const openBrowseRegion = useBrowseRegion(ME_PATH, regionCode)
 
   const navSearch = regionSearch(regionCode)
   const accountSearch = meSearch(regionCode, searchParams)
@@ -214,9 +223,9 @@ export function MeScreen({
       {/* 비회원(판단 전 · 로그인으로 가는 중)에게는 알림(종)을 그리지 않는다 (#123) */}
       <AppHeader
         title="내 정보"
-        regionName={regionName}
+        regionName={shownRegionName}
         current="me"
-        onRegionClick={() => notReady('동네 바꾸기')}
+        onRegionClick={openBrowseRegion}
         onNotificationClick={auth === 'guest' ? undefined : () => notReady('알림 설정')}
         onReportClick={() => router.push(reportHref)}
         reportLabel={auth === 'guest' ? '로그인하고 보고하기' : undefined}
@@ -278,10 +287,11 @@ export function MeScreen({
                 </SettingsSection>
 
                 <SettingsSection id="me-region" title="내 동네">
+                  {/* 둘러보는 동네가 아니라 회원의 내 동네다. 모르면(가입 없이 이메일 로그인) 값을 비운다 */}
                   <MenuRow
                     title="보고 동네"
-                    value={regionName}
-                    onClick={() => notReady('내 동네 바꾸기')}
+                    value={memberRegion?.name}
+                    href={navHref(ME_REGION_PATH, accountSearch)}
                   />
                   <MenuRow title="관심 동네" onClick={() => notReady('관심 동네')} />
                 </SettingsSection>

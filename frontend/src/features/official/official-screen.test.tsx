@@ -189,6 +189,14 @@ describe('OfficialScreen 이동', () => {
     )
   })
 
+  it('머리줄 동네 이름은 공식 정보로 돌아올 둘러볼 동네 고르기를 연다', async () => {
+    search = 'region=1111051500&mock=published'
+    renderOfficial(OFFICIAL_MOCKS.published, { regionCode: '1111051500' })
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '동네 바꾸기, 현재 ○○동' }))
+    expect(router.push).toHaveBeenCalledWith('/browse/region?next=%2Fofficial&region=1111051500')
+  })
+
   it('비회원의 보고 버튼은 보고하려던 로그인(?intent=report)으로 간다', async () => {
     renderOfficial(OFFICIAL_MOCKS.published)
 

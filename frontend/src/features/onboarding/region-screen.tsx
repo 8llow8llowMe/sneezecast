@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/button'
 import { useDistrictSearch } from '@/features/region/use-district-search'
+import { useNavTrail } from '@/lib/use-nav-trail'
 
+import { type BrowseReturn, browseReturnHref } from './browse-return'
 import {
   DistrictOptionList,
   districtOptions,
@@ -59,6 +61,11 @@ export type RegionScreenProps = {
   /** 보고 없이 둘러보기(`/browse/region`). 단계 표시 없이 고른 동네의 홈으로 바로 간다 */
   browse?: boolean
   /**
+   * 둘러보기의 돌아갈 곳(`?next=`, 머리줄 동네 이름에서 옴 — `browse-return.ts`). 있으면 고른 뒤 그 화면에 새 동네를 붙여 기록을 바꿔 가고,
+   * 뒤로는 앞 화면을 따지지 않고 기록을 되돌린다(앞 기록이 없으면 지금 둘러보던 동네의 그 화면). 둘러보기에서만 쓴다
+   */
+  browseReturn?: BrowseReturn | null
+  /**
    * 카카오 로그인에서 돌아왔다(`/setup/region?from=kakao`). 가입 종류가 아직 카카오가 아니면 가입 초안을 비우고 카카오로 둔다 —
    * 홈의 로그인 안내 시트처럼 첫 진입 Provider 밖에서 카카오로 시작하면 가입 종류가 없어 S02-3 이 `/login` 으로 돌려보낸다.
    * 둘러보기에서는 쓰지 않는다
@@ -73,6 +80,7 @@ export type RegionScreenProps = {
  * | --- | --- | --- | --- | --- |
  * | 기본 | `/setup/region` | 1 / 4 | 다음 | 성인 확인 `/setup/adult` |
  * | 둘러보기 | `/browse/region` | 없음 | 이 동네 보기 | 고른 동네 홈 `/?region=<code>` |
+ * | 둘러보기(머리줄에서) | `/browse/region?next=<경로>` | 없음 | 이 동네 보기 | 그 화면 `<경로>?region=<code>` (기록을 바꿔 감) |
  *
  * 폐지된 동네 다시 고르기(`/setup/region?reselect=1`)는 가입 초안을 쓰지 않고 회원 동네를 바로 저장해 `RegionReselectScreen` 이 맡는다.
  * 검색 칸 · 목록 · 결과 알림은 `district-picker.tsx` 를 같이 쓴다.
@@ -86,9 +94,16 @@ export type RegionScreenProps = {
  *
  * 시안(정본): docs/design/auth/screens/ 의 Setup-1 · Setup-1-empty · Setup-1-browse (+ -T · -D)
  */
-export function RegionScreen({ browse = false, fromKakao = false }: RegionScreenProps) {
+export function RegionScreen({
+  browse = false,
+  browseReturn = null,
+  fromKakao = false,
+}: RegionScreenProps) {
   const router = useRouter()
-  const { district, setDistrict, goBack, signup, resetSignup, updateSignup } = useOnboarding()
+  const { district, setDistrict, goBack, replace, signup, resetSignup, updateSignup } =
+    useOnboarding()
+  const { goBack: goBackInTrail } = useNavTrail()
+  const returning = browse ? browseReturn : null
 
   const needsKakaoMethod = !browse && fromKakao && signup.method !== 'kakao'
   useEffect(() => {
@@ -102,13 +117,22 @@ export function RegionScreen({ browse = false, fromKakao = false }: RegionScreen
 
   function next() {
     if (!district) return
-    router.push(browse ? browseHomePath(district.code) : SETUP_ADULT_PATH)
+    // 머리줄에서 왔으면 돌아갈 화면으로 기록을 바꿔 간다 — 뒤로 가기로 고르기 화면에 다시 오지 않고, 그 앞은 고르기 전 화면이다.
+    // 시작 화면의 둘러보기는 지금처럼 홈에 쌓아 간다(홈에서 뒤로 가면 다시 골라 볼 수 있다)
+    if (returning) replace(browseReturnHref(returning, district.code))
+    else router.push(browse ? browseHomePath(district.code) : SETUP_ADULT_PATH)
+  }
+
+  function back() {
+    // 머리줄은 여러 화면에 있어 앞 화면이 정해져 있지 않다 — 앱 안에서 왔으면 어디서든 되돌린다(돌아갈 곳이 있는 로그인과 같다)
+    if (returning) goBackInTrail(browseReturnHref(returning, returning.region))
+    else goBack(browse ? START_PATH : SETUP_REGION_PREVIOUS)
   }
 
   return (
     <OnboardingLayout
       step={browse ? undefined : 1}
-      onBack={() => goBack(browse ? START_PATH : SETUP_REGION_PREVIOUS)}
+      onBack={back}
       panelTitle={COPY[mode].panelTitle}
       footer={
         <Button fullWidth disabled={!district} onClick={next}>

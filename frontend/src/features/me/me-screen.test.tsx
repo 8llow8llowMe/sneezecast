@@ -13,6 +13,7 @@ import {
   loginWithEmail,
   logout,
   resetMockSession,
+  saveRegion,
   setupPassword,
   signup,
   withdrawHealthConsent,
@@ -324,9 +325,36 @@ describe('MeScreen 메뉴', () => {
     )
   })
 
+  it('보고 동네 행은 둘러보는 동네가 아니라 내 동네를 보이고 내 동네 바꾸기로 간다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    await saveRegion({ code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구' })
+    search = 'region=11440660&mock-provider=email'
+    renderMe({ regionCode: '11440660' })
+
+    const row = screen.getByRole('link', { name: /^보고 동네/ })
+    expect(row.textContent).toBe('보고 동네역삼1동')
+    expect(row.getAttribute('href')).toBe('/me/region?region=11440660&mock-provider=email')
+  })
+
+  it('내 동네를 모르면(가입 없이 이메일 로그인) 보고 동네 값을 비운다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    renderMe()
+    expect(screen.getByRole('link', { name: /^보고 동네/ }).textContent).toBe('보고 동네')
+  })
+
+  it('머리줄 동네 이름은 둘러보기 동네가 없으면 내 동네이고, 내 정보로 돌아올 둘러볼 동네 고르기를 연다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    await saveRegion({ code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구' })
+    renderMe()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '동네 바꾸기, 현재 역삼1동' }))
+    expect(router.push).toHaveBeenCalledWith('/browse/region?next=%2Fme')
+  })
+
   it.each([
     ['password-changed', '비밀번호를 바꿨어요'],
     ['password-set', '비밀번호를 설정했어요. 이제 이메일로도 로그인할 수 있어요'],
+    ['region-changed', '내 동네를 바꿨어요'],
   ] as const)(
     '계정 화면이 남긴 알림(%s)을 회원에게 한 번 띄우고 비운다 — 다시 그려도 뜨지 않는다',
     async (notice, message) => {

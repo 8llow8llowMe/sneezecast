@@ -85,7 +85,13 @@ export const NEXT_PARAM = 'next'
  * 쿼리 · 조각이 붙거나 다른 오리진(`//evil.example` · `https://…`)이면 홈으로 보낸다.
  * 내 정보 경로는 `features/me/me-paths.ts` 와 같다(테스트가 맞춰 본다). 첫 진입 화면이 내 정보 모듈을 끌어오지 않게 여기 다시 적는다.
  */
-export const NEXT_PATHS: readonly string[] = [HOME_PATH, '/me', '/me/devices', '/me/password']
+export const NEXT_PATHS: readonly string[] = [
+  HOME_PATH,
+  '/me',
+  '/me/devices',
+  '/me/password',
+  '/me/region',
+]
 
 /** `?next=` 값을 돌아갈 경로로. 없거나 목록 밖이면 홈이다 */
 export function safeNextPath(value: string | null | undefined): string {

@@ -36,9 +36,15 @@ import {
 export const REPORT_PARAM = 'report'
 
 export type ReportFlowProps = {
+  /** 이번 주 정보. 동네는 **보고 동네(회원의 내 동네)** 다 — 둘러보는 동네가 아니다 */
   week: ReportWeek
   /** 둘러보기 동네(화면이 확인한 코드). 홈 화면 추가 안내에서 주소로 바로 닫을 때 홈 주소에 남긴다 */
   regionCode: string | null
+  /**
+   * 홈에서 내 동네와 다른 동네를 둘러보는 중인지(#141). 참이면 시작 단계에 보고 동네를 알리고 확인 단계의 동네 앞에 `보고 동네` 를 붙인다 —
+   * 보고는 늘 내 동네로 집계되는데 화면에는 둘러보는 동네가 보이고 있다
+   */
+  reportingElsewhere?: boolean
   /** 아직 없는 화면(함께 채우기)으로 가는 동작 */
   onNotReady: (screen: string) => void
 }
@@ -72,7 +78,12 @@ function useSubmittedReport(): SubmittedReport | null {
  *
  * 시안: Report-start · Report-symptom · Report-confirm · Report-edit · Report-done · Report-done-ok (+ -T · -D), Flow
  */
-export function ReportFlow({ week, regionCode, onNotReady }: ReportFlowProps) {
+export function ReportFlow({
+  week,
+  regionCode,
+  reportingElsewhere = false,
+  onNotReady,
+}: ReportFlowProps) {
   const param = useModalParam(REPORT_PARAM)
   const searchParams = useSearchParams()
   const submitted = useSubmittedReport()
@@ -183,6 +194,9 @@ export function ReportFlow({ week, regionCode, onNotReady }: ReportFlowProps) {
     >
       {step === 'start' && (
         <>
+          {reportingElsewhere && (
+            <Callout>보고는 내 동네 {week.regionName} 기준이에요. 둘러보는 동네와 달라요.</Callout>
+          )}
           {submitted && (
             <Callout>
               {submitted.reportedLabel}에 보고했어요. 수정하면 집계에는 마지막 보고만 반영돼요.
@@ -227,7 +241,8 @@ export function ReportFlow({ week, regionCode, onNotReady }: ReportFlowProps) {
         <>
           <div className="flex flex-col gap-1.5 rounded-button bg-section p-4.5">
             <span className="text-sub text-fg-sub">
-              {week.weekRangeLabel} · {week.regionName}
+              {week.weekRangeLabel} · {reportingElsewhere && '보고 동네 '}
+              {week.regionName}
             </span>
             <span className="text-section-title font-semibold text-fg">
               {summarizeAnswer(symptomAnswer)}

@@ -11,7 +11,9 @@ import {
   getMockSession,
   loginWithEmail,
   resetMockSession,
+  saveRegion,
 } from '@/features/auth/auth-client'
+import { consentFor } from '@/features/auth/legal'
 import { leaveHomeNotice, takeHomeNotice } from '@/features/me/leave-notice'
 
 import { HomeScreen } from './home-screen'
@@ -151,12 +153,12 @@ describe('HomeScreen 판단 기준', () => {
   it('앱 안에서 연 판단 기준을 닫으면 쌓은 기록을 되돌린다 (휴대폰 뒤로 가기와 같다)', async () => {
     const go = vi.spyOn(window.history, 'go').mockImplementation(() => {})
     const user = userEvent.setup()
-    render(<HomeScreen week={HOME_MOCKS.high} />)
+    const { rerender } = render(<HomeScreen week={HOME_MOCKS.high} />)
 
     await user.click(screen.getByRole('button', { name: '왜 이렇게 보나요?' }))
-    // 테스트의 useSearchParams 는 주소를 따라가지 않으므로, 열린 뒤 다시 그린 상태를 흉내 낸다(다시 그리기는 동네 버튼으로 일으킨다)
+    // 테스트의 useSearchParams 는 주소를 따라가지 않으므로, 열린 뒤 다시 그린 상태를 흉내 낸다
     search = 'explain=1'
-    await user.click(screen.getByRole('button', { name: /^동네 바꾸기/ }))
+    rerender(<HomeScreen week={{ ...HOME_MOCKS.high }} />)
     await user.click(screen.getByRole('button', { name: '확인' }))
 
     expect(go).toHaveBeenCalledWith(-1)
@@ -586,5 +588,69 @@ describe('HomeScreen 오프라인 띠 (State-offline)', () => {
       <HomeScreen week={HOME_MOCKS.normal} receivedAt="2026-11-19T00:00:00Z" />,
     )
     expect(html).not.toContain('오프라인이에요')
+  })
+})
+
+describe('HomeScreen 둘러보기 동네 · 내 동네 (#141)', () => {
+  const YEOKSAM1 = { code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구' }
+  const SEOGYO = '11440660'
+
+  beforeEach(() => {
+    search = ''
+    resetMockSession()
+    router.push.mockClear()
+    window.history.replaceState(null, '', '/')
+  })
+
+  /** 내 동네가 역삼1동이고 건강정보 동의를 한 목 회원 */
+  async function signInWithRegion() {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    await saveRegion(YEOKSAM1)
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+  }
+
+  it('머리줄 동네 이름은 홈으로 돌아올 둘러볼 동네 고르기를 연다 (비회원도 같다)', async () => {
+    search = 'region=raw&report=login'
+    render(<HomeScreen week={{ ...HOME_MOCKS.normal, regionName: '서교동' }} regionCode={SEOGYO} />)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '동네 바꾸기, 현재 서교동' }))
+    expect(router.push).toHaveBeenCalledWith(`/browse/region?next=%2F&region=${SEOGYO}`)
+  })
+
+  it('둘러보기 동네가 없으면 회원은 내 동네를 보인다', async () => {
+    await signInWithRegion()
+    render(<HomeScreen week={HOME_MOCKS.normal} />)
+
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+      '역삼1동 이번 주 우리 동네 건강',
+    )
+    expect(screen.getByRole('button', { name: '동네 바꾸기, 현재 역삼1동' })).toBeDefined()
+  })
+
+  it('다른 동네를 둘러보는 중이면 그 동네를 보이고, 보고 흐름은 내 동네로 보고한다고 밝힌다', async () => {
+    await signInWithRegion()
+    search = `region=${SEOGYO}&report=start`
+    render(<HomeScreen week={{ ...HOME_MOCKS.normal, regionName: '서교동' }} regionCode={SEOGYO} />)
+
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+      '서교동 이번 주 우리 동네 건강',
+    )
+    expect(
+      await screen.findByText('보고는 내 동네 역삼1동 기준이에요. 둘러보는 동네와 달라요.'),
+    ).toBeDefined()
+  })
+
+  it('둘러보는 동네가 내 동네면 보고 동네를 따로 밝히지 않는다', async () => {
+    await signInWithRegion()
+    search = `region=${YEOKSAM1.code}&report=start`
+    render(
+      <HomeScreen
+        week={{ ...HOME_MOCKS.normal, regionName: '역삼1동' }}
+        regionCode={YEOKSAM1.code}
+      />,
+    )
+
+    await screen.findByText('증상 없었어요')
+    expect(screen.queryByText(/둘러보는 동네와 달라요/)).toBeNull()
   })
 })

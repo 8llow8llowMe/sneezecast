@@ -17,6 +17,7 @@ import { GROUP_LABEL, scaleMax, TREND_LABEL, TREND_TEXT_CLASS } from '@/features
 import { TrendBars } from '@/features/home/symptom-trends'
 import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
 import { HOME_PATH } from '@/features/onboarding/paths'
+import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { formatCount, formatMonthDay } from '@/lib/format'
 import { formatIsoWeekOfMonth, formatIsoWeekRange } from '@/lib/iso-week'
 import { navHref } from '@/lib/nav'
@@ -84,7 +85,9 @@ export function NoticeScreen({
 
   const title = `${data.regionName} 이번 주 안내`
   const goBack = () => navTrail.goBack(navHref(HOME_PATH, navSearch))
-  // 동네 바꾸기 · 알림 설정 · 문 연 곳 찾기 화면이 생기면 각각 연결한다
+  // 머리줄 동네 이름은 둘러볼 동네 고르기로 간다. 안내는 경로의 동네 것이라 고른 뒤에는 홈으로 돌아온다(#141)
+  const openBrowseRegion = useBrowseRegion(HOME_PATH, regionCode)
+  // 알림 설정 · 문 연 곳 찾기 화면이 생기면 각각 연결한다
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
   // 알림(종)은 회원에게만 그린다 — 데스크톱 머리줄(AppHeader)과 모바일 · 태블릿 머리줄이 같은 규칙이다 (#123)
   const notify = auth === 'guest' ? undefined : () => notReady('알림 설정')
@@ -103,7 +106,7 @@ export function NoticeScreen({
         <AppHeader
           regionName={data.regionName}
           current="home"
-          onRegionClick={() => notReady('동네 바꾸기')}
+          onRegionClick={openBrowseRegion}
           onNotificationClick={notify}
           onReportClick={openReport}
           reportLabel={reportLabel}
