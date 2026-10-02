@@ -25,7 +25,8 @@ export function TabBar({
   navSearch,
   className,
 }: {
-  current: MainNavKey
+  /** 지금 메뉴. 메뉴 밖 화면(없는 화면 404)이면 null 이다 — 표시하지 않는다 */
+  current: MainNavKey | null
   navSearch?: string | undefined
   className?: string
 }) {
