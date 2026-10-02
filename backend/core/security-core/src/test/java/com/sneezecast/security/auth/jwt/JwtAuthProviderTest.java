@@ -3,6 +3,9 @@ package com.sneezecast.security.auth.jwt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.sneezecast.security.auth.jwt.JwtAuthProvider.IssuedToken;
+import com.sneezecast.security.auth.jwt.JwtAuthProvider.RefreshTokenClaims;
+import com.sneezecast.security.common.constant.JwtClaimNames;
 import com.sneezecast.security.common.constant.SecurityScope;
 import com.sneezecast.security.common.dto.MemberLoginActive;
 import com.sneezecast.security.common.enums.SecurityRole;
@@ -13,8 +16,10 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -45,7 +50,7 @@ class JwtAuthProviderTest {
     @EnumSource(SecurityRole.class)
     @DisplayName("정상 토큰은 회원 식별자·권한·jti 를 돌려준다 (모든 역할)")
     void parsesIssuedToken(SecurityRole role) {
-        String token = provider.issueAccessToken(42L, role, Set.of());
+        String token = provider.issueAccessToken(42L, role, Set.of(), null).value();
 
         MemberLoginActive member = provider.parseAccessToken(token);
 
@@ -57,7 +62,7 @@ class JwtAuthProviderTest {
     @Test
     @DisplayName("발급한 scope 는 파싱 후에도 그대로 돌아온다")
     void scopesRoundTrip() {
-        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(SecurityScope.REPORT_WRITE, "test:other"));
+        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(SecurityScope.REPORT_WRITE, "test:other"), null).value();
 
         MemberLoginActive member = provider.parseAccessToken(token);
 
@@ -67,7 +72,7 @@ class JwtAuthProviderTest {
     @Test
     @DisplayName("scope 를 비워 발급하면 claim 을 싣지 않고, 파싱 결과는 빈 집합이다")
     void emptyScopesOmitClaim() {
-        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of());
+        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(), null).value();
 
         assertThat(claimsOf(token).containsKey(SecurityScope.CLAIM_NAME)).isFalse();
         assertThat(provider.parseAccessToken(token).scopes()).isEmpty();
@@ -87,7 +92,7 @@ class JwtAuthProviderTest {
     @ValueSource(strings = {"", " ", "report write", "report:write\t"})
     @DisplayName("비었거나 공백을 품은 scope 는 발급하지 않는다 — 공백 구분 claim 의 경계가 깨진다")
     void rejectsScopeWithWhitespace(String scope) {
-        assertThatThrownBy(() -> provider.issueAccessToken(1L, SecurityRole.USER, Set.of(scope)))
+        assertThatThrownBy(() -> provider.issueAccessToken(1L, SecurityRole.USER, Set.of(scope), null))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -166,7 +171,7 @@ class JwtAuthProviderTest {
     @Test
     @DisplayName("refresh 토큰도 같은 규칙으로 실패한다 — access 키로 서명된 토큰을 refresh 로 내면 서명 실패")
     void refreshTokenParsedWithSameRules() {
-        String accessToken = provider.issueAccessToken(1L, SecurityRole.USER, Set.of());
+        String accessToken = provider.issueAccessToken(1L, SecurityRole.USER, Set.of(), null).value();
 
         assertThatThrownBy(() -> provider.parseRefreshToken(accessToken))
             .isInstanceOf(SecurityJwtException.class)
@@ -174,6 +179,129 @@ class JwtAuthProviderTest {
             .isEqualTo(SecurityErrorCode.TOKEN_SIGNATURE_INVALID);
         assertThatThrownBy(() -> provider.parseRefreshToken("h.p.x"))
             .isInstanceOf(SecurityJwtException.class);
+    }
+
+    @Test
+    @DisplayName("access 의 sid · exp · jti 는 발급 결과와 파싱 결과가 같다 — exp 는 초 단위로 잘린 같은 값이다")
+    void accessTokenExposesSessionIdAndExpiry() {
+        IssuedToken issued = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(), "session-1");
+
+        MemberLoginActive member = provider.parseAccessToken(issued.value());
+
+        assertThat(member.sessionId()).isEqualTo("session-1");
+        assertThat(member.tokenId()).isEqualTo(issued.tokenId());
+        assertThat(member.expiresAt()).isEqualTo(issued.expiresAt());
+        assertThat(issued.expiresAt()).isBetween(Instant.now().plus(Duration.ofMinutes(14)), Instant.now().plus(Duration.ofMinutes(15)));
+        assertThat(claimsOf(issued.value()).get(JwtClaimNames.SESSION_ID)).isEqualTo("session-1");
+    }
+
+    @Test
+    @DisplayName("sid 없이 발급한 access 는 claim 을 싣지 않고, 파싱 결과의 sessionId 는 null 이다")
+    void accessTokenWithoutSessionId() {
+        IssuedToken issued = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(), null);
+
+        assertThat(claimsOf(issued.value()).containsKey(JwtClaimNames.SESSION_ID)).isFalse();
+        assertThat(provider.parseAccessToken(issued.value()).sessionId()).isNull();
+    }
+
+    static Stream<Arguments> brokenSessionIdClaims() {
+        return Stream.of(
+            Arguments.of("sid 가 숫자", 123),
+            Arguments.of("sid 가 배열", List.of("session-1")),
+            Arguments.of("sid 가 빈 문자열", " "));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("brokenSessionIdClaims")
+    @DisplayName("access 의 sid 가 문자열이 아니거나 비었으면 TOKEN_INVALID")
+    void rejectsBrokenAccessSessionId(String description, Object sid) {
+        String token = signed(ACCESS_KEY, Map.of("role", SecurityRole.USER.name(), JwtClaimNames.SESSION_ID, sid));
+
+        assertThatThrownBy(() -> provider.parseAccessToken(token))
+            .isInstanceOf(SecurityJwtException.class)
+            .extracting(exception -> ((SecurityJwtException) exception).getErrorCode())
+            .isEqualTo(SecurityErrorCode.TOKEN_INVALID);
+    }
+
+    @Test
+    @DisplayName("refresh 는 sid · jti · 회원을 돌려주고, 만료는 refresh 만료 설정이다")
+    void refreshTokenRoundTrip() {
+        IssuedToken issued = provider.issueRefreshToken(42L, "session-1");
+
+        RefreshTokenClaims claims = provider.parseRefreshToken(issued.value());
+
+        assertThat(claims.memberId()).isEqualTo(42L);
+        assertThat(claims.sessionId()).isEqualTo("session-1");
+        assertThat(claims.tokenId()).isEqualTo(issued.tokenId());
+        assertThat(issued.expiresAt()).isBetween(Instant.now().plus(Duration.ofDays(14)).minusSeconds(5), Instant.now().plus(Duration.ofDays(14)));
+    }
+
+    @Test
+    @DisplayName("같은 세션으로 같은 초 안에 다시 발급해도 jti 와 토큰이 다르다 — 회전 전후 토큰을 구별할 수 있어야 재사용을 잡는다")
+    void refreshTokenGetsNewJtiEveryIssue() {
+        IssuedToken first = provider.issueRefreshToken(42L, "session-1");
+        IssuedToken second = provider.issueRefreshToken(42L, "session-1");
+
+        assertThat(second.tokenId()).isNotEqualTo(first.tokenId());
+        assertThat(second.value()).isNotEqualTo(first.value());
+        assertThat(provider.parseRefreshToken(second.value()).sessionId()).isEqualTo("session-1");
+    }
+
+    @Test
+    @DisplayName("발급 결과의 toString 은 토큰 원문을 가린다 — 로그 · 예외 메시지로 토큰이 새지 않는다")
+    void issuedTokenMasksValue() {
+        IssuedToken issued = provider.issueRefreshToken(42L, "session-1");
+
+        assertThat(issued.toString()).doesNotContain(issued.value()).contains("****").contains(issued.tokenId());
+    }
+
+    @Test
+    @DisplayName("빈 세션 아이디로는 refresh 를 발급하지 않는다")
+    void refreshTokenRequiresSessionId() {
+        assertThatThrownBy(() -> provider.issueRefreshToken(42L, " ")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> provider.issueRefreshToken(42L, null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    static Stream<Arguments> brokenRefreshClaims() {
+        return Stream.of(
+            Arguments.of("sid 없음", Map.of(), "jti"),
+            Arguments.of("sid 가 빈 문자열", Map.of(JwtClaimNames.SESSION_ID, ""), "jti"),
+            Arguments.of("sid 가 숫자", Map.of(JwtClaimNames.SESSION_ID, 7), "jti"),
+            Arguments.of("jti 없음", Map.of(JwtClaimNames.SESSION_ID, "session-1"), null));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("brokenRefreshClaims")
+    @DisplayName("refresh 의 sid 가 없거나 문자열이 아니거나, jti 가 없으면 TOKEN_INVALID — 회전할 세션 · 비교할 기준이 없다")
+    void rejectsBrokenRefreshClaims(String description, Map<String, Object> claims, String jti) {
+        var builder = Jwts.builder().subject("42").claims(claims).expiration(new Date(System.currentTimeMillis() + 60_000));
+        if (jti != null) {
+            builder.id(jti);
+        }
+        String token = builder.signWith(Keys.hmacShaKeyFor(REFRESH_KEY.getBytes(StandardCharsets.UTF_8)), Jwts.SIG.HS512).compact();
+
+        assertThatThrownBy(() -> provider.parseRefreshToken(token))
+            .isInstanceOf(SecurityJwtException.class)
+            .extracting(exception -> ((SecurityJwtException) exception).getErrorCode())
+            .isEqualTo(SecurityErrorCode.TOKEN_INVALID);
+    }
+
+    @Test
+    @DisplayName("만료된 refresh 는 TOKEN_EXPIRED 다 — auth 가 재로그인 안내(AUTH_014)로 바꾼다")
+    void expiredRefreshToken() {
+        String token = Jwts.builder().id("jti").subject("42").claim(JwtClaimNames.SESSION_ID, "session-1")
+            .expiration(new Date(System.currentTimeMillis() - 60_000))
+            .signWith(Keys.hmacShaKeyFor(REFRESH_KEY.getBytes(StandardCharsets.UTF_8)), Jwts.SIG.HS512).compact();
+
+        assertThatThrownBy(() -> provider.parseRefreshToken(token))
+            .isInstanceOf(SecurityJwtException.class)
+            .extracting(exception -> ((SecurityJwtException) exception).getErrorCode())
+            .isEqualTo(SecurityErrorCode.TOKEN_EXPIRED);
+    }
+
+    private static String signed(String key, Map<String, Object> claims) {
+        return Jwts.builder().id("jti").subject("1").claims(claims).expiration(new Date(System.currentTimeMillis() + 60_000))
+            .signWith(Keys.hmacShaKeyFor(key.getBytes(StandardCharsets.UTF_8)), Jwts.SIG.HS512).compact();
     }
 
     private static Claims claimsOf(String token) {
