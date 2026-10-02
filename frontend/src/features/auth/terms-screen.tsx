@@ -30,6 +30,7 @@ import {
 } from './auth-client'
 import { ConsentRow, LEGAL_TEXT_NOT_READY } from './consent-row'
 import { type Consent, consentFor } from './legal'
+import { kakaoFailPath } from './login-notice'
 import { NO_CHECKS, requiredAgreed, setAll, type TermsChecks } from './terms-checks'
 
 type Failure = 'signup' | 'email-taken' | 'login' | 'region' | 'region-invalid' | null
@@ -40,12 +41,15 @@ type Failure = 'signup' | 'email-taken' | 'login' | 'region' | 'region-invalid' 
  *
  * - 필수 둘을 켜야 "동의하고 가입하기" 가 켜진다(incomplete 시안 — `aria-disabled`, 누르면 아무 일도 없다)
  * - 가입 종류는 Provider 초안의 `method` 로 가린다: 이메일 가입(이메일 · 비밀번호 · 닉네임 + 동의) →
- *   `loginWithEmail` → 동네 저장, 카카오 가입(동의만, 이미 로그인 상태) → 동네 저장.
+ *   `loginWithEmail` → 동네 저장, 카카오 가입(동의만 — 응답이 로그인이라 세션이 생긴다, #167) → 동네 저장.
  *   성인 확인(S02-2)은 `AGE_OVER_19` 동의로 함께 보낸다
  * - 단계마다 끝난 것을 `membership` 에 남겨, 로그인 · 동네 저장이 실패한 뒤 다시 누르면 남은 단계만 보낸다(가입 두 번 금지).
  *   비밀번호는 로그인까지 마친 뒤에 지운다 — 로그인을 다시 시도할 때 필요하다
  * - 가입이 인증 만료(`verification-expired`, `AUTH_007`)로 돌아오면 인증 · 보낸 시각 · 비밀번호를 지우고
  *   (이메일 · 닉네임은 남긴다) 이메일 단계로 기록을 바꿔 간다. 이메일 화면이 안내를 띄운다
+ * - 카카오 가입표가 없거나 지났으면(`kakao-restart` — `AUTH_025` · 그사이 가입된 이메일 `MEMBER_001` · 그 밖의 업무 오류로 가입표를 잃음)
+ *   카카오 로그인부터 다시 하게
+ *   로그인 방법 선택(`/login?error=kakao-fail`, 사유는 `&kakao=expired`)으로 기록을 바꿔 간다
  * - 가입된 이메일(`email-taken`, `MEMBER_001`)이면 빨강 상자로 알리고 `이메일로 로그인` 을 둔다(시안 없음 — Signup-email 의
  *   exists 문구를 옮겼다). 누르면 비밀번호를 지우고 이메일 로그인으로 기록을 바꿔 간다
  * - 실데이터 · 목데이터는 `useDataSource()` 로 정해 가입 · 로그인 · 동네 저장에 넘긴다
@@ -156,6 +160,11 @@ export function TermsScreen() {
       }
       if (result.status === 'email-taken') {
         fail('email-taken')
+        return
+      }
+      if (result.status === 'kakao-restart') {
+        // 가입표가 없어 이 화면에서는 다시 보낼 수 없다. 이동하는 동안은 보내는 중으로 둔다(다시 누르지 않게)
+        if (active.current) replace(kakaoFailPath(result.reason))
         return
       }
       // 서버도 가입에 쓴 인증 표시를 지운다. 카카오 가입은 이미 로그인한 상태다

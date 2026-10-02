@@ -1,4 +1,3 @@
-import { SETUP_REGION_FROM_KAKAO_PATH } from '@/features/onboarding/paths'
 import { ABOLISHED_DISTRICT_EXAMPLE } from '@/features/region/mock'
 import type { District } from '@/features/region/types'
 import { ApiError } from '@/lib/api/api-error'
@@ -13,7 +12,9 @@ import {
 } from '@/lib/session/session-store'
 import { clearSessionExpiring } from '@/lib/session-expiry'
 
+import { kakaoTicketLost } from './kakao-ticket'
 import type { Consent, ConsentType } from './legal'
+import type { KakaoFailReason } from './login-notice'
 import { type MyRegion, putMyRegion } from './member-client'
 import { getMemberInfoSnapshot, reloadMemberInfo, setMemberRegion } from './member-info'
 
@@ -21,12 +22,12 @@ import { getMemberInfoSnapshot, reloadMemberInfo, setMemberRegion } from './memb
  *
  * 이메일 인증 · 가입 · 이메일 로그인 · 로그아웃(`sendEmailCode` · `verifyEmailCode` · `signup` 이메일 갈래 · `loginWithEmail` ·
  * `logout`)과 내 동네 저장(`saveRegion`, #164), 비밀번호 재설정 · 변경과 로그인한 기기(`sendPasswordResetCode` ·
- * `verifyPasswordResetCode` · `resetPassword` · `changePassword` · `listSessions` · `revokeSession` · `revokeOtherSessions`, #166)는
- * 마지막 인자로 데이터 출처(`DataSource`)를 받는다. `api` 면 auth · 회원 API(docs/api-contract-draft.md "인증" · "회원")를 부르고,
- * `mock` 이면 아래 목 동작 그대로다. 출처는 부르는 화면이 `useDataSource()` 로 읽어 넘긴다 — 이 모듈은 쿠키를 읽지 않는다
+ * `verifyPasswordResetCode` · `resetPassword` · `changePassword` · `listSessions` · `revokeSession` · `revokeOtherSessions`, #166),
+ * 카카오 가입(`signup` 카카오 갈래, #167 — 카카오 로그인 · 연결은 `kakao-client.ts`)은 마지막 인자로 데이터 출처(`DataSource`)를
+ * 받는다. `api` 면 auth · 회원 API(docs/api-contract-draft.md "인증" · "회원")를 부르고, `mock` 이면 아래 목 동작 그대로다. 출처는 부르는 화면이 `useDataSource()` 로 읽어 넘긴다 — 이 모듈은 쿠키를 읽지 않는다
  * (docs/conventions.md "데이터 출처", `features/region/region-client.ts` 와 같다). 그 밖의 함수는 아직 출처와 무관하게 목이다.
  *
- * - 인증이 필요 없는 요청(코드 받기 · 코드 확인 · 가입 · 로그인 · 비밀번호 재설정)은 `auth: false` 로 부른다 — 만료된 access 를
+ * - 인증이 필요 없는 요청(코드 받기 · 코드 확인 · 가입 · 카카오 가입 · 로그인 · 비밀번호 재설정)은 `auth: false` 로 부른다 — 만료된 access 를
  *   실어 게이트웨이가 `SECURITY_002` 로 거절하는 일이 없게 한다. 로그아웃 · 비밀번호 변경 · 기기는 access 를 싣는다(API 계층이
  *   만료 전 재발급을 맡는다)
  * - 서버 오류 코드 중 화면 상태가 있는 것만 결과로 옮긴다. 일시 장애(`UNAVAILABLE` · 503) · 분류 밖 오류는 그대로 거부한다 —
@@ -48,6 +49,7 @@ function mapError<T>(error: unknown, table: Readonly<Record<string, T>>): T | nu
 const SEND_CODE_PATH = '/api/v1/auth/email/send-code'
 const VERIFY_CODE_PATH = '/api/v1/auth/email/verify-code'
 const SIGNUP_PATH = '/api/v1/auth/signup'
+const KAKAO_SIGNUP_PATH = '/api/v1/auth/kakao/signup'
 const LOGIN_PATH = '/api/v1/auth/login'
 const LOGOUT_PATH = '/api/v1/auth/logout'
 const SESSIONS_PATH = '/api/v1/auth/sessions'
@@ -66,9 +68,9 @@ const CHANGE_PASSWORD_PATH = '/api/v1/members/me/password'
  * - `member-no-consent`: 회원이지만 건강정보(민감정보) 동의를 하지 않음
  * - `member`: 회원이고 건강정보 동의를 함 — 보고할 수 있다
  *
- * 값을 바꾸는 곳은 이 모듈의 함수뿐이다: 카카오 가입 성공(`signup` kind kakao) · 이메일 로그인 성공(`loginWithEmail`)은
- * `member-no-consent`, 건강정보 동의 성공(`agreeHealthConsent`)은 `member`, 동의 철회 · 로그아웃 · 탈퇴 · 비밀번호 재설정 성공
- * (`withdrawHealthConsent` · `logout` · `withdrawMembership` · `resetPassword`)은 `guest`. 화면 코드는 고치지 않는다.
+ * 값을 바꾸는 곳은 이 모듈의 함수뿐이다: 카카오 가입 성공(`signup` kind kakao) · 이메일 로그인 성공(`loginWithEmail`) ·
+ * 카카오 로그인 · 연결 목(`kakao-client.ts` 가 `signInMockKakao` 로 부름)은 `member-no-consent`, 건강정보 동의 성공
+ * (`agreeHealthConsent`)은 `member`, 동의 철회 · 로그아웃 · 탈퇴 · 비밀번호 재설정 성공 (`withdrawHealthConsent` · `logout` · `withdrawMembership` · `resetPassword`)은 `guest`. 화면 코드는 고치지 않는다.
  * 모듈 메모리에만 두어 새로고침하면 `guest` 로 돌아간다 — 브라우저 저장소에 남기지 않는다.
  *
  * 내 정보(S10)가 보일 프로필(`MockProfile`)도 같은 세션에 둔다. 로그인 · 가입할 때 채우고 로그아웃 · 탈퇴하면 지운다.
@@ -296,21 +298,18 @@ function conditionsFor(
 }
 
 /**
- * 카카오 로그인을 시작한다. 돌려준 주소로 화면이 이동한다.
- *
- * 목은 신규 회원으로 보고 동네 선택(S02-1)으로 보낸다 — `?from=kakao` 를 붙여 S02-1 이 가입 종류를 카카오로 둔다
- * (홈의 로그인 안내 시트처럼 첫 진입 Provider 밖에서 시작해도 이어지게). 연동 때는 `GET /api/v1/auth/kakao/authorize` 로 브라우저를
- * 보내는 리다이렉트가 되고, 카카오 콜백이 신규 · 기존 회원을 가려 돌려보낸다(신규 회원은 같은 `?from=kakao` 주소). 실패하면 `/login?error=kakao-fail`,
- * 이메일 회원과 겹치면 `/login?error=kakao-exists` 로 온다.
- *
- * `switchAccount` 는 "다른 카카오 계정으로 계속하기" 다 — 연동 때 카카오 계정 고르기 화면을 띄우게 넘긴다.
+ * 카카오 로그인 · 연결의 목 세션 (`kakao-client.ts` 의 목 갈래만 부른다 — 화면 코드는 부르지 않는다). 목 세션은 이 모듈이 들고 있어
+ * 바꾸는 함수를 여기 둔다.
+ * - `kakao`: 카카오로 가입한 회원의 로그인(`LOGGED_IN`). 비밀번호가 없다 — 프로필은 시안 예시 값
+ * - `linked`: 이메일 계정에 카카오 로그인을 연결함(`POST /kakao/link`). 로그인 방법은 카카오, 비밀번호는 그대로다
  */
-export function startKakaoLogin(
-  options: { switchAccount?: boolean } = {},
-): Promise<{ redirectTo: string }> {
-  // 목에는 카카오 계정 고르기 화면이 없어 switchAccount 를 쓰지 않는다
-  void options
-  return Promise.resolve({ redirectTo: SETUP_REGION_FROM_KAKAO_PATH })
+export function signInMockKakao(kind: 'kakao' | 'linked'): void {
+  setMockSession(
+    'member-no-consent',
+    kind === 'kakao'
+      ? EXAMPLE_PROFILES.kakao
+      : { ...EXAMPLE_PROFILES.email, provider: 'kakao', hasPassword: true },
+  )
 }
 
 /* ── 이메일 가입 인증 (S13-2 · S13-3) ───────────────────────────────────────────────
@@ -516,9 +515,10 @@ function consumeSignupVerification(email: string): boolean {
 /* ── 가입 · 내 동네 · 건강정보 동의 (S02-3 · S02-4) ─────────────────────────────────
  *
  * 이메일 가입은 실데이터에서 `POST /api/v1/auth/signup`(백엔드 #56, `auth: false`)이다. 내 동네 저장은 `PUT /api/v1/members/me/region`
- * (#60, 아래 `saveRegion`)이다. 카카오 가입(#167) · 건강정보 동의(#59)는 아직 출처와 무관하게 목이다.
- * 가입 응답에는 토큰이 없다 — 이메일 가입은 이어서 `loginWithEmail`(#57)로 로그인한 뒤 동네를 저장한다.
- * 카카오 가입은 카카오 로그인으로 이미 로그인한 상태라 바로 동네를 저장한다.
+ * (#60, 아래 `saveRegion`)이다. 카카오 가입은 `POST /api/v1/auth/kakao/signup`(#61 · #167, `auth: false`, 가입표 쿠키)이다.
+ * 건강정보 동의(#59)는 아직 출처와 무관하게 목이다.
+ * 이메일 가입 응답에는 토큰이 없다 — 이어서 `loginWithEmail`(#57)로 로그인한 뒤 동네를 저장한다.
+ * 카카오 가입 응답은 로그인 응답(`AuthToken`)이라 바로 세션을 넣고 동네를 저장한다.
  *
  * 가입 오류 코드 → 결과: `AUTH_007`(인증 표시 없음 · 30분 지남) → `verification-expired`, `MEMBER_001`(가입된 이메일, 409) →
  * `email-taken`. 그 밖(검증 오류 · 일시 장애)은 거부한다 — 화면은 "가입하지 못했어요" 로 알린다.
@@ -554,11 +554,17 @@ export type SignupRequest =
 /**
  * - `verification-expired`: 이메일 인증 표시가 없거나 30분이 지났다(`AUTH_007`). 이메일 단계부터 다시 한다
  * - `email-taken`: 이미 가입된 이메일이다(`MEMBER_001` — 탈퇴 회원도 행이 파기될 때까지 이메일을 점유한다). 로그인으로 안내한다
+ * - `kakao-restart`(카카오 가입만): 가입표가 없거나 30분이 지났다(`AUTH_025`, 사유 `expired`) · 그사이 같은 이메일로 가입됐다
+ *   (`MEMBER_001`, 사유 없음 — 다시 카카오 로그인하면 계정 연결 확인으로 간다) · 그 밖의 업무 오류로 가입표를 잃었다(사유 없음).
+ *   카카오 로그인부터 다시 한다
  */
 export type SignupResult =
-  { status: 'ok' } | { status: 'verification-expired' } | { status: 'email-taken' }
+  | { status: 'ok' }
+  | { status: 'verification-expired' }
+  | { status: 'email-taken' }
+  | { status: 'kakao-restart'; reason: KakaoFailReason | null }
 
-const SIGNUP_FAILURES: Readonly<Record<string, Exclude<SignupResult['status'], 'ok'>>> = {
+const SIGNUP_FAILURES: Readonly<Record<string, 'verification-expired' | 'email-taken'>> = {
   AUTH_007: 'verification-expired',
   MEMBER_001: 'email-taken',
 }
@@ -569,17 +575,18 @@ function agreed(consents: readonly Consent[], type: ConsentType): boolean {
 }
 
 /**
- * 가입. 카카오 가입(`kind: 'kakao'`)은 출처와 무관하게 아직 목이다(#167).
+ * 가입. 카카오 가입(`kind: 'kakao'`)의 실데이터는 `signupWithKakao` 다(아래).
  * 이메일 가입의 실데이터 본문은 `{ email, password, nickname, termsAgreed, privacyAgreed, ageOver19Confirmed,
  * sensitiveHealthInfoAgreed }` 이고 동의 값은 `consents` 에서 만든다. 건강정보 동의는 S02-4 에서 따로 보내므로 가입 화면은
  * 넣지 않는다(false). 비밀번호는 본문으로만 보낸다.
  */
 export async function signup(request: SignupRequest, source: DataSource): Promise<SignupResult> {
   if (request.kind === 'kakao') {
-    // 카카오 가입은 카카오 로그인으로 이미 로그인한 상태다. 이메일 가입은 이어지는 loginWithEmail 이 회원으로 만든다.
+    if (source === 'api') return signupWithKakao(request.consents)
+    // 목 카카오 가입은 바로 회원이 된다(실데이터 응답이 로그인 응답인 것과 같다). 이메일 가입은 이어지는 loginWithEmail 이 회원으로 만든다.
     // 카카오가 주는 이메일 · 닉네임은 목이 몰라 예시 값을 쓴다
     setMockSession('member-no-consent', EXAMPLE_PROFILES.kakao)
-    return Promise.resolve({ status: 'ok' })
+    return { status: 'ok' }
   }
   if (source === 'api') {
     const { email, password, nickname, consents } = request
@@ -617,6 +624,44 @@ export async function signup(request: SignupRequest, source: DataSource): Promis
 }
 
 /**
+ * 카카오 가입 (실데이터). `POST /api/v1/auth/kakao/signup {termsAgreed, privacyAgreed, ageOver19Confirmed}` 를 `auth: false` 로 보낸다 —
+ * 가입표는 카카오 로그인(`SIGNUP_REQUIRED`)이 심은 HttpOnly 쿠키라 브라우저가 싣는다(`credentials: 'include'`). 이메일 · 닉네임은
+ * 서버가 가입표로 들고 있어 보내지 않는다. 응답은 로그인 응답(`AuthToken`, refresh 는 쿠키)이라 그대로 `setSession` 한다 —
+ * 이어지는 동네 저장(`saveRegion`)이 회원 세션으로 나간다. 응답 전에 화면을 떠나도 세션은 넣는다(서버에는 이미 회원 · 세션이 생겼다).
+ *
+ * 오류: `AUTH_025`(가입표 없음 · 만료 · 이미 씀) → `kakao-restart`(사유 `expired`), `MEMBER_001`(그사이 같은 이메일로 가입됨) →
+ * `kakao-restart`(사유 없음). 그 밖에 서비스가 업무 오류로 답했으면(저장소 장애 등 — 가입표를 이미 잃었다, `kakaoTicketLost`)
+ * `kakao-restart`(사유 없음). 응답을 받지 못한 실패(네트워크 · 타임아웃 · 게이트웨이 오류)와 필수 동의 검증(`AUTH_110~112` —
+ * 서버가 가입표를 지우지 않는다)만 거부한다 — 화면은 "가입하지 못했어요" 를 띄우고 다시 누르게 한다.
+ */
+async function signupWithKakao(consents: readonly Consent[]): Promise<SignupResult> {
+  let token: AuthToken
+  try {
+    token = await apiRequest<AuthToken>(KAKAO_SIGNUP_PATH, {
+      method: 'POST',
+      body: {
+        termsAgreed: agreed(consents, 'TERMS_OF_SERVICE'),
+        privacyAgreed: agreed(consents, 'PRIVACY_POLICY'),
+        ageOver19Confirmed: agreed(consents, 'AGE_OVER_19'),
+      },
+      auth: false,
+    })
+  } catch (error) {
+    switch (errorCodeOf(error)) {
+      case 'AUTH_025':
+        return { status: 'kakao-restart', reason: 'expired' }
+      case 'MEMBER_001':
+        return { status: 'kakao-restart', reason: null }
+      default:
+        if (kakaoTicketLost(error)) return { status: 'kakao-restart', reason: null }
+        throw error
+    }
+  }
+  setSession(token)
+  return { status: 'ok' }
+}
+
+/**
  * - `ok`: 저장했다
  * - `invalid`: 고를 수 없는 동네다 — 없는 코드(`REGION_001`) · 폐지된 코드(`REGION_002`) · 형식이 틀린 코드(`REGION_101` · `102`).
  *   서버는 저장하지 않았고, 화면은 다른 동네를 고르게 한다
@@ -649,7 +694,8 @@ async function putRegionWithRetry(code: string): Promise<MyRegion> {
  * 이름은 목 프로필이 내 동네를 들고 있게 받는다 — 그래서 시군구 없이 코드 · 이름만 받는다(지도 동네에는 시군구가 없다).
  *
  * 실데이터 (access 필요):
- * - 세션 저장소가 회원이 아니면 요청 없이 거부한다(401 을 받으러 보내지 않는다). 카카오 가입은 #167 전까지 목 세션만 세워 여기서 막힌다
+ * - 세션 저장소가 회원이 아니면 요청 없이 거부한다(401 을 받으러 보내지 않는다). 가입 마무리는 가입 응답(카카오) · 로그인(이메일)이
+ *   세션을 넣은 뒤에 부른다
  * - 성공하면 응답(서버가 방금 확인한 동네)을 회원 정보 저장소의 내 동네로 넣는다(`setMemberRegion`) — 다시 읽지 않는다.
  *   보낼 때의 회원과 저장소의 회원이 다르면(그사이 로그아웃 · 다른 회원) 넣지 않는다
  * - `REGION_001` · `002` · `101` · `102` → `invalid`. `REGION_003`(동시 첫 저장 경합, 409)은 한 번 다시 보낸다
@@ -666,8 +712,7 @@ export async function saveRegion(
 ): Promise<SaveRegionResult> {
   if (source === 'api') {
     const session = getSessionSnapshot()
-    // 실데이터 세션이 없으면 보내지 않고 거부한다 — 토큰 없이 보내 401(SECURITY_001)을 받으러 가지 않는다.
-    // 카카오 가입은 #167 전까지 목 세션만 세우므로 실데이터에서는 여기서 막힌다(화면은 "저장하지 못했어요")
+    // 실데이터 세션이 없으면 보내지 않고 거부한다 — 토큰 없이 보내 401(SECURITY_001)을 받으러 가지 않는다
     if (session.status !== 'member') throw new Error('saveRegion: no member session')
     const { memberId } = session.summary
     let saved: MyRegion

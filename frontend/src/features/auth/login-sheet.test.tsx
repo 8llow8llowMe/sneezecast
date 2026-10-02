@@ -3,8 +3,10 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type * as authClient from './auth-client'
-import { startKakaoLogin } from './auth-client'
+import { assignLocation } from '@/lib/location'
+
+import type * as kakaoClient from './kakao-client'
+import { type KakaoStartResult, startKakaoLogin } from './kakao-client'
 import { LoginSheet } from './login-sheet'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
@@ -12,14 +14,15 @@ vi.mock('next/navigation', () => ({
   useRouter: () => router,
 }))
 
-vi.mock('./auth-client', async (importOriginal) => {
-  const actual = await importOriginal<typeof authClient>()
+vi.mock('./kakao-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof kakaoClient>()
   return { ...actual, startKakaoLogin: vi.fn(actual.startKakaoLogin) }
 })
+vi.mock('@/lib/location', () => ({ assignLocation: vi.fn() }))
 
 /** 응답을 테스트가 정할 때까지 붙잡아 둔다 */
 function holdKakao() {
-  let resolve: (value: { redirectTo: string }) => void = () => {}
+  let resolve: (value: KakaoStartResult) => void = () => {}
   let reject: (reason: Error) => void = () => {}
   vi.mocked(startKakaoLogin).mockImplementationOnce(
     () =>
@@ -28,7 +31,11 @@ function holdKakao() {
         reject = rej
       }),
   )
-  return { resolve: (to: string) => resolve({ redirectTo: to }), reject: () => reject(new Error()) }
+  return {
+    resolve: (href: string, external = false) => resolve({ status: 'redirect', href, external }),
+    limit: () => resolve({ status: 'limited' }),
+    reject: () => reject(new Error()),
+  }
 }
 
 const kakao = () => screen.getByRole('button', { name: '카카오로 계속하기' })
@@ -37,6 +44,7 @@ describe('LoginSheet', () => {
   beforeEach(() => {
     router.push.mockClear()
     vi.mocked(startKakaoLogin).mockClear()
+    vi.mocked(assignLocation).mockClear()
   })
 
   it('보고는 회원만 할 수 있다는 이유와 두 가지 시작 방법을 보인다', () => {
@@ -77,6 +85,32 @@ describe('LoginSheet', () => {
     )
     expect((kakao() as HTMLButtonElement).disabled).toBe(false)
     expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('실데이터 인가 주소면 앱 밖으로 문서를 옮긴다', async () => {
+    const user = userEvent.setup()
+    const hold = holdKakao()
+    render(<LoginSheet open onClose={() => {}} />)
+
+    await user.click(kakao())
+    hold.resolve('https://kauth.kakao.com/oauth/authorize?state=s', true)
+    await waitFor(() =>
+      expect(assignLocation).toHaveBeenCalledWith(
+        'https://kauth.kakao.com/oauth/authorize?state=s',
+      ),
+    )
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('요청이 많으면(AUTH_028) 시트 안에 잠시 막혔다고 알린다', async () => {
+    const user = userEvent.setup()
+    const hold = holdKakao()
+    render(<LoginSheet open onClose={() => {}} />)
+
+    await user.click(kakao())
+    hold.limit()
+    expect((await screen.findByRole('alert')).textContent).toContain('요청이 많아 잠시 막혔어요')
+    expect((kakao() as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('응답 전에 시트가 닫히면 늦게 온 주소로 가지 않는다', async () => {

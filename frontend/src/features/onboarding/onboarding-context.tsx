@@ -122,6 +122,13 @@ type OnboardingState = {
   membership: Membership
   updateMembership: (patch: Partial<Membership>) => void
   /**
+   * 카카오 계정 연결 확인(`/login/kakao/link`, #167)에 보일 가린 이메일(`d***@example.com`). 카카오 콜백이 `LINK_REQUIRED` 를 받으면 넣고,
+   * 로그인 방법 선택(`/login`)에 들어오면 지운다. **메모리에만 둔다** — 주소 · 브라우저 저장소 · 로그에 남기지 않는다.
+   * 없으면(새로고침 · 바로 들어옴) 연결 확인 화면이 로그인 방법 선택으로 돌려보낸다
+   */
+  kakaoLinkEmail: string | null
+  setKakaoLinkEmail: (email: string | null) => void
+  /**
    * 앞 단계로. 앱 안에서 앞 단계 후보 중 하나를 거쳐 왔으면 기록을 되돌리고(휴대폰 뒤로 가기와 같다),
    * 주소로 바로 들어와 앞 단계 기록이 없으면 첫 후보로 기록을 쌓지 않고 바꿔 간다.
    * 후보가 여럿인 것은 같은 화면에 여러 길로 오기 때문이다 (동네 선택 ← 로그인 · 이메일 가입).
@@ -141,6 +148,7 @@ export function OnboardingProvider({
   initialAdultConfirmed = false,
   initialMembership = NO_MEMBERSHIP,
   initialPasswordReset = EMPTY_PASSWORD_RESET,
+  initialKakaoLinkEmail = null,
 }: {
   children: ReactNode
   /** 처음 고른 동네. 테스트에서 다음 단계부터 그릴 때 쓴다 — 화면은 늘 비워 시작한다 */
@@ -152,11 +160,14 @@ export function OnboardingProvider({
   initialMembership?: Membership
   /** 테스트에서 다음 단계부터 그릴 때 쓴다 */
   initialPasswordReset?: PasswordResetDraft
+  /** 테스트에서 계정 연결 확인부터 그릴 때 쓴다 */
+  initialKakaoLinkEmail?: string | null
 }) {
   const { replace, goBack: goBackInTrail } = useNavTrail()
   const [district, setDistrict] = useState<District | null>(initialDistrict)
   const [adultConfirmed, setAdultConfirmed] = useState(initialAdultConfirmed)
   const [notificationOptIn, setNotificationOptIn] = useState(false)
+  const [kakaoLinkEmail, setKakaoLinkEmail] = useState<string | null>(initialKakaoLinkEmail)
   const [membership, setMembership] = useState<Membership>(initialMembership)
   const updateMembership = useCallback(
     (patch: Partial<Membership>) => setMembership((current) => ({ ...current, ...patch })),
@@ -212,6 +223,8 @@ export function OnboardingProvider({
       setNotificationOptIn,
       membership,
       updateMembership,
+      kakaoLinkEmail,
+      setKakaoLinkEmail,
       goBack,
       replace,
     }),
@@ -227,6 +240,7 @@ export function OnboardingProvider({
       notificationOptIn,
       membership,
       updateMembership,
+      kakaoLinkEmail,
       goBack,
       replace,
     ],

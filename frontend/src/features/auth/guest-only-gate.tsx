@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 
 import {
+  KAKAO_LINK_PATH,
   LOGIN_EMAIL_PATH,
   LOGIN_PATH,
   SIGNUP_ACCOUNT_PATH,
@@ -25,7 +26,9 @@ import { useAuth, useAuthSettled } from './use-auth'
  * 내 정보 가드(`features/me/member-gate.ts`, 비회원 → 로그인)의 반대 방향이다. 회원(건강정보 동의 전 포함)이 시작 · 로그인 · 가입 화면을
  * 열면 `?next=`(허용 목록 안) 또는 홈으로 기록을 바꿔 간다. 로그인 → 홈 → 브라우저 뒤로 하면 로그인 화면이 다시 보이던 문제(점검 F3)도 이것으로 홈에 간다.
  *
- * 대상은 시작(S01) · 로그인 방법 고르기(S13-1) · 이메일 로그인(S13-5) · 이메일 가입(S13-2~4)이다. 빼는 것과 이유:
+ * 대상은 시작(S01) · 로그인 방법 고르기(S13-1) · 카카오 계정 연결 확인(`/login/kakao/link`, #167) · 이메일 로그인(S13-5) ·
+ * 이메일 가입(S13-2~4)이다. 빼는 것과 이유:
+ * - 카카오 콜백(`/login/kakao/callback`): 닿자마자 code 로 로그인해 스스로 이동한다. 이 가드도 보내면 두 이동이 겹친다
  * - 비밀번호 재설정(`/password/reset*`): 회원도 비밀번호 변경(`/me/password`)의 "비밀번호를 잊었어요" 로 들어온다.
  * - 재설정을 마친 이메일 로그인(`/login/email?reason=reset-done`): 재설정의 끝 화면이다. 회원을 홈으로 보내면 "비밀번호를 바꿨어요" 안내를
  *   잃는다. 재설정에 성공하면 서버가 그 계정의 모든 기기를 로그아웃하고, 재설정한 계정이 이 탭 계정이면 이 탭 세션도 비워 비회원으로
@@ -54,6 +57,7 @@ import { useAuth, useAuthSettled } from './use-auth'
 export const GUEST_ONLY_PATHS: readonly string[] = [
   START_PATH,
   LOGIN_PATH,
+  KAKAO_LINK_PATH,
   LOGIN_EMAIL_PATH,
   SIGNUP_EMAIL_PATH,
   SIGNUP_CODE_PATH,

@@ -26,6 +26,7 @@ vi.mock('next/navigation', () => ({
 const GUARDED = [
   '/start',
   '/login',
+  '/login/kakao/link',
   '/login/email',
   '/signup/email',
   '/signup/code',
@@ -59,6 +60,10 @@ describe('isGuestOnly', () => {
     '/browse/region',
   ])('%s 는 대상이 아니다 (회원도 거치는 화면)', (path) => {
     expect(isGuestOnly(path, new URLSearchParams())).toBe(false)
+  })
+
+  it('카카오 콜백은 대상이 아니다 — 닿자마자 스스로 이동한다', () => {
+    expect(isGuestOnly('/login/kakao/callback', new URLSearchParams('code=c&state=s'))).toBe(false)
   })
 
   it('재설정을 마친 이메일 로그인(?reason=reset-done)은 대상이 아니다', () => {

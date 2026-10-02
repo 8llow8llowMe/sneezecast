@@ -32,7 +32,6 @@ import {
   sendPasswordResetCode,
   signup,
   type SignupRequest,
-  startKakaoLogin,
   subscribeMockSession,
   verifyEmailCode,
   verifyPasswordResetCode,
@@ -103,15 +102,6 @@ describe('loginWithEmail (목)', () => {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     expect(apiRequest).not.toHaveBeenCalled()
     expect(setSession).not.toHaveBeenCalled()
-  })
-})
-
-describe('startKakaoLogin (목)', () => {
-  it('신규 회원으로 보고 카카오에서 왔다는 표시(?from=kakao)를 붙여 동네 선택으로 보낸다', async () => {
-    expect(await startKakaoLogin()).toEqual({ redirectTo: '/setup/region?from=kakao' })
-    expect(await startKakaoLogin({ switchAccount: true })).toEqual({
-      redirectTo: '/setup/region?from=kakao',
-    })
   })
 })
 
@@ -430,8 +420,7 @@ describe('목 회원 상태', () => {
     expect(getMockSession()).toBe('member')
   })
 
-  it('카카오 가입이 되면 바로 미동의 회원이다 (카카오 로그인 시작만으로는 바뀌지 않는다)', async () => {
-    await startKakaoLogin()
+  it('카카오 가입이 되면 바로 미동의 회원이다', async () => {
     expect(getMockSession()).toBe('guest')
     await signup({ kind: 'kakao', consents }, 'mock')
     expect(getMockSession()).toBe('member-no-consent')
@@ -929,10 +918,87 @@ describe('signup (API)', () => {
     vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('no-envelope', 502))
     await expect(signup(request, 'api')).rejects.toThrow(ApiError)
   })
+})
 
-  it('카카오 가입은 출처와 무관하게 아직 목이다(#167)', async () => {
-    expect(await signup({ kind: 'kakao', consents: [] }, 'api')).toEqual({ status: 'ok' })
+describe('signup 카카오 (API, #167)', () => {
+  const consents = [
+    consentFor('TERMS_OF_SERVICE'),
+    consentFor('PRIVACY_POLICY'),
+    consentFor('AGE_OVER_19'),
+  ]
+
+  beforeEach(() => resetMockSession())
+
+  it('인증 없이 동의 값만 보내고(이메일 · 닉네임은 가입표), 응답 토큰을 그대로 세션 저장소에 넣는다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(TOKEN)
+    expect(await signup({ kind: 'kakao', consents }, 'api')).toEqual({ status: 'ok' })
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/auth/kakao/signup', {
+      method: 'POST',
+      body: { termsAgreed: true, privacyAgreed: true, ageOver19Confirmed: true },
+      auth: false,
+    })
+    expect(setSession).toHaveBeenCalledWith(TOKEN)
+    // 목 세션은 건드리지 않는다
+    expect(getMockSession()).toBe('guest')
+  })
+
+  it('동의 목록에 없는 항목은 false 로 보낸다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(TOKEN)
+    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] }, 'api')
+    expect(vi.mocked(apiRequest).mock.calls[0]?.[1]?.body).toEqual({
+      termsAgreed: true,
+      privacyAgreed: false,
+      ageOver19Confirmed: false,
+    })
+  })
+
+  it.each([
+    ['AUTH_025', 400, 'expired'],
+    ['MEMBER_001', 409, null],
+  ] as const)(
+    '%s 면 카카오 로그인부터 다시(사유 %s)이고 세션을 만들지 않는다',
+    async (code, status, reason) => {
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, status))
+      expect(await signup({ kind: 'kakao', consents }, 'api')).toEqual({
+        status: 'kakao-restart',
+        reason,
+      })
+      expect(setSession).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    ['AUTH_017', 503],
+    ['AUTH_006', 503],
+  ] as const)(
+    '서비스가 그 밖의 업무 오류(%s)로 답하면 가입표를 이미 잃었으므로 사유 없이 다시 시작이다',
+    async (code, status) => {
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, status))
+      expect(await signup({ kind: 'kakao', consents }, 'api')).toEqual({
+        status: 'kakao-restart',
+        reason: null,
+      })
+      expect(setSession).not.toHaveBeenCalled()
+    },
+  )
+
+  it('필수 동의 검증 오류(가입표를 건드리지 않음) · 응답을 받지 못한 실패는 거부한다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('AUTH_111', 400))
+    await expect(signup({ kind: 'kakao', consents }, 'api')).rejects.toThrow(ApiError)
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('network', 0))
+    await expect(signup({ kind: 'kakao', consents }, 'api')).rejects.toThrow(ApiError)
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('timeout', 0))
+    await expect(signup({ kind: 'kakao', consents }, 'api')).rejects.toThrow(ApiError)
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('GATEWAY_003', 503))
+    await expect(signup({ kind: 'kakao', consents }, 'api')).rejects.toThrow(ApiError)
+    expect(setSession).not.toHaveBeenCalled()
+  })
+
+  it('목은 API 를 부르지 않고 카카오 예시 프로필의 미동의 회원이 된다', async () => {
+    expect(await signup({ kind: 'kakao', consents }, 'mock')).toEqual({ status: 'ok' })
     expect(apiRequest).not.toHaveBeenCalled()
+    expect(getMockSession()).toBe('member-no-consent')
+    expect(getMockProfile()).toEqual(EXAMPLE_PROFILES.kakao)
   })
 })
 
