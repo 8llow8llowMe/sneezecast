@@ -72,22 +72,31 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
   - 로그인 성공 → 응답(`AuthToken`)을 그대로 `setSession`. 가입 응답에는 토큰이 없어 S02-3 이 가입 → 로그인 → 동네 저장 순서로 잇고 비밀번호는 로그인 뒤 지운다. 가입 본문의 동의 값은 화면의 동의 목록(`legal.ts` `Consent`)에서 만들고 문서 버전은 보내지 않는다(서버의 `legal.*-version`). `sensitiveHealthInfoAgreed` 는 S02-4 에서 따로 받으므로 false 다.
   - **로그아웃 실패 정책**: 성공 · 토큰이 이미 무효(`login-required` · `reissue` · `relogin` — API 계층의 재발급이 재로그인으로 끝나 세션을 이미 비운 경우 포함)면 `clearSession('logout')`. 일시 장애 · 분류 밖 오류면 거부하고 세션을 그대로 둔다 — 서버의 refresh 세션이 살아 있는데 화면만 로그아웃된 것처럼 보이지 않게 한다. 화면(내 정보 · 재동의)은 로그아웃 실패 안내를 띄운다.
   - 세션이 사라진 갈래는 세션 저장소가 아직 회원일 때만 비운다(재발급이 재로그인으로 끝나 `clearSession('expired')` 로 이미 비웠으면 로그아웃을 다시 방송하지 않는다). 성공 · 세션 사라짐 모두 만료 진행 표시(`clearSessionExpiring`)를 꺼 화면의 홈 이동이 이기고 만료 토스트가 남지 않게 한다.
-  - 카카오 가입(`signup({ kind: 'kakao' })`) · 비밀번호 재설정 · 기기 · 동의(건강정보 · 재동의) · 탈퇴 · 내 동네(`saveRegion`) · 프로필 함수는 아직 출처와 무관하게 목이다.
+  - 카카오 가입(`signup({ kind: 'kakao' })`) · 비밀번호 재설정 · 기기 · 동의(건강정보 · 재동의) · 탈퇴 함수는 아직 출처와 무관하게 목이다. 내 정보 · 내 동네는 아래 "회원" 의 "프론트 연동 (#164)" 이다.
 - **BE 미정**: 카카오 로그인(`/kakao/*`, 백엔드 #61), 건강정보 동의 · 철회 · 약관 재동의 · 탈퇴(#59). 프론트 `startKakaoLogin` · `agreeHealthConsent` · `withdrawHealthConsent` · `agreeTermsReconsent` · `withdrawMembership` 은 목이다.
 
 ## 회원 `/api/v1/members` (확정)
 
 모두 인증 필요(`Authorization: Bearer`).
 
-| 요청                      | 바디 → `dataBody`                                              | 주요 오류                                                                                          | 프론트 함수      |
-| ------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------- |
-| `GET /me`                 | → `MyInfo`                                                     | `MEMBER_004` 회원 없음(404, 로그아웃 상태로), `002` · `003`(403)                                   | (세션 훅)        |
-| `PATCH /me`               | `{ nickname }` → `MyInfo`                                      | 검증 `MEMBER_101` · `102`                                                                          | (연동 이슈)      |
-| `POST /me/password`       | `{ currentPassword, newPassword }` → null (다른 기기 로그아웃) | `MEMBER_005` 불일치(400) · `006` 잠금(429) · `007` 비밀번호 없음(409) · `009`(503), 검증 `103~107` | `changePassword` |
-| `POST /me/password/setup` | `{ newPassword }` → null (다른 기기 로그아웃)                  | `MEMBER_008` 이미 있음(409) · `009`(503), 검증 `105~107`                                           | `setupPassword`  |
+| 요청                                                           | 바디 → `dataBody`                                                 | 주요 오류                                                                                                                     | 프론트 함수                       |
+| -------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `GET /me`                                                      | → `MyInfo`                                                        | `MEMBER_004` 회원 없음(404, 로그아웃 상태로), `002` · `003`(403)                                                              | `fetchMyInfo`(회원 정보 저장소)   |
+| `PATCH /me`                                                    | `{ nickname }` → `MyInfo`                                         | 검증 `MEMBER_101` · `102`                                                                                                     | (연동 이슈)                       |
+| `POST /me/password`                                            | `{ currentPassword, newPassword }` → null (다른 기기 로그아웃)    | `MEMBER_005` 불일치(400) · `006` 잠금(429) · `007` 비밀번호 없음(409) · `009`(503), 검증 `103~107`                            | `changePassword`                  |
+| `POST /me/password/setup` (#61 에서 제거 — 프론트 정리는 #166) | `{ newPassword }` → null (다른 기기 로그아웃)                     | `MEMBER_008` 이미 있음(409) · `009`(503), 검증 `105~107`                                                                      | `setupPassword`                   |
+| `GET /me/region`                                               | → `MemberRegion` \| null (아직 고르지 않음)                       | `REGION_004` 행정동 확인 장애(503)                                                                                            | `fetchMyRegion`(회원 정보 저장소) |
+| `PUT /me/region`                                               | `{ code }`(숫자 8자리) → `MemberRegion` (`abolished` 는 늘 false) | `REGION_001` 없는 코드 · `002` 폐지(400), `003` 동시 첫 저장 경합(409, 다시 보내면 갱신), `004`(503), 검증 `101` · `102`(400) | `saveRegion`                      |
 
-- `MyInfo` = `{ memberId, email, nickname, provider(EMAIL | KAKAO), hasPassword, role, pendingConsents, reportWritable }`. `hasPassword` 가 false 면 비밀번호 설정, true 면 비밀번호 변경을 보인다.
-- **BE 미정**: 내 동네(`saveRegion`, 백엔드 #60) · 프로필 이미지(#112) · 동네 폐지 표시. `GET /me` 는 아직 내 동네를 싣지 않는다.
+- `MyInfo` = `{ memberId, email, nickname, provider(EMAIL | KAKAO), hasPassword, role, pendingConsents, reportWritable }`. `provider` 는 카카오를 연결한 이메일 계정도 `KAKAO` 다(DB 값이 없으면 `EMAIL`). `hasPassword` 가 true 면 비밀번호 변경을 보이고, false 면(카카오로만 로그인) **비밀번호 메뉴를 숨긴다** — 비밀번호 최초 설정 API · 화면은 백엔드 #61 에서 없앴다(backend/docs/modules.md, 프론트 정리는 #166). 재동의 조건 `pendingConsents` 는 로그인 응답과 같은 계산이다.
+- `MemberRegion` = `{ code, name, sigungu, abolished }`. 이름 · 폐지 여부는 조회할 때마다 행정동 서비스(surveillance)에서 다시 읽는다 — 코드가 없으면 `name` · `sigungu` 가 null 이고 `abolished: true` 다. 폐지돼도 서버는 저장 값을 바꾸지 않는다(다시 고르게 한다). 내 동네는 `/me` 에 싣지 않는다 — `/me` 가 행정동 서비스 장애에 묶이지 않게 따로 읽는다.
+- **프론트 연동 (#164)**:
+  - **회원 정보 저장소**(`features/auth/member-info.ts`, 요청은 `member-client.ts`): 세션 저장소가 회원이 되면(로그인 · 새로고침 복원 · 다른 탭 로그인 — `memberId` 가 바뀔 때만) `GET /me` 와 `GET /me/region` 을 한 번씩 읽어 메모리에 두고, 비회원이 되면 바로 지운다(늦은 응답은 버린다). 같은 회원의 재발급에는 다시 읽지 않는다. 두 요청은 따로 `loading` · `ready` · `failed` 이고 다시 시도(`retryMemberInfo`)는 실패한 쪽만 다시 읽는다. 루트 레이아웃의 `SessionBootstrap` 이 켠다.
+  - `GET /me` 가 `MEMBER_004` 면 세션을 비운다(`clearSession('withdrawn')` — 만료 알림 없이 비회원, 다른 탭에도 알림). 다시 로그인할 계정이 없어 "다시 로그인해 주세요"(`expired`)로 보내지 않는다. 탈퇴 · 정지 `MEMBER_002` · `003`(403)도 세션을 끝낸다 — 세션 저장소의 재발급이 같은 코드를 세션 종료로 보는 것(`endsSession`)과 같은 판단이고, 사유도 재발급과 같은 `clearSession('expired')`(이 탭에 세션이 있었으면 만료 안내로 로그인 화면)다.
+  - 프로필 훅(`useMockProfile`, 이름 정리는 후속)은 실데이터면 이 저장소의 `MyInfo`(provider `EMAIL`/`KAKAO` → `email`/`kakao`)를 옮긴다. 읽기 전 · 실패면 null 이고 상태는 `useMockProfileStatus()` 다 — **예시 프로필로 채우지 않는다.** 내 동네 훅(`useMemberRegion`)은 반환 모양(`{ code, name } | null`)을 그대로 두고 저장소의 내 동네를 준다(미설정 · 읽기 전 · 실패 · 이름 모름이면 null, 상태는 `useMemberRegionStatus()`).
+  - `saveRegion(district, source)`: 실데이터는 코드만 `PUT` 한다. `REGION_001` · `002` · `101` · `102` → `{ status: 'invalid' }`(다른 동네를 고르게 함), `REGION_003` → 한 번 다시 보냄, `REGION_004` · 일시 장애 · 두 번째 경합 → 거부("바꾸지 못했어요 · 잠시 뒤 다시"). 성공하면 응답을 저장소의 내 동네로 넣는다(다시 읽지 않음 — 먼저 나간 조회의 늦은 응답은 버림). 부르는 화면(가입 마무리 · 내 동네 바꾸기 · 다시 고르기 · 지도 `내 동네로 설정`)이 `useDataSource()` 로 출처를 넘긴다.
+  - 회원 조건(`useMemberRequirements`): 실데이터는 세션의 `pendingConsents` → 약관 재동의, 내 동네 `abolished` → 동네 다시 고르기(재동의 다음). 내 동네가 미설정(null)이면 다시 고르게 하지 않는다. 내 동네를 읽는 중이면 동네 조건을 판단하지 않고(`settled: false` — 다시 고르기 화면은 이때 내보내지 않음), 읽지 못했으면 조건 없이 정해진 것으로 본다.
+- **BE 미정**: 프로필 이미지(#112).
 
 ## 행정동 `/api/v1/districts` (확정)
 
@@ -103,7 +112,7 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
   - `searchDistricts(query, source, signal?)`: 앞뒤 공백을 뺀 검색어로 부른다. 빈 검색어 · 20자 초과는 요청 없이 빈 배열이다(`DISTRICT_101` · `102` 를 받지 않는다). 검색 화면(`useDistrictSearch`)은 검색어가 바뀌면 앞 요청을 취소하고, 실패하면 다시 검색하라고 안내한다. 검색 입력칸에는 아직 `maxLength` 가 없다.
   - `findDistrict(code, source)`: 숫자 8자리가 아니면 요청 없이 null(`DISTRICT_103` 을 받지 않는다), 404(`DISTRICT_001`)면 null, 그 밖의 실패는 거부한다. 돌려주는 값은 `{ code, name, sigungu, active }` 다(목은 늘 `active: true`).
   - 둘러보기 동네(`?region=`, `districtFromParam`)는 폐지 코드 · API 실패를 모르는 동네(null)로 보고 원래 동네로 그린다. 동네 안내(`getRegionNotice`)는 폐지 코드면 404, 동네 확인이 실패하면 페이지 오류 경계로 보낸다.
-  - 내 동네가 폐지됐을 때 다시 고르게 하는 흐름(Setup-1-reselect)은 내 동네 API(#60) 연동 때 `active=false` 로 잇는다.
+  - 내 동네가 폐지됐을 때 다시 고르게 하는 흐름(Setup-1-reselect)은 이 API 가 아니라 내 동네 조회(`GET /api/v1/members/me/region` 의 `abolished`, 위 "회원")로 판정한다(#164). 다시 고른 코드가 폐지 · 없는 코드면 저장이 `REGION_002` · `001` 로 거절된다.
 - **BE 미정**: 폐지된 동의 후속 후보(`listSuccessorDistricts`) — 출처와 무관하게 목이다.
 
 ## BE 미정 — 프론트 초안
