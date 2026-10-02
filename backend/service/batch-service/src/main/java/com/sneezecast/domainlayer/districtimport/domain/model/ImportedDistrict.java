@@ -33,7 +33,7 @@ public record ImportedDistrict(String code, String name, String sidoCode, String
     }
 
     /**
-     * 행 PK. SGIS 코드를 숫자로 바꾼 값이다 — batch 는 Snowflake 를 쓰지 않고, 같은 코드는 언제 적재해도 같은 id 가 되어야
+     * 행 PK. SGIS 코드를 숫자로 바꾼 값이다 — district 는 Snowflake 를 쓰지 않고, 같은 코드는 언제 적재해도 같은 id 가 되어야
      * {@code ON DUPLICATE KEY UPDATE} 가 PK · {@code uk_district_code} 어느 쪽으로 걸려도 같은 행을 가리킨다.
      */
     public long id() {

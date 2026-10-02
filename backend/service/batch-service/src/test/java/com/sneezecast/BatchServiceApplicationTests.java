@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sneezecast.persistence.util.SnowflakeIdGenerator;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.util.ClassUtils;
 import org.springframework.web.context.WebApplicationContext;
 
 /**
@@ -128,6 +130,18 @@ class BatchServiceApplicationTests {
         assertThat(context.getBean(PlatformTransactionManager.class)).isInstanceOf(DataSourceTransactionManager.class);
         assertThat(context.getBean("transactionManager")).isInstanceOf(DataSourceTransactionManager.class);
         assertThat(context.getBean("taskletTransactionManager")).isInstanceOf(ResourcelessTransactionManager.class);
+    }
+
+    @Test
+    @DisplayName("persistence-core 에서 Snowflake 생성기만 올라오고 JPA 는 없다 — EntityManagerFactory 빈도, JPA 클래스도 없다")
+    void snowflakeWithoutJpa() {
+        assertThat(context.getBeansOfType(SnowflakeIdGenerator.class)).hasSize(1);
+        assertThat(context.containsBean("entityManagerFactory")).isFalse();
+        // persistence-core 에서 starter-data-jpa 를 뺐으므로 클래스 자체가 클래스패스에 없어야 한다.
+        assertThat(ClassUtils.isPresent("jakarta.persistence.EntityManagerFactory", getClass().getClassLoader())).isFalse();
+        // 상주 JVM(spring.batch.job.enabled=false)이라 worker-id 는 기본 1 그대로다 — 비트 배치 [.. worker 5비트][sequence 12비트].
+        long id = context.getBean(SnowflakeIdGenerator.class).generateId();
+        assertThat((id >> 12) & 0x1F).isEqualTo(1L);
     }
 
     @Test
