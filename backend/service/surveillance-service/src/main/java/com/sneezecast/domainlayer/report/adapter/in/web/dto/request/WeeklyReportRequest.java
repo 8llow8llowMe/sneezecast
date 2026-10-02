@@ -3,7 +3,6 @@ package com.sneezecast.domainlayer.report.adapter.in.web.dto.request;
 import com.sneezecast.domainlayer.report.application.exception.ReportValidationMessage;
 import com.sneezecast.domainlayer.report.domain.enums.SymptomGroup;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import java.util.List;
@@ -18,8 +17,9 @@ import org.hibernate.validator.constraints.UniqueElements;
  */
 @Builder
 public record WeeklyReportRequest(
-    @Schema(description = "[필수] 보고 행정동 코드 (SGIS 숫자 8자리). 보고 주는 서버가 정한다", example = "11230510", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = ReportValidationMessage.DISTRICT_CODE_REQUIRED)
+    @Schema(description = "[필수] 보고 행정동 코드 (SGIS 숫자 8자리). 보고 주는 서버가 정한다. 없으면(null) REPORT_101 · 빈 값 · 형식 오류는 REPORT_102",
+        example = "11230510", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotNull(message = ReportValidationMessage.DISTRICT_CODE_REQUIRED)
     @Pattern(regexp = ReportValidationMessage.DISTRICT_CODE_REGEXP, message = ReportValidationMessage.DISTRICT_CODE_FORMAT_INVALID)
     String districtCode,
 

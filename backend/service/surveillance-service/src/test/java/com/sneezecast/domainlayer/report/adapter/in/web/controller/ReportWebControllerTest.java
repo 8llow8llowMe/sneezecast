@@ -113,7 +113,9 @@ class ReportWebControllerTest {
     static Stream<Arguments> invalidBodies() {
         return Stream.of(
             Arguments.of("districtCode 없음", "{\"symptomGroups\":[]}", "REPORT_101", "districtCode"),
-            Arguments.of("districtCode 빈 문자열", "{\"districtCode\":\"\",\"symptomGroups\":[]}", "REPORT_101", "districtCode"),
+            // 빈 값 · 공백은 필수가 아니라 형식 오류 하나로만 나온다 (필수는 @NotNull 로만 본다).
+            Arguments.of("districtCode 빈 문자열", "{\"districtCode\":\"\",\"symptomGroups\":[]}", "REPORT_102", "districtCode"),
+            Arguments.of("districtCode 공백", "{\"districtCode\":\"   \",\"symptomGroups\":[]}", "REPORT_102", "districtCode"),
             Arguments.of("행안부 10자리 코드", "{\"districtCode\":\"1123051000\",\"symptomGroups\":[]}", "REPORT_102", "districtCode"),
             Arguments.of("전각 숫자", "{\"districtCode\":\"１１２３０５１０\",\"symptomGroups\":[]}", "REPORT_102", "districtCode"),
             Arguments.of("symptomGroups 없음", "{\"districtCode\":\"11230510\"}", "REPORT_103", "symptomGroups"),
@@ -129,12 +131,13 @@ class ReportWebControllerTest {
 
     @ParameterizedTest(name = "{0} → {2}")
     @MethodSource("invalidBodies")
-    @DisplayName("잘못된 본문은 필드별 코드 400 봉투이고 유스케이스를 부르지 않는다 — null · 중복 원소를 조용히 접지 않는다")
+    @DisplayName("잘못된 본문은 필드별 코드 하나의 400 봉투이고 유스케이스를 부르지 않는다 — null · 중복 원소를 조용히 접지 않는다")
     void invalidBodyIsRejected(String description, String body, String code, String field) throws Exception {
         mockMvc.perform(put(PATH).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.dataHeader.success").value(false))
             .andExpect(jsonPath("$.dataHeader.resultCode").value(code))
+            .andExpect(jsonPath("$.dataHeader.fieldErrors.length()").value(1))
             .andExpect(jsonPath("$.dataHeader.fieldErrors[0].field").value(field))
             .andExpect(jsonPath("$.dataBody").doesNotExist());
         verifyNoInteractions(reportWebUseCase);
