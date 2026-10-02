@@ -60,7 +60,7 @@ function useSubmittedReport(): SubmittedReport | null {
  * | 단계 | 주소 | 내용 |
  * | --- | --- | --- |
  * | 시작 | `?report=start` | 증상 없었어요(바로 보내고 되돌리기 알림) · 증상이 있었어요 |
- * | 증상 고르기 1/2 | `?report=symptom` | 여러 개 고르기, "그 외 증상만" 은 단독 |
+ * | 증상 고르기 1/2 | `?report=symptom` | 여러 개 고르기 |
  * | 확인 2/2 | `?report=confirm` | 보낼 내용 · 개인정보 안내 · 보내기 |
  * | 완료 | `?report=done` | 모바일 전체 화면 · 대화상자. 홈 화면 추가 안내(홈 화면 앱이어야 알림을 받는 기기만) · 변화 보기 · 수정하기 · 함께 채우기 |
  *
@@ -207,7 +207,6 @@ export function ReportFlow({ week, regionCode, onNotReady }: ReportFlowProps) {
             <ChoiceButton
               key={option.key}
               label={option.label}
-              hint={option.hint}
               size="md"
               selected={selected.includes(option.key)}
               onClick={() => setSelected((now) => toggleSymptom(now, option.key))}

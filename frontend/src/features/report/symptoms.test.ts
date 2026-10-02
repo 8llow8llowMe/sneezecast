@@ -15,12 +15,10 @@ describe('toggleSymptom', () => {
     ])
   })
 
-  it('"그 외 증상만" 을 고르면 다른 것을 모두 뺀다', () => {
-    expect(toggleSymptom(['respiratory', 'gastrointestinal'], 'other')).toEqual(['other'])
-  })
-
-  it('"그 외 증상만" 을 고른 뒤 다른 것을 고르면 "그 외" 를 뺀다', () => {
-    expect(toggleSymptom(['other'], 'gastrointestinal')).toEqual(['gastrointestinal'])
+  it('하나를 빼도 나머지는 남는다', () => {
+    expect(toggleSymptom(['respiratory', 'gastrointestinal'], 'respiratory')).toEqual([
+      'gastrointestinal',
+    ])
   })
 })
 
@@ -33,8 +31,5 @@ describe('summarizeAnswer', () => {
     expect(
       summarizeAnswer({ kind: 'symptom', symptoms: ['respiratory', 'gastrointestinal'] }),
     ).toBe('증상 있음 · 발열·기침·인후통, 구토·설사')
-    expect(summarizeAnswer({ kind: 'symptom', symptoms: ['other'] })).toBe(
-      '증상 있음 · 그 외 증상만',
-    )
   })
 })
