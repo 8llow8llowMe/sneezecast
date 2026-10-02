@@ -13,7 +13,7 @@ import { ApiError, UNAVAILABLE_CODE } from './api-error'
  *   봉투 없는 응답 · 네트워크 · 타임아웃 `UNAVAILABLE`)
  * - `other`: 도메인 오류(로그인 실패 · 검증 · 탈퇴 회원 …). 화면이 `code` 로 직접 다룬다
  *
- * 401 재시도 · 재발급 · `notifySessionExpired()` 연결은 다음 연동 이슈에서 이 분류를 써서 만든다.
+ * 401 재시도는 `client.ts`, 재발급 · `notifySessionExpired()` 연결은 세션 저장소(갈아 끼우기를 끼우는 쪽)가 이 분류로 한다.
  */
 export type ApiErrorKind =
   | 'reissue'

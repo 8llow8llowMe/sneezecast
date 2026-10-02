@@ -1,8 +1,9 @@
 import { clientEnv } from '@/lib/env.client'
 
-import { resolveAccessToken } from './access-token'
+import { refreshRejectedAccessToken, resolveAccessToken } from './access-token'
 import { ApiError, unavailableError } from './api-error'
 import { readEnvelope } from './envelope'
+import { classifyErrorCode } from './error-kind'
 
 /**
  * 백엔드 API 를 부르는 얇은 `fetch` 래퍼. 화면 코드는 `fetch` 를 직접 부르지 않고(ESLint 가 막는다) 도메인 클라이언트
@@ -15,6 +16,10 @@ import { readEnvelope } from './envelope'
  *   `GATEWAY_004`(504) 봉투를 먼저 받는다
  * - 성공 봉투면 `dataBody` 를, 실패 봉투면 `ApiError`(서버 코드 · 문구 · 필드 오류)를, 봉투가 없거나 응답을 못 받으면
  *   `ApiError`(`UNAVAILABLE`)를 던진다. 호출한 쪽이 `signal` 로 취소하면 그 사유를 그대로 던진다
+ * - 401 처리: 토큰을 실어 보냈는데 `reissue` 갈래(`SECURITY_002/003/004/005/007`)면 갈아 끼우기(`refreshRejectedAccessToken`,
+ *   세션 저장소)로 새 토큰을 받아 **같은 요청을 한 번만** 다시 보낸다. 다시 보낸 요청의 오류는 그대로 던진다(더 재발급하지 않는다).
+ *   토큰을 싣지 않은 요청 · `SECURITY_001` · 403 · `auth: false` 는 다시 보내지 않는다 — 재발급이 재발급을 부르는 고리가 없다.
+ *   재발급이 재로그인(`AUTH_014/015`)으로 끝나면 세션 저장소가 세션을 비우고 `notifySessionExpired()` 를 부른다
  *
  * 요청 바디 · 토큰 · 응답을 로그로 남기지 않는다. 비밀번호 · 토큰 · 인증 코드는 `query` 가 아니라 `body` 로 보낸다.
  *
@@ -77,14 +82,42 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   if (method === 'GET' && body !== undefined) {
     throw new TypeError('GET 요청에는 바디를 줄 수 없다')
   }
-  const payload = body === undefined ? undefined : JSON.stringify(body)
+  const request: PreparedRequest = {
+    url,
+    method,
+    payload: body === undefined ? undefined : JSON.stringify(body),
+    signal,
+  }
 
+  const token = auth ? await resolveAccessToken() : null
+  try {
+    return await send<T>(request, token)
+  } catch (error) {
+    if (!token || !(error instanceof ApiError) || classifyErrorCode(error.code) !== 'reissue') {
+      throw error
+    }
+    const refreshed = await refreshRejectedAccessToken(token)
+    if (!refreshed) throw error
+    // 다시 보내는 요청도 send 가 취소를 먼저 본다 — 재발급을 기다리는 동안 취소했으면 그 사유를 던진다
+    return send<T>(request, refreshed)
+  }
+}
+
+type PreparedRequest = {
+  url: string
+  method: ApiMethod
+  payload: string | undefined
+  signal: AbortSignal | undefined
+}
+
+/** 한 번 보내고 봉투를 푼다. 다시 보낼 때도 주소 · 메서드 · 바디는 같고 토큰만 바뀐다 */
+async function send<T>(
+  { url, method, payload, signal }: PreparedRequest,
+  token: string | null,
+): Promise<T> {
   const headers = new Headers({ Accept: 'application/json' })
   if (payload !== undefined) headers.set('Content-Type', 'application/json')
-  if (auth) {
-    const token = await resolveAccessToken()
-    if (token) headers.set('Authorization', `Bearer ${token}`)
-  }
+  if (token) headers.set('Authorization', `Bearer ${token}`)
 
   signal?.throwIfAborted()
 
