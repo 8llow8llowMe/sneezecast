@@ -31,6 +31,8 @@ x-api-gateway-environment: &api_gateway_environment
   # 업스트림 대기 상한. 기본값은 application-*.yml 과 같다.
   GATEWAY_CONNECT_TIMEOUT_MS: ${GATEWAY_CONNECT_TIMEOUT_MS:-2000}
   GATEWAY_RESPONSE_TIMEOUT: ${GATEWAY_RESPONSE_TIMEOUT:-10s}
+  # X-Real-IP · X-Forwarded-* 를 믿을 앞단 프록시. 콤마 구분 IP 또는 CIDR (dev 는 nginx 192.168.0.12).
+  GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES}
   # auth-service · surveillance-service 와 같은 값이다 (공통 경로의 한 항목). HS512 라 UTF-8 64바이트 이상.
   JWT_ACCESS_KEY: ${JWT_ACCESS_KEY}
   # false = fail-closed. 블랙리스트 조회가 실패하면 503 으로 막는다.
