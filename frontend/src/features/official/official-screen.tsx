@@ -13,8 +13,8 @@ import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { navHref } from '@/lib/nav'
+import { useNavTrail } from '@/lib/use-nav-trail'
 
-import { cameInApp, documentEntryPath } from './back'
 import type { OfficialReport, PublishedOfficial } from './types'
 
 /** 공식 정보(S08) 주소 (docs/design/SCREENS.md) */
@@ -35,7 +35,7 @@ const TITLE = '질병관리청 발표'
  * - 출처(`공식` 배지 · 제목 "질병관리청 발표") · 집계 단위(전국) · 기준 주 · 발표일을 본문 맨 위 줄에 밝힌다.
  *   기준 주는 모바일이 주차("47주"), 태블릿 · 데스크톱이 기간("11월 17일~23일")이다(시안대로).
  * - 받은 발표가 없으면(`empty`) 단계 · 요약 · 원문 보기 대신 "아직 받은 발표가 없어요" 를 보인다(시안 없음).
- * - 뒤로: 앱 안에서 거쳐 왔으면 기록을 되돌리고, 주소로 바로 들어왔으면 홈으로 기록을 바꿔 간다(`back.ts`).
+ * - 뒤로: 앱 안에서 거쳐 왔으면(홈 · 동네 안내 등 어느 화면이든) 기록을 되돌리고, 주소로 바로 들어왔으면 홈으로 기록을 바꿔 간다(`useNavTrail`).
  * - 머리줄 보고 버튼은 내 정보와 같이 회원 상태로 갈 곳을 고른다(`reportHrefFor`). 동네 · 알림은 "준비하고 있어요" 알림이다.
  */
 export function OfficialScreen({
@@ -50,6 +50,7 @@ export function OfficialScreen({
   regionCode?: string | null
 }) {
   const router = useRouter()
+  const navTrail = useNavTrail()
   const auth = useMockAuth()
   const { toast, show, dismiss } = useToast()
   const navSearch = regionSearch(regionCode)
@@ -57,10 +58,7 @@ export function OfficialScreen({
 
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
   const openReport = () => router.push(reportHrefFor(auth, regionCode))
-  const goBack = () => {
-    if (cameInApp(documentEntryPath(), OFFICIAL_PATH)) router.back()
-    else router.replace(navHref(HOME_PATH, navSearch))
-  }
+  const goBack = () => navTrail.goBack(navHref(HOME_PATH, navSearch))
 
   return (
     <div className="flex min-h-dvh flex-col">

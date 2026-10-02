@@ -5,18 +5,20 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { NavTrailProvider } from '@/lib/use-nav-trail'
+
 import { NOTICE_MOCKS, type NoticeMockKey } from './mock'
-import { clearNoticeEntry, enteredNoticeInApp, markNoticeEntry } from './notice-entry'
 import { AI_DRAFT_DISCLOSURE, NoticeScreen } from './notice-screen'
 import type { RegionNotice } from './types'
 
 // 테스트에는 Next 라우터가 없다. 주소 · 경로는 이 값으로 흉내 낸다
 let search = ''
 const PATH = '/notice/11680640/2025-W47'
+const location = vi.hoisted(() => ({ pathname: '/notice/11680640/2025-W47' }))
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(search),
-  usePathname: () => PATH,
+  usePathname: () => location.pathname,
   useRouter: () => router,
 }))
 
@@ -33,7 +35,7 @@ function data(key: NoticeMockKey, overrides: Partial<RegionNotice> = {}): Region
 
 beforeEach(() => {
   search = ''
-  clearNoticeEntry()
+  location.pathname = PATH
   vi.clearAllMocks()
 })
 
@@ -184,9 +186,31 @@ describe('NoticeScreen — 안내 없음 (Guide-none)', () => {
 })
 
 describe('NoticeScreen — 이동', () => {
-  it('앱 안 링크로 들어왔으면 뒤로가 기록을 되돌린다', async () => {
-    markNoticeEntry(PATH)
-    render(<NoticeScreen data={data('published')} />)
+  /**
+   * 루트의 앱 안 이동 기록(`NavTrailProvider`) 안에서 주소를 차례로 지나며 그린다. 안내 경로(`PATH`)에서는 안내를,
+   * 다른 경로에서는 빈 화면을 그린다. 첫 주소가 이 문서를 처음 연 주소다
+   */
+  function visit(paths: readonly string[], { strict = false } = {}) {
+    // 같은 요소 객체를 다시 넘기면 React 가 다시 그리지 않아 매번 새로 만든다
+    const tree = () => {
+      const ui = (
+        <NavTrailProvider>
+          {location.pathname === PATH ? <NoticeScreen data={data('published')} /> : <div />}
+        </NavTrailProvider>
+      )
+      return strict ? <StrictMode>{ui}</StrictMode> : ui
+    }
+    const [first = PATH, ...rest] = paths
+    location.pathname = first
+    const { rerender } = render(tree())
+    for (const path of rest) {
+      location.pathname = path
+      rerender(tree())
+    }
+  }
+
+  it('앱 안 링크(홈의 안내 전체 보기)로 들어왔으면 뒤로가 기록을 되돌린다', async () => {
+    visit(['/', PATH])
 
     await userEvent.click(screen.getAllByRole('button', { name: '뒤로' })[0]!)
     expect(router.back).toHaveBeenCalledOnce()
@@ -194,35 +218,24 @@ describe('NoticeScreen — 이동', () => {
   })
 
   it('StrictMode 이중 렌더 · 이중 effect 에서도 앱 안 진입을 잃지 않는다', async () => {
-    markNoticeEntry(PATH)
-    render(
-      <StrictMode>
-        <NoticeScreen data={data('published')} />
-      </StrictMode>,
-    )
+    visit(['/', PATH], { strict: true })
 
     await userEvent.click(screen.getAllByRole('button', { name: '뒤로' })[0]!)
     expect(router.back).toHaveBeenCalledOnce()
-    expect(enteredNoticeInApp(PATH)).toBe(false)
+    expect(router.replace).not.toHaveBeenCalled()
   })
 
-  it('표시는 한 번만 쓴다 — 주소로 연 안내 → 홈 → 링크로 같은 안내 → 휴대폰 뒤로 두 번이면 홈으로 replace 한다', async () => {
-    // 링크로 들어간 안내: 표시를 소비한다
-    markNoticeEntry(PATH)
-    const linked = render(<NoticeScreen data={data('published')} />)
-    expect(enteredNoticeInApp(PATH)).toBe(false)
-    linked.unmount()
-
+  it('주소로 연 안내 → 홈 → 링크로 같은 안내 → 휴대폰 뒤로 두 번이면 홈으로 replace 한다 (앱 밖으로 나가지 않는다)', async () => {
     // 휴대폰 뒤로 두 번으로 처음(주소로 연) 안내 기록에 돌아와 다시 그린다. 앞에 앱 기록이 없다
-    render(<NoticeScreen data={data('published')} />)
+    visit([PATH, '/', PATH, '/', PATH])
+
     await userEvent.click(screen.getAllByRole('button', { name: '뒤로' })[0]!)
     expect(router.back).not.toHaveBeenCalled()
     expect(router.replace).toHaveBeenCalledWith('/')
   })
 
-  it('주소로 바로 들어왔거나 다른 안내에서 남긴 기록이면 홈으로 기록을 바꿔 간다', async () => {
-    markNoticeEntry('/notice/11680650/2025-W47')
-    render(<NoticeScreen data={data('published')} />)
+  it('주소로 바로 들어왔으면 홈으로 기록을 바꿔 간다 (데스크톱 뒤로도 같다)', async () => {
+    visit([PATH])
 
     await userEvent.click(screen.getAllByRole('button', { name: '뒤로' })[1]!)
     expect(router.replace).toHaveBeenCalledWith('/')

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
-import { INSTALL_PATH, installSearch, markInstallEntry } from '@/features/install/install-entry'
+import { INSTALL_PATH, installSearch } from '@/features/install/install-entry'
 import { navHref } from '@/lib/nav'
 import type { PushSupport } from '@/lib/push-support'
 import { useDevicePlatform } from '@/lib/use-push-support'
@@ -51,7 +51,6 @@ export function PushUnavailable({
       {support === 'needs-install' && (
         <Link
           href={navHref(INSTALL_PATH, installSearch(regionCode, searchParams))}
-          onClick={markInstallEntry}
           className="mt-1 flex min-h-touch w-fit items-center font-semibold text-brand"
         >
           홈 화면에 추가하는 방법 보기

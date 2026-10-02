@@ -3,29 +3,50 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { OFFICIAL_MOCKS } from './mock'
-import { OfficialScreen } from './official-screen'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
 
-// 테스트에는 Next 라우터가 없다. 주소 쿼리는 이 값으로 흉내 낸다
+import { OFFICIAL_MOCKS } from './mock'
+import { OFFICIAL_PATH, OfficialScreen } from './official-screen'
+
+// 테스트에는 Next 라우터가 없다. 주소 쿼리 · 경로는 이 값으로 흉내 낸다
 let search = ''
+const location = vi.hoisted(() => ({ pathname: '/official' }))
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(search),
+  usePathname: () => location.pathname,
   useRouter: () => router,
 }))
 
-/** 이 문서를 처음 연 주소(Navigation Timing)를 흉내 낸다 */
-function openedAt(path: string) {
-  vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
-    { name: `http://localhost${path}` } as PerformanceEntry,
-  ])
-}
-
+/**
+ * 공식 정보를 루트의 앱 안 이동 기록(`NavTrailProvider`) 안에 그린다.
+ * `from` 을 주면 그 화면에서 앱 안 이동으로 온 것으로, 생략하면 주소로 바로 들어온 것으로 그린다.
+ */
 function renderOfficial(
   official: (typeof OFFICIAL_MOCKS)[keyof typeof OFFICIAL_MOCKS],
-  props: { regionCode?: string } = {},
+  { from, ...props }: { regionCode?: string; from?: string } = {},
 ) {
-  return render(<OfficialScreen official={official} regionName="○○동" {...props} />)
+  if (from === undefined) {
+    location.pathname = OFFICIAL_PATH
+    return render(
+      <NavTrailProvider>
+        <OfficialScreen official={official} regionName="○○동" {...props} />
+      </NavTrailProvider>,
+    )
+  }
+  location.pathname = from
+  const result = render(
+    <NavTrailProvider>
+      <div />
+    </NavTrailProvider>,
+  )
+  location.pathname = OFFICIAL_PATH
+  result.rerender(
+    <NavTrailProvider>
+      <OfficialScreen official={official} regionName="○○동" {...props} />
+    </NavTrailProvider>,
+  )
+  return result
 }
 
 describe('OfficialScreen 발표가 있을 때', () => {
@@ -122,7 +143,6 @@ describe('OfficialScreen 이동', () => {
   })
 
   it('주소로 바로 들어왔으면 뒤로가 홈으로 기록을 바꿔 간다', async () => {
-    openedAt('/official')
     renderOfficial(OFFICIAL_MOCKS.published)
 
     await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
@@ -131,8 +151,7 @@ describe('OfficialScreen 이동', () => {
   })
 
   it('앱 안에서 거쳐 왔으면 뒤로가 기록을 되돌린다 (데스크톱 뒤로도 같다)', async () => {
-    openedAt('/')
-    renderOfficial(OFFICIAL_MOCKS.published)
+    renderOfficial(OFFICIAL_MOCKS.published, { from: '/' })
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('button', { name: '뒤로' }))
@@ -141,8 +160,15 @@ describe('OfficialScreen 이동', () => {
     expect(router.replace).not.toHaveBeenCalled()
   })
 
-  it('브라우저가 처음 연 주소를 알려 주지 않으면 바로 들어온 것으로 본다', async () => {
-    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([])
+  it('동네 안내 등 다른 앱 안 화면에서 왔어도 뒤로가 기록을 되돌린다', async () => {
+    renderOfficial(OFFICIAL_MOCKS.published, { from: '/notice/11680640/2025-W47' })
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).toHaveBeenCalledOnce()
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('주소로 바로 들어와 홈으로 갈 때 둘러보기 동네를 남긴다', async () => {
     renderOfficial(OFFICIAL_MOCKS.empty, { regionCode: '1111051500' })
 
     await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))

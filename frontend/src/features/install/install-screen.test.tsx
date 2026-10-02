@@ -1,18 +1,21 @@
 // @vitest-environment jsdom
-import { StrictMode } from 'react'
+import { type ReactElement, StrictMode } from 'react'
 import { renderToString } from 'react-dom/server'
 
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { clearInstallEntry, enteredInstallInApp, markInstallEntry } from './install-entry'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
+
 import { InstallScreen } from './install-screen'
 
 let search = ''
+const location = vi.hoisted(() => ({ pathname: '/install' }))
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(search),
+  usePathname: () => location.pathname,
   useRouter: () => router,
 }))
 
@@ -29,9 +32,31 @@ function guideTitles() {
   return screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)
 }
 
+/**
+ * 루트의 앱 안 이동 기록(`NavTrailProvider`) 안에서 주소를 차례로 지나며 그린다. `/install` 에서는 `screen` 을,
+ * 다른 경로에서는 빈 화면을 그린다. 첫 주소가 이 문서를 처음 연 주소다
+ */
+function visit(paths: readonly string[], screenUi: ReactElement, { strict = false } = {}) {
+  // 같은 요소 객체를 다시 넘기면 React 가 다시 그리지 않아 매번 새로 만든다
+  const tree = () => {
+    const ui = (
+      <NavTrailProvider>{location.pathname === '/install' ? screenUi : <div />}</NavTrailProvider>
+    )
+    return strict ? <StrictMode>{ui}</StrictMode> : ui
+  }
+  const [first = '/install', ...rest] = paths
+  location.pathname = first
+  const result = render(tree())
+  for (const path of rest) {
+    location.pathname = path
+    result.rerender(tree())
+  }
+  return result
+}
+
 beforeEach(() => {
   search = ''
-  clearInstallEntry()
+  location.pathname = '/install'
   vi.clearAllMocks()
 })
 
@@ -117,7 +142,7 @@ describe('InstallScreen', () => {
 
   it('주소로 바로 들어왔으면 닫기 · 나중에 할게요가 홈으로 기록을 바꿔 간다 (동네 · 덮어쓰기를 남긴다)', async () => {
     search = 'region=11440660&mock-auth=member&mock-push=needs-install&utm=x'
-    render(<InstallScreen regionCode="11440660" />)
+    visit(['/install'], <InstallScreen regionCode="11440660" />)
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('button', { name: '닫기' }))
@@ -132,9 +157,8 @@ describe('InstallScreen', () => {
     expect(router.back).not.toHaveBeenCalled()
   })
 
-  it('앱 안 링크로 들어왔으면 닫기 · 나중에 할게요가 기록을 되돌린다', async () => {
-    markInstallEntry()
-    render(<InstallScreen />)
+  it('앱 안 링크(내 정보)로 들어왔으면 닫기 · 나중에 할게요가 기록을 되돌린다', async () => {
+    visit(['/me', '/install'], <InstallScreen />)
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('button', { name: '닫기' }))
@@ -145,26 +169,18 @@ describe('InstallScreen', () => {
     expect(router.replace).not.toHaveBeenCalled()
   })
 
-  it('표시는 마운트 때 소비한다 — 다음에 표시 없이 연 설치 안내(새 탭 · 새로고침 · 다른 길)는 홈으로 간다', async () => {
-    markInstallEntry()
-    const { unmount } = render(<InstallScreen />)
-    expect(enteredInstallInApp()).toBe(false)
+  it('앱 안에서 왔더라도 새 탭 · 새로고침(기록을 새로 셈)으로 다시 연 설치 안내는 홈으로 간다', async () => {
+    const { unmount } = visit(['/me', '/install'], <InstallScreen />)
     unmount()
 
-    render(<InstallScreen />)
+    visit(['/install'], <InstallScreen />)
     await userEvent.setup().click(screen.getByRole('button', { name: '닫기' }))
     expect(router.back).not.toHaveBeenCalled()
     expect(router.replace).toHaveBeenCalledWith('/')
   })
 
-  it('StrictMode 의 두 번 그리기 · effect 에도 읽은 값을 지킨다', async () => {
-    markInstallEntry()
-    render(
-      <StrictMode>
-        <InstallScreen />
-      </StrictMode>,
-    )
-    expect(enteredInstallInApp()).toBe(false)
+  it('StrictMode 의 두 번 그리기 · effect 에도 앱 안 진입을 지킨다', async () => {
+    visit(['/me', '/install'], <InstallScreen />, { strict: true })
     await userEvent.setup().click(screen.getByRole('button', { name: '닫기' }))
     expect(router.back).toHaveBeenCalledTimes(1)
     expect(router.replace).not.toHaveBeenCalled()
