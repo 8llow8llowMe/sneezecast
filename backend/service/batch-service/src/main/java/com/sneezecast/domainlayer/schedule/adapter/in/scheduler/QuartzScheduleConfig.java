@@ -1,5 +1,6 @@
 package com.sneezecast.domainlayer.schedule.adapter.in.scheduler;
 
+import com.sneezecast.domainlayer.notifiableimport.adapter.in.batch.job.NotifiableImportJobConfig;
 import com.sneezecast.global.properties.BatchScheduleProperties;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -9,6 +10,7 @@ import org.quartz.JobBuilder;
 import org.quartz.JobDetail;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.quartz.SchedulerFactoryBeanCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
@@ -31,21 +33,10 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p><b>잡을 추가하는 방법.</b> 주간 적재 잡이 생기면 {@code BatchScheduleProperties} 에 cron 필드를 더하고, 그 잡의 {@code JobDetail} 과
  * {@code Trigger} 를 <b>이 클래스에</b> {@code @Bean} 두 개로 더한다 — 반드시 {@link #newJobDetail} · {@link #newCronTrigger} 로 만든다.
- * <pre>
- * &#64;Bean
- * public JobDetail notifiableImportJobDetail() {
- *     return newJobDetail("notifiableImportJob");
- * }
- *
- * &#64;Bean
- * public Trigger notifiableImportTrigger(BatchScheduleProperties properties,
- *                                        &#64;Qualifier("notifiableImportJobDetail") JobDetail jobDetail) {
- *     return newCronTrigger(jobDetail, properties.notifiableImportCron(), properties);
- * }
- * </pre>
+ * {@link #notifiableImportJobDetail} · {@link #notifiableImportTrigger} 가 그 모양이다.
  * 부트 {@code QuartzAutoConfiguration} 이 컨텍스트의 {@code JobDetail} · {@code Trigger} 빈을 모두 스케줄러에 등록하므로 별도 등록 코드는 없다.
- * 이 클래스 밖에 두면 {@link ScheduleEnabledCondition} 이 닿지 않아 수동 실행 JVM 에도 트리거가 붙는다. 지금은 스케줄할 잡이 없어서(
- * {@code districtImportJob} 은 수동 전용) 등록된 빈이 없고 스케줄러는 빈 채로 뜬다.
+ * 이 클래스 밖에 두면 {@link ScheduleEnabledCondition} 이 닿지 않아 수동 실행 JVM 에도 트리거가 붙는다. {@code districtImportJob} 은 수동 전용이라
+ * 트리거가 없다.
  *
  * <p><b>수동 실행 JVM 에서는 켜지지 않는다.</b> {@code --spring.batch.job.enabled=true} 로 띄운 두 번째 JVM 은 잡 하나를 돌리고 끝나야 하는데,
  * 거기에 스케줄 트리거까지 붙으면 그 짧은 수명 동안 또 다른 잡을 띄울 수 있다. {@link ScheduleEnabledCondition} 이 그 조합을 배제한다.
@@ -67,6 +58,23 @@ public class QuartzScheduleConfig {
     @Bean
     public SchedulerFactoryBeanCustomizer scheduleAutoStartupCustomizer() {
         return factory -> factory.setAutoStartup(true);
+    }
+
+    /**
+     * 전수신고 적재(매주 화 05:00 KST). 겹침 금지 목록은 자기 자신뿐이다 — {@code districtImportJob} 과는 쓰는 테이블이 다르고, 스케줄 잡끼리는
+     * Quartz 스레드가 하나라 겹치지 않는다.
+     */
+    @Bean
+    public JobDetail notifiableImportJobDetail() {
+        return newJobDetail(NotifiableImportJobConfig.JOB_NAME);
+    }
+
+    @Bean
+    public Trigger notifiableImportTrigger(
+        BatchScheduleProperties batchScheduleProperties,
+        @Qualifier("notifiableImportJobDetail") JobDetail notifiableImportJobDetail
+    ) {
+        return newCronTrigger(notifiableImportJobDetail, batchScheduleProperties.notifiableCron(), batchScheduleProperties);
     }
 
     /**

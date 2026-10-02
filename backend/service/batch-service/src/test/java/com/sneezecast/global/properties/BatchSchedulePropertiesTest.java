@@ -21,14 +21,34 @@ class BatchSchedulePropertiesTest {
         .withUserConfiguration(TestConfig.class);
 
     @Test
-    @DisplayName("값을 주지 않으면 Asia/Seoul · 6시간이 채워진다")
+    @DisplayName("값을 주지 않으면 Asia/Seoul · 6시간 · 전수신고 화 05:00 이 채워진다")
     void fillsDefaultsWhenAbsent() {
         contextRunner.run(context -> {
             BatchScheduleProperties properties = context.getBean(BatchScheduleProperties.class);
             assertThat(properties.timeZone()).isEqualTo("Asia/Seoul");
             assertThat(properties.zoneId()).isEqualTo(ZoneId.of("Asia/Seoul"));
             assertThat(properties.staleRunningAfter()).isEqualTo(Duration.ofHours(6));
+            assertThat(properties.notifiableCron()).isEqualTo("0 0 5 ? * TUE");
         });
+    }
+
+    @Test
+    @DisplayName("전수신고 cron 은 설정한 값을 받고, 빈 값은 기본값으로 접는다")
+    void bindsNotifiableCron() {
+        contextRunner.withPropertyValues("batch.schedule.notifiable-cron=0 30 6 ? * WED")
+            .run(context -> assertThat(context.getBean(BatchScheduleProperties.class).notifiableCron()).isEqualTo("0 30 6 ? * WED"));
+        contextRunner.withPropertyValues("batch.schedule.notifiable-cron=")
+            .run(context -> assertThat(context.getBean(BatchScheduleProperties.class).notifiableCron())
+                .isEqualTo(BatchScheduleProperties.DEFAULT_NOTIFIABLE_CRON));
+    }
+
+    @ParameterizedTest(name = "notifiable-cron={0}")
+    @ValueSource(strings = {"0 5 * * TUE", "0 0 5 * * TUE", "0 0 25 ? * TUE", "every tuesday"})
+    @DisplayName("Quartz cron 이 아닌 값은 기동을 세운다 — 초 없는 5필드 · 일과 요일을 모두 지정한 식 포함")
+    void rejectsInvalidNotifiableCron(String cron) {
+        contextRunner.withPropertyValues("batch.schedule.notifiable-cron=" + cron)
+            .run(context -> assertThat(context).hasFailed()
+                .getFailure().rootCause().hasMessageContaining("batch.schedule.notifiable-cron"));
     }
 
     @Test

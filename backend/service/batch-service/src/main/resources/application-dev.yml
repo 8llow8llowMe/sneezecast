@@ -16,7 +16,7 @@ spring:
       # dev 만 애플리케이션이 BATCH_* 메타 테이블을 만든다 (적재 계정에 dev 한정 CREATE 권한이 필요하다).
       initialize-schema: always
 
-# dev 는 프로세스 안 Quartz 를 켠다. 등록된 트리거가 없으면 빈 스케줄러가 돈다.
+# dev 는 프로세스 안 Quartz 를 켠다 — notifiableImportJob 이 매주 화 05:00(KST)에 돈다 (batch.schedule.notifiable-cron).
 # 끄려면 배포 설정에 BATCH_SCHEDULE_ENABLED=false 를 준다.
 batch:
   schedule:

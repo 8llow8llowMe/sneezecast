@@ -52,6 +52,10 @@ batch:
     time-zone: Asia/Seoul
     # 이 시간을 넘긴 실행 중(STARTING · STARTED · STOPPING) 실행은 죽은 JVM 의 잔재로 보고 겹침 판정에서 뺀다 (ERROR 로그로 남긴다).
     stale-running-after: 6h
+    # 잡별 주기 (Quartz cron — 초가 맨 앞, 시각은 위 time-zone 기준). 잘못된 식이면 기동이 실패한다.
+    # 원천의 갱신 주기에서 나온 값이라 환경마다 다르지 않아 환경변수로 열지 않는다. 바꾸려면 여기를 고친다.
+    # notifiableImportJob(전수신고): 매주 화 05:00. districtImportJob 은 수동 전용이라 주기가 없다.
+    notifiable-cron: "0 0 5 ? * TUE"
 
 # SGIS 오픈API (districtImportJob). 인증키는 Vault kv/sneezecast/batch 에서 주입한다.
 # 비어 있어도 기동은 성공하고, 잡을 실행할 때 SGIS_CREDENTIALS_MISSING 으로 실패한다.

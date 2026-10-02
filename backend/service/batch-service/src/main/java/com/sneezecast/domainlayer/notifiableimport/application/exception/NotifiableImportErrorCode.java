@@ -48,9 +48,18 @@ public enum NotifiableImportErrorCode {
 
     /** 실행당 호출 상한에 닿았다. 개발계정 일 1,000건 한도를 지키려는 장치라, 이후 요청은 부르지 않는다. */
     REQUEST_BUDGET_EXCEEDED("NOTIFIABLE_IMPORT_010", "실행당 질병관리청 API 호출 상한에 닿아 더 부르지 않습니다. (used=%s, maxCallsPerRun=%s)",
-        HttpStatus.TOO_MANY_REQUESTS);
+        HttpStatus.TOO_MANY_REQUESTS),
 
-    // 020 ~ 은 잡 실행 요약(#85, 예: 일부 요청 실패로 실행을 FAILED 로 끝낸다)에 쓴다.
+    // 실행 요약 — 020 ~ 029
+
+    /**
+     * 실행 하나에서 실패한 요청이 있다. 실패한 요청마다 FAILED 적재 이력이 남아 있고, 이 예외는 Step · Job 을 FAILED 로 끝내 알리는 몫이다.
+     * {@code aborted=true} 면 {@code abortedBy} 코드 때문에 남은 요청({@code notAttempted})을 부르지 않았다. {@code failedRequestKeys} 는 앞에서부터
+     * 최대 20개다.
+     */
+    RUN_FAILED("NOTIFIABLE_IMPORT_020",
+        "전수신고 적재에서 실패한 요청이 있습니다. (planned=%s, imported=%s, failed=%s, notAttempted=%s, aborted=%s, abortedBy=%s, failedRequestKeys=%s)",
+        HttpStatus.BAD_GATEWAY);
 
     private final String code;
     private final String message;

@@ -2,6 +2,7 @@ package com.sneezecast.domainlayer.schedule.adapter.in.scheduler;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sneezecast.domainlayer.notifiableimport.adapter.in.batch.job.NotifiableImportJobConfig;
 import com.sneezecast.global.properties.BatchScheduleProperties;
 import java.time.DayOfWeek;
 import java.time.ZoneId;
@@ -16,7 +17,7 @@ import org.quartz.JobKey;
 import org.quartz.Scheduler;
 import org.quartz.Trigger;
 import org.quartz.TriggerKey;
-import org.springframework.beans.factory.annotation.Qualifier;
+import org.quartz.impl.matchers.GroupMatcher;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration;
@@ -27,11 +28,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 헬퍼({@link QuartzScheduleConfig#newJobDetail} · {@link QuartzScheduleConfig#newCronTrigger})로 만든 JobDetail · Trigger 가 실제 메모리 스토어
- * 스케줄러에 어떻게 올라가는지 본다. 아직 스케줄할 잡이 없으므로 테스트 전용 설정({@link DummyScheduleTestConfig})이 더미 주간 잡을 등록한다 —
- * 주간 잡 이슈가 {@code QuartzScheduleConfig} 에 더할 빈 두 개와 같은 모양이다.
+ * {@code QuartzScheduleConfig} 의 실제 트리거 빈({@code notifiableImportJob})이 메모리 스토어 스케줄러에 어떻게 올라가는지 본다. 헬퍼
+ * ({@link QuartzScheduleConfig#newJobDetail})의 겹침 목록 정리는 스케줄러 없이 직접 본다.
  *
- * <p><b>스케줄러는 시작하지 않는다.</b> 시작하면 더미 트리거가 실제 cron 시각에 발화하려 든다. {@code spring.quartz.auto-startup=false} 만으로는
+ * <p><b>스케줄러는 시작하지 않는다.</b> 시작하면 트리거가 실제 cron 시각에 발화하려 든다. {@code spring.quartz.auto-startup=false} 만으로는
  * 부족하다 — {@code QuartzScheduleConfig} 의 커스터마이저가 그것을 true 로 되돌린다. 그래서 <b>맨 뒤에 등록되는</b> 커스터마이저
  * ({@link NoAutoStartupTestConfig})로 다시 끈다. 그 눌림이 먹었는지는 {@code staysInStandbyWithSingleDaemonThread} 가 지킨다.
  *
@@ -41,15 +41,13 @@ import org.springframework.context.annotation.Configuration;
 class QuartzScheduleRegistrationTest {
 
     private static final String SCHEDULER_NAME = "schedule-registration-test-scheduler";
-    private static final String DUMMY_JOB_NAME = "dummyWeeklyImportJob";
-    private static final String OTHER_JOB_NAME = "dummyOtherImportJob";
-    /** 매주 화요일 05:00 — entity-design §4-1 의 전수신고 주기와 같은 모양. */
-    private static final String DUMMY_CRON = "0 0 5 ? * TUE";
+    private static final String JOB_NAME = NotifiableImportJobConfig.JOB_NAME;
+    private static final String OTHER_JOB_NAME = "otherImportJob";
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
         .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class, QuartzAutoConfiguration.class))
         .withUserConfiguration(
-            BatchSchedulePropertiesTestConfig.class, QuartzScheduleConfig.class, DummyScheduleTestConfig.class, NoAutoStartupTestConfig.class)
+            BatchSchedulePropertiesTestConfig.class, QuartzScheduleConfig.class, NoAutoStartupTestConfig.class)
         .withPropertyValues(
             "batch.schedule.enabled=true",
             "spring.quartz.job-store-type=memory",
@@ -64,7 +62,7 @@ class QuartzScheduleRegistrationTest {
     void registersJobDetailAndTriggerByJobName() {
         contextRunner.run(context -> {
             Scheduler scheduler = context.getBean(Scheduler.class);
-            JobDetail jobDetail = scheduler.getJobDetail(JobKey.jobKey(DUMMY_JOB_NAME));
+            JobDetail jobDetail = scheduler.getJobDetail(JobKey.jobKey(JOB_NAME));
 
             assertThat(jobDetail).isNotNull();
             assertThat(jobDetail.getJobClass()).isEqualTo(SpringBatchLaunchQuartzJob.class);
@@ -72,31 +70,43 @@ class QuartzScheduleRegistrationTest {
             // Quartz 2.3 API 이름의 오타(Exection)가 그대로다.
             assertThat(jobDetail.isConcurrentExectionDisallowed()).isTrue();
 
-            Trigger trigger = scheduler.getTrigger(TriggerKey.triggerKey(DUMMY_JOB_NAME + "Trigger"));
+            Trigger trigger = scheduler.getTrigger(TriggerKey.triggerKey(JOB_NAME + "Trigger"));
             assertThat(trigger).isNotNull();
             assertThat(trigger.getJobKey()).isEqualTo(jobDetail.getKey());
+            // 지금 스케줄되는 잡은 이것 하나다. districtImportJob 은 수동 전용이다.
+            assertThat(scheduler.getJobKeys(GroupMatcher.anyGroup())).containsExactly(jobDetail.getKey());
         });
     }
 
     @Test
-    @DisplayName("JobDataMap 이 실행할 잡 이름과 겹침 금지 목록을 실어 나른다 — 자기 자신이 맨 앞이고 중복 · 빈 값은 빠진다")
-    void carriesJobDataWithSelfFirst() {
+    @DisplayName("전수신고 JobDataMap 은 실행할 잡 이름과 겹침 금지 목록(자기 자신뿐)을 실어 나른다")
+    void notifiableJobBlocksOnlyItself() {
         contextRunner.run(context -> {
-            var jobDataMap = context.getBean(Scheduler.class).getJobDetail(JobKey.jobKey(DUMMY_JOB_NAME)).getJobDataMap();
+            var jobDataMap = context.getBean(Scheduler.class).getJobDetail(JobKey.jobKey(JOB_NAME)).getJobDataMap();
 
-            assertThat(jobDataMap.getString(SpringBatchLaunchQuartzJob.JOB_NAME_KEY)).isEqualTo(DUMMY_JOB_NAME);
-            assertThat(jobDataMap.getString(SpringBatchLaunchQuartzJob.BLOCKED_BY_KEY)).isEqualTo(DUMMY_JOB_NAME + "," + OTHER_JOB_NAME);
+            assertThat(jobDataMap.getString(SpringBatchLaunchQuartzJob.JOB_NAME_KEY)).isEqualTo(JOB_NAME);
             assertThat(SpringBatchLaunchQuartzJob.parseBlockedBy(jobDataMap.getString(SpringBatchLaunchQuartzJob.BLOCKED_BY_KEY)))
-                .containsExactly(DUMMY_JOB_NAME, OTHER_JOB_NAME);
+                .containsExactly(JOB_NAME);
         });
     }
 
     @Test
-    @DisplayName("다음 발화는 JVM 시간대가 아니라 설정 시간대(Asia/Seoul) 기준 화요일 05:00 이고, misfire 는 FireAndProceed 다")
+    @DisplayName("겹침 금지 목록은 자기 자신이 맨 앞이고 중복 · 빈 값은 빠진다")
+    void newJobDetailPutsSelfFirstAndDropsDuplicates() {
+        JobDetail jobDetail = QuartzScheduleConfig.newJobDetail(JOB_NAME, OTHER_JOB_NAME, " ", null, JOB_NAME);
+
+        assertThat(jobDetail.getJobDataMap().getString(SpringBatchLaunchQuartzJob.BLOCKED_BY_KEY)).isEqualTo(JOB_NAME + "," + OTHER_JOB_NAME);
+        assertThat(SpringBatchLaunchQuartzJob.parseBlockedBy(jobDetail.getJobDataMap().getString(SpringBatchLaunchQuartzJob.BLOCKED_BY_KEY)))
+            .containsExactly(JOB_NAME, OTHER_JOB_NAME);
+    }
+
+    @Test
+    @DisplayName("기본 cron 의 다음 발화는 JVM 시간대가 아니라 설정 시간대(Asia/Seoul) 기준 화요일 05:00 이고, misfire 는 FireAndProceed 다")
     void nextFireTimeFollowsConfiguredTimeZone() {
         contextRunner.run(context -> {
-            CronTrigger trigger = (CronTrigger) context.getBean(Scheduler.class).getTrigger(TriggerKey.triggerKey(DUMMY_JOB_NAME + "Trigger"));
+            CronTrigger trigger = (CronTrigger) context.getBean(Scheduler.class).getTrigger(TriggerKey.triggerKey(JOB_NAME + "Trigger"));
 
+            assertThat(trigger.getCronExpression()).isEqualTo("0 0 5 ? * TUE");
             assertThat(trigger.getTimeZone()).isEqualTo(TimeZone.getTimeZone("Asia/Seoul"));
             ZonedDateTime nextFire = trigger.getNextFireTime().toInstant().atZone(ZoneId.of("Asia/Seoul"));
             assertThat(nextFire.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
@@ -110,7 +120,7 @@ class QuartzScheduleRegistrationTest {
     @DisplayName("batch.schedule.time-zone 을 바꾸면 같은 cron 이 그 시간대의 05:00 이 된다 — 시간대는 설정이 정한다")
     void timeZoneComesFromProperties() {
         contextRunner.withPropertyValues("batch.schedule.time-zone=UTC").run(context -> {
-            CronTrigger trigger = (CronTrigger) context.getBean(Scheduler.class).getTrigger(TriggerKey.triggerKey(DUMMY_JOB_NAME + "Trigger"));
+            CronTrigger trigger = (CronTrigger) context.getBean(Scheduler.class).getTrigger(TriggerKey.triggerKey(JOB_NAME + "Trigger"));
 
             assertThat(trigger.getTimeZone()).isEqualTo(TimeZone.getTimeZone("UTC"));
             assertThat(trigger.getNextFireTime().toInstant().atZone(ZoneId.of("UTC")).getHour()).isEqualTo(5);
@@ -138,24 +148,6 @@ class QuartzScheduleRegistrationTest {
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(BatchScheduleProperties.class)
     static class BatchSchedulePropertiesTestConfig {
-    }
-
-    /** 주간 잡 이슈가 {@code QuartzScheduleConfig} 에 더할 빈 두 개와 같은 모양의 더미. 중복 · 빈 값이 걸러지는지도 함께 본다. */
-    @Configuration(proxyBeanMethods = false)
-    static class DummyScheduleTestConfig {
-
-        @Bean
-        JobDetail dummyWeeklyImportJobDetail() {
-            return QuartzScheduleConfig.newJobDetail(DUMMY_JOB_NAME, OTHER_JOB_NAME, " ", DUMMY_JOB_NAME);
-        }
-
-        @Bean
-        Trigger dummyWeeklyImportTrigger(
-            BatchScheduleProperties batchScheduleProperties,
-            @Qualifier("dummyWeeklyImportJobDetail") JobDetail dummyWeeklyImportJobDetail
-        ) {
-            return QuartzScheduleConfig.newCronTrigger(dummyWeeklyImportJobDetail, DUMMY_CRON, batchScheduleProperties);
-        }
     }
 
     /**
