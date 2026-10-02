@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원 · 행정동은 백엔드에 구현돼 있어 확정**이고, 보고 · 집계 · 안내 · 공식 정보 · 운영자는 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원 · 행정동 · 주간 보고는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자는 **BE 미정**이라 아래 초안은 프론트 제안이다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -115,24 +115,47 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
   - 내 동네가 폐지됐을 때 다시 고르게 하는 흐름(Setup-1-reselect)은 이 API 가 아니라 내 동네 조회(`GET /api/v1/members/me/region` 의 `abolished`, 위 "회원")로 판정한다(#164). 다시 고른 코드가 폐지 · 없는 코드면 저장이 `REGION_002` · `001` 로 거절된다.
 - **BE 미정**: 폐지된 동의 후속 후보(`listSuccessorDistricts`) — 출처와 무관하게 목이다.
 
+## 주간 보고 `/api/v1/reports/current` (확정)
+
+본인의 **이번 주** 보고 하나다. 모두 인증 필요(`Authorization: Bearer`) **+ 건강정보 동의(scope `report:write`)** — 건강 · 증상은 민감정보라 조회도 쓰기와 같은 권한이다. 경로 · 본문에 주를 받지 않는다(지난 주 보고는 쓰지도 읽지도 못한다). 응답에 회원 ID · 보고자 키 · 보고 ID 를 싣지 않는다.
+
+| 요청     | 바디 → `dataBody`                                                                                     | 주요 오류                                                                                                                                                                                                                    | 프론트 함수                               |
+| -------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `PUT`    | `{ districtCode, symptomGroups }` → `WeeklyReport` (이번 주에 처음이면 저장, 있으면 동네 · 증상 바꿈) | `REPORT_002` 없는 행정동 · `003` 폐지된 행정동(400), `001` 같은 주 동시 처리(409 — 서버가 한 번 다시 하고도 졌다), 검증 `REPORT_100`(모르는 증상군 · 깨진 JSON) · `101`~`105`(동네 없음 · 형식 · 목록 없음 · 빈 원소 · 중복) | `submitReport` · `updateReport`           |
+| `GET`    | → `WeeklyReport` \| null (아직 보내지 않음)                                                           |                                                                                                                                                                                                                              | `fetchCurrentReport`(이번 주 보고 저장소) |
+| `DELETE` | → null (멱등 — 없어도 200, 이번 주 집계에서 빠짐)                                                     |                                                                                                                                                                                                                              | `cancelReport`                            |
+
+- 공통 오류: 토큰 없음 `SECURITY_001`(401), **동의 전(scope 없음) `SECURITY_006`(403)** — 서비스(security-core `CustomAccessDeniedHandler`)가 낸다. 게이트웨이는 토큰이 없으면 통과시키고 인가 판정을 하지 않는다(`JwtErrorCode` 주석).
+- 요청 `districtCode` 는 SGIS 숫자 8자리, `symptomGroups` 는 `RESPIRATORY`(호흡기: 발열 · 기침 · 인후통) · `ENTERIC`(장관: 구토 · 설사) 목록이다. **증상 없음은 빈 배열**이고 정상 보고다(건강한 보고가 집계의 분모). null · null 원소 · 중복은 거부된다.
+- `WeeklyReport` = `{ isoWeek, districtCode, symptomGroups: [{ code, name, description }], reportedAt, updatedAt }`. `isoWeek` 는 `2026-W40` 처럼 KST 달력 기준 ISO 주(월요일 시작)이고 서버가 정한다. `symptomGroups` 는 선언 순서(호흡기 → 장관). `reportedAt` 은 이번 주 첫 보고 시각, `updatedAt` 은 마지막 수정 시각(ISO-8601 UTC, 초 단위 — 고친 적이 없으면 같다).
+- **보고 주는 서버가 받은 시각(KST)으로 정한다**(`ReportWeekCalculator` · `ReportWeek`). 일요일 23:59 KST 에 흐름을 열어 월요일 00:00 KST 뒤에 보내면 새 주로 저장된다. 프론트는 주를 계산하지 않고, 응답 `isoWeek` 가 정본이다.
+  - 화면에 보이는 주 라벨(`ReportWeek` 의 `weekRangeLabel` · `reportPeriodLabel`)은 아직 홈 주간 집계 목(`features/home/mock.ts`, BE 미정)의 예시 값(`11월 17일(월)~23일(일)`)이라 **서버 `isoWeek` 와 무관하다** — 지금은 늘 어긋날 수 있다. 주간 집계 API 연동 때 응답 주로 바꾸고, 그 뒤에도 일요일 자정 근처에는 연 시점의 라벨과 저장된 주가 다를 수 있다(받은 보고의 `isoWeek` 로 고칠지는 그때 정한다).
+- **프론트 연동 (#165)**:
+  - 요청 · 응답 옮기기는 `features/report/report-api.ts`. 화면 증상 `respiratory` ↔ `RESPIRATORY`, `gastrointestinal` ↔ `ENTERIC`. 보내는 값은 고른 증상뿐이고 주 · 회원 · 위치는 싣지 않는다. 받은 보고는 `SubmittedReport { answer, reportedLabel }` 이고 `reportedLabel` 은 `reportedAt` 을 **KST 날짜** "10월 2일" 로 쓴다(`Intl` `timeZone: 'Asia/Seoul'` — 브라우저 시간대와 무관, UTC 15:00 부터 다음 날). **모르는 증상군 코드가 오면 버리지 않고 실패로 본다** — 버리면 증상 보고가 다른 증상 · 증상 없음으로 보이고, 그대로 고쳐 보내면 서버의 증상이 지워진다.
+  - `submitReport` · `updateReport(answer, districtCode, source)` 은 같은 `PUT` 이다. 보고 동네는 **내 동네**(`useMemberRegion()` 의 코드 — 둘러보기 동네가 아님)다. 세션이 회원이 아니거나 동네가 없으면 요청 없이 거부한다. 결과: `ok`(응답을 이번 주 보고 저장소에 바로 넣음) · `consent-required`(`SECURITY_006` — `refreshSession()` 으로 재발급해 세션 요약을 맞춘 뒤) · `region-changed`(`REPORT_003` · `002` — 내 동네를 다시 읽게 한 뒤, `reloadMemberRegion()`). 그 밖(`REPORT_001` · 검증 `REPORT_100`~`105` · 일시 장애)은 거부하고 화면은 "보내지 못했어요. 잠시 뒤 다시 보내 주세요." 다. `REPORT_001` 은 서버가 이미 한 번 다시 했으므로 프론트는 자동으로 다시 보내지 않는다.
+  - `REPORT_002`(행정동 서비스에 없는 코드)도 다시 고르기 갈래다 — 내 동네 조회는 그 코드를 `abolished: true` 로 준다(위 "회원"). 다시 읽은 내 동네가 폐지면 회원 조건(`useMemberRequirements`)이 동네 다시 고르기로 보낸다. 다른 탭에서 이미 바꿨으면 새 동네로 다시 보낼 수 있다.
+  - `cancelReport(source)` 는 `DELETE` 이고 성공하면 저장소를 비운다. 실패는 거부한다(화면은 "되돌리지 못했어요" + 다시 시도). `SECURITY_006` 이면 보내기처럼 세션 요약을 맞춘 뒤 거부한다.
+  - **이번 주 보고 저장소**(`features/report/current-report.ts`): 세션이 회원이고 `reportWritable` 이 true 일 때만 `GET` 을 읽는다 — false 면 요청 없이 비운다(403 을 받으러 가지 않는다). `memberId` 가 바뀌거나 `reportWritable` 이 false → true 가 되면 다시 읽고, 비회원(로그아웃 · 만료 · 다른 탭 로그아웃)이 되거나 보고할 수 없게 되면 바로 지운다. 한 회원에 한 번만 보내고(single-flight) 늦은 응답은 버린다. `loading` · `ready` · `failed` 이고 다시 시도(`retryCurrentReport`)는 실패했을 때만 보낸다. `SessionBootstrap` 이 켠다. 보고 내용은 메모리에만 두고 브라우저 저장소에 남기지 않는다.
+  - 화면은 `useSubmittedReport()`(반환 모양 그대로 — 읽는 중 · 실패 · 미보고 모두 null)와 `useSubmittedReportStatus()` 로 읽는다. 목데이터 모드는 지금처럼 `report-client.ts` 의 목 모듈 메모리다.
+  - **주가 바뀌면 다시 읽는다**: 저장소는 읽은 값의 주(응답 `isoWeek`, 미보고면 요청을 보낸 때의 KST 주 — `kstIsoWeek`, `src/lib/iso-week.ts`)를 두고, 화면이 다시 보일 때(`visibilitychange` → visible · `focus`) KST 기준 지금 주와 다르면 `loading` 으로 다시 읽는다(같은 주면 요청 없음). 화면을 계속 띄워 둔 채 주가 바뀌면 다음에 다시 보일 때까지는 지난 주 값이다.
+  - 읽기가 `SECURITY_006` 이면 `refreshSession()` 으로 요약을 맞춘다(보고할 수 없다고 바뀌면 저장소가 지운다).
+  - **되돌리기를 줄지는 PUT 응답으로 정한다**: `report-api.ts` 가 `firstSubmission`(`reportedAt === updatedAt` — 고친 적 없음)을 결과에 싣고, 화면은 이 값이 true 인 `증상 없음` 에만 되돌리기를 준다. 이 탭 저장소가 미보고였어도(읽는 중 · 실패 · 다른 기기 · 탭에서 그 사이 보냄) 서버에 이미 있던 보고를 고친 것이면 주지 않는다 — 되돌리면 그 보고까지 지운다. 한계: 서버 시각이 초 단위라 첫 저장과 같은 초 안에 고친 보고는 첫 저장으로 보인다. 목은 보내기 전에 목 보고가 없었는지다.
+  - 한계: 다른 탭에서 내 동네를 다른 **현행** 동네로 바꾸면 이 탭은 낡은 동네로 보낸다 — 서버가 받아들여 그 동네로 집계된다(회원 정보 저장소가 `memberId` 가 바뀔 때만 다시 읽는 것과 같은 한계).
+
 ## BE 미정 — 프론트 초안
 
-백엔드에 아직 없다(게이트웨이 라우트 `/api/v1/reports/**` · `/api/v1/advisories/**` 만 열려 있다). 아래는 화면을 만들며 가정한 모양이고, 연동 이슈에서 백엔드와 맞춘다. 지역 키 `admCd` 는 행정동 `code`(SGIS 8자리)다.
+백엔드에 아직 없다(게이트웨이 라우트 `/api/v1/advisories/**` 는 열려 있다). 아래는 화면을 만들며 가정한 모양이고, 연동 이슈에서 백엔드와 맞춘다. 지역 키 `admCd` 는 행정동 `code`(SGIS 8자리)다.
 
 ```text
 GET  /api/regions/{admCd}/weekly?week=     → { status: normal|slight|high|insufficient,
                                                 participants, publicThreshold,
                                                 symptomRate?, baselineRate?,   // insufficient면 없음
                                                 groups: [{ key, trend, series: number[] }] }
-POST /api/reports                          → { admCd, week, answer: none|symptom, groups: [] }
-PUT  /api/reports/{week}                   → 같은 주 수정
-DELETE /api/reports/{week}                 → 되돌리기(직후)·삭제
 GET  /api/notices/{admCd}?week=            → 발행된 안내 | null (정정·철회 이력 포함)
 GET  /api/official/latest                  → 질병관리청 단계·기준 주·요약·원문 링크
 GET  /api/admin/candidates?week=           → 후보 목록 (운영자)
 POST /api/admin/candidates/{id}/publish|hold|correct|withdraw
 ```
 
-- 로그인한 회원만 보고한다. 보고 데이터에는 회원 식별자 대신 가명 키(`reporter_key`)만 남는다.
 - `insufficient` 응답에는 `symptomRate` · `baselineRate` 가 없다. 프론트는 이 값이 없을 때 수치·상태색을 그리지 않는다.
-- 프론트 함수: 보고 `report-client.ts`(`submitReport` · `updateReport` · `cancelReport`), 안내 `notice-client.ts`(`getRegionNotice`). 홈 주간 집계 · 공식 정보 · 운영자는 목 데이터다.
+- 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 홈 주간 집계 · 공식 정보 · 운영자는 목 데이터다(보고는 위 "주간 보고" 로 확정).
