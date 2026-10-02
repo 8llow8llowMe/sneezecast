@@ -34,7 +34,7 @@ function Harness({
 async function sentOnNov19(answer: ReportAnswer) {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2025, 10, 19))
-  await submitReport(answer)
+  await submitReport(answer, null, 'mock')
   vi.useRealTimers()
 }
 
@@ -96,7 +96,7 @@ async function copiedLink(user: ReturnType<typeof userEvent.setup>) {
 describe('ReportFlow', () => {
   beforeEach(async () => {
     window.history.replaceState(null, '', '/?report=start')
-    await cancelReport()
+    await cancelReport('mock')
   })
 
   afterEach(() => {

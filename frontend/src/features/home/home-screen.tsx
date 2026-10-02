@@ -11,6 +11,7 @@ import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
 import { HealthConsentSheet } from '@/features/auth/health-consent-sheet'
 import { LoginSheet } from '@/features/auth/login-sheet'
+import { useAuthSettled } from '@/features/auth/use-auth'
 import { MOCK_AUTH_PARAM, useMockAuth } from '@/features/auth/use-mock-auth'
 import { takeHomeNotice } from '@/features/me/leave-notice'
 import { useRequiredStepsGate } from '@/features/me/member-gate'
@@ -113,15 +114,22 @@ export function HomeScreen({
   // 라우터의 effect 에서 시작하는데, 처음 열 때는 자식(이 화면) effect 가 먼저 돌아 그 전에 바꾸면 Next 가 모른다
   const { value: reportValue, replace: replaceReport } = report
   // 시트 열림은 바뀔 값으로 미리 정한다. 하이드레이션 직후(replace 전)에도 맞는 시트가 바로 보이고, replace 는 주소 정리만 한다.
-  // 재동의 · 동네 다시 고르기로 보낼 곳이 있으면 시트를 열지 않는다 — 보고하려던 로그인(#136) 뒤 조건이 남은 회원에게 보내기 전 시트가 비친다
+  // 재동의 · 동네 다시 고르기로 보낼 곳이 있으면 시트를 열지 않는다 — 보고하려던 로그인(#136) 뒤 조건이 남은 회원에게 보내기 전 시트가 비친다.
+  // **회원 상태가 정해진 뒤에만 판단한다**(`useAuthSettled`, #165). 실데이터는 새로고침하면 세션을 되살리는 동안(`idle` · `restoring`)
+  // 비회원으로 보여, 그때 고치면 회원의 `?report=done` 이 로그인 시트를 거쳐 시작 단계로 바뀐다. 그동안은 시트를 열지 않고 주소도 두며,
+  // 정해진 뒤 맞춘다. 목데이터는 하이드레이션을 마치면 바로 정해진다(서버 그림의 비회원으로 고치지 않는다 — 시트는 어차피 effect 에서 열린다)
+  const authSettled = useAuthSettled()
   const reportEntry =
-    requiredTarget === null ? (guardReportEntry(reportValue, auth) ?? reportValue) : null
+    authSettled && requiredTarget === null
+      ? (guardReportEntry(reportValue, auth) ?? reportValue)
+      : null
   useEffect(() => {
+    if (!authSettled) return
     const fixed = guardReportEntry(reportValue, auth)
     if (fixed === null || requiredTarget !== null) return
     const timer = setTimeout(() => replaceReport(fixed), 0)
     return () => clearTimeout(timer)
-  }, [reportValue, auth, replaceReport, requiredTarget])
+  }, [authSettled, reportValue, auth, replaceReport, requiredTarget])
 
   // 내 정보에서 건강정보 동의를 철회하고 왔으면 알림을 한 번 띄운다(`features/me/leave-notice.ts`)
   useEffect(() => {
