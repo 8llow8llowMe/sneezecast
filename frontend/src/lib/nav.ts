@@ -28,7 +28,7 @@ export function navHref(href: string, search?: string): string {
 /**
  * 경로가 어느 주요 메뉴 화면인지. 그 메뉴 아래 경로(`/me/devices`)도 그 메뉴다. 주요 메뉴 밖(로그인 · 첫 진입 등)이면 null 이다.
  * 루트 오류 화면(`app/error.tsx`)이 탭바 · 헤더 메뉴를 그릴지와 현재 메뉴를 고를 때 쓴다. 불러오는 중은 경계가 화면마다 있어
- * (`app/(home)/loading.tsx` · `app/me/loading.tsx`) 메뉴를 바로 넘기므로 쓰지 않는다.
+ * (`app/(home)/loading.tsx` · `app/map/loading.tsx` · `app/me/loading.tsx`) 메뉴를 바로 넘기므로 쓰지 않는다.
  */
 export function mainNavKeyFor(pathname: string | null): MainNavKey | null {
   if (pathname === null) return null
