@@ -187,8 +187,8 @@ frontend/
 - 재발급이 일시 장애(`unavailable`)이거나 분류에 없는 오류면 세션을 끝내지 않는다 — 회원 요약은 두고 토큰만 버린다. 세션 중이면 공급자 · 갈아 끼우기가 일시 장애(`UNAVAILABLE`)를 던져 요청이 "잠시 뒤 다시" 로 끝난다(토큰 없이 보내 `SECURITY_001` 로 보이지 않게). 다음 요청이 다시 재발급한다.
 - **새로고침 복원**: refresh 쿠키는 게이트웨이 호스트 · `Path=/api/v1/auth` 전용 HttpOnly 라 화면이 있는지 모른다. 로그인 · 재발급에 성공하면 1st-party 힌트 쿠키 **`sc_session=1`**(`Path=/` · `SameSite=Lax` · HTTPS 면 `Secure` · 14일, 값은 고정 `1`)을 남기고, 로그아웃 · 만료 · 재로그인 응답이면 지운다. 앱을 열 때 실데이터 모드이고 힌트가 있을 때만 재발급을 한 번 한다(`restoring` → `member`). `SessionBootstrap` 은 하이드레이션 커밋의 effect 에서 출처 쿠키를 직접 읽어(`readBrowserDataSource`) 바로 시작한다 — 훅 값(첫 그림은 서버 기본값)을 기다리면 `idle` 동안 나간 회원 요청이 토큰 없이 나간다. 힌트가 없으면 요청 없이 `guest` 다. 복원이 재로그인 · 탈퇴 · 정지 · 두 번째 경합으로 끝나면 알리지 않고(방송도 없음) 힌트를 지우며, 일시 장애면 힌트를 남긴 채 `guest` 로 보인다. 복원 중 요청은 복원을 기다려 그 토큰을 싣는다.
 - 만료 알림(`notifySessionExpired`)은 이 탭에 세션이 있었을 때만 부른다. 다른 탭의 로그아웃 · 만료 알림을 받으면 조용히 `guest` 가 된다.
-- 화면은 `features/auth/use-auth.ts` 의 `useAuth()`(회원 상태) · `useAuthSettled()`(정해졌는지)로 읽는다. `useMockAuth` 는 같은 훅의 옛 이름이다(이름 정리는 로그인 연동 PR).
-- **지금(#158)은 실데이터 모드에서 회원이 될 수 없다.** 로그인 · 가입 · 로그아웃 · 재동의 · 프로필(`features/auth/auth-client.ts`)은 아직 목이라 `setSession` 을 부르는 곳이 없다 — 실데이터 모드는 늘 `guest` 이고, 세션 저장소는 로그인 연동(다음 PR)부터 채워진다. 새로고침 복원 · 재발급은 단위 테스트로만 확인했다.
+- 화면은 `features/auth/use-auth.ts` 의 `useAuth()`(회원 상태) · `useAuthSettled()`(정해졌는지)로 읽는다. `useMockAuth` 는 같은 훅의 옛 이름이다(이름 정리는 후속).
+- **실데이터 모드에서 회원이 되는 길은 이메일 로그인(#163)이다.** `loginWithEmail(…, 'api')` 이 응답을 `setSession` 에 넣고, `logout(…, 'api')` 이 `clearSession('logout')` 을 부른다(실패 정책은 [api-contract-draft.md](api-contract-draft.md) "인증" 의 "프론트 연동 (#163)"). 카카오 로그인 · 카카오 가입 · 비밀번호 재설정 · 로그인한 기기 · 동의(건강정보 · 재동의) · 탈퇴 · 내 동네 · 프로필은 아직 출처와 무관하게 목이다. 로그아웃 중 재발급이 재로그인으로 끝나 세션이 이미 비었으면 다시 비우지 않고, 성공 · 세션 사라짐 모두 만료 진행 표시(`clearSessionExpiring`)를 끈다.
 - 한계(로그인 연동 뒤): FE 로컬(`http://localhost`)은 교차 사이트라 refresh 쿠키가 실리지 않는다 — 로그인은 되지만 새로고침하면 재발급이 `AUTH_014` 로 끝나 `guest` 다. 새로고침 복원은 dev 웹에서 확인한다.
 
 ### 데이터 출처 (실데이터 · 목데이터)
