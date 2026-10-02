@@ -37,6 +37,9 @@ describe('guardReportEntry', () => {
     ['confirm', 'guest', 'login'],
     ['start', 'member-no-consent', 'health-consent'],
     ['done', 'member-no-consent', 'health-consent'],
+    // 함께 채우기 공유 시트(#151)도 보고 흐름 단계라 같은 가드를 받는다
+    ['share', 'guest', 'login'],
+    ['share', 'member-no-consent', 'health-consent'],
     // 상태에 맞지 않는 시트
     ['health-consent', 'guest', 'login'],
     ['login', 'member-no-consent', 'health-consent'],
@@ -53,6 +56,7 @@ describe('guardReportEntry', () => {
     ['start', 'member'],
     ['symptom', 'member'],
     ['done', 'member'],
+    ['share', 'member'],
     // 모르는 값은 아무 것도 열지 않으므로 그대로 둔다
     ['unknown', 'guest'],
   ] as const)('?report=%s · %s 는 그대로 둔다', (value, auth) => {

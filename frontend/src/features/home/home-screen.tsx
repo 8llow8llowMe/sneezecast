@@ -237,8 +237,8 @@ export function HomeScreen({
         <ReportFlow
           week={reportWeek}
           regionCode={regionCode}
+          reportRegionCode={memberRegion?.code ?? null}
           reportingElsewhere={reportingElsewhere}
-          onNotReady={notReady}
         />
       )}
 
