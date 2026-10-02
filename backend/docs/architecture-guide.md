@@ -93,7 +93,7 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 - **auth DB 에는 증상이 없고, surveillance DB 에는 `member_id` 가 없다.** 회원 정보(이메일·닉네임·프로필 이미지)는 auth 에만 있다. 성명은 받지 않는다.
 - `reporter_key = HMAC-SHA256(pepper, memberId)`. pepper 는 Vault 의 surveillance 경로에만 있고 auth 는 모른다. 32자 미만이면 기동 실패, 기동 로그에는 지문만 남긴다. **pepper 는 교체하지 않는다** (교체 = 전 행 재키잉).
 - 보고 행 컬럼은 `reporter_key`, `iso_week`, `district_code`, `symptom_mask`(증상군 비트), `revision_count`, 시각뿐이다. 개별 증상·자유 서술·좌표·성명 컬럼을 만들지 않는다.
-- **공개 API 는 집계와 발행된 안내만 읽는다.** 표본이 임계 미만이면 수치·비율 없이 `INSUFFICIENT` 만 내린다. 원시 보고 행을 반환하는 API 는 운영자용에도 두지 않는다.
+- **공개 API 는 집계와 발행된 안내만 읽는다.** 표본이 임계 미만이면 수치·비율 없이 `INSUFFICIENT` 만 내린다. 본인의 이번 주 보고(`GET /api/v1/reports/current`) 외에는 원시 보고 행을 반환하는 API 를 두지 않는다(운영자용 포함).
 - `advisory` · `official` · `district` 패키지는 `report` 의 영속 계층을 import 하지 않는다 (ArchUnit 으로 검사).
 - 원시 보고는 기준선 산출에 필요한 기간(52주)만 보관하고 스케줄러가 삭제한다. 탈퇴·철회 시 즉시 삭제하고, 익명 집계는 남긴다. 파기 호출이 실패해도 끝까지 다시 부르고, 탈퇴 회원 행은 파기가 끝난 뒤에만 지운다 (그 전에 지우면 `memberId` 를 잃어 `reporter_key` 를 다시 계산할 수 없다).
 - 동의 상태는 JWT scope 로 전달한다. access token TTL 은 15분 이하, 철회 시 refresh 세션을 폐기한다. 다른 기기의 access token 에 남은 `report:write`(최대 15분)로 들어온 보고는 TTL 이 지난 뒤의 2차 파기가 지운다.
