@@ -72,7 +72,7 @@ class JwtAuthFilterTest {
     @Test
     @DisplayName("정상 토큰은 인증 주체를 세우고 체인을 계속 탄다 — 역할과 SCOPE_ authority 를 함께 싣는다")
     void validTokenAuthenticates() throws Exception {
-        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(SecurityScope.REPORT_WRITE));
+        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(SecurityScope.REPORT_WRITE), "session-1").value();
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 
@@ -84,6 +84,8 @@ class JwtAuthFilterTest {
         MemberLoginActive principal = (MemberLoginActive) authentication.getPrincipal();
         assertThat(principal.memberId()).isEqualTo(42L);
         assertThat(principal.scopes()).containsExactly(SecurityScope.REPORT_WRITE);
+        assertThat(principal.sessionId()).as("로그아웃 · 기기 목록이 현재 세션을 sid 로 가린다").isEqualTo("session-1");
+        assertThat(principal.expiresAt()).isNotNull();
         assertThat(authentication.getAuthorities()).extracting(GrantedAuthority::getAuthority)
             .containsExactlyInAnyOrder("USER", "SCOPE_report:write");
     }
@@ -91,7 +93,7 @@ class JwtAuthFilterTest {
     @Test
     @DisplayName("scope 없이 발급된 토큰은 역할 authority 만 싣는다 — 동의 전 회원은 SCOPE_report:write 가 없다")
     void tokenWithoutScopeHasOnlyRoleAuthority() throws Exception {
-        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of());
+        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(), null).value();
 
         filter(null).doFilter(requestWithBearer(token), new MockHttpServletResponse(), new MockFilterChain());
 
@@ -103,7 +105,7 @@ class JwtAuthFilterTest {
     @Test
     @DisplayName("로그아웃(블랙리스트)된 토큰은 401 SECURITY_007")
     void revokedTokenEndsWith401() throws Exception {
-        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of());
+        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(), null).value();
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter(tokenId -> true).doFilter(requestWithBearer(token), response, new MockFilterChain());
@@ -115,7 +117,7 @@ class JwtAuthFilterTest {
     @Test
     @DisplayName("소문자 bearer 도 같은 토큰으로 인증된다 — 게이트웨이가 통과시킨 토큰을 여기서만 익명으로 만들지 않는다")
     void lowercaseSchemeAuthenticates() throws Exception {
-        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of());
+        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(), null).value();
         MockFilterChain chain = new MockFilterChain();
 
         filter(tokenId -> false).doFilter(requestWithAuthorization("bearer " + token), new MockHttpServletResponse(), chain);
@@ -128,7 +130,7 @@ class JwtAuthFilterTest {
     @Test
     @DisplayName("소문자 bearer 로 보낸 폐기 토큰도 401 SECURITY_007 — scheme 대소문자로 블랙리스트를 비껴가지 못한다")
     void lowercaseSchemeRevokedTokenEndsWith401() throws Exception {
-        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of());
+        String token = provider.issueAccessToken(42L, SecurityRole.USER, Set.of(), null).value();
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 

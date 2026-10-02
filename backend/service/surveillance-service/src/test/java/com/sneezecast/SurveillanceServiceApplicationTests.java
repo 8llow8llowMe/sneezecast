@@ -111,7 +111,7 @@ class SurveillanceServiceApplicationTests {
     @Test
     @DisplayName("다른 키로 서명한 토큰은 401 봉투다 — 검증 키가 JWT_ACCESS_KEY 에서 온다")
     void tokenSignedWithOtherKeyIsUnauthorized() throws Exception {
-        String token = provider(OTHER_ACCESS_KEY).issueAccessToken(1L, SecurityRole.USER, Set.of(SecurityScope.REPORT_WRITE));
+        String token = provider(OTHER_ACCESS_KEY).issueAccessToken(1L, SecurityRole.USER, Set.of(SecurityScope.REPORT_WRITE), null).value();
 
         mockMvc.perform(get(MethodSecurityProbeController.AUTHENTICATED_PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
             .andExpect(status().isUnauthorized())
@@ -200,7 +200,7 @@ class SurveillanceServiceApplicationTests {
     }
 
     private static String bearer(SecurityRole role, String... scopes) {
-        return "Bearer " + provider(ACCESS_KEY).issueAccessToken(1L, role, Set.of(scopes));
+        return "Bearer " + provider(ACCESS_KEY).issueAccessToken(1L, role, Set.of(scopes), null).value();
     }
 
     private static String signDirectly(Map<String, Object> claims, Instant expiration) {
