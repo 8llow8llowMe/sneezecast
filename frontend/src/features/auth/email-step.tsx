@@ -25,8 +25,11 @@ export type EmailStepProps = {
   sendCode: (email: string) => Promise<SendCodeResult>
   /** 코드를 보냈을 때 그 흐름의 초안을 고친다. 이어서 `nextPath` 로 간다 */
   onSent: (email: string, sentAt: number) => void
-  /** 뒤로 (앞 단계) */
-  backPath: string
+  /**
+   * 뒤로 (앞 단계). 앞 화면이 여럿이면 후보를 모두 준다 — 바로 앞이 그중 하나면 기록을 되돌리고, 아니면 첫 후보로 바꿔 간다
+   * (`useOnboarding().goBack`)
+   */
+  backPath: string | readonly [string, ...string[]]
   /** 코드 단계 */
   nextPath: string
 }
