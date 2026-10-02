@@ -33,7 +33,8 @@ export function HeaderCenterNav({
   current,
   navSearch,
 }: {
-  current: MainNavKey
+  /** 지금 메뉴. 메뉴 밖 화면(없는 화면 404)이면 null 이다 */
+  current: MainNavKey | null
   navSearch?: string | undefined
 }) {
   return (
@@ -63,7 +64,8 @@ export function HeaderMeNav({
   current,
   navSearch,
 }: {
-  current: MainNavKey
+  /** 지금 메뉴. 메뉴 밖 화면(없는 화면 404)이면 null 이다 */
+  current: MainNavKey | null
   navSearch?: string | undefined
 }) {
   const active = current === HEADER_ME_NAV.key
