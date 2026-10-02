@@ -4,13 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sneezecast.apigateway.jwt.exception.JwtErrorCode;
 import com.sneezecast.apigateway.jwt.exception.JwtException;
-import com.sneezecast.common.dto.Response;
-import java.nio.charset.StandardCharsets;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
-import org.springframework.core.io.buffer.DataBuffer;
-import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
@@ -72,8 +68,7 @@ public class JwtAuthExceptionWebHandler implements WebExceptionHandler {
         byte[] body;
         try {
             // 상태·헤더보다 먼저 직렬화한다 — 실패하면 응답을 건드리지 않은 채 넘길 수 있어야 한다.
-            body = objectMapper.writeValueAsString(Response.fail(errorCode.getResultCode(), errorCode.getMessage()))
-                .getBytes(StandardCharsets.UTF_8);
+            body = ErrorEnvelopeWriter.serialize(objectMapper, errorCode.getResultCode(), errorCode.getMessage());
         } catch (JsonProcessingException serializationFailure) {
             log.error("jwt error envelope serialization failed errorCode={}", errorCode.name(), serializationFailure);
             return Mono.error(ex);
@@ -81,10 +76,7 @@ public class JwtAuthExceptionWebHandler implements WebExceptionHandler {
 
         logRejection(exchange, errorCode);
 
-        response.setStatusCode(errorCode.getHttpStatus());
-        response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
-        DataBuffer buffer = response.bufferFactory().wrap(body);
-        return response.writeWith(Mono.just(buffer));
+        return ErrorEnvelopeWriter.write(response, errorCode.getHttpStatus(), body);
     }
 
     /**
