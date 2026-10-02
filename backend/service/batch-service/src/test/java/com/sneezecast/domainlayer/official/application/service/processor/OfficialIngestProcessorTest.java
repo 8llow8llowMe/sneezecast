@@ -53,9 +53,15 @@ class OfficialIngestProcessorTest {
     private JdbcOfficialSurveillanceBulkAdapter surveillanceAdapter;
     private JdbcOfficialSourceSnapshotBulkAdapter snapshotAdapter;
     private OfficialIngestProcessor processor;
+    /**
+     * 테스트 안의 모든 프로세서가 생성기 하나를 나눠 쓴다. 같은 worker 의 생성기 둘이 같은 ms 에 id 를 만들면 같은 값이 나와 PK 가 겹친다
+     * (운영에서 JVM 마다 worker-id 를 가르는 이유와 같다).
+     */
+    private SnowflakeIdGenerator snowflakeIdGenerator;
 
     @BeforeEach
     void setUp() {
+        snowflakeIdGenerator = new SnowflakeIdGenerator(0, 1);
         dataSource = OfficialFixtures.h2DataSource("official-ingest");
         jdbcTemplate = new JdbcTemplate(dataSource);
         surveillanceAdapter = new JdbcOfficialSurveillanceBulkAdapter(jdbcTemplate);
@@ -241,7 +247,7 @@ class OfficialIngestProcessorTest {
     }
 
     private OfficialIngestProcessor processor(OfficialSurveillanceBulkPort surveillancePort, OfficialSourceSnapshotBulkPort snapshotPort) {
-        return new OfficialIngestProcessor(surveillancePort, snapshotPort, new SnowflakeIdGenerator(0, 1), new DataSourceTransactionManager(dataSource));
+        return new OfficialIngestProcessor(surveillancePort, snapshotPort, snowflakeIdGenerator, new DataSourceTransactionManager(dataSource));
     }
 
     /** 행 0 · IMPORTED 0 · FAILED 1(error_code = 그 에러코드의 code, imported_count 0, created_at = syncedAt). */
