@@ -59,6 +59,8 @@ export function OfficialScreen({
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
   const openReport = () => router.push(reportHrefFor(auth, regionCode))
   const goBack = () => navTrail.goBack(navHref(HOME_PATH, navSearch))
+  // 알림(종)은 회원에게만 그린다 — 데스크톱 머리줄(AppHeader)과 모바일 · 태블릿 머리줄이 같은 규칙이다 (#123)
+  const notify = auth === 'guest' ? undefined : () => notReady('알림 설정')
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -68,7 +70,7 @@ export function OfficialScreen({
           regionName={regionName}
           current="home"
           onRegionClick={() => notReady('동네 바꾸기')}
-          onNotificationClick={() => notReady('알림 설정')}
+          onNotificationClick={notify}
           onReportClick={openReport}
           reportLabel={reportLabel}
           navSearch={navSearch}
@@ -87,7 +89,7 @@ export function OfficialScreen({
         </span>
         <span className="hidden grow tablet:block" />
         <span className="hidden tablet:contents">
-          <IconButton label="알림 설정" icon={<BellIcon />} onClick={() => notReady('알림 설정')} />
+          {notify && <IconButton label="알림 설정" icon={<BellIcon />} onClick={notify} />}
           <Button size="sm" onClick={openReport}>
             {reportLabel}
           </Button>

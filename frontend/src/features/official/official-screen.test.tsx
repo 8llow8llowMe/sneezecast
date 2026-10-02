@@ -178,11 +178,15 @@ describe('OfficialScreen 이동', () => {
   it('둘러보기 동네를 탭바 · 메뉴 링크에 남긴다', () => {
     renderOfficial(OFFICIAL_MOCKS.published, { regionCode: '1111051500' })
 
-    const hrefs = [...document.querySelectorAll('nav[aria-label="주요 메뉴"] a')].map((link) =>
-      link.getAttribute('href'),
-    )
+    const hrefs = [
+      ...document.querySelectorAll('nav[aria-label="주요 메뉴"] a, nav[aria-label="계정 메뉴"] a'),
+    ].map((link) => link.getAttribute('href'))
+    // 탭바 셋 + 데스크톱 가운데 메뉴 둘 + 오른쪽 끝 내 정보
     expect(hrefs).toHaveLength(6)
     hrefs.forEach((href) => expect(href).toMatch(/\?region=1111051500$/))
+    expect(screen.getByRole('link', { name: '우리동네체온계' }).getAttribute('href')).toBe(
+      '/?region=1111051500',
+    )
   })
 
   it('비회원의 보고 버튼은 로그인으로 간다', async () => {
@@ -205,10 +209,19 @@ describe('OfficialScreen 이동', () => {
   })
 
   it('알림 설정은 준비 중 알림을 띄운다', async () => {
+    search = 'mock-auth=member-no-consent'
     renderOfficial(OFFICIAL_MOCKS.published)
+
+    // 태블릿 머리줄 · 데스크톱 머리줄에 하나씩 있다
+    expect(screen.getAllByRole('button', { name: '알림 설정' })).toHaveLength(2)
 
     const [bell] = screen.getAllByRole('button', { name: '알림 설정' })
     await userEvent.setup().click(bell as HTMLElement)
     expect(screen.getByRole('status').textContent).toContain('알림 설정 화면은 준비하고 있어요')
+  })
+
+  it('비회원에게는 어느 머리줄에도 알림(종)을 그리지 않는다', () => {
+    renderOfficial(OFFICIAL_MOCKS.published)
+    expect(screen.queryByRole('button', { name: '알림 설정' })).toBeNull()
   })
 })

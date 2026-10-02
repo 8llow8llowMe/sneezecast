@@ -38,6 +38,16 @@ describe('ErrorState', () => {
     })
   })
 
+  it('데스크톱 머리줄은 서비스명(홈 링크) · 홈 · 지도 · 오른쪽 끝 내 정보다', () => {
+    render(<ErrorState onRetry={() => {}} nav="home" />)
+    const header = screen.getByRole('banner')
+
+    expect(screen.getByRole('link', { name: '우리동네체온계' }).getAttribute('href')).toBe('/')
+    const account = screen.getByRole('navigation', { name: '계정 메뉴' })
+    expect(header.lastElementChild).toBe(account)
+    expect(within(account).getByRole('link').getAttribute('href')).toBe('/me')
+  })
+
   it('메뉴가 없는 화면이면 메뉴 없이 안내만 둔다', () => {
     render(<ErrorState onRetry={() => {}} />)
 

@@ -69,13 +69,32 @@ describe('HomeScreen', () => {
   })
 
   it('아직 없는 화면으로 가는 버튼은 준비 중 알림을 띄운다', async () => {
+    search = 'mock-auth=member'
     render(<HomeScreen week={HOME_MOCKS.normal} />)
 
     await userEvent.setup().click(screen.getByRole('button', { name: '알림 설정' }))
-    // 비회원 홈은 안내 상자(role=status)도 있어 알림 영역을 글자로 찾는다
     expect(
       screen.getByText('알림 설정 화면은 준비하고 있어요').closest('[role="status"]'),
     ).not.toBeNull()
+  })
+
+  it.each([
+    ['비회원', '', false],
+    ['동의 전 회원', 'mock-auth=member-no-consent', true],
+    ['동의한 회원', 'mock-auth=member', true],
+  ])('%s 머리줄의 알림(종): 비회원에게만 그리지 않는다', (_, base, shown) => {
+    search = base
+    render(<HomeScreen week={HOME_MOCKS.normal} />)
+
+    expect(screen.queryByRole('button', { name: '알림 설정' }) !== null).toBe(shown)
+  })
+
+  it('데스크톱 서비스명은 둘러보기 동네를 남긴 채 홈으로 가는 링크다', () => {
+    render(<HomeScreen week={HOME_MOCKS.normal} regionCode="1111051500" />)
+
+    expect(screen.getByRole('link', { name: '우리동네체온계' }).getAttribute('href')).toBe(
+      '/?region=1111051500',
+    )
   })
 })
 
@@ -123,9 +142,9 @@ describe('HomeScreen 판단 기준', () => {
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
     await user.click(screen.getByRole('button', { name: '왜 이렇게 보나요?' }))
-    // 테스트의 useSearchParams 는 주소를 따라가지 않으므로, 열린 뒤 다시 그린 상태를 흉내 낸다
+    // 테스트의 useSearchParams 는 주소를 따라가지 않으므로, 열린 뒤 다시 그린 상태를 흉내 낸다(다시 그리기는 동네 버튼으로 일으킨다)
     search = 'explain=1'
-    await user.click(screen.getByRole('button', { name: '알림 설정' }))
+    await user.click(screen.getByRole('button', { name: /^동네 바꾸기/ }))
     await user.click(screen.getByRole('button', { name: '확인' }))
 
     expect(go).toHaveBeenCalledWith(-1)
@@ -370,14 +389,16 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
 
   it('둘러보기 동네(regionCode)를 탭바 · 데스크톱 메뉴 링크에 붙인다', () => {
     render(<HomeScreen week={HOME_MOCKS.insufficient} regionCode="1111051500" />)
-    const hrefs = [...document.querySelectorAll('nav[aria-label="주요 메뉴"] a')].map((link) =>
-      link.getAttribute('href'),
-    )
+    const hrefs = [
+      ...document.querySelectorAll('nav[aria-label="주요 메뉴"] a, nav[aria-label="계정 메뉴"] a'),
+    ].map((link) => link.getAttribute('href'))
 
+    // 탭바 셋 + 데스크톱 가운데 메뉴 둘(홈 · 지도) + 오른쪽 끝 내 정보 하나
     expect(hrefs).toHaveLength(6)
     hrefs.forEach((href) => expect(href).toMatch(/\?region=1111051500$/))
     expect(hrefs).toContain('/?region=1111051500')
     expect(hrefs).toContain('/map?region=1111051500')
+    expect(hrefs.filter((href) => href === '/me?region=1111051500')).toHaveLength(2)
   })
 
   it('목 세션이 바뀌면 같은 홈이 회원 홈으로 다시 그려진다', async () => {

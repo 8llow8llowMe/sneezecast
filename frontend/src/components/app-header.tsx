@@ -1,10 +1,9 @@
-import Link from 'next/link'
-
 import clsx from 'clsx'
 
-import { MAIN_NAV, type MainNavKey, navHref } from '@/lib/nav'
+import type { MainNavKey } from '@/lib/nav'
 
 import { Button } from './button'
+import { BrandLink, HeaderCenterNav, HeaderMeNav } from './header-nav'
 import { IconButton } from './icon-button'
 import { BellIcon, ChevronDownIcon } from './icons'
 
@@ -13,11 +12,17 @@ export type AppHeaderProps = {
   regionName: string
   current: MainNavKey
   onRegionClick: () => void
-  onNotificationClick: () => void
+  /**
+   * 알림(종) 버튼. **비회원이면 넘기지 않는다 — 종을 그리지 않는다**(#123). 알림은 동의한 회원만 받으므로 비회원에게 설정할 것이 없다.
+   * 회원(건강정보 동의 전 포함)은 넘긴다
+   */
+  onNotificationClick?: (() => void) | undefined
   onReportClick: () => void
   /** 보고 버튼 글자. 기본은 "이번 주 건강 보고하기", 비회원 홈은 "로그인하고 보고하기" (Home-guest 시안) */
   reportLabel?: string | undefined
-  /** 데스크톱 메뉴 링크 뒤에 붙일 쿼리(앞 `?` 없이). 둘러보기 동네(`region=<코드>`)를 메뉴를 옮겨도 잃지 않게 한다 */
+  /**
+   * 데스크톱 서비스명 · 메뉴 링크 뒤에 붙일 쿼리(앞 `?` 없이). 둘러보기 동네(`region=<코드>`)를 메뉴를 옮겨도 잃지 않게 한다
+   */
   navSearch?: string | undefined
   /**
    * 화면 제목 (내 정보 — Settings · Settings-T 시안). 있으면 모바일 · 태블릿에서 동네 버튼 대신 제목을 보이고,
@@ -35,7 +40,11 @@ export type AppHeaderProps = {
  * | --- | --- | --- |
  * | 모바일 | 52 | 동네 · 알림 (보고 버튼은 화면 아래 고정 버튼) |
  * | 태블릿 | 72 | 동네 · 알림 · 보고 버튼 |
- * | 데스크톱 | 64 | 서비스명 · 동네 · 메뉴 · 알림 · 보고 버튼, 아래 구분선 |
+ * | 데스크톱 | 64 | 서비스명(홈 링크) · 동네 · 메뉴(홈 · 지도) · 알림 · 보고 버튼 · 내 정보, 아래 구분선 |
+ *
+ * - 알림(종)은 비회원에게 그리지 않는다(`onNotificationClick` 을 넘기지 않음). 시안 Home-guest 는 종이 있지만 #123 에서 뺐다.
+ * - 데스크톱 `내 정보` 는 가운데 메뉴에서 빼 오른쪽 끝에 둔다(#123, 탭바의 오른쪽 끝과 같은 자리). 시안은 가운데 메뉴의 셋째 항목이다.
+ * - 서비스명은 시안대로 데스크톱에만 보이고, 누르면 홈(둘러보기 동네 유지)으로 간다.
  *
  * 시안: Home(모바일) · Tablet · Desktop, 비회원 Home-guest(-T · -D), 제목이 있는 내 정보 Settings(-T · -D)
  */
@@ -50,7 +59,9 @@ export function AppHeader({
   title,
   className,
 }: AppHeaderProps) {
-  const bell = <IconButton label="알림 설정" icon={<BellIcon />} onClick={onNotificationClick} />
+  const bell = onNotificationClick && (
+    <IconButton label="알림 설정" icon={<BellIcon />} onClick={onNotificationClick} />
+  )
   return (
     <header
       className={clsx(
@@ -63,9 +74,7 @@ export function AppHeader({
         className,
       )}
     >
-      <span className="hidden text-screen-title font-extrabold tracking-brand text-brand desktop:inline">
-        우리동네체온계
-      </span>
+      <BrandLink navSearch={navSearch} />
 
       {title && (
         <h1 className="text-screen-title font-bold text-fg tablet:pl-2 desktop:hidden">{title}</h1>
@@ -84,30 +93,13 @@ export function AppHeader({
         <ChevronDownIcon />
       </button>
 
-      <nav aria-label="주요 메뉴" className="hidden grow gap-1 desktop:flex">
-        {MAIN_NAV.map((item) => {
-          const active = item.key === current
-          return (
-            <Link
-              key={item.key}
-              href={navHref(item.href, navSearch)}
-              aria-current={active ? 'page' : undefined}
-              className={clsx(
-                'flex h-11 items-center px-3.5 text-body',
-                active ? 'font-bold text-brand' : 'font-medium text-fg-sub',
-              )}
-            >
-              {item.label}
-            </Link>
-          )
-        })}
-      </nav>
+      <HeaderCenterNav current={current} navSearch={navSearch} />
 
       {/* 모바일 · 태블릿에서 알림 · 보고 버튼을 오른쪽으로 민다. 데스크톱은 메뉴가 늘어나 자리를 채운다 */}
       <span className="grow desktop:hidden" />
 
       {/* 제목이 있는 모바일 머리줄에는 알림이 없다 (Settings 시안) */}
-      {title ? <span className="hidden tablet:contents">{bell}</span> : bell}
+      {bell && (title ? <span className="hidden tablet:contents">{bell}</span> : bell)}
 
       {/*
         모바일에서는 화면 아래 고정 버튼이 보고를 맡는다.
@@ -119,6 +111,9 @@ export function AppHeader({
           {reportLabel}
         </Button>
       </span>
+
+      {/* 데스크톱 오른쪽 끝. 모바일 · 태블릿은 탭바의 오른쪽 끝이 같은 메뉴다 */}
+      <HeaderMeNav current={current} navSearch={navSearch} />
     </header>
   )
 }
