@@ -338,7 +338,7 @@ curl -s http://127.0.0.1:3081/actuator/health
 docker inspect -f '{{.State.Status}} {{.RestartCount}}' sneezecast-auth-service-dev
 
 # 4. 게이트웨이 → 업스트림 (라우트가 lb:// 로 Eureka 를 거친다. 503 이면 대상이 아직 등록 전이다)
-curl -s -o /dev/null -w '%{http_code}\n' http://192.168.0.13:3000/api/v1/districts
+curl -s -o /dev/null -w '%{http_code}\n' --get --data-urlencode 'query=역삼' http://192.168.0.13:3000/api/v1/districts
 
 # 5. 공개 도메인 경유 (nginx + 인증서). /actuator 는 404 여야 한다
 curl -s -o /dev/null -w '%{http_code}\n' https://api-dev.sneezecast.com/actuator/health
@@ -353,7 +353,7 @@ docker logs --since 2m sneezecast-api-gateway-dev 2>&1 | grep -o 'clientIp=[^ ]*
 curl -s -o /dev/null -H 'X-Real-IP: 1.2.3.4' http://192.168.0.13:3000/api/v1/districts
 ```
 
-4번은 업스트림이 내는 401 · 404(아직 컨트롤러가 없는 경로)면 라우팅은 된 것이다. 게이트웨이 자체의 503 · 504 와 구분한다.
+4번은 200 이면 라우팅 · surveillance · DB 조회까지 된 것이다(행정동 적재 전이면 빈 배열). `query` 를 빼면 400 `DISTRICT_101` 이다. 게이트웨이 자체의 503 · 504 와 구분한다.
 surveillance 기동 로그의 pepper 지문(SHA-256 앞 8자)을 첫 배포 때 기록해 두고, 이후 배포에서 바뀌지 않았는지 본다.
 
 ## 10. prod — 설정만 있고 검증하지 않았다
