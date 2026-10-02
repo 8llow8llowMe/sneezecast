@@ -3,6 +3,8 @@ package com.sneezecast.global.config;
 import com.sneezecast.common.config.JasyptPropertiesConfig;
 import com.sneezecast.global.properties.BatchScheduleProperties;
 import com.sneezecast.global.properties.DistrictImportProperties;
+import com.sneezecast.global.properties.KdcaProperties;
+import com.sneezecast.global.properties.NotifiableImportProperties;
 import com.sneezecast.global.properties.SgisProperties;
 import com.sneezecast.persistence.config.SnowflakePropertiesConfig;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -17,6 +19,8 @@ import org.springframework.context.annotation.Import;
 @EnableConfigurationProperties({
     SgisProperties.class,
     DistrictImportProperties.class,
+    KdcaProperties.class,
+    NotifiableImportProperties.class,
     BatchScheduleProperties.class
 })
 public class BatchServicePropertiesConfig {
