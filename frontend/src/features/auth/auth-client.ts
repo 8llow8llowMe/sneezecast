@@ -15,8 +15,8 @@ import type { Consent } from './legal'
  * - `member`: 회원이고 건강정보 동의를 함 — 보고할 수 있다
  *
  * 값을 바꾸는 곳은 이 모듈의 함수뿐이다: 카카오 가입 성공(`signup` kind kakao) · 이메일 로그인 성공(`loginWithEmail`)은
- * `member-no-consent`, 건강정보 동의 성공(`agreeHealthConsent`)은 `member`, 동의 철회 성공(`withdrawHealthConsent`)은
- * `member-no-consent`, 로그아웃 · 탈퇴 성공(`logout` · `withdrawMembership`)은 `guest`. 화면 코드는 고치지 않는다.
+ * `member-no-consent`, 건강정보 동의 성공(`agreeHealthConsent`)은 `member`, 동의 철회 · 로그아웃 · 탈퇴 성공(`withdrawHealthConsent` ·
+ * `logout` · `withdrawMembership`)은 `guest`. 화면 코드는 고치지 않는다.
  * 모듈 메모리에만 두어 새로고침하면 `guest` 로 돌아간다 — 브라우저 저장소에 남기지 않는다.
  *
  * 내 정보(S10)가 보일 프로필(`MockProfile`)도 같은 세션에 둔다. 로그인 · 가입할 때 채우고 로그아웃 · 탈퇴하면 지운다.
@@ -449,7 +449,7 @@ export function agreeTermsReconsent(consent: Consent): Promise<void> {
  * 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다 — 화면은 대화상자 안에서 다시 시도하라고 알린다.
  *
  * 성공하면 화면과 무관하게 여기서 목 세션을 바꾼다(응답 전에 화면이 닫혀도 서버에는 결과가 남는다):
- * 로그아웃 · 탈퇴 → `guest`(프로필도 지운다), 동의 철회 → `member-no-consent`(동의한 회원 세션일 때만 — 비회원 세션은 그대로).
+ * 로그아웃 · 탈퇴 · 동의 철회 → `guest`(프로필도 지운다). 동의 철회는 서버가 모든 기기의 세션을 폐기하므로 로그아웃과 같은 결과다.
  *
  * 목에서 실패를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다). 프로필 이메일로 가린다 — 그 이메일로 이메일 로그인한 뒤 연다:
  * - 로그아웃: `logout-fail@example.com` → 거부(세션은 그대로)
@@ -476,14 +476,15 @@ export function logout(): Promise<void> {
 /**
  * 건강정보(민감정보) 처리 동의를 철회한다. 서버가 보낸 보고를 모두 지운다(파기 요청).
  *
- * 목은 `member-no-consent` 로 둔다. 백엔드 #59 는 철회와 함께 refresh 세션을 모두 폐기하고 요청 기기의 access token 도
- * 막는다(대화상자 문구 "모든 기기에서 로그아웃돼요") — 연동 때 철회 뒤 세션이 남는지 백엔드와 맞춘다(SCREENS.md 연동 요구사항).
+ * 목은 로그아웃과 같이 `guest` 로 만들고 프로필을 지운다(보낸 보고 목도 세션이 바뀌어 함께 지운다). 백엔드 #59 는 철회와 함께
+ * refresh 세션을 모두 폐기하고 요청 기기의 access token 도 막는다(대화상자 문구 "모든 기기에서 로그아웃돼요").
+ * 연동 때 철회 응답 뒤 세션이 폐기되는지 백엔드와 맞춘다(SCREENS.md 연동 요구사항).
  */
 export function withdrawHealthConsent(): Promise<void> {
   const failure = rejectIfProfileEmail(MOCK_CONSENT_WITHDRAW_FAIL_EMAIL, 'consent withdraw')
   if (failure) return failure
-  // 동의한 회원 세션만 바꾼다. `?mock-auth=member` 덮어쓰기로 비회원 세션에서 철회해도 회원이 되지 않는다
-  if (mockSession === 'member') setMockSession('member-no-consent')
+  // 철회하면 로그아웃된다(모든 기기). 비회원 세션(`?mock-auth=member` 덮어쓰기로 연 경우)은 이미 비회원이라 그대로다
+  setMockSession('guest')
   return Promise.resolve()
 }
 

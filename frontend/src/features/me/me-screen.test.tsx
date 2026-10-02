@@ -19,9 +19,11 @@ import {
   withdrawMembership,
 } from '@/features/auth/auth-client'
 import { consentFor } from '@/features/auth/legal'
+import { getSubmittedReport, submitReport } from '@/features/report/report-client'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
+import { takeHomeNotice } from './leave-notice'
 import { MeScreen } from './me-screen'
 import { MeTrailProvider, useMeTrail } from './me-trail'
 
@@ -91,6 +93,7 @@ function deferred() {
 beforeEach(() => {
   search = ''
   resetMockSession()
+  takeHomeNotice()
   // vi.fn 의 부른 기록을 지운다(감싼 원래 구현은 남는다). restoreAllMocks 는 spyOn 만 되돌린다
   vi.clearAllMocks()
   window.history.replaceState(null, '', '/me')
@@ -470,19 +473,25 @@ describe('MeScreen 확인 대화상자', () => {
     expect(router.push).not.toHaveBeenCalled()
   })
 
-  it('동의 철회에 성공하면 미동의 회원이 되고 홈으로 간다', async () => {
+  it('동의 철회에 성공하면 로그아웃되고 홈으로 기록을 바꿔 간다 (region 은 남고 알림을 남긴다)', async () => {
     await loginAsMember()
-    search = 'confirm=consent-withdraw'
-    renderMe()
+    await submitReport({ kind: 'none' })
+    search = 'region=11440660&mock-provider=email&confirm=consent-withdraw'
+    renderMe({ regionCode: '11440660' })
 
     const dialog = screen.getByRole('dialog', { name: '건강정보 동의를 철회할까요?' })
     await userEvent.setup().click(within(dialog).getByRole('button', { name: '동의 철회하기' }))
 
     expect(withdrawHealthConsent).toHaveBeenCalledTimes(1)
-    expect(getMockSession()).toBe('member-no-consent')
-    // 세션이 먼저 바뀌어(미동의 회원은 이 대화상자를 열 수 없다) 이동할 때까지 대화상자를 닫지 않는다
+    expect(getMockSession()).toBe('guest')
+    expect(getMockProfile()).toBeNull()
+    expect(getSubmittedReport()).toBeNull()
+    // 세션이 먼저 바뀌어도(비회원은 이 대화상자를 열 수 없다) 이동할 때까지 대화상자를 닫지 않는다
     expect(screen.getByRole('dialog', { name: '건강정보 동의를 철회할까요?' })).toBeDefined()
-    expect(router.replace).toHaveBeenCalledWith('/')
+    // 가드가 로그인으로 보내지 않고 홈으로만 간다
+    expect(router.replace.mock.calls).toEqual([['/?region=11440660']])
+    expect(router.push).not.toHaveBeenCalled()
+    expect(takeHomeNotice()).toBe('건강정보 동의를 철회하고 로그아웃했어요')
   })
 
   it('?mock-auth= 덮어쓰기로 연 동의 철회는 비회원 세션을 회원으로 바꾸지 않고 홈으로 간다', async () => {
@@ -494,6 +503,24 @@ describe('MeScreen 확인 대화상자', () => {
 
     expect(getMockSession()).toBe('guest')
     expect(router.replace).toHaveBeenCalledWith('/')
+  })
+
+  it('동의 철회하지 못하면 세션 · 보고를 그대로 두고 알림도 남기지 않는다', async () => {
+    await loginAsMember('consent-withdraw-fail@example.com')
+    const sent = await submitReport({ kind: 'none' })
+    search = 'confirm=consent-withdraw'
+    renderMe()
+
+    const dialog = screen.getByRole('dialog', { name: '건강정보 동의를 철회할까요?' })
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: '동의 철회하기' }))
+
+    expect(within(dialog).getByRole('alert').textContent).toBe(
+      '동의를 철회하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    )
+    expect(getMockSession()).toBe('member')
+    expect(getSubmittedReport()).toBe(sent)
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(takeHomeNotice()).toBeNull()
   })
 
   it('탈퇴하지 못하면 대화상자 안에 알리고 다시 누를 수 있다', async () => {
@@ -598,8 +625,9 @@ describe('MeScreen 확인 대화상자', () => {
       await pending.promise
     })
 
-    expect(getMockSession()).toBe('member-no-consent')
+    expect(getMockSession()).toBe('guest')
     expect(router.replace).not.toHaveBeenCalled()
+    expect(takeHomeNotice()).toBeNull()
   })
 
   it('주소로 바로 들어온 미동의 회원의 consent-withdraw 는 열지 않고 주소에서 지운다', async () => {
