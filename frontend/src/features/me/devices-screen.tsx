@@ -46,7 +46,7 @@ function sortSessions(sessions: readonly DeviceSession[]): DeviceSession[] {
 }
 
 /**
- * S10 로그인한 기기 (`/me/devices`, Settings-devices). 회원만 본다 — 비회원이 주소로 들어오면 로그인으로 보낸다(`useMemberGate`).
+ * S10 로그인한 기기 (`/me/devices`, Settings-devices). 회원만 본다 — 비회원이 주소로 들어오면 로그인으로 보내고(`useMemberGate`), 로그인 뒤 이 화면으로 돌아온다(`?next=`, #140).
  *
  * | 상태 | 보이는 것 |
  * | --- | --- |
@@ -71,7 +71,7 @@ export function DevicesScreen({
   regionName: string
   regionCode?: string | null
 }) {
-  const auth = useMemberGate()
+  const auth = useMemberGate({ next: ME_DEVICES_PATH })
   if (!auth) return null
   return <Devices auth={auth} regionName={regionName} regionCode={regionCode} />
 }

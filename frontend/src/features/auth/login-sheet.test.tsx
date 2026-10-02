@@ -7,6 +7,7 @@ import { assignLocation } from '@/lib/location'
 
 import type * as kakaoClient from './kakao-client'
 import { type KakaoStartResult, startKakaoLogin } from './kakao-client'
+import { clearLoginReturn, LOGIN_RETURN_STORAGE_KEY, peekLoginReturn } from './login-return-store'
 import { LoginSheet } from './login-sheet'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
@@ -45,6 +46,17 @@ describe('LoginSheet', () => {
     router.push.mockClear()
     vi.mocked(startKakaoLogin).mockClear()
     vi.mocked(assignLocation).mockClear()
+    clearLoginReturn()
+  })
+
+  it('카카오로 떠나기 전에 보고하려던 로그인(둘러보기 동네 포함)을 둔다 (#140)', async () => {
+    const hold = holdKakao()
+    render(<LoginSheet open onClose={() => {}} regionCode="11680640" />)
+    await userEvent.setup().click(kakao())
+    hold.resolve('https://kauth.kakao.com/oauth/authorize?state=s', true)
+    await waitFor(() => expect(assignLocation).toHaveBeenCalled())
+    expect(peekLoginReturn()).toEqual({ next: '/', region: '11680640', intent: 'report' })
+    expect(window.sessionStorage.getItem(LOGIN_RETURN_STORAGE_KEY)).not.toBeNull()
   })
 
   it('보고는 회원만 할 수 있다는 이유와 두 가지 시작 방법을 보인다', () => {

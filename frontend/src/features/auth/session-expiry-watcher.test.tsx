@@ -41,8 +41,36 @@ describe('SessionExpiryWatcher', () => {
     act(() => notifySessionExpired())
 
     expect(getMockSession()).toBe('guest')
-    expect(router.replace).toHaveBeenCalledWith('/login?reason=expired')
+    // 만료된 화면(내 정보)으로 돌아오게 next 를 싣는다(#140)
+    expect(router.replace).toHaveBeenCalledWith('/login?reason=expired&next=%2Fme')
     expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [
+      '/me/devices',
+      'region=11440660&mock-auth=member',
+      '/login?reason=expired&next=%2Fme%2Fdevices&region=11440660',
+    ],
+    ['/me/password', '', '/login?reason=expired&next=%2Fme%2Fpassword'],
+    ['/', 'region=11680640&report=start', '/login?reason=expired&region=11680640'],
+    // 허용 목록 밖 화면은 next 를 싣지 않는다(다시 로그인하면 홈) — 둘러보기 동네는 남긴다
+    ['/map', 'region=11680640', '/login?reason=expired&region=11680640'],
+    ['/official', '', '/login?reason=expired'],
+  ])('%s?%s 에서 만료되면 %s 로 간다', (path, query, expected) => {
+    pathname.value = path
+    search.value = query
+    render(<SessionExpiryWatcher />)
+    act(() => notifySessionExpired())
+    expect(router.replace.mock.calls).toEqual([[expected]])
+  })
+
+  it('화면이 바뀌면 바뀐 화면을 싣는다', () => {
+    const view = render(<SessionExpiryWatcher />)
+    pathname.value = '/me/devices'
+    view.rerender(<SessionExpiryWatcher />)
+    act(() => notifySessionExpired())
+    expect(router.replace.mock.calls).toEqual([['/login?reason=expired&next=%2Fme%2Fdevices']])
   })
 
   it('목 재현 입력 ?mock-session=expired 면 열자마자 만료 흐름을 탄다', () => {
@@ -51,7 +79,8 @@ describe('SessionExpiryWatcher', () => {
 
     expect(getMockSession()).toBe('guest')
     expect(router.replace).toHaveBeenCalledTimes(1)
-    expect(router.replace).toHaveBeenCalledWith('/login?reason=expired')
+    // 목 덮어쓰기(`mock-auth` · `mock-session`)는 싣지 않는다 — 다시 만료되지 않는다
+    expect(router.replace).toHaveBeenCalledWith('/login?reason=expired&next=%2Fme')
   })
 
   it('모르는 ?mock-session= 값은 무시한다', () => {
@@ -128,7 +157,7 @@ describe('SessionExpiryWatcher 실데이터 모드', () => {
 
     act(() => clearSession('expired'))
 
-    expect(router.replace).toHaveBeenCalledWith('/login?reason=expired')
+    expect(router.replace).toHaveBeenCalledWith('/login?reason=expired&next=%2Fme')
     expect(getMockSession()).toBe('member-no-consent')
   })
 

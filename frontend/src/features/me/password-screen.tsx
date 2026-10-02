@@ -13,6 +13,7 @@ import {
   type ChangePasswordResult,
   type MockAuthState,
 } from '@/features/auth/auth-client'
+import { saveLoginReturn } from '@/features/auth/login-return-store'
 import { retryMemberInfo } from '@/features/auth/member-info'
 import { confirmProblem, passwordProblem } from '@/features/auth/signup-rules'
 import { useMockProfile, useMockProfileStatus } from '@/features/auth/use-mock-auth'
@@ -38,7 +39,7 @@ import { useShownRegionName } from './member-region'
 type Status = 'idle' | 'submitting' | 'wrong-current' | 'locked' | 'rule' | 'failed' | 'done'
 
 /**
- * S10 비밀번호 변경 (`/me/password`, Settings-password). 회원만 본다(`useMemberGate`).
+ * S10 비밀번호 변경 (`/me/password`, Settings-password). 회원만 본다(`useMemberGate` — 비회원은 로그인 뒤 이 화면으로 돌아온다, `?next=`, #140).
  *
  * - 현재 비밀번호 · 새 비밀번호 · 확인 · `비밀번호를 잊었어요`. **비밀번호가 없는 회원(카카오로만 로그인, `hasPassword` false)에게는
  *   이 화면이 없다** — 비밀번호 최초 설정 API 를 백엔드 #61 에서 없앴다(#166). 그리지 않고 내 정보로 돌려보낸다(`useMeTrail().goBack`
@@ -62,7 +63,7 @@ export function PasswordScreen({
   regionName: string
   regionCode?: string | null
 }) {
-  const auth = useMemberGate()
+  const auth = useMemberGate({ next: ME_PASSWORD_PATH })
   const profile = useMockProfile()
   const profileStatus = useMockProfileStatus()
   const searchParams = useSearchParams()
@@ -185,7 +186,12 @@ function PasswordForm({
             variant="subtle"
             aria-disabled={busy || undefined}
             onClick={() => {
-              if (!busy) router.push(PASSWORD_RESET_PATH)
+              if (busy) return
+              // 이 계정을 재설정하면 서버가 모든 기기를 로그아웃해 이 탭도 비회원으로 이메일 로그인(reset-done)에 닿는다.
+              // 그 로그인 뒤 내 정보로 돌아오게 돌아갈 곳을 둔다 — 앞서 다른 흐름에서 둔 값이 끼어들지 않게 덮어쓰기도 한다(#140).
+              // 비밀번호 변경 화면으로 돌려보내지 않는다: 방금 비밀번호를 정했으니 다시 바꿀 까닭이 없다
+              saveLoginReturn({ next: ME_PATH, region: null, intent: null })
+              router.push(PASSWORD_RESET_PATH)
             }}
           >
             비밀번호를 잊었어요

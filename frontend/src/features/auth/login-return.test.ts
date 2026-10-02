@@ -4,10 +4,12 @@ import { REPORT_PARAM } from '@/features/report/report-flow'
 
 import {
   afterLoginHref,
+  expiredLoginHref,
   isReturning,
   loginHref,
   loginReturnFrom,
   loginReturnFromSearch,
+  loginReturnTo,
   NO_LOGIN_RETURN,
   REPORT_ENTRY_PARAM,
 } from './login-return'
@@ -122,4 +124,27 @@ describe('보고하려던 로그인 (intent=report)', () => {
   it('보고 진입 쿼리 이름은 홈의 보고 흐름과 같다', () => {
     expect(REPORT_ENTRY_PARAM).toBe(REPORT_PARAM)
   })
+})
+
+describe('지금 화면으로 돌아올 로그인 (loginReturnTo · expiredLoginHref, #140)', () => {
+  it('허용 목록 안 경로면 next 로, 둘러보기 동네는 남기고 보고하려던 표시는 없다', () => {
+    const search = new URLSearchParams('region=11440660&mock-auth=member&report=start')
+    expect(loginReturnTo('/me/devices', search)).toEqual({
+      next: '/me/devices',
+      region: '11440660',
+      intent: null,
+    })
+    expect(expiredLoginHref(loginReturnTo('/me/devices', search))).toBe(
+      '/login?reason=expired&next=%2Fme%2Fdevices&region=11440660',
+    )
+  })
+
+  it.each(['/map', '/official', '/login', '/me/unknown', '//evil.example'])(
+    '목록 밖 경로(%s)는 next 를 싣지 않는다',
+    (path) => {
+      expect(expiredLoginHref(loginReturnTo(path, new URLSearchParams()))).toBe(
+        '/login?reason=expired',
+      )
+    },
+  )
 })

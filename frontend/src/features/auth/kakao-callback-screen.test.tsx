@@ -21,6 +21,12 @@ import { getMockSession, resetMockSession } from './auth-client'
 import { KakaoCallbackScreen, readKakaoCallback } from './kakao-callback-screen'
 import type * as kakaoClient from './kakao-client'
 import { kakaoLogin, type KakaoLoginResult } from './kakao-client'
+import {
+  clearLoginReturn,
+  LOGIN_RETURN_STORAGE_KEY,
+  peekLoginReturn,
+  saveLoginReturn,
+} from './login-return-store'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
 vi.mock('next/navigation', () => ({
@@ -90,6 +96,7 @@ describe('KakaoCallbackScreen', () => {
     // 붙잡아 둔 채 끝난 테스트의 1회용 구현이 남지 않게 원래 구현으로 되돌린다
     vi.mocked(kakaoLogin).mockReset()
     resetMockSession()
+    clearLoginReturn()
   })
 
   afterEach(() => resetApiSession())
@@ -124,6 +131,73 @@ describe('KakaoCallbackScreen', () => {
     visit('?code=c1&state=s1')
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'))
     expect(router.replace).toHaveBeenCalledTimes(1)
+  })
+
+  describe('카카오로 떠나기 전에 둔 돌아갈 곳 (#140)', () => {
+    /** 카카오 왕복으로 문서를 새로 열면 모듈 변수는 비고 저장소만 남는다 */
+    function savedBeforeKakao(next: string, region: string | null, intent: 'report' | null) {
+      window.sessionStorage.setItem(
+        LOGIN_RETURN_STORAGE_KEY,
+        JSON.stringify({ v: 1, next, region, intent, savedAt: Date.now() }),
+      )
+    }
+
+    it('로그인됨이면 그곳으로 가고 둔 값을 지운다 (목)', async () => {
+      savedBeforeKakao('/me', '11440660', null)
+      vi.mocked(kakaoLogin).mockResolvedValueOnce({ status: 'logged-in' })
+      visit('?code=c1&state=s1')
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/me?region=11440660'))
+      expect(window.sessionStorage.getItem(LOGIN_RETURN_STORAGE_KEY)).toBeNull()
+    })
+
+    it('실데이터 LOGGED_IN 도 보고하려던 로그인이면 같은 동네 홈의 보고 진입으로 간다', async () => {
+      selectApiSource()
+      savedBeforeKakao('/', '11680640', 'report')
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(okResponse({ result: 'LOGGED_IN', ...memberToken() }))),
+      )
+      visit('?code=c1&state=s1')
+      await waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith('/?region=11680640&report=start'),
+      )
+      expect(getSessionSnapshot()).toMatchObject({ status: 'member' })
+    })
+
+    it('가입이 필요하면 둔 값을 가입 마무리(S02-4)까지 그대로 둔다', async () => {
+      saveLoginReturn({ next: '/me', region: null, intent: null })
+      vi.mocked(kakaoLogin).mockResolvedValueOnce({ status: 'signup-required' })
+      visit('?code=c1&state=s1')
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/region?from=kakao'))
+      expect(peekLoginReturn()).toEqual({ next: '/me', region: null, intent: null })
+    })
+
+    it('실패하면 로그인 화면 주소에 둔 값을 다시 싣는다 (값은 남는다)', async () => {
+      savedBeforeKakao('/', '11680640', 'report')
+      vi.mocked(kakaoLogin).mockResolvedValueOnce({ status: 'failed', reason: 'expired' })
+      visit('?code=c1&state=s1')
+      await waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith(
+          '/login?error=kakao-fail&kakao=expired&region=11680640&intent=report',
+        ),
+      )
+      expect(peekLoginReturn()).toEqual({ next: '/', region: '11680640', intent: 'report' })
+    })
+
+    it('사용자 취소(값 없음)여도 둔 값을 싣는다', async () => {
+      savedBeforeKakao('/me/devices', null, null)
+      visit('?error=access_denied&state=s1')
+      await waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith('/login?error=kakao-fail&next=%2Fme%2Fdevices'),
+      )
+    })
+
+    it('오염된 값이면 싣지 않고 홈으로 간다', async () => {
+      window.sessionStorage.setItem(LOGIN_RETURN_STORAGE_KEY, '{"v":1,"next":"//evil.example"')
+      vi.mocked(kakaoLogin).mockResolvedValueOnce({ status: 'logged-in' })
+      visit('?code=c1&state=s1')
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'))
+    })
   })
 
   it('가입이 필요하면 카카오 가입 종류를 되살리는 동네 선택(?from=kakao)으로 간다', async () => {

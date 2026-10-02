@@ -14,6 +14,11 @@ import {
   signup,
 } from '@/features/auth/auth-client'
 import { consentFor } from '@/features/auth/legal'
+import {
+  clearLoginReturn,
+  peekLoginReturn,
+  saveLoginReturn,
+} from '@/features/auth/login-return-store'
 import { resetMemberInfoForTests, startMemberInfo } from '@/features/auth/member-info'
 import { resetSessionForTests, setSession } from '@/lib/session/session-store'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
@@ -298,10 +303,14 @@ describe('PasswordScreen 이메일 회원 — 비밀번호 변경', () => {
     expect(router.replace).not.toHaveBeenCalled()
   })
 
-  it('비밀번호를 잊었어요는 비밀번호 재설정으로 간다', async () => {
+  it('비밀번호를 잊었어요는 재설정 뒤 로그인하면 내 정보로 돌아오게 두고 비밀번호 재설정으로 간다 (#140)', async () => {
+    // 앞서 다른 흐름에서 둔 값은 덮어쓴다
+    saveLoginReturn({ next: '/', region: '11680640', intent: 'report' })
     renderPassword()
     await userEvent.setup().click(screen.getByRole('button', { name: '비밀번호를 잊었어요' }))
     expect(router.push).toHaveBeenCalledWith('/password/reset')
+    expect(peekLoginReturn()).toEqual({ next: '/me', region: null, intent: null })
+    clearLoginReturn()
   })
 })
 
@@ -334,7 +343,8 @@ describe('PasswordScreen 회원 가드 · 뒤로 가기', () => {
     resetMockSession()
     const { container } = renderPassword()
     expect(container.textContent).toBe('')
-    expect(router.replace).toHaveBeenCalledWith('/login')
+    // 로그인 뒤 이 화면으로 돌아오게 next 를 싣는다(#140)
+    expect(router.replace).toHaveBeenCalledWith('/login?next=%2Fme%2Fpassword')
   })
 
   it('주소로 바로 들어왔으면 내 정보로 기록을 바꿔 가고, 앱 안에서 왔으면 기록을 되돌린다', async () => {

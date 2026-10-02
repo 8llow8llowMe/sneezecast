@@ -243,7 +243,8 @@ describe('DevicesScreen 회원 가드', () => {
     resetMockSession()
     const { container } = renderDevices()
     expect(container.textContent).toBe('')
-    expect(router.replace).toHaveBeenCalledWith('/login')
+    // 로그인 뒤 이 화면으로 돌아오게 next 를 싣는다(#140)
+    expect(router.replace).toHaveBeenCalledWith('/login?next=%2Fme%2Fdevices')
     expect(listSessions).not.toHaveBeenCalled()
   })
 

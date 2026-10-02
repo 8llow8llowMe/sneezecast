@@ -204,11 +204,11 @@ describe('GuestOnlyGate', () => {
       </NavTrailProvider>,
     )
     act(() => notifySessionExpired())
-    expect(router.replace).toHaveBeenCalledWith('/login?reason=expired')
+    expect(router.replace).toHaveBeenCalledWith('/login?reason=expired&next=%2Fme')
     router.replace.mockClear()
 
     pathname = '/login'
-    search = 'reason=expired'
+    search = 'reason=expired&next=%2Fme'
     view.rerender(
       <NavTrailProvider>
         <SessionExpiryWatcher />

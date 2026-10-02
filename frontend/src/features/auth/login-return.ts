@@ -1,13 +1,23 @@
-import { HOME_PATH } from '@/features/onboarding/paths'
-import type { ReportStep } from '@/features/report/types'
+import { HOME_PATH, LOGIN_EXPIRED_PATH } from '@/features/onboarding/paths'
 import { navHref } from '@/lib/nav'
 
-import { NEXT_PARAM, safeNextPath } from './required-steps'
+import {
+  INTENT_PARAM,
+  type LoginIntent,
+  NEXT_PARAM,
+  REPORT_ENTRY_PARAM,
+  REPORT_ENTRY_VALUE,
+  safeNextPath,
+} from './required-steps'
+
+export type { LoginIntent } from './required-steps'
+export { REPORT_ENTRY_PARAM } from './required-steps'
 
 /* ── 로그인 뒤 돌아올 곳 (#123) ────────────────────────────────────────────────────────────────
  *
- * 회원만 쓰는 화면(지금은 내 정보 `/me`)의 가드가 비회원을 로그인으로 보낼 때 `?next=` 와 둘러보기 동네(`?region=`)를 붙인다.
- * 로그인 방법 고르기(S13-1) → 이메일 로그인(S13-5)이 이 둘을 이어 받고, 로그인에 성공하면 그곳으로 기록을 바꿔 간다.
+ * 회원만 쓰는 화면(내 정보와 그 아래 계정 화면)의 가드 · 로그인 만료 이동이 비회원을 로그인으로 보낼 때 `?next=` 와 둘러보기 동네(`?region=`)를
+ * 붙인다(`loginReturnTo`). 로그인 방법 고르기(S13-1) → 이메일 로그인(S13-5)이 이 둘을 이어 받고, 로그인에 성공하면 그곳으로 기록을 바꿔 간다.
+ * 가입 · 카카오 · 비밀번호 재설정처럼 주소 쿼리로 잇지 않는 흐름은 떠날 때 둔 값을 끝에서 읽는다(`login-return-store.ts`, #140).
  *
  * - `next` 는 허용 목록(`NEXT_PATHS`)과 정확히 같은 경로만 따른다(`safeNextPath`, 오픈 리다이렉트 방지). 그 밖이면 홈이다.
  * - QA 용 목 덮어쓰기(`mock-auth` · `mock-provider` · `mock-required`)는 넘기지 않는다. 로그인은 세션을 바꾸는 동작이라
@@ -22,15 +32,6 @@ import { NEXT_PARAM, safeNextPath } from './required-steps'
  */
 
 const REGION_PARAM = 'region'
-const INTENT_PARAM = 'intent'
-
-/** 홈의 보고 진입 쿼리(`features/report/report-flow.tsx` 의 `REPORT_PARAM` 과 같다 — 테스트가 맞춰 본다). 첫 진입 화면이 보고 흐름을 끌어오지 않게 다시 적는다 */
-export const REPORT_ENTRY_PARAM = 'report'
-/** 로그인 뒤 열 보고 진입 값. 미동의 회원이면 홈이 동의 시트로 고친다 */
-const REPORT_ENTRY_VALUE: ReportStep = 'start'
-
-/** 로그인하려던 까닭. 지금은 보고뿐이다 */
-export type LoginIntent = 'report'
 
 export type LoginReturn = {
   /** 로그인 뒤 갈 경로. 허용 목록 안이거나 홈이다 */
@@ -39,16 +40,6 @@ export type LoginReturn = {
   region: string | null
   /** 보고하려던 로그인이면 `report`. `next` 가 홈일 때만 있다 */
   intent: LoginIntent | null
-}
-
-/**
- * 카카오 로그인 · 계정 연결을 마친 뒤 갈 곳 (#167). 지금은 늘 홈이다 — 카카오는 문서를 카카오 인가 화면으로 옮겼다 돌아와(콜백)
- * 첫 진입 Provider · 주소 쿼리가 비므로 돌아갈 곳(`next` · `region` · `intent`)을 이어 받지 못한다.
- * **#140 이 여기에 끼운다**: 카카오를 떠나기 전에 돌아갈 곳을 들고 가서(콜백 · 가입 마무리 내내) 이 함수가 그곳을 돌려주게 한다.
- * 부르는 곳은 콜백(`LOGGED_IN`)과 계정 연결 확인(연결 성공)이다. 가입 마무리(S02-4 → 홈)는 아직 따로다
- */
-export function afterKakaoLoginPath(): string {
-  return HOME_PATH
 }
 
 /** 돌아갈 곳이 없는 로그인(시작 화면에서 옴) — 로그인 뒤 홈으로 간다 */
@@ -102,6 +93,22 @@ export function afterLoginQuery({ region, intent }: LoginReturn): URLSearchParam
 /** 로그인에 성공한 뒤 갈 주소 (`afterLoginQuery`) */
 export function afterLoginHref(loginReturn: LoginReturn): string {
   return navHref(loginReturn.next, afterLoginQuery(loginReturn).toString())
+}
+
+/**
+ * 지금 화면으로 돌아올 로그인(#140). 로그인 만료 이동 · 계정 화면의 비회원 가드가 쓴다.
+ * 경로가 허용 목록(`NEXT_PATHS`) 밖이면 홈이다(`next` 를 싣지 않는다). 둘러보기 동네는 남기고, 보고하려던 표시는 없다
+ */
+export function loginReturnTo(
+  path: string,
+  searchParams: Pick<URLSearchParams, 'get'>,
+): LoginReturn {
+  return { next: safeNextPath(path), region: searchParams.get(REGION_PARAM) || null, intent: null }
+}
+
+/** 로그인 만료로 보내는 로그인 화면 주소(`/login?reason=expired` + 돌아갈 곳). 만료 감시 · 회원 가드가 같은 주소에 닿게 한곳에서 만든다 */
+export function expiredLoginHref(loginReturn: LoginReturn): string {
+  return loginHref(LOGIN_EXPIRED_PATH, loginReturn)
 }
 
 /**

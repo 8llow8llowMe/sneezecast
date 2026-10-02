@@ -13,7 +13,7 @@ import { useDataSource } from '@/lib/use-data-source'
 
 import { linkKakaoAccount } from './kakao-client'
 import { kakaoFailPath } from './login-notice'
-import { afterKakaoLoginPath } from './login-return'
+import { afterKakaoLoginPath, peekLoginReturn, withSavedLoginReturn } from './login-return-store'
 import { KAKAO_START_FAILURE_TEXT, type KakaoStartFailure, useKakaoStart } from './use-kakao-start'
 
 type Failure = 'link' | KakaoStartFailure | null
@@ -23,12 +23,13 @@ type Failure = 'link' | KakaoStartFailure | null
  * 시안 Login-kakao-exists 자리이고, 백엔드 #61 화면 계약대로 문구 · 버튼만 바꿨다 — 파랑 상자 안에 연결을 묻는 문장 · 가린 이메일 ·
  * `연결하고 계속하기`, 아래에 `다른 카카오 계정으로 계속하기`.
  *
- * - `연결하고 계속하기`: `POST /api/v1/auth/kakao/link`(연결 확인표 쿠키, 10분). 성공하면 로그인된 채 홈(`afterKakaoLoginPath`)으로
- *   기록을 바꿔 간다. 확인표가 지났거나(`AUTH_026`) 연결할 수 없는 계정이면(`AUTH_027`) 카카오 로그인부터 다시 하게
+ * - `연결하고 계속하기`: `POST /api/v1/auth/kakao/link`(연결 확인표 쿠키, 10분). 성공하면 로그인된 채 카카오로 떠나기 전에 둔 돌아갈 곳
+ *   (`afterKakaoLoginPath`, 없으면 홈, #140)으로 기록을 바꿔 간다. 확인표가 지났거나(`AUTH_026`) 연결할 수 없는 계정이면(`AUTH_027`) 카카오 로그인부터 다시 하게
  *   `/login?error=kakao-fail` 로 간다. 서비스가 그 밖의 업무 오류로 답해도(확인표를 이미 잃음) 같다. 응답을 받지 못한 실패
  *   (네트워크 · 타임아웃 · 게이트웨이)만 빨강 상자로 알리고 다시 누를 수 있다(`kakaoTicketLost`)
  * - `다른 카카오 계정으로 계속하기`: 카카오 계정을 고르게 하고 처음부터 다시 한다(`switchAccount`). 백엔드가 이 요청에서 확인표를 지운다
  * - 가린 이메일은 첫 진입 Provider 메모리로만 받는다. 없으면(새로고침 · 바로 들어옴) 로그인 방법 선택으로 기록을 바꿔 간다
+ *   (카카오 실패와 같이 둔 돌아갈 곳을 쿼리로 싣는다 — `withSavedLoginReturn`)
  * - 연결해도 이메일 · 비밀번호 로그인은 그대로 된다. 회원이 닿으면 첫 진입 가드가 홈으로 보낸다(`GUEST_ONLY_PATHS`)
  *
  * 시안: docs/design/auth/screens/ 의 Login-kakao-exists (+ -T · -D) — 상자 문장 · 버튼은 시안 없음(백엔드 계약 문장)
@@ -44,7 +45,7 @@ export function KakaoLinkScreen() {
 
   const missing = kakaoLinkEmail === null
   useEffect(() => {
-    if (missing) replace(LOGIN_PATH)
+    if (missing) replace(withSavedLoginReturn(LOGIN_PATH))
   }, [missing, replace])
 
   if (kakaoLinkEmail === null) return null
@@ -57,7 +58,11 @@ export function KakaoLinkScreen() {
       const result = await linkKakaoAccount(source)
       if (!active.current) return
       // 이동하는 동안은 보내는 중으로 둔다 — 다시 눌러 두 번 연결하지 않게 한다
-      replace(result.status === 'ok' ? afterKakaoLoginPath() : kakaoFailPath(result.reason))
+      replace(
+        result.status === 'ok'
+          ? afterKakaoLoginPath()
+          : withSavedLoginReturn(kakaoFailPath(result.reason)),
+      )
     } catch {
       if (!active.current) return
       setFailure('link')
@@ -68,7 +73,8 @@ export function KakaoLinkScreen() {
   async function switchAccount() {
     if (pending) return
     setFailure(null)
-    const failed = await kakao.start({ switchAccount: true })
+    // 들고 온 돌아갈 곳을 그대로 다시 들고 간다(수명도 새로 센다)
+    const failed = await kakao.start(peekLoginReturn(), { switchAccount: true })
     if (failed) setFailure(failed)
   }
 

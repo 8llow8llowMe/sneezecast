@@ -11,7 +11,7 @@ import { useActiveRef } from '@/lib/use-active-ref'
 
 import { kakaoLogin, type KakaoLoginResult } from './kakao-client'
 import { kakaoFailPath } from './login-notice'
-import { afterKakaoLoginPath } from './login-return'
+import { afterKakaoLoginPath, withSavedLoginReturn } from './login-return-store'
 
 /**
  * 카카오가 붙여 보낸 콜백 쿼리에서 로그인에 쓸 값을 읽는다. 카카오가 `error`(사용자 취소 `access_denied` 등)를 붙였거나
@@ -35,7 +35,7 @@ function targetOf(result: KakaoLoginResult): string {
     case 'link-required':
       return KAKAO_LINK_PATH
     case 'failed':
-      return kakaoFailPath(result.reason)
+      return withSavedLoginReturn(kakaoFailPath(result.reason))
   }
 }
 
@@ -48,9 +48,10 @@ function targetOf(result: KakaoLoginResult): string {
  * 2. `POST /api/v1/auth/kakao/login` 을 **한 번만** 보낸다. state 는 일회용이라 두 번 보내면 두 번째가 `AUTH_020` 이다.
  *    StrictMode 의 effect 두 번 실행은 타이머를 정리에서 취소해 한 번이 되고, 이 화면 안에서는 ref 로 한 번 더 막는다.
  *    새로고침은 주소에서 이미 지운 뒤라 값이 없어 실패로 끝난다(code 를 다시 쓰지 않는다)
- * 3. 결과로 기록을 바꿔 간다(이 주소가 기록에 남지 않게): 로그인됨 → 홈(`afterKakaoLoginPath`, #140 이 돌아갈 곳을 끼울 자리) ·
- *    가입 필요 → 동네 선택 `?from=kakao`(S02-1 → S02-3, S02-1 이 가입 종류를 카카오로 둔다) · 연결 필요 → 계정 연결 확인
- *    (가린 이메일은 첫 진입 Provider 메모리로만 넘긴다) · 실패 · 취소 · 값 없음 → `/login?error=kakao-fail`(사유가 있으면 `&kakao=`)
+ * 3. 결과로 기록을 바꿔 간다(이 주소가 기록에 남지 않게): 로그인됨 → 카카오로 떠나기 전에 둔 돌아갈 곳(`afterKakaoLoginPath` — 읽고 지운다,
+ *    없으면 홈, #140) · 가입 필요 → 동네 선택 `?from=kakao`(S02-1 → S02-3, S02-1 이 가입 종류를 카카오로 둔다 — 돌아갈 곳은 가입 마무리까지
+ *    그대로 둔다) · 연결 필요 → 계정 연결 확인(가린 이메일은 첫 진입 Provider 메모리로만 넘긴다) · 실패 · 취소 · 값 없음 →
+ *    `/login?error=kakao-fail`(사유가 있으면 `&kakao=`, 둔 돌아갈 곳을 쿼리로 다시 싣는다 — `withSavedLoginReturn`)
  *
  * **실데이터면 새로고침 복원(`restoreSession`)이 끝난 뒤에 보낸다.** 콜백은 문서를 새로 연 직후라 세션 힌트가 있으면
  * `SessionBootstrap` 이 재발급을 보내 둔다. 카카오 로그인과 동시에 나가면 늦게 온 재발급 응답의 refresh `Set-Cookie` 가 카카오 로그인이 심은
@@ -77,7 +78,7 @@ export function KakaoCallbackScreen() {
       // Next 가 자기 기록 상태를 덧붙이고 주소를 따라가게 state 는 null 로 넘긴다
       if (search || hash) window.history.replaceState(null, '', pathname)
       if (!callback) {
-        replace(kakaoFailPath(null))
+        replace(withSavedLoginReturn(kakaoFailPath(null)))
         return
       }
       const source = readBrowserDataSource()
@@ -92,7 +93,7 @@ export function KakaoCallbackScreen() {
             replace(targetOf(result))
           },
           () => {
-            if (active.current) replace(kakaoFailPath(null))
+            if (active.current) replace(withSavedLoginReturn(kakaoFailPath(null)))
           },
         )
     }, 0)

@@ -10,6 +10,7 @@ import {
   type AbolishedRegion,
   carriedParams,
   NEXT_PARAM,
+  reportIntentFrom,
   safeNextPath,
   stepTarget,
   targetAfter,
@@ -74,7 +75,8 @@ function useCandidates(code: string | null): CandidateLoad {
  *   보인다. 검색어를 고치면 선택을 지운다(동네 선택과 같다)
  * - **첫 진입 Provider 의 가입 초안 · 고른 동네를 쓰지 않는다.** 회원의 동네를 바로 저장한다(`saveRegion`, 실데이터는
  *   `PUT /api/v1/members/me/region`). 성공하면 내 동네(목 프로필 · 실데이터 저장소)가 먼저 바뀌고(화면과 무관), 화면이 떠 있으면
- *   남은 조건 화면이나 `?next=`(허용 목록 밖이면 홈)로 기록을 바꿔 간다
+ *   남은 조건 화면이나 `?next=`(허용 목록 밖이면 홈)로 기록을 바꿔 간다. 보고하려던 로그인(`?intent=report`)이면 같은 동네 홈의
+ *   보고 진입(`report=start`)으로 간다(#140, `targetAfter`)
  * - 보내는 중에는 버튼이 꺼지고(`aria-disabled`) 검색 칸은 읽기 전용이다. 실패하면 빨강 상자로 알리고 다시 누를 수 있다.
  *   서버가 그 동네를 받지 않으면(`invalid` — 없는 코드 · 또 폐지된 코드) 선택을 지우고 다른 동네를 고르라고 알린다
  * - 옛 동네 이름을 모르면(실데이터 — 행정동 서비스에 코드가 없음) 안내를 "고르셨던 동네가 …" 로 쓴다
@@ -105,12 +107,14 @@ export function RegionReselectScreen() {
   // 약관 재동의가 남았으면 그쪽이 먼저다. 이 화면은 첫 조건이 동네일 때만 그린다
   const showing = authSettled && requirements.steps[0] === 'region'
   const oldRegion = showing ? requirements.abolishedRegion : pending ? submittingFrom : null
+  const next = safeNextPath(searchParams.get(NEXT_PARAM))
   const redirect =
     authSettled && requirements.settled && !showing
       ? stepTarget(
           requirements.steps,
-          safeNextPath(searchParams.get(NEXT_PARAM)),
+          next,
           carriedParams(searchParams),
+          reportIntentFrom(searchParams, next),
         )
       : null
   useEffect(() => {

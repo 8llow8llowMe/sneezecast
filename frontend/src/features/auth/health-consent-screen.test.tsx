@@ -1,13 +1,21 @@
 // @vitest-environment jsdom
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type Membership, OnboardingProvider } from '@/features/onboarding/onboarding-context'
+import { setSession } from '@/lib/session/session-store'
+import { memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
 
 import type * as authClient from './auth-client'
 import { agreeHealthConsent } from './auth-client'
 import { HealthConsentScreen } from './health-consent-screen'
+import {
+  clearLoginReturn,
+  LOGIN_RETURN_STORAGE_KEY,
+  peekLoginReturn,
+  saveLoginReturn,
+} from './login-return-store'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
 vi.mock('next/navigation', () => ({
@@ -44,6 +52,7 @@ describe('HealthConsentScreen', () => {
     router.replace.mockClear()
     router.push.mockClear()
     vi.mocked(agreeHealthConsent).mockReset()
+    clearLoginReturn()
   })
 
   it('4 / 4 단계 · 법정 고지 표(보관 52주)를 보이고 뒤로 버튼이 없다', () => {
@@ -124,6 +133,98 @@ describe('HealthConsentScreen', () => {
       await Promise.resolve()
     })
     expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  describe('로그인 뒤 돌아갈 곳 (#140)', () => {
+    const REPORT = { next: '/', region: '11680640', intent: 'report' as const }
+
+    it('보고하려던 가입이면 동의 뒤 같은 동네 홈의 보고 진입으로 가고 둔 값을 지운다', async () => {
+      saveLoginReturn(REPORT)
+      const { user } = setup()
+      await user.click(check())
+      await user.click(agree())
+      await waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith('/?region=11680640&report=start'),
+      )
+      expect(peekLoginReturn()).toEqual({ next: '/', region: null, intent: null })
+    })
+
+    it('나중에 할게요는 보고 진입을 붙이지 않는다 — 미룬 동의 시트를 홈이 다시 열지 않게', async () => {
+      saveLoginReturn(REPORT)
+      const { user } = setup()
+      await user.click(screen.getByRole('button', { name: '나중에 할게요' }))
+      expect(router.replace).toHaveBeenCalledWith('/?region=11680640')
+    })
+
+    it('내 정보에서 온 가입이면 내 정보로 간다', async () => {
+      saveLoginReturn({ next: '/me', region: null, intent: null })
+      const { user } = setup()
+      await user.click(screen.getByRole('button', { name: '나중에 할게요' }))
+      expect(router.replace).toHaveBeenCalledWith('/me')
+    })
+
+    it('카카오 왕복 뒤처럼 저장소에만 남은 값도 읽는다', async () => {
+      window.sessionStorage.setItem(
+        LOGIN_RETURN_STORAGE_KEY,
+        JSON.stringify({
+          v: 1,
+          next: '/me/devices',
+          region: null,
+          intent: null,
+          savedAt: Date.now(),
+        }),
+      )
+      const { user } = setup()
+      await user.click(screen.getByRole('button', { name: '나중에 할게요' }))
+      expect(router.replace).toHaveBeenCalledWith('/me/devices')
+      expect(window.sessionStorage.getItem(LOGIN_RETURN_STORAGE_KEY)).toBeNull()
+    })
+
+    describe('실데이터 — 동의가 세션 요약에 반영됐을 때만 보고 진입을 붙인다', () => {
+      afterEach(() => resetApiSession())
+
+      it('요약이 아직 미동의면(#168 전 — 동의 보내기가 목) 보고 진입 없이 같은 동네 홈으로 간다', async () => {
+        selectApiSource()
+        act(() => setSession(memberToken({ reportWritable: false })))
+        saveLoginReturn(REPORT)
+        const { user } = setup()
+        await user.click(check())
+        await user.click(agree())
+        await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/?region=11680640'))
+      })
+
+      it('요약이 동의로 바뀌었으면(#168 에서 동의 뒤 세션 요약을 다시 받음) 보고 진입을 붙인다', async () => {
+        selectApiSource()
+        act(() => setSession(memberToken({ reportWritable: false })))
+        vi.mocked(agreeHealthConsent).mockImplementationOnce(() => {
+          setSession(memberToken({ reportWritable: true }))
+          return Promise.resolve()
+        })
+        saveLoginReturn(REPORT)
+        const { user } = setup()
+        await user.click(check())
+        await user.click(agree())
+        await waitFor(() =>
+          expect(router.replace).toHaveBeenCalledWith('/?region=11680640&report=start'),
+        )
+      })
+    })
+
+    it('오염된 값이면 홈으로 간다', async () => {
+      window.sessionStorage.setItem(
+        LOGIN_RETURN_STORAGE_KEY,
+        JSON.stringify({
+          v: 1,
+          next: 'https://evil.example',
+          region: 'x',
+          intent: null,
+          savedAt: Date.now(),
+        }),
+      )
+      const { user } = setup()
+      await user.click(screen.getByRole('button', { name: '나중에 할게요' }))
+      expect(router.replace).toHaveBeenCalledWith('/')
+    })
   })
 
   it('가입을 마치지 않았으면 가입 동의로 돌려보낸다', () => {

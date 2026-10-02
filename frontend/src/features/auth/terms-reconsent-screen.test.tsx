@@ -261,6 +261,75 @@ describe('TermsReconsentScreen 동의하지 않고 로그아웃 (시안에 없�
   })
 })
 
+describe('TermsReconsentScreen 보고하려던 로그인 (#140)', () => {
+  const agreeNow = async () => {
+    const user = userEvent.setup()
+    render(ui)
+    await user.click(screen.getByRole('checkbox', { name: '바뀐 서비스 이용약관에 동의해요' }))
+    await user.click(agreeButton())
+  }
+
+  it('마친 뒤 남은 조건이 없으면 같은 동네 홈의 보고 진입으로 간다', async () => {
+    search = 'region=11680640&intent=report'
+    await agreeNow()
+    expect(router.replace.mock.calls).toEqual([['/?region=11680640&report=start']])
+  })
+
+  it('동네 조건이 남았으면 동네 다시 고르기에 보고하려던 표시를 잇는다', async () => {
+    search = 'region=11680640&mock-auth=member&mock-required=terms,region&intent=report'
+    await agreeNow()
+    expect(router.replace.mock.calls).toEqual([
+      [
+        '/setup/region?reselect=1&region=11680640&mock-auth=member&mock-required=region&intent=report',
+      ],
+    ])
+  })
+
+  it('내 정보로 돌아가는 재동의면 보고 진입을 붙이지 않는다', async () => {
+    search = 'next=/me&intent=report'
+    await agreeNow()
+    expect(router.replace.mock.calls).toEqual([['/me']])
+  })
+
+  it('동네 조건만 남은 채 닿으면 동네 다시 고르기로 보내며 표시를 잇는다', () => {
+    resetMockSession()
+    search = 'mock-auth=member&mock-required=region&intent=report'
+    render(ui)
+    expect(router.replace).toHaveBeenCalledWith(
+      '/setup/region?reselect=1&mock-auth=member&mock-required=region&intent=report',
+    )
+  })
+
+  it('조건 없이 닿으면(마친 것이 아님) 홈으로만 보내고 보고 진입은 열지 않는다', async () => {
+    resetMockSession()
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
+    search = 'region=11680640&intent=report'
+    render(ui)
+    expect(router.replace.mock.calls).toEqual([['/?region=11680640']])
+  })
+
+  it('실데이터도 재동의를 마치면 같은 동네 홈의 보고 진입으로 간다', async () => {
+    selectApiSource()
+    // 내 동네 읽기는 실패시켜(일시 장애) 동네 조건 없이 정해지게 한다
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
+    )
+    const stop = startSession()
+    act(() => setSession(memberToken({ pendingConsents: ['TERMS_OF_SERVICE'] })))
+    try {
+      search = 'region=11680640&intent=report'
+      await agreeNow()
+      await vi.waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith('/?region=11680640&report=start'),
+      )
+    } finally {
+      stop()
+      resetApiSession()
+    }
+  })
+})
+
 describe('TermsReconsentScreen 들어올 수 없을 때', () => {
   it('비회원이면 그리지 않고 next 로 보낸다', () => {
     resetMockSession()

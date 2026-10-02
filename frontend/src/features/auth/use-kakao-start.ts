@@ -8,6 +8,8 @@ import { useActiveRef } from '@/lib/use-active-ref'
 import { useDataSource } from '@/lib/use-data-source'
 
 import { startKakaoLogin } from './kakao-client'
+import type { LoginReturn } from './login-return'
+import { saveLoginReturn } from './login-return-store'
 
 /** 카카오 로그인을 시작하지 못한 까닭. 화면이 알림 모양(토스트 · 상자)을 고른다 */
 export type KakaoStartFailure = 'limited' | 'failed'
@@ -24,12 +26,17 @@ export const KAKAO_START_FAILURE_TEXT: Readonly<Record<KakaoStartFailure, string
  * - 출처는 누를 때의 `useDataSource()` 다(하이드레이션 뒤라 쿠키 값)
  * - 시작하면 이동하는 동안에도 `pending` 을 켜 둔다 — 다시 눌러 두 번 시작하지 않게 한다(누름은 ref 로도 막는다)
  * - 실데이터는 카카오 인가 화면으로 문서를 옮기고(`assignLocation`), 목은 앱 안 주소로 `router.push` 한다
+ * - 떠나기 직전에 로그인 뒤 돌아갈 곳(`loginReturn`)을 둔다(`login-return-store.ts`, #140) — 카카오를 다녀오면 문서를 새로 열어
+ *   메모리가 빈다. 콜백(로그인됨) · 계정 연결 · 카카오 가입 마무리(S02-4)가 읽는다. 돌아갈 곳이 없으면 앞선 값을 지운다
  * - 카카오 화면에서 브라우저 뒤로로 돌아와 bfcache 로 다시 보이면(`pageshow` 의 `persisted`) `pending` 을 풀어 다시 누를 수 있게 한다
  * - 실패하면 `pending` 을 풀고 까닭을 돌려준다. 응답 전에 화면을 떠났으면(`useActiveRef`) 아무것도 하지 않고 null 이다
  */
 export function useKakaoStart(): {
   pending: boolean
-  start: (options?: { switchAccount?: boolean }) => Promise<KakaoStartFailure | null>
+  start: (
+    loginReturn: LoginReturn,
+    options?: { switchAccount?: boolean },
+  ) => Promise<KakaoStartFailure | null>
 } {
   const router = useRouter()
   const source = useDataSource()
@@ -48,7 +55,10 @@ export function useKakaoStart(): {
   }, [])
 
   const start = useCallback(
-    async (options: { switchAccount?: boolean } = {}): Promise<KakaoStartFailure | null> => {
+    async (
+      loginReturn: LoginReturn,
+      options: { switchAccount?: boolean } = {},
+    ): Promise<KakaoStartFailure | null> => {
       if (starting.current) return null
       starting.current = true
       setPending(true)
@@ -57,6 +67,7 @@ export function useKakaoStart(): {
         const result = await startKakaoLogin(source, options)
         if (!active.current) return null
         if (result.status === 'redirect') {
+          saveLoginReturn(loginReturn)
           if (result.external) assignLocation(result.href)
           else router.push(result.href)
           return null

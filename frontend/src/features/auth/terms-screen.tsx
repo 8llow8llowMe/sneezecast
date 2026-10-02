@@ -31,6 +31,7 @@ import {
 import { ConsentRow, LEGAL_TEXT_NOT_READY } from './consent-row'
 import { type Consent, consentFor } from './legal'
 import { kakaoFailPath } from './login-notice'
+import { withSavedLoginReturn } from './login-return-store'
 import { NO_CHECKS, requiredAgreed, setAll, type TermsChecks } from './terms-checks'
 
 type Failure = 'signup' | 'email-taken' | 'login' | 'region' | 'region-invalid' | null
@@ -52,6 +53,8 @@ type Failure = 'signup' | 'email-taken' | 'login' | 'region' | 'region-invalid' 
  *   로그인 방법 선택(`/login?error=kakao-fail`, 사유는 `&kakao=expired`)으로 기록을 바꿔 간다
  * - 가입된 이메일(`email-taken`, `MEMBER_001`)이면 빨강 상자로 알리고 `이메일로 로그인` 을 둔다(시안 없음 — Signup-email 의
  *   exists 문구를 옮겼다). 누르면 비밀번호를 지우고 이메일 로그인으로 기록을 바꿔 간다
+ * - 위 두 길로 로그인 화면에 갈 때는 가입에 들고 온 돌아갈 곳(`login-return-store.ts`, #140)을 그 주소에 쿼리로 싣는다 — 거기서 로그인해도
+ *   원래 가려던 곳으로 간다. 가입을 마치면 증상 보고 동의(S02-4)가 그 값을 읽는다
  * - 실데이터 · 목데이터는 `useDataSource()` 로 정해 가입 · 로그인 · 동네 저장에 넘긴다
  * - 고른 동네를 서버가 받지 않으면(`invalid` — 없는 코드 · 폐지) 빨강 상자로 앞 단계에서 다시 고르게 한다. 계정 · 로그인은 남아
  *   다시 고른 뒤 누르면 동네 저장만 보낸다
@@ -164,7 +167,7 @@ export function TermsScreen() {
       }
       if (result.status === 'kakao-restart') {
         // 가입표가 없어 이 화면에서는 다시 보낼 수 없다. 이동하는 동안은 보내는 중으로 둔다(다시 누르지 않게)
-        if (active.current) replace(kakaoFailPath(result.reason))
+        if (active.current) replace(withSavedLoginReturn(kakaoFailPath(result.reason)))
         return
       }
       // 서버도 가입에 쓴 인증 표시를 지운다. 카카오 가입은 이미 로그인한 상태다
@@ -211,7 +214,7 @@ export function TermsScreen() {
   function goLogin() {
     setPending(true)
     updateSignup({ password: '' })
-    replace(LOGIN_EMAIL_PATH)
+    replace(withSavedLoginReturn(LOGIN_EMAIL_PATH))
   }
 
   return (

@@ -10,11 +10,17 @@ import { KakaoButton } from '@/components/kakao-button'
 import { ToastRegion, useToast } from '@/components/toast'
 import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
-import { LOGIN_EMAIL_PATH, SIGNUP_EMAIL_PATH, START_PATH } from '@/features/onboarding/paths'
+import {
+  isFlowStepPath,
+  LOGIN_EMAIL_PATH,
+  SIGNUP_EMAIL_PATH,
+  START_PATH,
+} from '@/features/onboarding/paths'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
 import type { KakaoFailReason, LoginNotice } from './login-notice'
 import { isReturning, loginHref, type LoginReturn, NO_LOGIN_RETURN } from './login-return'
+import { saveLoginReturn } from './login-return-store'
 import { KAKAO_START_FAILURE_TEXT, useKakaoStart } from './use-kakao-start'
 
 /**
@@ -48,8 +54,15 @@ const KAKAO_FAIL_TEXT: Readonly<Record<KakaoFailReason | 'default', string>> = {
  * **돌아갈 곳**(`?next=` · `?region=`, #123): 회원만 쓰는 화면(내 정보)의 가드가 붙여 보낸다. 이메일 로그인 링크에 그대로 넘겨
  * 로그인에 성공하면 그곳으로 간다(`login-return.ts`). 이때 뒤로는 앞 화면을 따지지 않고 되돌린다 — 가드가 기록을 바꿔 보내
  * 바로 앞이 내 정보 링크를 누른 화면이다. 돌아갈 곳이 없으면 지금처럼 시작 화면(S01)에서 왔을 때만 되돌린다.
+ * 단, 바로 앞이 가입 · 재설정 · 카카오 · 조건 화면 흐름의 단계(`isFlowStepPath`)면 되돌리지 않고 시작 화면으로 기록을 바꿔 간다(#140) —
+ * 흐름 중간에 로그인 화면으로 돌려보낼 때(S02-3 의 카카오 가입표 만료 · 가입된 이메일 → 이메일 로그인의 뒤로, 재설정 완료 → 이메일 로그인의 뒤로)
+ * 돌아갈 곳을 쿼리로 다시 실어 이 화면은 "돌아갈 곳이 있는 로그인" 이 되는데, 바로 앞 기록은 그만둔 단계다. 주소 표시(`reason` · `error`)로
+ * 가리지 않고 앱 안 이동 기록의 바로 앞 경로로 가린다 — 이메일 로그인의 뒤로가 쿼리를 바꿔 이 화면으로 오면 표시가 사라지고,
+ * 앞으로 흐름이 늘어도 경로 접두어로 함께 걸린다.
  * 머리줄 보고 버튼이 보낸 보고하려던 로그인(`?intent=report`, #136)도 같다 — 이메일 로그인에 이어 넘기고, 뒤로는 보고를 누른 화면으로 되돌린다.
- * 카카오 · 이메일 가입은 아직 돌아갈 곳을 이어 받지 않는다(가입 · 카카오 로그인을 마치면 홈 — #140, `afterKakaoLoginPath`). 이메일 가입의 뒤로는 기록을 되돌려 이 주소(쿼리 포함)로 온다.
+ * 카카오로 계속하기 · 이메일로 가입하기는 떠나기 전에 돌아갈 곳을 둔다(`login-return-store.ts`, #140) — 카카오 로그인 · 계정 연결 ·
+ * 가입 마무리(S02-4)를 마치면 그곳으로 간다. 돌아갈 곳이 없으면 앞서 둔 값을 지운다. 이메일 가입의 뒤로는 기록을 되돌려 이 주소(쿼리 포함)로 온다.
+ * 로그인 만료(`?reason=expired`)도 만료된 화면(허용 목록 안이면)을 `?next=` 로 싣고 온다(#140).
  *
  * 시안: docs/design/auth/screens/ 의 Login · Login-kakao-fail (+ -T · -D)
  */
@@ -89,13 +102,17 @@ export function LoginScreen({
     // 실데이터는 카카오를 다녀오며 페이지를 새로 열어 메모리가 비므로, 콜백이 보내는 S02-1(`?from=kakao`)이 다시 'kakao' 로 둔다
     resetSignup()
     updateSignup({ method: 'kakao' })
-    const failure = await kakao.start()
+    const failure = await kakao.start(loginReturn)
     if (failure) show({ message: KAKAO_START_FAILURE_TEXT[failure] })
   }
 
   return (
     <OnboardingLayout
-      onBack={() => (isReturning(loginReturn) ? navTrail.goBack(START_PATH) : goBack(START_PATH))}
+      onBack={() =>
+        isReturning(loginReturn)
+          ? navTrail.goBack(START_PATH, (previous) => !isFlowStepPath(previous))
+          : goBack(START_PATH)
+      }
       panelTitle={
         <>
           보고는 회원만
@@ -107,7 +124,14 @@ export function LoginScreen({
           <KakaoButton disabled={kakao.pending} onClick={() => void continueWithKakao()}>
             카카오로 계속하기
           </KakaoButton>
-          <Button variant="secondary" fullWidth onClick={() => router.push(SIGNUP_EMAIL_PATH)}>
+          <Button
+            variant="secondary"
+            fullWidth
+            onClick={() => {
+              saveLoginReturn(loginReturn)
+              router.push(SIGNUP_EMAIL_PATH)
+            }}
+          >
             이메일로 가입하기
           </Button>
           <p className="flex items-center justify-center gap-1">
