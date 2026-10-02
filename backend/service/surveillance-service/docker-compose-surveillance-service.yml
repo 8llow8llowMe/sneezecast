@@ -38,6 +38,9 @@ x-surveillance-service-environment: &surveillance_service_environment
   JWT_ACCESS_KEY: ${JWT_ACCESS_KEY}
   # reporter_key = HMAC-SHA256(pepper, memberId). 32자 미만이면 기동 실패. 교체 금지 (교체 = 전 행 재키잉).
   REPORTER_KEY_PEPPER: ${REPORTER_KEY_PEPPER}
+  # Snowflake ID. 환경당 인스턴스 하나라 기본값(0/0)으로 충분하다. 인스턴스를 늘리면 인스턴스마다 다른 worker-id 를 준다. 기본값은 application.yml 과 같다.
+  SNOWFLAKE_DATACENTER_ID: ${SNOWFLAKE_DATACENTER_ID:-0}
+  SNOWFLAKE_WORKER_ID: ${SNOWFLAKE_WORKER_ID:-0}
 
 x-logging: &default-logging
   driver: "json-file"
