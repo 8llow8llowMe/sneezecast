@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sneezecast.SurveillanceH2TestSupport;
+import com.sneezecast.domainlayer.report.adapter.out.persistence.entity.WeeklyReportEntity;
 import com.sneezecast.domainlayer.report.application.exception.ReportErrorCode;
 import com.sneezecast.domainlayer.report.application.exception.ReportException;
 import com.sneezecast.domainlayer.report.domain.enums.SymptomGroup;
@@ -217,6 +218,23 @@ class WeeklyReportRepositoryAdapterTest extends SurveillanceH2TestSupport {
         }
 
         assertThat(adapter.findByReporterKeyAndIsoWeek(KEY_A, W40).orElseThrow().revisionCount()).isEqualTo(threads * updatesPerThread);
+    }
+
+    @Test
+    @DisplayName("수정 횟수는 SMALLINT 상한(32767)에서 멈춘다 — 상한에서 고쳐도 범위 초과 없이 값만 바뀐다")
+    void revisionCountSaturatesAtSmallintMax() {
+        adapter.insert(WeeklyReport.newReport(1L, KEY_A, W40, YEOKSAM_1, Set.of()));
+        jdbcTemplate.update("UPDATE weekly_report SET revision_count = ?", WeeklyReportEntity.MAX_REVISION_COUNT - 1);
+
+        assertThat(update(KEY_A, W40, GARAK_1, Set.of())).get().extracting(WeeklyReport::revisionCount).isEqualTo(32767);
+        Optional<WeeklyReport> saturated = update(KEY_A, W40, YEOKSAM_1, Set.of(ENTERIC));
+
+        assertThat(saturated).get().satisfies(report -> {
+            assertThat(report.revisionCount()).isEqualTo(32767);
+            assertThat(report.districtCode()).isEqualTo(YEOKSAM_1);
+            assertThat(report.symptoms()).containsExactly(ENTERIC);
+        });
+        assertThat(number(row(KEY_A, W40), "REVISION_COUNT")).isEqualTo(32767);
     }
 
     @Test
