@@ -12,6 +12,13 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    // 동적 조회는 QueryDSL(coding-conventions §8-4). persistence-core 는 implementation 으로만 들고 있어, Q 클래스 생성 · 컴파일용으로 같은 버전을 다시 건다.
+    implementation 'io.github.openfeign.querydsl:querydsl-jpa:7.1'
+    annotationProcessor 'io.github.openfeign.querydsl:querydsl-apt:7.1:jpa'
+    // Entity ↔ Domain 매핑 (coding-conventions §4). lombok 보다 뒤에 돌도록 binding 을 함께 건다. 버전은 auth-service 와 같게 둔다.
+    implementation 'org.mapstruct:mapstruct:1.6.3'
+    annotationProcessor 'org.mapstruct:mapstruct-processor:1.6.3'
+    annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
     // OpenAPI 문서 빈(SurveillanceServiceSwaggerConfig)과 컨트롤러 Swagger 어노테이션용. 버전은 common-core 와 같게 둔다.
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
     runtimeOnly 'com.mysql:mysql-connector-j'
