@@ -3,6 +3,7 @@ import { act, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { clearSessionExpiring, isSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
+import { NavTrailProvider, useNavTrail } from '@/lib/use-nav-trail'
 
 import { getMockSession, loginWithEmail, resetMockSession } from './auth-client'
 import { SessionExpiryWatcher } from './session-expiry-watcher'
@@ -94,5 +95,50 @@ describe('SessionExpiryWatcher', () => {
 
     await act(() => loginWithEmail('dong@example.com', 'dongne2026'))
     expect(isSessionExpiring()).toBe(false)
+  })
+})
+
+describe('SessionExpiryWatcher 와 앱 안 이동 기록', () => {
+  let navTrail: ReturnType<typeof useNavTrail> | null = null
+  function Probe() {
+    navTrail = useNavTrail()
+    return null
+  }
+
+  beforeEach(async () => {
+    router.replace.mockClear()
+    router.back.mockClear()
+    clearSessionExpiring()
+    resetMockSession()
+    await loginWithEmail('dong@example.com', 'dongne2026')
+  })
+
+  afterEach(() => {
+    resetMockSession()
+  })
+
+  it('바로 연 공식 정보 → 홈 → 로그인 만료(/login 으로 replace) → 휴대폰 뒤로 → 공식 정보의 뒤로가 사이트 밖으로 나가지 않는다', () => {
+    // 같은 요소 객체를 다시 넘기면 React 가 다시 그리지 않아 매번 새로 만든다
+    const tree = () => (
+      <NavTrailProvider>
+        <Probe />
+        <SessionExpiryWatcher />
+      </NavTrailProvider>
+    )
+    pathname.value = '/official'
+    const { rerender } = render(tree())
+    pathname.value = '/'
+    rerender(tree())
+    act(() => notifySessionExpired())
+    expect(router.replace).toHaveBeenCalledWith('/login?reason=expired')
+    for (const next of ['/login', '/official']) {
+      pathname.value = next
+      rerender(tree())
+    }
+
+    router.replace.mockClear()
+    navTrail?.goBack('/')
+    expect(router.back).not.toHaveBeenCalled()
+    expect(router.replace).toHaveBeenCalledWith('/')
   })
 })

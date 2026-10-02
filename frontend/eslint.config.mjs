@@ -40,6 +40,18 @@ const noDirectFetch = {
   message: 'fetch 직접 호출 금지. src/lib/api/ 를 거친다 (docs/conventions.md)',
 }
 
+/**
+ * Next 라우터의 replace 직접 호출 차단 — 앱 안 replace 는 모두 `useNavTrail().replace` 로 한다 (docs/conventions.md "화면의 뒤로").
+ * 기록을 거치지 않은 replace 는 앱 안 이동 기록을 실제 브라우저 기록보다 길게 만들어, 바로 연 화면의 뒤로가 사이트 밖으로 나간다.
+ * `router.replace` · `useRouter().replace` · `const { replace } = useRouter()` 를 잡는다. 기록 자신(src/lib/use-nav-trail.tsx)만 예외다.
+ */
+const noDirectRouterReplace = {
+  selector:
+    ':matches(MemberExpression[object.name="router"][property.name="replace"], MemberExpression[object.callee.name="useRouter"][property.name="replace"], VariableDeclarator[init.callee.name="useRouter"] > ObjectPattern > Property[key.name="replace"])',
+  message:
+    'router.replace 직접 호출 금지. useNavTrail().replace 를 쓴다 — 앱 안 이동 기록이 어긋나 뒤로가 사이트 밖으로 나간다 (docs/conventions.md)',
+}
+
 export default tseslint.config(
   {
     ignores: ['.next/**', 'coverage/**', 'node_modules/**', 'next-env.d.ts', 'docs/**'],
@@ -104,7 +116,13 @@ export default tseslint.config(
         { name: 'sessionStorage', message: '위와 동일' },
       ],
 
-      'no-restricted-syntax': ['error', noArbitraryValue, noComplexArbitrary, noRawHex],
+      'no-restricted-syntax': [
+        'error',
+        noArbitraryValue,
+        noComplexArbitrary,
+        noRawHex,
+        noDirectRouterReplace,
+      ],
 
       // icon-only 버튼의 라벨. 래퍼 컴포넌트에서 오탐이 있어 warn 으로 둔다
       'jsx-a11y/control-has-associated-label': 'warn',
@@ -142,7 +160,16 @@ export default tseslint.config(
         noComplexArbitrary,
         noRawHex,
         noDirectFetch,
+        noDirectRouterReplace,
       ],
+    },
+  },
+
+  // ── 4-1. 앱 안 이동 기록 자신은 router.replace 를 부른다
+  {
+    files: ['src/lib/use-nav-trail.tsx'],
+    rules: {
+      'no-restricted-syntax': ['error', noArbitraryValue, noComplexArbitrary, noRawHex],
     },
   },
 

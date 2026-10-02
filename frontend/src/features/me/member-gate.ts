@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 
 import type { MockAuthState } from '@/features/auth/auth-client'
 import { carriedParams, safeNextPath, stepTarget } from '@/features/auth/required-steps'
@@ -10,6 +10,7 @@ import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { LOGIN_EXPIRED_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { isSessionExpiring } from '@/lib/session-expiry'
 import { useHydrated } from '@/lib/use-hydrated'
+import { useNavTrail } from '@/lib/use-nav-trail'
 
 /**
  * 회원만 쓰는 계정 화면(로그인한 기기 · 비밀번호)의 가드. 회원이면 회원 상태를, 아니면(또는 아직 모르면) null 을 돌려준다.
@@ -22,15 +23,15 @@ import { useHydrated } from '@/lib/use-hydrated'
  * 앱 안 이동으로 처음 그리는 화면은 하이드레이션이 아니라 처음부터 목 세션으로 판단한다.
  */
 export function useMemberGate(): Exclude<MockAuthState, 'guest'> | null {
-  const router = useRouter()
+  const { replace } = useNavTrail()
   const hydrated = useHydrated()
   const auth = useMockAuth()
   const guest = hydrated && auth === 'guest'
 
   useEffect(() => {
     // 로그인 만료로 비회원이 됐으면 만료 주소(토스트)로 보낸다. 만료 이동보다 나중에 불려도 같은 곳에 닿는다
-    if (guest) router.replace(isSessionExpiring() ? LOGIN_EXPIRED_PATH : LOGIN_PATH)
-  }, [guest, router])
+    if (guest) replace(isSessionExpiring() ? LOGIN_EXPIRED_PATH : LOGIN_PATH)
+  }, [guest, replace])
 
   return hydrated && auth !== 'guest' ? auth : null
 }
@@ -62,12 +63,12 @@ export function useRequiredStepsTarget(nextPath: string): string | null {
  * 조건이 있는 동안에도 화면은 그대로 그린다(첫 그림은 늘 비회원이라 숨겨도 깜빡인다).
  */
 export function useRequiredStepsGate(nextPath: string): string | null {
-  const router = useRouter()
+  const { replace } = useNavTrail()
   const target = useRequiredStepsTarget(nextPath)
 
   useEffect(() => {
-    if (target) router.replace(target)
-  }, [target, router])
+    if (target) replace(target)
+  }, [target, replace])
 
   return target
 }
