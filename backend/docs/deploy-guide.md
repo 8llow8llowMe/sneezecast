@@ -210,7 +210,7 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
 | `SERVICE_DISCOVERY_HOSTNAME` | `192.168.0.13` | 미니PC 사설 IP (미정) | dev 는 값 대조, prod 는 비어 있지 않음만 |
 | `SERVICE_DISCOVERY_PORT` | `3761` | `4761` | 모든 잡이 값 대조 (내부 포트 = 호스트 포트) |
 | 서비스 포트 키 (`API_GATEWAY_PORT` 등) | §4 표의 dev 포트 | §4 표의 prod 포트 | 그 잡의 `hostPorts` 와 대조 |
-| `AUTH_SERVICE_APP_NAME` / `SURVEILLANCE_SERVICE_APP_NAME` | `auth-service` / `surveillance-service` | 같음 | compose 가 각 서비스의 `SPRING_APPLICATION_NAME` 으로 넘긴다 |
+| `AUTH_SERVICE_APP_NAME` / `SURVEILLANCE_SERVICE_APP_NAME` | `auth-service` / `surveillance-service` | 같음 | compose 가 각 서비스의 `SPRING_APPLICATION_NAME` 으로 넘긴다. auth 는 `SURVEILLANCE_SERVICE_APP_NAME` 을 내 동네 검증 Feign 대상 이름으로도 쓴다(compose 기본값 `surveillance-service`) |
 | `AUTH_DB_URL` | `jdbc:mysql://192.168.0.11:3306/sneezecast_auth?...` | 미정 | DB 이름은 §8 SQL 과 같아야 한다 |
 | `SURVEILLANCE_DB_URL` · `BATCH_DB_URL` | `jdbc:mysql://192.168.0.11:3306/sneezecast_surveillance?...` | 미정 | batch 도 같은 DB 다 |
 | `GATEWAY_TRUSTED_PROXIES` | `192.168.0.12` (nginx) | prod nginx 사설 IP (미정) | 앱이 기동 때 형식(IP · CIDR, 호스트명 거부)만 본다. 값이 틀려도 뜨지만 nginx 경유 요청이 모두 nginx IP 한 키를 나눠 써 auth IP 발송 상한이 전체에 걸린다 — §9 7번으로 확인 |

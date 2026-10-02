@@ -124,7 +124,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | `auth` | 이메일 + 비밀번호 가입·로그인, 카카오 소셜 로그인, 이메일 인증 코드, 비밀번호 재설정, 토큰 발급·재발급·폐기, 세션(기기) 관리 |
 | `member` | 회원 (닉네임·프로필 이미지), 내 정보 수정, 비밀번호 변경·설정, 탈퇴 |
 | `consent` | 민감정보 처리 동의와 철회 이력 (알림 수신 동의는 2단계) |
-| `region` | 회원이 선택한 행정동 |
+| `region` | 회원이 선택한 행정동 (내 동네 저장 · 조회 — 코드 검증과 이름 · 폐지 여부는 surveillance 내부 API 를 Feign 으로 부른다) |
 | `notification` | PWA 푸시 구독, 안내 발행 시 팬아웃 발송, 발송 로그 (2단계) |
 
 - 스키마: MySQL `auth` (물리 DB 이름 `sneezecast_auth` — 공유 dev MySQL 에서 다른 프로젝트와 겹치지 않게 접두사를 붙인다). Redis · MinIO 사용.
@@ -140,6 +140,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 비밀번호 | `POST /password/reset/send-code` · `POST /password/reset/verify-code` (일회용 재설정 토큰) · `POST /password/reset` · `POST /me/password` (변경) · `POST /me/password/setup` (소셜 가입자 최초 설정) |
 | 세션 | `GET /sessions` · `DELETE /sessions/{sessionId}` · `DELETE /sessions` (현재 기기를 뺀 전부) |
 | 내 정보 | `GET /me` · `PATCH /me` · `POST /me/withdraw` (#59) · 프로필 이미지 업로드 · `DELETE /me/profile-image` (#112) |
+| 내 동네 | `GET /me/region` · `PUT /me/region` |
 
 **저장소**
 
@@ -193,14 +194,14 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 
 **내 정보 · 비밀번호 변경 · 설정** (`member` 컨텍스트, 인증 필요)
 
-- `GET /members/me` → `{memberId, email, nickname, provider(EMAIL | KAKAO — DB 값이 null 이면 EMAIL), hasPassword, role, pendingConsents, reportWritable}`. 재동의 · 보고 가능 여부는 토큰과 같은 계산(`MemberConsentProcessor.currentStatus` + auth 의 `ReportScopePolicy` — member 는 `MemberReportScopePort` 로 부른다)이다. 내 동네는 #60, 프로필 이미지는 #112 에서 더한다.
+- `GET /members/me` → `{memberId, email, nickname, provider(EMAIL | KAKAO — DB 값이 null 이면 EMAIL), hasPassword, role, pendingConsents, reportWritable}`. 재동의 · 보고 가능 여부는 토큰과 같은 계산(`MemberConsentProcessor.currentStatus` + auth 의 `ReportScopePolicy` — member 는 `MemberReportScopePort` 로 부른다)이다. 내 동네는 `/me` 에 싣지 않고 `GET /members/me/region`(#60)으로 따로 읽는다 — 이름 · 폐지 여부를 surveillance 에서 읽으므로 `/me` 가 surveillance 장애에 묶이지 않게 한다. 프로필 이미지는 #112 에서 더한다.
 - `PATCH /members/me` 는 닉네임만 바꾼다(가입과 같은 2~10자). 수정은 엔티티를 조회해 변경 감지로 한다 — 리포지토리의 수정 메서드는 `@Transactional(MANDATORY)` 라 트랜잭션 밖에서 부르면 바로 실패한다.
 - 비밀번호 변경 `{currentPassword, newPassword}` · 최초 설정 `{newPassword}`: 소셜 계정이 변경을 부르면 `MEMBER_007`, 이미 비밀번호가 있는데 설정을 부르면 `MEMBER_008`. 새 비밀번호 규칙은 가입과 같다(현재와 같아도 막지 않는다).
 - 현재 비밀번호 확인은 회원 단위로 횟수를 제한한다(`passwordChangeFail:{memberId}`, 상한 · 잠금은 `auth.login.*` 5회 · 10분). 로그인처럼 **BCrypt 전에 먼저 올리고**, 상한째 틀린 시도부터 `MEMBER_006`(429)이다. 틀리면 `MEMBER_005`.
 - 성공 순서: 현재 비밀번호 확인 → 새 비밀번호 BCrypt(트랜잭션 밖) → **지금 기기(access `sid`)를 뺀 다른 기기 세션 폐기 + access 블랙리스트**(sid 가 없으면 전부) → 저장(커밋) → 같은 범위 2차 폐기(실패해도 로그만 — 재설정과 같은 이유). 1차 폐기가 실패하면 저장하지 않고 `MEMBER_009`(503) — member 컨트롤러에는 auth 의 예외 처리기가 걸리지 않아 auth 의 `AUTH_017` 을 member 코드로 바꿔 낸다.
 - 비밀번호 최초 설정은 지금은 access 만으로 된다. 탈취된 access(15분 이하)로 이메일 로그인 자격을 만들 수 있다는 위험이 있지만, 소셜(카카오) 회원이 아직 없어(#61) 노출이 없다. 재인증(이메일 코드 · 최근 로그인)을 요구할지는 #61 에서 정한다.
 - member 요청 검증은 `MemberRequestExceptionHandler`(member 패키지 전용) 가 `MEMBER_1xx` 로 낸다. auth 검증 오류가 MEMBER 코드로 새지 않게 처리기를 나눴다.
-- **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향).
+- **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향). `region` 은 다른 컨텍스트와 서로 import 하지 않는다(회원은 JWT 의 `memberId` 로만 안다).
 - 오류 코드: `AUTH_018` 재설정 인증 만료(400) · `AUTH_019` 재설정 IP 상한(429) · 검증 `AUTH_115` · `116`(resetToken), `MEMBER_004` 회원 없음(404) · `005` 현재 비밀번호 불일치(400) · `006` 확인 잠금(429) · `007` 비밀번호 미설정(409) · `008` 이미 설정됨(409) · `009` 세션 저장소 장애(503) · `100` · `198` · `199` 요청 형식, 검증 `MEMBER_101~107`.
 
 **화면 계약** (2026-10-01 결정, 프론트 S13-2~6 · S02-2~4 · S10)
@@ -220,6 +221,12 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 비밀번호 재설정(S13-6)은 프론트 제안 1 이다: verify-code 가 `{resetToken}` 을 주고, 새 비밀번호는 `{resetToken, newPassword}` 로만 보낸다. 토큰은 메모리에만 둔다. `AUTH_018` 이면 `/password/reset?reason=verification-expired`. 토큰은 1회용이라 토큰당 시도 상한은 두지 않았다(제안과 다른 점). 재설정에 성공하면 **모든 기기가 로그아웃**되므로 화면은 이메일 로그인으로 보낸다.
 - 비밀번호 변경 · 설정(S10)에 성공하면 **이 기기는 유지되고 다른 기기는 로그아웃**된다(2026-10-02 결정). 화면에 "다른 기기에서는 로그아웃돼요" 안내가 필요하다. `MEMBER_005` → 현재 비밀번호 틀림, `MEMBER_006` → 잠시 막힘, `MEMBER_007` · `008` 은 `hasPassword` 와 어긋난 호출이라 내 정보를 다시 불러온다.
 - 내 정보 `GET /members/me` 의 `provider` 는 `EMAIL` / `KAKAO`, `hasPassword` 로 `비밀번호 변경` / `비밀번호 설정` 을 가른다. 재동의 조건은 로그인 응답과 같은 `pendingConsents` 다.
+
+**내 동네** (`region` 컨텍스트, `/api/v1/members/me/region`)
+
+- `PUT` 은 형식(숫자 8자리 — `REGION_101` 필수 · `102` 형식)을 먼저 보고, surveillance `GET /internal/v1/districts/{code}` 로 현행인지 확인한 뒤 회원당 1행 upsert 한다(있으면 변경 감지로 코드만 바꾼다). 없는 코드 `REGION_001` · 폐지 `REGION_002`(400), 같은 회원의 동시 첫 저장 경합 `REGION_003`(409, 다시 보내면 갱신). 원격 확인은 트랜잭션 밖이고 저장 구간만 `MemberRegionProcessor.save` 트랜잭션이다.
+- `GET` 은 미설정이면 200 + `dataBody: null`, 있으면 이름 · 폐지 여부를 그때 surveillance 에서 읽는다(`abolished = !active`). surveillance 에 코드가 없으면 `abolished: true` · 이름 null 로 내리고 WARN 을 남긴다(코드만). 저장 행은 자동으로 바꾸지 않는다.
+- Feign `DistrictClient`(이름 `feign-client.target-services.surveillance-service`), timeout connect 1s · read 3s(`spring.cloud.openfeign.client.config.default`), 서킷 `surveillance-service`(최근 20건 중 10건 이상 · 실패율 50% → 10초 열림, 4xx 제외). 5xx · timeout · 서킷 오픈 · 계약 밖 응답(봉투 없는 404 등)은 `REGION_004`(503) — **검증하지 못한 코드는 저장하지 않고**, 조회도 503 이다.
 
 **설정 · 기동 규칙**
 
