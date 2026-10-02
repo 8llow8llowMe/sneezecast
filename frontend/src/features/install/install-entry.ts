@@ -24,29 +24,3 @@ export function installSearch(
   }
   return params.toString()
 }
-
-/*
- * 앱 안 링크로 설치 안내에 들어왔는지. 모듈 메모리라 새로고침하면 사라진다(브라우저 저장소에 남기지 않는다).
- *
- * 설치 안내는 홈 · 내 정보와 레이아웃을 같이 쓰지 않는 단독 화면이라 레이아웃 Provider 로 앞 화면을 셀 수 없다.
- * 진입 링크가 누를 때 표시를 남기고(`markInstallEntry`), 화면이 마운트 때 한 번 읽어 상태에 둔 뒤 표시를 비운다
- * (`enteredInstallInApp` → `clearInstallEntry`, 동네 안내 `notice-entry.ts` 와 같다). 표시가 남지 않아 새 탭으로 연 링크 ·
- * 나중에 다른 길로 들어온 설치 안내가 앞 기록이 있다고 잘못 보지 않는다.
- * 주소로 바로 열었거나 새로고침 · 새 탭 · 앞으로 가기로 다시 들어왔으면 표시가 없다 — 그때는 홈으로 기록을 바꿔 간다.
- */
-let enteredInApp = false
-
-/** 설치 안내로 가는 앱 안 링크를 누를 때 부른다. 진입 링크마다 불러야 한다 */
-export function markInstallEntry(): void {
-  enteredInApp = true
-}
-
-/** 앱 안 링크로 들어왔으면 true. 화면이 마운트 때 한 번 읽는다(`useState` 초기값) */
-export function enteredInstallInApp(): boolean {
-  return enteredInApp
-}
-
-/** 표시를 비운다. 화면이 읽은 뒤(마운트 effect)와 테스트에서 부른다 */
-export function clearInstallEntry(): void {
-  enteredInApp = false
-}

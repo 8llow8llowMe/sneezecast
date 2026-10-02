@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
+import type { ReactNode } from 'react'
+
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resetMockSession } from '@/features/auth/auth-client'
-import { clearInstallEntry } from '@/features/install/install-entry'
 import { InstallScreen } from '@/features/install/install-screen'
 import { cancelReport } from '@/features/report/report-client'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import { HomeScreen } from './home-screen'
 import { HOME_MOCKS } from './mock'
@@ -16,7 +18,13 @@ const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
   useRouter: () => router,
+  usePathname: () => window.location.pathname,
 }))
+
+/** 루트 레이아웃처럼 앱 안 이동 기록으로 감싼다. 화면을 바꿔 그려도 기록은 이어진다 */
+function app(child: ReactNode) {
+  return <NavTrailProvider>{child}</NavTrailProvider>
+}
 
 /** 열린 대화상자의 제목 (홈에는 보고 · 판단 기준 · 로그인 · 동의 대화상자가 있다) */
 function openDialogTitle() {
@@ -34,7 +42,6 @@ describe('보고 완료 → 홈 화면 추가 안내 → 닫기', () => {
   beforeEach(async () => {
     resetMockSession()
     await cancelReport()
-    clearInstallEntry()
     vi.clearAllMocks()
   })
 
@@ -46,11 +53,11 @@ describe('보고 완료 → 홈 화면 추가 안내 → 닫기', () => {
     const user = userEvent.setup()
     // 홈에서 보고 버튼으로 연 보고 흐름(기록 한 칸)
     window.history.replaceState({ sneezecastModalDepth: 1 }, '', `/?report=start&${QA}`)
-    const home = render(<HomeScreen week={HOME_MOCKS.normal} />)
+    const view = render(app(<HomeScreen week={HOME_MOCKS.normal} />))
 
     // 1) 증상 없음으로 보내면 완료 단계(기록 없이 바꿈)
     await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
-    home.rerender(<HomeScreen week={HOME_MOCKS.normal} />)
+    view.rerender(app(<HomeScreen week={HOME_MOCKS.normal} />))
     expect(window.location.search).toBe(`?report=done&${QA}`)
     expect(openDialogTitle()).toBe('이번 주 보고를 받았어요')
 
@@ -59,21 +66,19 @@ describe('보고 완료 → 홈 화면 추가 안내 → 닫기', () => {
     expect(link.getAttribute('href')).toBe(`/install?${QA}`)
     link.addEventListener('click', (event) => event.preventDefault())
     await user.click(link)
-    home.unmount()
     window.history.pushState(null, '', `/install?${QA}`)
-    const install = render(<InstallScreen />)
+    view.rerender(app(<InstallScreen />))
 
-    // 3) 앱 안 링크로 왔으므로 닫기는 기록을 되돌린다(홈으로 replace 하지 않는다)
+    // 3) 앱 안 이동으로 왔으므로(루트 이동 기록에 홈이 앞에 있다) 닫기는 기록을 되돌린다(홈으로 replace 하지 않는다)
     await user.click(screen.getByRole('button', { name: '닫기' }))
     expect(router.back).toHaveBeenCalledTimes(1)
     expect(router.replace).not.toHaveBeenCalled()
 
     // 4) 되돌아온 완료 주소에서 홈이 새로 그려져도 보낸 보고가 남아 완료 단계다
-    install.unmount()
     window.history.back()
     await vi.waitFor(() => expect(window.location.pathname).toBe('/'))
     expect(window.location.search).toBe(`?report=done&${QA}`)
-    render(<HomeScreen week={HOME_MOCKS.normal} />)
+    view.rerender(app(<HomeScreen week={HOME_MOCKS.normal} />))
     expect(openDialogTitle()).toBe('이번 주 보고를 받았어요')
     expect(screen.getByRole('link', { name: /다음 주 월요일에 알려드릴까요/ })).toBeDefined()
 

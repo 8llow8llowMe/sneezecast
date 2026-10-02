@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 
 import { AppHeader } from '@/components/app-header'
 import { Badge } from '@/components/badge'
@@ -20,8 +19,8 @@ import { reportHrefFor } from '@/features/me/me-paths'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { formatCount, formatMonthDay } from '@/lib/format'
 import { formatIsoWeekOfMonth, formatIsoWeekRange } from '@/lib/iso-week'
+import { useNavTrail } from '@/lib/use-nav-trail'
 
-import { clearNoticeEntry, enteredNoticeInApp } from './notice-entry'
 import type {
   InsufficientNoticeStats,
   MeasuredNoticeStats,
@@ -62,26 +61,17 @@ const suffix = (value: string | null, word: string) => (value === null ? null : 
  * - 정정된 안내는 배지 줄에 마지막 정정일을 적고, 제목 위에 정정 이력(최근 것부터)을 모두 보인다.
  * - 안내가 없는 주는 `시민 자가보고` 배지로 집계만 보인다. `자료 부족` 이면 수치 · 상태색 없이 참여 진행 막대만 보인다.
  * - 질병관리청 정보는 자가보고 집계와 다른 요소(공식 배지가 달린 링크)로 공식 정보 화면(S08)에 잇는다.
- * - "뒤로" 는 앱 안 링크로 들어왔으면 기록을 되돌리고, 주소로 바로 들어왔거나 휴대폰 뒤로 · 앞으로 · 새로고침으로 다시 그렸으면
- *   홈으로 기록을 바꿔 간다(`notice-entry.ts` 의 표시를 마운트할 때 소비한다).
+ * - "뒤로" 는 앱 안에서 거쳐 왔으면 기록을 되돌리고, 주소로 바로 들어왔거나 새로고침 · 새 탭으로 열었으면
+ *   홈으로 기록을 바꿔 간다(`useNavTrail`).
  */
 export function NoticeScreen({ data }: { data: RegionNotice }) {
   const router = useRouter()
-  const pathname = usePathname()
+  const navTrail = useNavTrail()
   const auth = useMockAuth()
   const { toast, show, dismiss } = useToast()
 
   const title = `${data.regionName} 이번 주 안내`
-  // 앱 안 링크로 들어왔는지는 마운트할 때 한 번 읽어 상태로 옮기고 모듈 표시는 비운다(소비, notice-entry.ts).
-  // 읽기는 렌더의 lazy 초기값이라 StrictMode 이중 호출에도 같은 값이고, 비우기는 effect 라 두 번 돌아도 같다
-  const [enteredInApp] = useState(() => enteredNoticeInApp(pathname))
-  useEffect(() => {
-    clearNoticeEntry()
-  }, [])
-  const goBack = () => {
-    if (enteredInApp) router.back()
-    else router.replace(HOME_PATH)
-  }
+  const goBack = () => navTrail.goBack(HOME_PATH)
   // 동네 바꾸기 · 알림 설정 · 문 연 곳 찾기 화면이 생기면 각각 연결한다
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
   const openReport = () => router.push(reportHrefFor(auth, null))

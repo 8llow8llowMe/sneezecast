@@ -3,8 +3,6 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { clearInstallEntry, enteredInstallInApp } from '@/features/install/install-entry'
-
 import { cancelReport, getSubmittedReport, submitReport } from './report-client'
 import { ReportFlow, resolveStep } from './report-flow'
 import type { ReportAnswer } from './types'
@@ -59,7 +57,6 @@ describe('ReportFlow', () => {
   beforeEach(async () => {
     window.history.replaceState(null, '', '/?report=start')
     await cancelReport()
-    clearInstallEntry()
     onNotReady.mockClear()
   })
 
@@ -218,7 +215,7 @@ describe('ReportFlow', () => {
     expect(onNotReady).toHaveBeenCalledWith('함께 채우기')
   })
 
-  it('홈 화면 앱이어야 알림을 받는 기기는 완료 화면에서 설치 안내로 잇는다 — 동네 · 덮어쓰기를 남기고 앱 안 진입을 표시한다', async () => {
+  it('홈 화면 앱이어야 알림을 받는 기기는 완료 화면에서 설치 안내로 잇는다 — 동네 · 덮어쓰기를 남긴다', async () => {
     window.history.replaceState(
       null,
       '',
@@ -236,7 +233,6 @@ describe('ReportFlow', () => {
     // jsdom 은 링크 이동을 하지 않는다. 누름 처리만 확인한다
     link.addEventListener('click', (event) => event.preventDefault())
     await user.click(link)
-    expect(enteredInstallInApp()).toBe(true)
     expect(onNotReady).not.toHaveBeenCalled()
   })
 

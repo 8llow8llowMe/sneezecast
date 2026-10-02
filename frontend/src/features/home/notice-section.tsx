@@ -2,7 +2,6 @@ import Link from 'next/link'
 
 import { Badge } from '@/components/badge'
 import { Section } from '@/components/section'
-import { NoticeLink } from '@/features/notice/notice-link'
 
 import type { PublishedNotice } from './types'
 
@@ -38,9 +37,9 @@ export function NoticeSection({
           </ol>
           <div className="flex items-center justify-between pt-2">
             <span className="text-sub text-fg-sub">근거: {notice.source}</span>
-            <NoticeLink href={notice.href} className="text-sub font-semibold text-brand">
+            <Link href={notice.href} className="text-sub font-semibold text-brand">
               안내 전체 보기
-            </NoticeLink>
+            </Link>
           </div>
         </div>
       ) : (

@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-import { clearInstallEntry, enteredInstallInApp } from '@/features/install/install-entry'
 
 import { PushUnavailable } from './push-unavailable'
 
@@ -17,7 +14,6 @@ const IPAD_UA =
 
 beforeEach(() => {
   search = ''
-  clearInstallEntry()
 })
 
 afterEach(() => {
@@ -64,14 +60,5 @@ describe('PushUnavailable', () => {
     expect(box.querySelector('strong')?.textContent).toBe('이 브라우저에서는 알림을 받을 수 없어요')
     expect(box.textContent).toMatch(/같은 내용은 홈 상단에서 확인할 수 있어요\.$/)
     expect(screen.queryByRole('link')).toBeNull()
-  })
-
-  it('설치 안내 링크를 누르면 앱 안에서 들어갔다고 표시한다 (닫으면 기록을 되돌린다)', async () => {
-    render(<PushUnavailable support="needs-install" regionCode={null} />)
-    const link = screen.getByRole('link', { name: '홈 화면에 추가하는 방법 보기' })
-    // jsdom 은 링크 이동을 하지 않는다. 누름 처리만 확인한다
-    link.addEventListener('click', (event) => event.preventDefault())
-    await userEvent.setup().click(link)
-    expect(enteredInstallInApp()).toBe(true)
   })
 })

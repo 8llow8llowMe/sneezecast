@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useId } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 import clsx from 'clsx'
 
@@ -11,9 +11,10 @@ import { CloseIcon } from '@/components/icons'
 import { ToastRegion, useToast } from '@/components/toast'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { navHref } from '@/lib/nav'
+import { useNavTrail } from '@/lib/use-nav-trail'
 import { useDevicePlatform } from '@/lib/use-push-support'
 
-import { clearInstallEntry, enteredInstallInApp, installSearch } from './install-entry'
+import { installSearch } from './install-entry'
 import {
   guideFor,
   INSTALL_GUIDES,
@@ -76,23 +77,17 @@ function GuideSection({
  * 방법 묶음은 하이드레이션 뒤 기기(UA)로 하나만 보인다. 판별 전(서버 · 첫 그림)과 모르는 기기는 폭에 맞는 두 묶음을 다 보인다.
  * **알림 권한을 묻지 않는다** — `알림 켜기` 는 푸시 구독(2단계)이 생길 때까지 "준비하고 있어요" 알림만 띄운다.
  *
- * 닫기 · `나중에 할게요`: 앱 안 링크(내 정보)로 왔으면 `router.back()`, 주소로 바로 들어왔으면 홈으로 기록을 바꿔 간다
- * (동네 · 덮어쓰기는 남긴다). 판별은 진입 링크가 남긴 표시를 마운트 때 소비해서 한다(`install-entry.ts`).
+ * 닫기 · `나중에 할게요`: 앱 안에서 왔으면(내 정보의 진입 링크 등) `router.back()`, 주소로 바로 들어왔으면 홈으로 기록을 바꿔 간다
+ * (동네 · 덮어쓰기는 남긴다). 판별은 루트의 앱 안 이동 기록이 한다(`useNavTrail`) — 진입 링크는 따로 표시를 남기지 않는다.
  */
 export function InstallScreen({ regionCode = null }: { regionCode?: string | null }) {
-  const router = useRouter()
+  const navTrail = useNavTrail()
   const searchParams = useSearchParams()
   const guide = guideFor(useDevicePlatform())
   const { toast, show, dismiss } = useToast()
-  // 앱 안 링크가 남긴 표시를 마운트 때 한 번 읽고 비운다. 비우는 일은 effect 에서 해 StrictMode 의 두 번 그리기에도 값이 같다
-  const [inApp] = useState(enteredInstallInApp)
-  useEffect(() => {
-    clearInstallEntry()
-  }, [])
 
   function close() {
-    if (inApp) router.back()
-    else router.replace(navHref(HOME_PATH, installSearch(regionCode, searchParams)))
+    navTrail.goBack(navHref(HOME_PATH, installSearch(regionCode, searchParams)))
   }
 
   return (

@@ -10,7 +10,7 @@ import { ChoiceButton } from '@/components/choice-button'
 import { ChevronRightIcon, SuccessIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
 import { ToastRegion, useToast } from '@/components/toast'
-import { INSTALL_PATH, installSearch, markInstallEntry } from '@/features/install/install-entry'
+import { INSTALL_PATH, installSearch } from '@/features/install/install-entry'
 import { navHref } from '@/lib/nav'
 import { useModalParam } from '@/lib/use-modal-param'
 import { usePushSupport } from '@/lib/use-push-support'
@@ -258,12 +258,11 @@ export function ReportFlow({ week, regionCode, onNotReady }: ReportFlowProps) {
             홈 화면 앱이어야 알림을 받는 기기(needs-install)에만 설치 안내로 잇는다. 이미 받을 수 있는 기기(supported)는
             설치가 필요 없고 알림 켜기(푸시 구독)는 2단계라, 받을 수 없는 브라우저(unsupported)는 설치해도 받지 못해,
             판단 전(null)은 기기를 몰라 그리지 않는다 (docs/design/SCREENS.md "보고 완료").
-            앱 안 링크라 markInstallEntry 로 표시를 남겨 설치 안내의 닫기가 router.back() 으로 이 완료 화면에 돌아온다
+            앱 안 이동이라 설치 안내의 닫기가 루트의 이동 기록(useNavTrail)을 보고 router.back() 으로 이 완료 화면에 돌아온다
           */}
           {pushSupport === 'needs-install' && (
             <Link
               href={navHref(INSTALL_PATH, installSearch(regionCode, searchParams))}
-              onClick={markInstallEntry}
               className="mt-3 flex items-center justify-between gap-3 rounded-button bg-section p-4 text-left tablet:mt-0"
             >
               <span className="flex flex-col gap-0.5">
