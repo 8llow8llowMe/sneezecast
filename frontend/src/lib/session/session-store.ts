@@ -273,6 +273,21 @@ export async function restoreSession(): Promise<void> {
   await reissue('restore')
 }
 
+/**
+ * 회원 요약을 서버 값으로 다시 맞춘다(재발급 한 번 — 탭 안에서 진행 중인 재발급과 하나로 묶인다). 회원이 아니면 아무 일도 없다.
+ * 서비스가 토큰의 권한으로 거절했는데(`SECURITY_006`) 요약은 된다고 할 때 부른다 — 예: 보고 권한(`reportWritable`, #165).
+ * 토큰과 요약은 같은 응답에서 오므로 보통은 어긋나지 않는다. 결과 처리(세션 종료 · 일시 장애면 토큰만 버림)는 재발급 그대로이고,
+ * 던지지 않는다(일시 장애면 요약이 그대로다)
+ */
+export async function refreshSession(): Promise<void> {
+  if (snapshot.status !== 'member') return
+  try {
+    await reissue('stale')
+  } catch {
+    // 일시 장애: 세션은 그대로 두고 다음 요청이 다시 재발급한다(requestReissue)
+  }
+}
+
 function receive(message: SessionMessage): void {
   if (message.type === 'signed-in') setSession(message.token, { broadcast: false })
   else clearSession('remote', { broadcast: false })

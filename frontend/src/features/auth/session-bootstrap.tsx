@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 
+import { startCurrentReport } from '@/features/report/current-report'
 import { readBrowserDataSource } from '@/lib/data-source'
 import { restoreSession, startSession } from '@/lib/session/session-store'
 import { useDataSource } from '@/lib/use-data-source'
@@ -20,6 +21,8 @@ import { startMemberInfo } from './member-info'
  *   바뀌지 않아 하이드레이션이 어긋나지 않는다. 훅 값은 토글로 출처가 바뀔 때 다시 확인하는 신호로만 쓴다
  * - 회원 정보 저장소(`member-info.ts`)를 세션에 잇는다(`startMemberInfo`). 세션이 회원이 되면 내 정보 · 내 동네를 읽고 비회원이
  *   되면 지운다. 목데이터 모드는 세션이 회원이 되지 않아 요청하지 않는다
+ * - 이번 주 보고 저장소(`features/report/current-report.ts`, #165)도 같이 잇는다. 보고할 수 있는 회원(`reportWritable`)이 되면
+ *   이번 주 보고를 읽고, 아니게 되면 지운다
  */
 export function SessionBootstrap(): null {
   const source = useDataSource()
@@ -27,6 +30,8 @@ export function SessionBootstrap(): null {
   useEffect(() => startSession(), [])
 
   useEffect(() => startMemberInfo(), [])
+
+  useEffect(() => startCurrentReport(), [])
 
   useEffect(() => {
     if (readBrowserDataSource() === 'api') void restoreSession()

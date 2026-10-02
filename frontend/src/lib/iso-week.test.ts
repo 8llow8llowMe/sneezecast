@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatIsoWeekOfMonth, formatIsoWeekRange, isoWeekMonday, parseIsoWeek } from './iso-week'
+import {
+  formatIsoWeekOfMonth,
+  formatIsoWeekRange,
+  isoWeekMonday,
+  kstIsoWeek,
+  parseIsoWeek,
+} from './iso-week'
 
 describe('parseIsoWeek', () => {
   it('YYYY-Www 를 연도 · 주로 읽는다', () => {
@@ -79,5 +85,35 @@ describe('formatIsoWeekOfMonth', () => {
 
   it('읽을 수 없는 주면 null 이다', () => {
     expect(formatIsoWeekOfMonth('2025-W00')).toBeNull()
+  })
+})
+
+describe('kstIsoWeek — KST 기준 지금 ISO 주', () => {
+  it('일요일 23:59 KST 까지는 그 주, 월요일 00:00 KST 부터 다음 주다', () => {
+    expect(kstIsoWeek(new Date('2026-10-04T14:59:59Z'))).toBe('2026-W40') // 일 23:59:59 KST
+    expect(kstIsoWeek(new Date('2026-10-04T15:00:00Z'))).toBe('2026-W41') // 월 00:00 KST
+    // UTC 로는 아직 일요일이지만 KST 는 월요일이다
+    expect(kstIsoWeek(new Date('2026-10-04T20:00:00Z'))).toBe('2026-W41')
+  })
+
+  it('53주가 있는 해와 연말 · 연초 경계', () => {
+    // 2026년 1월 1일이 목요일이라 53주까지 있다
+    expect(kstIsoWeek(new Date('2026-12-31T03:00:00Z'))).toBe('2026-W53')
+    expect(kstIsoWeek(new Date('2027-01-03T14:59:59Z'))).toBe('2026-W53') // 일 23:59:59 KST
+    expect(kstIsoWeek(new Date('2027-01-03T15:00:00Z'))).toBe('2027-W01') // 월 00:00 KST
+    // 12월 말 월요일이 다음 해 1주인 해
+    expect(kstIsoWeek(new Date('2024-12-29T15:00:00Z'))).toBe('2025-W01') // 2024-12-30(월) KST
+    expect(kstIsoWeek(new Date('2024-12-29T14:59:59Z'))).toBe('2024-W52')
+  })
+
+  it('브라우저 시간대와 무관하다', () => {
+    const originalTz = process.env.TZ
+    process.env.TZ = 'America/Los_Angeles'
+    try {
+      expect(kstIsoWeek(new Date('2026-10-04T15:00:00Z'))).toBe('2026-W41')
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ
+      else process.env.TZ = originalTz
+    }
   })
 })
