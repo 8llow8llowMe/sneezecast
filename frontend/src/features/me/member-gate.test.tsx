@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { renderToString } from 'react-dom/server'
 
-import { act, render } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { loginWithEmail, resetMockSession } from '@/features/auth/auth-client'
 import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
+import { restoreSession } from '@/lib/session/session-store'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 import { NavTrailProvider, useNavTrail } from '@/lib/use-nav-trail'
+import { holdReissue, memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
 
 import { MeRequiredStepsGate, useMemberGate, useRequiredStepsGate } from './member-gate'
 
@@ -182,6 +184,60 @@ describe('useMemberGate', () => {
 function MeGate({ paused = false }: { paused?: boolean }) {
   return <p>{useMemberGate({ next: '/me', paused }) ?? '가드 대기'}</p>
 }
+
+describe('실데이터 모드의 가드 (새로고침 뒤 세션 복원)', () => {
+  beforeEach(() => {
+    pathname = '/me'
+    selectApiSource()
+  })
+
+  afterEach(() => {
+    resetApiSession()
+  })
+
+  it('복원 중에는 로그인으로 보내지 않고, 비회원으로 정해진 뒤 보낸다', async () => {
+    const server = holdReissue()
+    render(<MeGate />)
+    // 복원 전(idle)에도 판단하지 않는다
+    expect(router.replace).not.toHaveBeenCalled()
+
+    let restoring: Promise<void> = Promise.resolve()
+    act(() => {
+      restoring = restoreSession()
+    })
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(screen.getByText('가드 대기')).toBeTruthy()
+
+    await act(async () => {
+      server.fail('AUTH_014', 401)
+      await restoring
+    })
+    expect(router.replace.mock.calls).toEqual([['/login?next=%2Fme']])
+  })
+
+  it('복원이 회원으로 끝나면 보내지 않고 회원 상태를 돌려준다', async () => {
+    const server = holdReissue()
+    render(<MeGate />)
+    let restoring: Promise<void> = Promise.resolve()
+    act(() => {
+      restoring = restoreSession()
+    })
+
+    await act(async () => {
+      server.succeed(memberToken({ reportWritable: false }))
+      await restoring
+    })
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(screen.getByText('member-no-consent')).toBeTruthy()
+  })
+
+  it('?mock-auth=member 덮어쓰기로 비회원 가드를 건너뛰지 않는다', async () => {
+    search = 'mock-auth=member'
+    render(<MeGate />)
+    await act(() => restoreSession())
+    expect(router.replace.mock.calls).toEqual([['/login?next=%2Fme']])
+  })
+})
 
 describe('가드의 replace 와 앱 안 이동 기록', () => {
   let navTrail: ReturnType<typeof useNavTrail> | null = null

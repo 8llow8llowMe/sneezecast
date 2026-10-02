@@ -2,6 +2,7 @@ import { type ReactNode, Suspense } from 'react'
 import type { Metadata, Viewport } from 'next'
 
 import { DataSourceToggle } from '@/components/data-source-toggle'
+import { SessionBootstrap } from '@/features/auth/session-bootstrap'
 import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
 import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME } from '@/lib/app-info'
 import { isDataSourceSwitchable } from '@/lib/data-source'
@@ -50,6 +51,8 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         {/* 앱 안 이동 경로 기록. 모든 화면의 "뒤로" 가 이 기록으로 판단한다(docs/conventions.md "화면의 뒤로").
             앱 안 replace 는 모두 이 기록을 거쳐야 해 로그인 만료 감시도 안에 둔다 */}
         <NavTrailProvider>
+          {/* 세션 저장소를 켜고 실데이터면 새로고침 전 세션을 되살린다(docs/conventions.md "세션 저장소") */}
+          <SessionBootstrap />
           {children}
           {/* 로그인 만료를 받아 로그인 화면으로 보낸다. 주소 쿼리(목 재현 입력)를 읽어 Suspense 로 감싼다 */}
           <Suspense fallback={null}>

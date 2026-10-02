@@ -2,8 +2,10 @@
 import { act, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { clearSession, setSession } from '@/lib/session/session-store'
 import { clearSessionExpiring, isSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 import { NavTrailProvider, useNavTrail } from '@/lib/use-nav-trail'
+import { memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
 
 import { getMockSession, loginWithEmail, resetMockSession } from './auth-client'
 import { SessionExpiryWatcher } from './session-expiry-watcher'
@@ -94,6 +96,49 @@ describe('SessionExpiryWatcher', () => {
     expect(isSessionExpiring()).toBe(true)
 
     await act(() => loginWithEmail('dong@example.com', 'dongne2026'))
+    expect(isSessionExpiring()).toBe(false)
+  })
+})
+
+describe('SessionExpiryWatcher 실데이터 모드', () => {
+  beforeEach(async () => {
+    pathname.value = '/me'
+    search.value = ''
+    router.replace.mockClear()
+    clearSessionExpiring()
+    resetMockSession()
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    selectApiSource()
+  })
+
+  afterEach(() => {
+    resetApiSession()
+    resetMockSession()
+  })
+
+  it('?mock-session=expired 는 듣지 않는다', () => {
+    search.value = 'mock-session=expired'
+    render(<SessionExpiryWatcher />)
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('세션 저장소의 만료를 받으면 로그인 만료로 보내고 목 세션은 건드리지 않는다', () => {
+    setSession(memberToken())
+    render(<SessionExpiryWatcher />)
+
+    act(() => clearSession('expired'))
+
+    expect(router.replace).toHaveBeenCalledWith('/login?reason=expired')
+    expect(getMockSession()).toBe('member-no-consent')
+  })
+
+  it('만료 뒤 실데이터 세션으로 다시 회원이 되면 표시를 끈다', () => {
+    setSession(memberToken())
+    render(<SessionExpiryWatcher />)
+    act(() => clearSession('expired'))
+    expect(isSessionExpiring()).toBe(true)
+
+    act(() => setSession(memberToken()))
     expect(isSessionExpiring()).toBe(false)
   })
 })

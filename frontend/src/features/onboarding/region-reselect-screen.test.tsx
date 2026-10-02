@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server'
 
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as authClient from '@/features/auth/auth-client'
 import {
@@ -15,7 +15,9 @@ import {
 import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
 import type * as regionClient from '@/features/region/region-client'
 import { listSuccessorDistricts, searchDistricts } from '@/features/region/region-client'
+import { restoreSession } from '@/lib/session/session-store'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
+import { holdReissue, resetApiSession, selectApiSource } from '@/test/api-session'
 
 import { OnboardingProvider } from './onboarding-context'
 import { RegionReselectScreen } from './region-reselect-screen'
@@ -307,5 +309,29 @@ describe('RegionReselectScreen 로그인 만료', () => {
 
     expect(router.replace.mock.calls).toEqual([['/login?reason=expired']])
     clearSessionExpiring()
+  })
+})
+
+describe('RegionReselectScreen 실데이터 모드 (새로고침 뒤 세션 복원)', () => {
+  afterEach(() => {
+    resetApiSession()
+  })
+
+  it('복원 중에는 다른 곳으로 보내지 않고, 정해진 뒤에 판단한다', async () => {
+    selectApiSource()
+    const server = holdReissue()
+    render(ui)
+    let restoring: Promise<void> = Promise.resolve()
+    act(() => {
+      restoring = restoreSession()
+    })
+    expect(router.replace).not.toHaveBeenCalled()
+
+    // 실데이터 세션에는 아직 동네 조건이 없다(내 동네 연동 전) — 회원으로 정해지면 홈으로 간다
+    await act(async () => {
+      server.succeed()
+      await restoring
+    })
+    expect(router.replace.mock.calls).toEqual([['/']])
   })
 })

@@ -12,14 +12,13 @@ import {
   START_PATH,
 } from '@/features/onboarding/paths'
 import { navHref } from '@/lib/nav'
-import { useHydrated } from '@/lib/use-hydrated'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
 import type { MockAuthState } from './auth-client'
 import { isResetDone } from './login-notice'
 import { afterLoginQuery, loginReturnFromSearch } from './login-return'
 import { carriedParams } from './required-steps'
-import { useMockAuth } from './use-mock-auth'
+import { useAuth, useAuthSettled } from './use-auth'
 
 /* ── 회원이 연 로그인 · 가입 화면은 홈으로 (#127) ─────────────────────────────────────────────────
  *
@@ -37,7 +36,8 @@ import { useMockAuth } from './use-mock-auth'
  * 끼어들지 않는다 — 두 이동이 겹치지 않고, 가입 · 로그인 흐름이 바뀌어도 이 가드가 흐름을 끊지 않는다.
  * 로그인 만료(`/login?reason=expired`)는 만료 감시가 세션을 먼저 비우고 보내므로 비회원으로 닿아 그대로 보인다.
  *
- * **하이드레이션을 마친 뒤에만 판단한다**(`member-gate.ts` 와 같은 이유 — 서버 · 첫 그림은 늘 비회원). 레이아웃은 첫 진입 화면 사이를
+ * **회원 상태가 정해진 뒤에만 판단한다**(`useAuthSettled`, `member-gate.ts` 와 같은 이유 — 서버 · 첫 그림 · 실데이터 복원 중은 늘 비회원).
+ * 실데이터 회원이 로그인 화면을 새로고침하면 복원이 끝난 그림을 "닿음" 으로 본다. 레이아웃은 첫 진입 화면 사이를
  * 오가도 다시 그려지지 않으므로 경로가 바뀔 때마다 "닿음" 으로 본다(쿼리만 바뀌면 같은 화면).
  *
  * 보낼 곳에는 둘러보기 동네와 QA 덮어쓰기(`?mock-auth=` 등)를 남긴다(`carriedParams`). 세션을 바꾸는 이동이 아니라 같은 회원으로 보여야 하고,
@@ -88,12 +88,12 @@ export function GuestOnlyGate() {
   const { replace } = useNavTrail()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const hydrated = useHydrated()
-  const auth = useMockAuth()
+  const settled = useAuthSettled()
+  const auth = useAuth()
 
   // 이 경로에 닿았을 때의 회원 상태. 이전 그림의 값을 이어 쓰는 상태라 그리는 중에 고친다(React "이전 렌더의 정보 저장" 방식)
   const [arrival, setArrival] = useState<Arrival | null>(null)
-  if (hydrated && arrival?.path !== pathname) setArrival({ path: pathname, auth })
+  if (settled && arrival?.path !== pathname) setArrival({ path: pathname, auth })
 
   const target =
     arrival?.path === pathname && arrival.auth !== 'guest' && isGuestOnly(pathname, searchParams)
