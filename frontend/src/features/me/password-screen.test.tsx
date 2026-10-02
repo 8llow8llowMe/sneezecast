@@ -11,7 +11,6 @@ import {
   getMockProfile,
   loginWithEmail,
   resetMockSession,
-  setupPassword,
   signup,
 } from '@/features/auth/auth-client'
 import { consentFor } from '@/features/auth/legal'
@@ -47,7 +46,6 @@ vi.mock('@/features/auth/auth-client', async (importOriginal) => {
   return {
     ...actual,
     changePassword: vi.fn(actual.changePassword),
-    setupPassword: vi.fn(actual.setupPassword),
   }
 })
 
@@ -122,7 +120,7 @@ describe('PasswordScreen 이메일 회원 — 비밀번호 변경', () => {
 
     await fillChange(user)
     await user.click(submitButton())
-    expect(changePassword).toHaveBeenCalledWith('dongne2026', 'newpass2026')
+    expect(changePassword).toHaveBeenCalledWith('dongne2026', 'newpass2026', 'mock')
     expect(router.replace).toHaveBeenCalledWith('/me?region=11440660&mock-provider=email')
     expect(router.push).not.toHaveBeenCalled()
     for (const label of ['현재 비밀번호', '새 비밀번호', '새 비밀번호 확인']) {
@@ -192,7 +190,7 @@ describe('PasswordScreen 이메일 회원 — 비밀번호 변경', () => {
     const user = userEvent.setup()
     await fillChange(user, { current: 'dongne2026', next: 'dongne2026' })
     await user.click(submitButton())
-    expect(changePassword).toHaveBeenCalledWith('dongne2026', 'dongne2026')
+    expect(changePassword).toHaveBeenCalledWith('dongne2026', 'dongne2026', 'mock')
   })
 
   it('보내지 못하면(password-fail@example.com) 빨강 상자로 알리고 다시 누를 수 있다', async () => {
@@ -208,6 +206,48 @@ describe('PasswordScreen 이메일 회원 — 비밀번호 변경', () => {
     expect(submitButton().getAttribute('aria-disabled')).toBeNull()
     await user.click(submitButton())
     expect(changePassword).toHaveBeenCalledTimes(2)
+  })
+
+  it('현재 비밀번호 확인이 잠기면(locked) 회색 상자로 알리고, 칸을 고치면 지운다', async () => {
+    vi.mocked(changePassword).mockResolvedValueOnce({ status: 'locked' })
+    renderPassword()
+    const user = userEvent.setup()
+
+    await fillChange(user)
+    await user.click(submitButton())
+    expect(screen.getByRole('alert').textContent).toBe(
+      '비밀번호 확인 시도가 많아 잠시 막혔어요. 조금 뒤 다시 시도해 주세요.',
+    )
+    expect(router.replace).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText('현재 비밀번호'), '1')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('서버가 새 비밀번호를 규칙 위반으로 거절하면(invalid-password) 그 칸 아래 규칙 오류를 보이고 고칠 때까지 버튼을 끈다', async () => {
+    vi.mocked(changePassword).mockResolvedValueOnce({ status: 'invalid-password' })
+    renderPassword()
+    const user = userEvent.setup()
+
+    await fillChange(user)
+    await user.click(submitButton())
+    expect(screen.getByLabelText('새 비밀번호').getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByText('영문과 숫자를 함께 8~20자로, 띄어쓰기 없이 써 주세요.')).toBeDefined()
+    expect(submitButton().getAttribute('aria-disabled')).toBe('true')
+
+    await user.type(screen.getByLabelText('새 비밀번호'), '1')
+    expect(screen.getByLabelText('새 비밀번호').getAttribute('aria-invalid')).toBeNull()
+  })
+
+  it('비밀번호 없는 계정(no-password)이면 빨강 상자로 알린다', async () => {
+    vi.mocked(changePassword).mockResolvedValueOnce({ status: 'no-password' })
+    renderPassword()
+    const user = userEvent.setup()
+
+    await fillChange(user)
+    await user.click(submitButton())
+    expect(screen.getByRole('alert').textContent).toContain('비밀번호를 바꾸지 못했어요.')
+    expect(router.replace).not.toHaveBeenCalled()
   })
 
   it('보내는 중에는 칸 · 버튼 · 뒤로를 꺼 두 번 보내지 않는다', async () => {
@@ -265,59 +305,27 @@ describe('PasswordScreen 이메일 회원 — 비밀번호 변경', () => {
   })
 })
 
-describe('PasswordScreen 카카오 회원 — 비밀번호 설정', () => {
-  const consents = [consentFor('TERMS_OF_SERVICE')]
-
+describe('PasswordScreen 비밀번호가 없는 회원(카카오로만 로그인) — 화면 없음 (#166)', () => {
   beforeEach(async () => {
     resetMockSession()
-    await signup({ kind: 'kakao', consents }, 'mock')
+    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] }, 'mock')
   })
 
-  it('현재 비밀번호 칸 없이 설정 제목 · 안내와 두 칸을 보인다', () => {
-    renderPassword()
-
-    expect(screen.getAllByRole('heading', { level: 1, name: '비밀번호 설정' })).toHaveLength(2)
-    expect(screen.getByText('비밀번호를 정하면 이메일로도 로그인할 수 있어요.')).toBeDefined()
+  it('주소로 들어오면 그리지 않고 내 정보로 기록을 바꿔 간다 — 설정 화면이 없다', () => {
+    search = 'region=11440660'
+    const { container } = renderPassword({ regionCode: '11440660' })
+    expect(container.textContent).toBe('')
     expect(screen.queryByLabelText('현재 비밀번호')).toBeNull()
-    expect(screen.getByLabelText('비밀번호')).toBeDefined()
-    expect(screen.getByLabelText('비밀번호 확인')).toBeDefined()
-    expect(screen.queryByRole('button', { name: '비밀번호를 잊었어요' })).toBeNull()
+    expect(router.replace).toHaveBeenCalledWith('/me?region=11440660')
+    expect(router.replace).toHaveBeenCalledTimes(1)
   })
 
-  it('설정하면 프로필이 비밀번호 있음이 되고, 이동할 때까지 화면은 설정 그대로다', async () => {
-    renderPassword()
-    const user = userEvent.setup()
-
-    await user.type(screen.getByLabelText('비밀번호'), 'newpass2026')
-    await user.type(screen.getByLabelText('비밀번호 확인'), 'newpass2026')
-    await user.click(submitButton('비밀번호 설정하기'))
-
-    expect(setupPassword).toHaveBeenCalledWith('newpass2026')
-    expect(getMockProfile()?.hasPassword).toBe(true)
-    expect(router.replace).toHaveBeenCalledWith('/me')
-    // 목 프로필이 바뀌어도 바꾸기 화면으로 뒤집히지 않는다
-    expect(screen.queryByLabelText('현재 비밀번호')).toBeNull()
-    expect(submitButton('비밀번호 설정하기').getAttribute('aria-disabled')).toBe('true')
-  })
-
-  it('설정하지 못하면(새 비밀번호 fail2026) 빨강 상자로 알린다', async () => {
-    renderPassword()
-    const user = userEvent.setup()
-
-    await user.type(screen.getByLabelText('비밀번호'), 'fail2026')
-    await user.type(screen.getByLabelText('비밀번호 확인'), 'fail2026')
-    await user.click(submitButton('비밀번호 설정하기'))
-    expect(screen.getByRole('alert').textContent).toContain(
-      '비밀번호를 설정하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
-    )
-    expect(getMockProfile()?.hasPassword).toBe(false)
-    expect(router.replace).not.toHaveBeenCalled()
-  })
-
-  it('설정을 마친 카카오 회원은 변경 화면을 본다', async () => {
-    await setupPassword('newpass2026')
-    renderPassword()
-    expect(screen.getByLabelText('현재 비밀번호')).toBeDefined()
+  it('?mock-provider=kakao 덮어쓰기(예시 카카오 프로필)도 같다', () => {
+    resetMockSession()
+    search = 'mock-auth=member&mock-provider=kakao'
+    const { container } = renderPassword()
+    expect(container.textContent).toBe('')
+    expect(router.replace).toHaveBeenCalledWith('/me?mock-auth=member&mock-provider=kakao')
   })
 })
 
@@ -369,14 +377,16 @@ describe('PasswordScreen → 내 정보 (알림 · 기록)', () => {
     // 기록을 되돌려 내 정보가 다시 그려진다
     pathname = '/me'
     rerender(meScreen())
-    expect(screen.getAllByText('비밀번호를 바꿨어요')).toHaveLength(1)
+    expect(screen.getAllByText('비밀번호를 바꿨어요. 다른 기기에서는 로그아웃됐어요')).toHaveLength(
+      1,
+    )
 
     // 알림은 비워졌다 — 계정 화면에 갔다 돌아와도 다시 뜨지 않는다
     pathname = '/me/devices'
     rerender(withTrail(<div />))
     pathname = '/me'
     rerender(meScreen())
-    expect(screen.queryByText('비밀번호를 바꿨어요')).toBeNull()
+    expect(screen.queryByText('비밀번호를 바꿨어요. 다른 기기에서는 로그아웃됐어요')).toBeNull()
   })
 
   it('주소로 바로 들어왔으면 성공 뒤 내 정보로 기록을 바꿔 가고 거기서 알림을 띄운다', async () => {
@@ -389,29 +399,11 @@ describe('PasswordScreen → 내 정보 (알림 · 기록)', () => {
 
     pathname = '/me'
     rerender(meScreen())
-    expect(screen.getByText('비밀번호를 바꿨어요').closest('[role="status"]')).not.toBeNull()
-  })
-
-  it('카카오 회원이 설정하면 내 정보가 설정 알림을 띄우고 행이 비밀번호 변경이 된다', async () => {
-    resetMockSession()
-    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] }, 'mock')
-    const user = userEvent.setup()
-    pathname = '/me'
-    const { rerender } = render(meScreen())
-    pathname = '/me/password'
-    rerender(passwordScreen())
-
-    await user.type(screen.getByLabelText('비밀번호'), 'newpass2026')
-    await user.type(screen.getByLabelText('비밀번호 확인'), 'newpass2026')
-    await user.click(submitButton('비밀번호 설정하기'))
-    expect(router.back).toHaveBeenCalledTimes(1)
-
-    pathname = '/me'
-    rerender(meScreen())
     expect(
-      screen.getByText('비밀번호를 설정했어요. 이제 이메일로도 로그인할 수 있어요'),
-    ).toBeDefined()
-    expect(screen.getByRole('link', { name: '비밀번호 변경' })).toBeDefined()
+      screen
+        .getByText('비밀번호를 바꿨어요. 다른 기기에서는 로그아웃됐어요')
+        .closest('[role="status"]'),
+    ).not.toBeNull()
   })
 })
 
@@ -450,5 +442,58 @@ describe('PasswordScreen 실데이터 (#164)', () => {
     expect(
       screen.getAllByRole('heading', { level: 1, name: '비밀번호 변경' }).length,
     ).toBeGreaterThan(0)
+  })
+
+  it('비밀번호가 없는 회원(hasPassword false)이면 그리지 않고 내 정보로 돌려보낸다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    renderPassword()
+    await flush()
+    act(() =>
+      server.reply(
+        'GET /api/v1/members/me',
+        okResponse(myInfoBody({ provider: 'KAKAO', hasPassword: false })),
+      ),
+    )
+    await flush()
+    expect(screen.queryByLabelText('현재 비밀번호')).toBeNull()
+    expect(router.replace).toHaveBeenCalledWith('/me')
+  })
+
+  it('출처 api 로 바꾸고, 서버가 비밀번호 없는 계정(MEMBER_007)이라 하면 내 정보를 다시 읽어 내 정보로 되돌아간다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    // 내 정보에서 왔다
+    pathname = '/me'
+    const { rerender } = render(withTrail(<div />))
+    pathname = '/me/password'
+    rerender(withTrail(<PasswordScreen regionName="○○동" />))
+    await flush()
+    act(() => server.reply('GET /api/v1/members/me', okResponse(myInfoBody())))
+    await flush()
+
+    const user = userEvent.setup()
+    await fillChange(user)
+    await user.click(submitButton())
+    await flush()
+    expect(changePassword).toHaveBeenCalledWith('dongne2026', 'newpass2026', 'api')
+
+    act(() => server.reply('POST /api/v1/members/me/password', errorResponse('MEMBER_007', 409)))
+    await flush()
+    expect(screen.getByRole('alert').textContent).toContain('비밀번호를 바꾸지 못했어요.')
+    // 다시 읽는 동안에는 화면을 그대로 둔다
+    expect(server.requests().filter((key) => key === 'GET /api/v1/members/me')).toHaveLength(2)
+    expect(router.replace).not.toHaveBeenCalled()
+
+    act(() =>
+      server.reply(
+        'GET /api/v1/members/me',
+        okResponse(myInfoBody({ provider: 'KAKAO', hasPassword: false })),
+      ),
+    )
+    await flush()
+    expect(screen.queryByLabelText('현재 비밀번호')).toBeNull()
+    expect(router.back).toHaveBeenCalledTimes(1)
+    expect(router.replace).not.toHaveBeenCalled()
   })
 })

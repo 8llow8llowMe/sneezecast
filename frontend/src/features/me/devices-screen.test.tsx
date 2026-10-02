@@ -15,7 +15,16 @@ import {
   revokeSession,
 } from '@/features/auth/auth-client'
 import { submitReport } from '@/features/report/report-client'
+import { getSessionSnapshot, resetSessionForTests, setSession } from '@/lib/session/session-store'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
+import {
+  errorResponse,
+  holdRequests,
+  memberToken,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
 import { DevicesScreen } from './devices-screen'
 import { MeTrailProvider } from './me-trail'
@@ -152,14 +161,17 @@ describe('DevicesScreen 다른 기기 로그아웃', () => {
     await screen.findByRole('list', { name: '로그인한 기기 목록' })
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'Mac · Chrome 로그아웃' }))
-    expect(revokeSession).toHaveBeenCalledWith('mock-session-mac')
+    expect(revokeSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'mock-session-mac', current: false }),
+      'mock',
+    )
     expect(screen.queryByText('Mac · Chrome')).toBeNull()
     expect(
       screen.getByText('Mac · Chrome에서 로그아웃했어요').closest('[role="status"]'),
     ).not.toBeNull()
     expect(document.activeElement).toBe(screen.getByRole('list', { name: '로그인한 기기 목록' }))
     // 목 서버에서도 빠졌다
-    expect((await listSessions()).map((session) => session.deviceName)).toEqual([
+    expect((await listSessions('mock')).map((session) => session.deviceName)).toEqual([
       'iPhone · Safari',
       'Galaxy · 삼성 인터넷',
     ])
@@ -332,5 +344,93 @@ describe('DevicesScreen 뒤로 가기 · 셸', () => {
     expect(titles).toHaveLength(2)
     expect(titles[0]?.closest('header')?.classList).toContain('desktop:hidden')
     expect(titles[1]?.parentElement?.classList).toContain('desktop:flex')
+  })
+})
+
+describe('DevicesScreen 실데이터 (auth API, #166)', () => {
+  beforeEach(() => {
+    resetSessionForTests()
+    selectApiSource()
+  })
+  afterEach(() => resetApiSession())
+
+  /** 요청이 나가고 응답의 then 이 돌 때까지 */
+  const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
+  const SESSIONS = {
+    sessions: [
+      {
+        sessionId: '9b1e7c22-4d5f-4b6a-8c7d-1e2f3a4b5c6d',
+        deviceLabel: 'Mac · Chrome',
+        createdAt: '2026-09-20T01:00:00Z',
+        // UTC 15:30 은 한국 시각으로 다음 날 00:30 이다
+        lastUsedAt: '2026-09-30T15:30:00Z',
+        current: false,
+      },
+      {
+        sessionId: '3f2a9c11-0e4b-4a1f-9c3d-0b8e2f7a5d61',
+        deviceLabel: 'iPhone · Safari',
+        createdAt: '2026-10-01T00:30:00Z',
+        lastUsedAt: '2026-10-01T05:12:00Z',
+        current: true,
+      },
+    ],
+    totalCount: 2,
+  }
+
+  it('GET /api/v1/auth/sessions 를 그린다 — 마지막 사용은 한국 시각, 예시 기기는 없다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    renderDevices()
+    await flush()
+    expect(server.requests()).toEqual(['GET /api/v1/auth/sessions'])
+    expect(listSessions).toHaveBeenCalledWith('api')
+
+    act(() => server.reply('GET /api/v1/auth/sessions', okResponse(SESSIONS)))
+    const list = await screen.findByRole('list', { name: '로그인한 기기 목록' })
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'iPhone · Safari지금 사용 중이 기기',
+      'Mac · Chrome마지막 사용 10월 1일 00:30로그아웃',
+    ])
+    expect(screen.queryByText('Galaxy · 삼성 인터넷')).toBeNull()
+  })
+
+  it('불러오지 못하면 예시 목록으로 채우지 않고 빨강 상자로 알린다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    renderDevices()
+    await flush()
+    act(() => server.reply('GET /api/v1/auth/sessions', errorResponse('GATEWAY_003', 503)))
+    expect((await screen.findByRole('alert')).textContent).toContain('불러오지 못했어요')
+    expect(screen.queryByText('iPhone · Safari')).toBeNull()
+  })
+
+  it('다른 기기를 로그아웃하면 그 세션 id 로 DELETE 하고, 이 기기 세션은 그대로다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    renderDevices()
+    await flush()
+    act(() => server.reply('GET /api/v1/auth/sessions', okResponse(SESSIONS)))
+    await screen.findByRole('list', { name: '로그인한 기기 목록' })
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Mac · Chrome 로그아웃' }))
+    await flush()
+    expect(server.requests()).toContain(
+      'DELETE /api/v1/auth/sessions/9b1e7c22-4d5f-4b6a-8c7d-1e2f3a4b5c6d',
+    )
+    act(() =>
+      server.reply(
+        'DELETE /api/v1/auth/sessions/9b1e7c22-4d5f-4b6a-8c7d-1e2f3a4b5c6d',
+        okResponse(null),
+      ),
+    )
+    await flush()
+    expect(screen.queryByText('Mac · Chrome')).toBeNull()
+    expect(screen.getByText('Mac · Chrome에서 로그아웃했어요')).toBeDefined()
+    expect(getSessionSnapshot().status).toBe('member')
   })
 })

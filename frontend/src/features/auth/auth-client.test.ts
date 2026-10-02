@@ -30,7 +30,6 @@ import {
   saveRegion,
   sendEmailCode,
   sendPasswordResetCode,
-  setupPassword,
   signup,
   type SignupRequest,
   startKakaoLogin,
@@ -41,7 +40,7 @@ import {
   withdrawMembership,
 } from './auth-client'
 import { consentFor, LEGAL_VERSIONS } from './legal'
-import { setMemberRegion } from './member-info'
+import { getMemberInfoSnapshot, reloadMemberInfo, setMemberRegion } from './member-info'
 
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
 vi.mock('@/lib/session/session-store', () => ({
@@ -49,7 +48,11 @@ vi.mock('@/lib/session/session-store', () => ({
   clearSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
 }))
-vi.mock('./member-info', () => ({ setMemberRegion: vi.fn() }))
+vi.mock('./member-info', () => ({
+  setMemberRegion: vi.fn(),
+  reloadMemberInfo: vi.fn(),
+  getMemberInfoSnapshot: vi.fn(),
+}))
 
 beforeEach(() => {
   vi.mocked(apiRequest).mockReset()
@@ -57,6 +60,9 @@ beforeEach(() => {
   vi.mocked(clearSession).mockReset()
   vi.mocked(getSessionSnapshot).mockReset()
   vi.mocked(setMemberRegion).mockReset()
+  vi.mocked(reloadMemberInfo).mockReset()
+  vi.mocked(getMemberInfoSnapshot).mockReset()
+  vi.mocked(getMemberInfoSnapshot).mockReturnValue(null)
   vi.mocked(getSessionSnapshot).mockReturnValue({
     status: 'member',
     summary: { memberId: '1', role: 'USER', pendingConsents: [], reportWritable: true },
@@ -254,8 +260,8 @@ describe('비밀번호 재설정 (목)', () => {
 
   /** 코드를 받고 맞혀 재설정 토큰을 받는다 */
   async function tokenFor(email: string): Promise<string> {
-    await sendPasswordResetCode(email)
-    const result = await verifyPasswordResetCode(email, '482915')
+    await sendPasswordResetCode(email, 'mock')
+    const result = await verifyPasswordResetCode(email, '482915', 'mock')
     if (result.status !== 'ok') throw new Error(`토큰을 받지 못했다: ${result.status}`)
     return result.resetToken
   }
@@ -263,27 +269,29 @@ describe('비밀번호 재설정 (목)', () => {
   afterEach(() => vi.useRealTimers())
 
   it('코드 받기는 가입과 같은 재현 입력을 쓴다 — 가입 여부를 드러내지 않는다', async () => {
-    expect(await sendPasswordResetCode(' LIMIT@example.com ')).toEqual({ status: 'limit' })
-    expect(await sendPasswordResetCode('never-joined@example.com')).toEqual({ status: 'sent' })
+    expect(await sendPasswordResetCode(' LIMIT@example.com ', 'mock')).toEqual({ status: 'limit' })
+    expect(await sendPasswordResetCode('never-joined@example.com', 'mock')).toEqual({
+      status: 'sent',
+    })
   })
 
   it('코드 확인은 가입과 같은 한도다 — 000000 은 4번부터 줄고 5번째에 잠기며 999999 는 잠긴다', async () => {
-    await sendPasswordResetCode('reset-try@example.com')
+    await sendPasswordResetCode('reset-try@example.com', 'mock')
     for (const remainingAttempts of [4, 3, 2, 1]) {
-      expect(await verifyPasswordResetCode('reset-try@example.com', '000000')).toEqual({
+      expect(await verifyPasswordResetCode('reset-try@example.com', '000000', 'mock')).toEqual({
         status: 'wrong',
         remainingAttempts,
       })
     }
-    expect(await verifyPasswordResetCode('reset-try@example.com', '000000')).toEqual({
+    expect(await verifyPasswordResetCode('reset-try@example.com', '000000', 'mock')).toEqual({
       status: 'locked',
     })
-    expect(await verifyPasswordResetCode('reset-try@example.com', '482915')).toEqual({
+    expect(await verifyPasswordResetCode('reset-try@example.com', '482915', 'mock')).toEqual({
       status: 'expired',
     })
 
-    await sendPasswordResetCode('reset-lock@example.com')
-    expect(await verifyPasswordResetCode('reset-lock@example.com', '999999')).toEqual({
+    await sendPasswordResetCode('reset-lock@example.com', 'mock')
+    expect(await verifyPasswordResetCode('reset-lock@example.com', '999999', 'mock')).toEqual({
       status: 'locked',
     })
   })
@@ -291,7 +299,7 @@ describe('비밀번호 재설정 (목)', () => {
   it('맞히면 일회용 토큰을 주고, 코드는 한 번만 쓴다', async () => {
     const token = await tokenFor('reset-ok@example.com')
     expect(token).not.toBe('')
-    expect(await verifyPasswordResetCode('reset-ok@example.com', '482915')).toEqual({
+    expect(await verifyPasswordResetCode('reset-ok@example.com', '482915', 'mock')).toEqual({
       status: 'expired',
     })
     // 토큰은 맞힐 때마다 새로 준다
@@ -300,22 +308,52 @@ describe('비밀번호 재설정 (목)', () => {
 
   it('토큰으로 바꾸고 토큰을 소비한다 — 같은 토큰으로 두 번 바꾸지 못한다', async () => {
     const token = await tokenFor('reset-once@example.com')
-    expect(await resetPassword(token, 'newpass2026')).toEqual({ status: 'ok' })
-    expect(await resetPassword(token, 'newpass2027')).toEqual({ status: 'verification-expired' })
+    expect(await resetPassword(token, 'newpass2026', 'dong@example.com', 'mock')).toEqual({
+      status: 'ok',
+    })
+    expect(await resetPassword(token, 'newpass2027', 'dong@example.com', 'mock')).toEqual({
+      status: 'verification-expired',
+    })
+  })
+
+  it('바꾸면 서버처럼 모든 기기가 로그아웃된다 — 목 세션이 비회원이 되고 세션 저장소는 건드리지 않는다', async () => {
+    resetMockSession()
+    await loginWithEmail('reset-member@example.com', 'dongne2026', 'mock')
+    const token = await tokenFor('reset-member@example.com')
+    expect(await resetPassword(token, 'newpass2026', 'dong@example.com', 'mock')).toEqual({
+      status: 'ok',
+    })
+    expect(getMockSession()).toBe('guest')
+    expect(clearSession).not.toHaveBeenCalled()
+    expect(apiRequest).not.toHaveBeenCalled()
+  })
+
+  it('다른 계정의 비밀번호를 바꾸면 목 세션은 그대로다', async () => {
+    resetMockSession()
+    await loginWithEmail('me@example.com', 'dongne2026', 'mock')
+    const token = await tokenFor('someone-else@example.com')
+    expect(await resetPassword(token, 'newpass2026', 'someone-else@example.com', 'mock')).toEqual({
+      status: 'ok',
+    })
+    expect(getMockSession()).toBe('member-no-consent')
   })
 
   it('토큰 없이 이메일만으로는 바꾸지 못한다 — 코드를 맞힌 뒤라도 그렇다', async () => {
     await tokenFor('victim@example.com')
-    expect(await resetPassword('victim@example.com', 'newpass2026')).toEqual({
+    expect(
+      await resetPassword('victim@example.com', 'newpass2026', 'dong@example.com', 'mock'),
+    ).toEqual({
       status: 'verification-expired',
     })
-    expect(await resetPassword('', 'newpass2026')).toEqual({ status: 'verification-expired' })
+    expect(await resetPassword('', 'newpass2026', 'dong@example.com', 'mock')).toEqual({
+      status: 'verification-expired',
+    })
   })
 
   it('가입 인증과 따로다 — 가입 코드 · 인증으로 재설정을, 재설정 인증으로 가입을 마치지 못한다', async () => {
     await sendEmailCode('both@example.com', 'mock')
     // 가입 코드만 보냈으면 재설정 코드는 없다
-    expect(await verifyPasswordResetCode('both@example.com', '482915')).toEqual({
+    expect(await verifyPasswordResetCode('both@example.com', '482915', 'mock')).toEqual({
       status: 'expired',
     })
 
@@ -339,18 +377,24 @@ describe('비밀번호 재설정 (목)', () => {
     vi.useFakeTimers()
     const token = await tokenFor('reset-slow@example.com')
     vi.setSystemTime(Date.now() + 901_000)
-    expect(await resetPassword(token, 'newpass2026')).toEqual({ status: 'verification-expired' })
+    expect(await resetPassword(token, 'newpass2026', 'dong@example.com', 'mock')).toEqual({
+      status: 'verification-expired',
+    })
   })
 
   it('재현용 이메일: verify-expired 로 받은 토큰은 늘 만료, reset-fail 로 받은 토큰은 거부(토큰은 남는다)', async () => {
     const expiredToken = await tokenFor('verify-expired@example.com')
-    expect(await resetPassword(expiredToken, 'newpass2026')).toEqual({
+    expect(await resetPassword(expiredToken, 'newpass2026', 'dong@example.com', 'mock')).toEqual({
       status: 'verification-expired',
     })
 
     const failToken = await tokenFor('reset-fail@example.com')
-    await expect(resetPassword(failToken, 'newpass2026')).rejects.toThrow()
-    await expect(resetPassword(failToken, 'newpass2026')).rejects.toThrow()
+    await expect(
+      resetPassword(failToken, 'newpass2026', 'dong@example.com', 'mock'),
+    ).rejects.toThrow()
+    await expect(
+      resetPassword(failToken, 'newpass2026', 'dong@example.com', 'mock'),
+    ).rejects.toThrow()
   })
 })
 
@@ -509,7 +553,7 @@ describe('로그인한 기기 (목)', () => {
 
   it('시안의 예시 기기(이 기기 + 다른 기기 둘)를 준다 — 기기 이름 · 마지막 사용 시각만, IP · 지역은 없다', async () => {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
-    const sessions = await listSessions()
+    const sessions = await listSessions('mock')
     expect(sessions.map((session) => [session.deviceName, session.current])).toEqual([
       ['iPhone · Safari', true],
       ['Mac · Chrome', false],
@@ -524,92 +568,88 @@ describe('로그인한 기기 (목)', () => {
   })
 
   it('받은 목록을 고쳐도 목 서버 목록은 그대로다', async () => {
-    const sessions = await listSessions()
+    const sessions = await listSessions('mock')
     sessions.pop()
-    expect(await listSessions()).toHaveLength(3)
+    expect(await listSessions('mock')).toHaveLength(3)
   })
 
   it('한 기기를 로그아웃하면 목록에서 빠지고, 이미 없는 세션은 끝난 것으로 본다', async () => {
-    await revokeSession('mock-session-mac')
-    expect((await listSessions()).map((session) => session.id)).toEqual([
+    await revokeSession({ id: 'mock-session-mac', current: false }, 'mock')
+    expect((await listSessions('mock')).map((session) => session.id)).toEqual([
       'mock-session-this',
       'mock-session-galaxy',
     ])
-    await expect(revokeSession('mock-session-mac')).resolves.toBeUndefined()
+    await expect(
+      revokeSession({ id: 'mock-session-mac', current: false }, 'mock'),
+    ).resolves.toBeUndefined()
   })
 
   it('이 기기의 세션은 여기서 로그아웃하지 않는다 (거부)', async () => {
-    await expect(revokeSession('mock-session-this')).rejects.toThrow()
-    expect(await listSessions()).toHaveLength(3)
+    await expect(
+      revokeSession({ id: 'mock-session-this', current: true }, 'mock'),
+    ).rejects.toThrow()
+    expect(await listSessions('mock')).toHaveLength(3)
   })
 
   it('다른 기기 모두 로그아웃하면 이 기기만 남는다', async () => {
-    await revokeOtherSessions()
-    expect((await listSessions()).map((session) => session.id)).toEqual(['mock-session-this'])
+    await revokeOtherSessions('mock')
+    expect((await listSessions('mock')).map((session) => session.id)).toEqual(['mock-session-this'])
   })
 
   it('비회원이 되면(로그아웃) 목록을 지워 다음 로그인은 예시 목록부터다', async () => {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
-    await revokeOtherSessions()
+    await revokeOtherSessions('mock')
     await logout('mock')
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
-    expect(await listSessions()).toHaveLength(3)
+    expect(await listSessions('mock')).toHaveLength(3)
   })
 
   it('재현 이메일이면 목록 · 로그아웃을 거부하고 목록을 그대로 둔다', async () => {
     await loginWithEmail('sessions-fail@example.com', 'dongne2026', 'mock')
-    await expect(listSessions()).rejects.toThrow()
+    await expect(listSessions('mock')).rejects.toThrow()
 
     await loginWithEmail('session-revoke-fail@example.com', 'dongne2026', 'mock')
-    await expect(revokeSession('mock-session-mac')).rejects.toThrow()
-    await expect(revokeOtherSessions()).rejects.toThrow()
-    expect(await listSessions()).toHaveLength(3)
+    await expect(
+      revokeSession({ id: 'mock-session-mac', current: false }, 'mock'),
+    ).rejects.toThrow()
+    await expect(revokeOtherSessions('mock')).rejects.toThrow()
+    expect(await listSessions('mock')).toHaveLength(3)
   })
 })
 
-describe('비밀번호 변경 · 설정 (목)', () => {
-  const consents = [consentFor('TERMS_OF_SERVICE')]
-
+describe('비밀번호 변경 (목)', () => {
   beforeEach(() => resetMockSession())
 
-  it('예시 프로필: 이메일 회원은 비밀번호가 있고 카카오 회원은 없다', () => {
+  it('예시 프로필: 이메일 회원은 비밀번호가 있고 카카오 회원은 없다(설정 API 는 없다 — #61)', () => {
     expect(EXAMPLE_PROFILES.email.hasPassword).toBe(true)
     expect(EXAMPLE_PROFILES.kakao.hasPassword).toBe(false)
   })
 
   it('변경: 현재 비밀번호 wrong 이면 wrong-current, 그 밖에는 성공이다', async () => {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
-    expect(await changePassword('wrong', 'newpass2026')).toEqual({ status: 'wrong-current' })
-    expect(await changePassword('dongne2026', 'newpass2026')).toEqual({ status: 'ok' })
+    expect(await changePassword('wrong', 'newpass2026', 'mock')).toEqual({
+      status: 'wrong-current',
+    })
+    expect(await changePassword('dongne2026', 'newpass2026', 'mock')).toEqual({ status: 'ok' })
     // 새 비밀번호가 현재와 같아도 막지 않는다(계약에 없음)
-    expect(await changePassword('dongne2026', 'dongne2026')).toEqual({ status: 'ok' })
+    expect(await changePassword('dongne2026', 'dongne2026', 'mock')).toEqual({ status: 'ok' })
   })
 
-  it('설정에 성공하면 카카오 회원 프로필의 hasPassword 가 true 가 된다', async () => {
-    await signup({ kind: 'kakao', consents }, 'mock')
-    const listener = vi.fn()
-    const unsubscribe = subscribeMockSession(listener)
-    await setupPassword('newpass2026')
-    unsubscribe()
-    expect(getMockProfile()).toEqual({ ...EXAMPLE_PROFILES.kakao, hasPassword: true })
+  it('바꾸면 서버처럼 다른 기기를 로그아웃하고 이 기기는 남긴다 — 목 세션은 그대로다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
+    expect(await changePassword('dongne2026', 'newpass2026', 'mock')).toEqual({ status: 'ok' })
+    expect((await listSessions('mock')).map((session) => session.id)).toEqual(['mock-session-this'])
     expect(getMockSession()).toBe('member-no-consent')
-    expect(listener).toHaveBeenCalledTimes(1)
   })
 
-  it('비회원 세션(덮어쓰기로 연 경우)에서 설정해도 세션을 바꾸지 않는다', async () => {
-    await setupPassword('newpass2026')
-    expect(getMockSession()).toBe('guest')
-    expect(getMockProfile()).toBeNull()
-  })
-
-  it('재현 이메일 · 재현 새 비밀번호면 거부하고 프로필을 그대로 둔다', async () => {
+  it('재현 이메일 · 재현 새 비밀번호면 거부하고 기기 목록을 그대로 둔다', async () => {
     await loginWithEmail('password-fail@example.com', 'dongne2026', 'mock')
-    await expect(changePassword('dongne2026', 'newpass2026')).rejects.toThrow()
-    await expect(changePassword('wrong', 'newpass2026')).rejects.toThrow()
+    await expect(changePassword('dongne2026', 'newpass2026', 'mock')).rejects.toThrow()
+    await expect(changePassword('wrong', 'newpass2026', 'mock')).rejects.toThrow()
 
-    await signup({ kind: 'kakao', consents }, 'mock')
-    await expect(setupPassword('fail2026')).rejects.toThrow()
-    expect(getMockProfile()?.hasPassword).toBe(false)
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
+    await expect(changePassword('dongne2026', 'fail2026', 'mock')).rejects.toThrow()
+    expect(await listSessions('mock')).toHaveLength(3)
   })
 })
 
@@ -1089,5 +1129,416 @@ describe('saveRegion (API)', () => {
     await saveRegion(YEOKSAM1, 'mock')
     expect(apiRequest).not.toHaveBeenCalled()
     expect(setMemberRegion).not.toHaveBeenCalled()
+  })
+})
+
+describe('sendPasswordResetCode (API)', () => {
+  it('인증 없이 이메일을 본문으로 보내고 sent 다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    expect(await sendPasswordResetCode('dong@example.com', 'api')).toEqual({ status: 'sent' })
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/auth/password/reset/send-code', {
+      method: 'POST',
+      body: { email: 'dong@example.com' },
+      auth: false,
+    })
+  })
+
+  it.each(['AUTH_001', 'AUTH_002'])('%s(429) 면 limit 이다', async (code) => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, 429))
+    expect(await sendPasswordResetCode('dong@example.com', 'api')).toEqual({ status: 'limit' })
+  })
+
+  it('일시 장애 · 분류 밖 오류는 거부한다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('AUTH_006', 503))
+    await expect(sendPasswordResetCode('dong@example.com', 'api')).rejects.toThrow(ApiError)
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('network', 0))
+    await expect(sendPasswordResetCode('dong@example.com', 'api')).rejects.toThrow(ApiError)
+  })
+
+  it('목 저장소를 쓰지 않는다 — 실데이터로 보낸 코드는 목 확인에서 만료다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    await sendPasswordResetCode('only-api-reset@example.com', 'api')
+    expect(await verifyPasswordResetCode('only-api-reset@example.com', '482915', 'mock')).toEqual({
+      status: 'expired',
+    })
+  })
+})
+
+describe('verifyPasswordResetCode (API)', () => {
+  const wrongCode = () => apiError('AUTH_003', 400)
+
+  it('인증 없이 이메일 · 코드를 본문으로 보내고 응답의 재설정 토큰을 돌려준다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ resetToken: 'q3J9x0b2V7mZ' })
+    expect(await verifyPasswordResetCode('dong@example.com', '482915', 'api')).toEqual({
+      status: 'ok',
+      resetToken: 'q3J9x0b2V7mZ',
+    })
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/auth/password/reset/verify-code', {
+      method: 'POST',
+      body: { email: 'dong@example.com', code: '482915' },
+      auth: false,
+    })
+  })
+
+  it('AUTH_003 이면 wrong 이고 남은 시도를 가입과 따로 센다', async () => {
+    // 가입 인증에서 두 번 틀렸어도 재설정은 처음부터 센다
+    vi.mocked(apiRequest).mockRejectedValueOnce(wrongCode()).mockRejectedValueOnce(wrongCode())
+    await verifyEmailCode('split@example.com', '000000', 'api')
+    await verifyEmailCode('split@example.com', '000000', 'api')
+
+    const remaining: number[] = []
+    for (let i = 0; i < CODE_MAX_ATTEMPTS + 1; i += 1) {
+      vi.mocked(apiRequest).mockRejectedValueOnce(wrongCode())
+      const result = await verifyPasswordResetCode(' Split@example.com ', '000000', 'api')
+      if (result.status !== 'wrong') throw new Error(`wrong 이 아니다: ${result.status}`)
+      remaining.push(result.remainingAttempts)
+    }
+    expect(remaining).toEqual([4, 3, 2, 1, 1, 1])
+  })
+
+  it('코드를 다시 받으면 · 인증을 마치면 센 실패 수를 0 으로 되돌린다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(wrongCode())
+    await verifyPasswordResetCode('reset-again@example.com', '000000', 'api')
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    await sendPasswordResetCode('reset-again@example.com', 'api')
+    vi.mocked(apiRequest).mockRejectedValueOnce(wrongCode())
+    expect(await verifyPasswordResetCode('reset-again@example.com', '000000', 'api')).toEqual({
+      status: 'wrong',
+      remainingAttempts: 4,
+    })
+
+    vi.mocked(apiRequest).mockResolvedValueOnce({ resetToken: 'token-1' })
+    await verifyPasswordResetCode('reset-again@example.com', '482915', 'api')
+    vi.mocked(apiRequest).mockRejectedValueOnce(wrongCode())
+    expect(await verifyPasswordResetCode('reset-again@example.com', '000000', 'api')).toEqual({
+      status: 'wrong',
+      remainingAttempts: 4,
+    })
+  })
+
+  it.each([
+    ['AUTH_004', 400, 'expired'],
+    ['AUTH_005', 400, 'locked'],
+    ['AUTH_010', 429, 'locked'],
+  ] as const)('%s 면 %s 다', async (code, status, expected) => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, status))
+    expect(await verifyPasswordResetCode('dong@example.com', '000000', 'api')).toEqual({
+      status: expected,
+    })
+  })
+
+  it('토큰이 없는 성공 응답 · 일시 장애 · 분류 밖 오류는 거부한다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    await expect(verifyPasswordResetCode('dong@example.com', '482915', 'api')).rejects.toThrow()
+    vi.mocked(apiRequest).mockResolvedValueOnce({ resetToken: '' })
+    await expect(verifyPasswordResetCode('dong@example.com', '482915', 'api')).rejects.toThrow()
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('AUTH_006', 503))
+    await expect(verifyPasswordResetCode('dong@example.com', '482915', 'api')).rejects.toThrow(
+      ApiError,
+    )
+  })
+})
+
+describe('resetPassword (API)', () => {
+  /** 회원 정보 저장소가 이 탭 회원(memberId '1')의 내 정보를 읽어 둔 상태 */
+  function knownEmail(email: string) {
+    vi.mocked(getMemberInfoSnapshot).mockReturnValue({
+      memberId: '1',
+      info: {
+        status: 'ready',
+        value: {
+          memberId: '1',
+          email,
+          nickname: '재채기탐정',
+          provider: 'email',
+          hasPassword: true,
+          pendingConsents: [],
+        },
+      },
+      region: { status: 'loading' },
+    })
+  }
+
+  it('인증 없이 토큰 · 새 비밀번호만 본문으로 보낸다(이메일은 보내지 않는다)', async () => {
+    vi.mocked(getSessionSnapshot).mockReturnValue({ status: 'guest' })
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    expect(await resetPassword('reset-token', 'newpass2026', 'dong@example.com', 'api')).toEqual({
+      status: 'ok',
+    })
+    expect(apiRequest).toHaveBeenCalledTimes(1)
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/auth/password/reset', {
+      method: 'POST',
+      body: { resetToken: 'reset-token', newPassword: 'newpass2026' },
+      auth: false,
+    })
+  })
+
+  it('이 탭 계정의 이메일과 같으면(앞뒤 공백 · 대소문자 무시) 이 탭 세션을 로그아웃으로 비운다 — 로그아웃 API 는 부르지 않는다', async () => {
+    knownEmail('Dong@Example.com')
+    notifySessionExpired()
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    expect(await resetPassword('reset-token', 'newpass2026', ' dong@example.com ', 'api')).toEqual({
+      status: 'ok',
+    })
+    // 사용자가 고른 결과라 만료 안내가 아니다 — 화면이 이메일 로그인으로 간다
+    expect(clearSession).toHaveBeenCalledWith('logout')
+    expect(isSessionExpiring()).toBe(false)
+    expect(apiRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('이 탭 계정과 다른 이메일이면 이 탭 세션을 건드리지 않는다(서버는 그 계정의 세션만 끊었다)', async () => {
+    knownEmail('me@example.com')
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    expect(await resetPassword('reset-token', 'newpass2026', 'other@example.com', 'api')).toEqual({
+      status: 'ok',
+    })
+    expect(clearSession).not.toHaveBeenCalled()
+    expect(apiRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('이 탭 계정의 이메일을 모르면(내 정보 읽는 중 · 실패) 로그아웃 API 로 서버 세션까지 끊는다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+    expect(await resetPassword('reset-token', 'newpass2026', 'dong@example.com', 'api')).toEqual({
+      status: 'ok',
+    })
+    expect(apiRequest).toHaveBeenLastCalledWith('/api/v1/auth/logout', { method: 'POST' })
+    expect(clearSession).toHaveBeenCalledTimes(1)
+    expect(clearSession).toHaveBeenCalledWith('logout')
+  })
+
+  it('이메일을 모르고 로그아웃이 거부돼도(일시 장애) 이 탭 세션은 비운다 — 재설정은 성공이다', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(unavailableError('network', 0))
+    expect(await resetPassword('reset-token', 'newpass2026', 'dong@example.com', 'api')).toEqual({
+      status: 'ok',
+    })
+    expect(apiRequest).toHaveBeenCalledTimes(2)
+    expect(clearSession).toHaveBeenCalledWith('logout')
+  })
+
+  it('다른 회원의 내 정보만 있으면(회원이 바뀌는 중) 모르는 것으로 본다', async () => {
+    knownEmail('dong@example.com')
+    vi.mocked(getSessionSnapshot).mockReturnValue({
+      status: 'member',
+      summary: { memberId: '2', role: 'USER', pendingConsents: [], reportWritable: true },
+    })
+    vi.mocked(apiRequest).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+    await resetPassword('reset-token', 'newpass2026', 'dong@example.com', 'api')
+    expect(apiRequest).toHaveBeenLastCalledWith('/api/v1/auth/logout', { method: 'POST' })
+  })
+
+  it('이 탭에 세션이 없으면 비우지 않는다', async () => {
+    vi.mocked(getSessionSnapshot).mockReturnValue({ status: 'guest' })
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    expect(await resetPassword('reset-token', 'newpass2026', 'dong@example.com', 'api')).toEqual({
+      status: 'ok',
+    })
+    expect(clearSession).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['AUTH_018', 400, 'verification-expired'],
+    ['AUTH_115', 400, 'verification-expired'],
+    ['AUTH_116', 400, 'verification-expired'],
+    ['AUTH_019', 429, 'limited'],
+    ['AUTH_105', 400, 'invalid-password'],
+    ['AUTH_106', 400, 'invalid-password'],
+    ['AUTH_107', 400, 'invalid-password'],
+  ] as const)('%s 면 %s 이고 세션은 그대로다', async (code, status, expected) => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, status))
+    expect(await resetPassword('reset-token', 'newpass2026', 'dong@example.com', 'api')).toEqual({
+      status: expected,
+    })
+    expect(clearSession).not.toHaveBeenCalled()
+  })
+
+  it('세션 저장소 장애(AUTH_017) · 일시 장애는 거부하고 세션을 그대로 둔다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('AUTH_017', 503))
+    await expect(
+      resetPassword('reset-token', 'newpass2026', 'dong@example.com', 'api'),
+    ).rejects.toThrow(ApiError)
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('timeout', 0))
+    await expect(
+      resetPassword('reset-token', 'newpass2026', 'dong@example.com', 'api'),
+    ).rejects.toThrow(ApiError)
+    expect(clearSession).not.toHaveBeenCalled()
+  })
+
+  it('목 세션 · 목 토큰은 건드리지 않는다', async () => {
+    resetMockSession()
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    await resetPassword('mock-reset-1', 'newpass2026', 'dong@example.com', 'api')
+    expect(getMockSession()).toBe('member-no-consent')
+  })
+})
+
+describe('changePassword (API)', () => {
+  it('access 를 실어(auth 기본값) 현재 · 새 비밀번호를 본문으로 보내고 ok 다 — 이 기기 세션은 그대로다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    expect(await changePassword('dongne2026', 'newpass2026', 'api')).toEqual({ status: 'ok' })
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/members/me/password', {
+      method: 'POST',
+      body: { currentPassword: 'dongne2026', newPassword: 'newpass2026' },
+    })
+    expect(clearSession).not.toHaveBeenCalled()
+    expect(setSession).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['MEMBER_005', 400, 'wrong-current'],
+    ['MEMBER_103', 400, 'wrong-current'],
+    ['MEMBER_104', 400, 'wrong-current'],
+    ['MEMBER_006', 429, 'locked'],
+    ['MEMBER_105', 400, 'invalid-password'],
+    ['MEMBER_106', 400, 'invalid-password'],
+    ['MEMBER_107', 400, 'invalid-password'],
+  ] as const)('%s 면 %s 다', async (code, status, expected) => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, status))
+    expect(await changePassword('dongne2026', 'newpass2026', 'api')).toEqual({ status: expected })
+    expect(reloadMemberInfo).not.toHaveBeenCalled()
+  })
+
+  it('비밀번호 없는 계정(MEMBER_007)이면 no-password 이고 내 정보를 다시 읽는다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('MEMBER_007', 409))
+    expect(await changePassword('dongne2026', 'newpass2026', 'api')).toEqual({
+      status: 'no-password',
+    })
+    expect(reloadMemberInfo).toHaveBeenCalledTimes(1)
+  })
+
+  it('세션 저장소 장애(MEMBER_009) · 일시 장애 · 분류 밖 오류는 거부한다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('MEMBER_009', 503))
+    await expect(changePassword('dongne2026', 'newpass2026', 'api')).rejects.toThrow(ApiError)
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('network', 0))
+    await expect(changePassword('dongne2026', 'newpass2026', 'api')).rejects.toThrow(ApiError)
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('MEMBER_100', 400))
+    await expect(changePassword('dongne2026', 'newpass2026', 'api')).rejects.toThrow(ApiError)
+    expect(clearSession).not.toHaveBeenCalled()
+  })
+
+  it('목 재현 값(wrong · fail2026)을 듣지 않는다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+    expect(await changePassword('wrong', 'newpass2026', 'api')).toEqual({ status: 'ok' })
+    expect(await changePassword('dongne2026', 'fail2026', 'api')).toEqual({ status: 'ok' })
+  })
+})
+
+describe('로그인한 기기 (API)', () => {
+  const SESSIONS = {
+    sessions: [
+      {
+        sessionId: '3f2a9c11-0e4b-4a1f-9c3d-0b8e2f7a5d61',
+        deviceLabel: 'iPhone · Safari',
+        createdAt: '2026-10-01T00:30:00Z',
+        lastUsedAt: '2026-10-01T05:12:00Z',
+        current: true,
+      },
+      {
+        sessionId: '9b1e7c22-4d5f-4b6a-8c7d-1e2f3a4b5c6d',
+        deviceLabel: 'Mac · Chrome',
+        createdAt: '2026-09-20T01:00:00Z',
+        lastUsedAt: '2026-09-30T15:30:00Z',
+        current: false,
+        // 계약 밖 값이 실려 와도 옮기지 않는다
+        ip: '203.0.113.7',
+      },
+    ],
+    totalCount: 2,
+  }
+
+  beforeEach(() => resetMockSession())
+
+  it('목록은 access 를 실어 부르고 세션 id · 기기 이름 · 마지막 사용 시각 · 이 기기인지만 옮긴다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(SESSIONS)
+    const sessions = await listSessions('api')
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/auth/sessions')
+    expect(sessions).toEqual([
+      {
+        id: '3f2a9c11-0e4b-4a1f-9c3d-0b8e2f7a5d61',
+        deviceName: 'iPhone · Safari',
+        lastActiveAt: '2026-10-01T05:12:00Z',
+        current: true,
+      },
+      {
+        id: '9b1e7c22-4d5f-4b6a-8c7d-1e2f3a4b5c6d',
+        deviceName: 'Mac · Chrome',
+        lastActiveAt: '2026-09-30T15:30:00Z',
+        current: false,
+      },
+    ])
+  })
+
+  it('목록이 실패하면 거부한다 — 예시 목록으로 채우지 않는다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('network', 0))
+    await expect(listSessions('api')).rejects.toThrow(ApiError)
+  })
+
+  it('다른 기기 하나를 로그아웃하면 그 세션 id 로 DELETE 하고 이 기기 세션은 그대로다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    await revokeSession({ id: '9b1e7c22-4d5f-4b6a-8c7d-1e2f3a4b5c6d', current: false }, 'api')
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/api/v1/auth/sessions/9b1e7c22-4d5f-4b6a-8c7d-1e2f3a4b5c6d',
+      { method: 'DELETE' },
+    )
+    expect(clearSession).not.toHaveBeenCalled()
+  })
+
+  it('id 는 경로 조각으로만 붙인다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    await revokeSession({ id: '../logout?x=1', current: false }, 'api')
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/auth/sessions/..%2Flogout%3Fx%3D1', {
+      method: 'DELETE',
+    })
+  })
+
+  it('지금 기기(current)를 로그아웃하면 이 탭의 세션을 로그아웃으로 비운다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    await revokeSession({ id: '3f2a9c11-0e4b-4a1f-9c3d-0b8e2f7a5d61', current: true }, 'api')
+    expect(clearSession).toHaveBeenCalledWith('logout')
+  })
+
+  it('세션 id 형식 오류(AUTH_114) · 일시 장애는 거부하고 세션을 그대로 둔다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('AUTH_114', 400))
+    await expect(revokeSession({ id: 'not-uuid', current: true }, 'api')).rejects.toThrow(ApiError)
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('timeout', 0))
+    await expect(
+      revokeSession({ id: '3f2a9c11-0e4b-4a1f-9c3d-0b8e2f7a5d61', current: true }, 'api'),
+    ).rejects.toThrow(ApiError)
+    expect(clearSession).not.toHaveBeenCalled()
+  })
+
+  it('다른 기기 모두는 DELETE /sessions 이고 이 기기 세션은 그대로다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    await revokeOtherSessions('api')
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/auth/sessions', { method: 'DELETE' })
+    expect(clearSession).not.toHaveBeenCalled()
+  })
+
+  it('다른 기기 모두가 AUTH_014(이 기기 세션을 서버가 모름)면 로그인 만료로 비우고 거부한다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('AUTH_014', 401))
+    await expect(revokeOtherSessions('api')).rejects.toThrow(ApiError)
+    expect(clearSession).toHaveBeenCalledWith('expired')
+
+    // 이미 비었으면 다시 비우지 않는다
+    vi.mocked(clearSession).mockClear()
+    vi.mocked(getSessionSnapshot).mockReturnValue({ status: 'guest' })
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('AUTH_014', 401))
+    await expect(revokeOtherSessions('api')).rejects.toThrow(ApiError)
+    expect(clearSession).not.toHaveBeenCalled()
+  })
+
+  it('다른 기기 모두의 일시 장애는 거부하고 세션을 그대로 둔다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('AUTH_017', 503))
+    await expect(revokeOtherSessions('api')).rejects.toThrow(ApiError)
+    expect(clearSession).not.toHaveBeenCalled()
+  })
+
+  it('목 서버 목록은 건드리지 않는다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
+    vi.mocked(apiRequest).mockResolvedValueOnce(null)
+    await revokeOtherSessions('api')
+    expect(await listSessions('mock')).toHaveLength(3)
   })
 })

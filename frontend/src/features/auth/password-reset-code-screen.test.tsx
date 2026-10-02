@@ -11,6 +11,7 @@ import {
   type SignupDraft,
   useOnboarding,
 } from '@/features/onboarding/onboarding-context'
+import { resetApiSession, selectApiSource } from '@/test/api-session'
 
 import type * as authClient from './auth-client'
 import {
@@ -83,11 +84,28 @@ describe('PasswordResetCodeScreen', () => {
     vi.mocked(sendPasswordResetCode).mockReset()
     vi.mocked(verifyPasswordResetCode).mockReset()
     // 목 서버에 이 이메일로 보낸 재설정 코드를 만든다
-    await sendPasswordResetCode(EMAIL)
+    await sendPasswordResetCode(EMAIL, 'mock')
     vi.mocked(sendPasswordResetCode).mockClear()
   })
 
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => {
+    vi.useRealTimers()
+    resetApiSession()
+  })
+
+  it('실데이터 모드면 출처 api 로 확인하고 받은 토큰을 초안에 둔다', async () => {
+    selectApiSource()
+    vi.mocked(verifyPasswordResetCode).mockResolvedValueOnce({
+      status: 'ok',
+      resetToken: 'server-token',
+    })
+    const { user } = setup()
+    await user.type(codeInput(), '482915')
+    await user.click(confirmButton())
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/password/reset/new'))
+    expect(verifyPasswordResetCode).toHaveBeenCalledWith(EMAIL, '482915', 'api')
+    expect(drafts().passwordReset.resetToken).toBe('server-token')
+  })
 
   it('가입 여부를 드러내지 않는 재설정용 중립 문구를 늘 보인다', () => {
     setup()
@@ -103,7 +121,7 @@ describe('PasswordResetCodeScreen', () => {
     await user.type(codeInput(), '482915')
     await user.click(confirmButton())
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/password/reset/new'))
-    expect(verifyPasswordResetCode).toHaveBeenCalledWith(EMAIL, '482915')
+    expect(verifyPasswordResetCode).toHaveBeenCalledWith(EMAIL, '482915', 'mock')
     expect(verifyEmailCode).not.toHaveBeenCalled()
     expect(drafts().passwordReset.resetToken).toMatch(/^mock-reset-/)
     expect(drafts().signup).toEqual(EMPTY_SIGNUP)
@@ -149,7 +167,7 @@ describe('PasswordResetCodeScreen', () => {
     await waitFor(() =>
       expect(screen.getByRole('timer', { name: '남은 시간' }).textContent).toBe('5:00'),
     )
-    expect(sendPasswordResetCode).toHaveBeenCalledWith(EMAIL)
+    expect(sendPasswordResetCode).toHaveBeenCalledWith(EMAIL, 'mock')
     expect(sendEmailCode).not.toHaveBeenCalled()
   })
 

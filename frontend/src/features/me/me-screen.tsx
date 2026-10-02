@@ -81,7 +81,8 @@ function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label
 /**
  * S10 내 정보 (`/me`). **회원만 본다** — 비회원이면 본문을 그리지 않고 로그인(`/login?next=/me`, 둘러보기 동네 유지)으로 기록을 바꿔
  * 간다(`useMemberGate`, #123). 탭바 · 머리줄의 `내 정보` 링크는 회원 상태와 무관하게 `/me` 이고 이 가드가 비회원을 보낸다.
- * 로그인 방법(`useMockProfile`)으로 화면이 둘이다: 이메일 회원(Settings) · 카카오 회원(Settings-kakao, 비밀번호 "설정").
+ * 로그인 방법(`useMockProfile`)으로 화면이 둘이다: 이메일 회원(Settings) · 카카오 회원(Settings-kakao). 비밀번호가 없는 회원
+ * (`hasPassword` false — 카카오로만 로그인)에게는 시안의 `비밀번호 설정` 행을 그리지 않는다(설정 API 없음, #166).
  * 비로그인 화면(Settings-guest)은 #123 에서 그리지 않게 됐다.
  * 동의하지 않은 회원은 시안이 없어 회원 화면에서 `내 보고` 섹션을 빼고, `건강정보 동의 철회` 자리에 `건강정보 동의하기` 를 둔다.
  *
@@ -103,8 +104,8 @@ function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label
  * 데스크톱 설정 메뉴의 바로가기는 `#id` 링크가 아니라 버튼이다. 같은 문서 `#` 링크는 Next 가 모르는 기록 항목(state 가 null)을
  * 쌓아, 그 뒤 연 대화상자의 닫기(`history.go(-1)`)가 그 항목으로 돌아가며 첫 닫기에 닫히지 않는다(docs/conventions.md).
  *
- * 로그인한 기기(`/me/devices`) · 비밀번호 변경 · 설정(`/me/password`) · 보고 동네(`/me/region`) 행은 그 화면으로 간다. 동네(`region`)와 QA 덮어쓰기
- * (`mock-auth` · `mock-provider`)를 주소에 남긴다. 비밀번호를 바꾸거나 정하고 돌아오면 계정 화면이 내 정보 레이아웃
+ * 로그인한 기기(`/me/devices`) · 비밀번호 변경(`/me/password`) · 보고 동네(`/me/region`) 행은 그 화면으로 간다. 동네(`region`)와 QA 덮어쓰기
+ * (`mock-auth` · `mock-provider`)를 주소에 남긴다. 비밀번호를 바꾸고 돌아오면 계정 화면이 내 정보 레이아웃
  * (`MeTrailProvider`)에 남긴 알림을 한 번 꺼내 토스트로 띄운다 — 회원일 때만 띄운다(내 동네를 바꾸고 와도 같다).
  * 아직 없는 화면(관심 동네 · 알림 설정 · 안내 본문 등)은 홈처럼 "준비하고 있어요" 알림을 띄운다.
  *
@@ -182,7 +183,7 @@ export function MeScreen({
 
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
 
-  // 비밀번호를 바꾸거나 정하고 왔으면 계정 화면이 내 정보 레이아웃에 남긴 알림을 한 번 꺼내 띄운다.
+  // 비밀번호 · 내 동네를 바꾸고 왔으면 계정 화면이 내 정보 레이아웃에 남긴 알림을 한 번 꺼내 띄운다.
   // 하이드레이션 첫 그림의 회원 상태(늘 guest)로는 판단하지 않는다. 비회원이면 꺼내서 버리기만 한다
   const hydrated = useHydrated()
   const signedIn = auth !== 'guest'
@@ -289,14 +290,11 @@ export function MeScreen({
                         : undefined
                     }
                   />
-                  {/* 아직 비밀번호가 없는 카카오 회원은 설정, 그 밖에는 변경이다. 같은 화면(`/me/password`)이 둘을 맡는다 */}
-                  {profile?.hasPassword === false ? (
-                    <MenuRow
-                      title="비밀번호 설정"
-                      description="이메일로도 로그인할 수 있어요"
-                      href={navHref(ME_PASSWORD_PATH, accountSearch)}
-                    />
-                  ) : (
+                  {/*
+                    비밀번호가 있는 회원에게만 보인다. 카카오로만 로그인하는 회원(`hasPassword` false)은 비밀번호가 없고 설정 API 도
+                    없다(백엔드 #61, #166). 실데이터에서 내 정보를 읽기 전 · 읽지 못함이면 있는지 몰라 보이지 않는다
+                  */}
+                  {profile?.hasPassword === true && (
                     <MenuRow
                       title="비밀번호 변경"
                       href={navHref(ME_PASSWORD_PATH, accountSearch)}

@@ -26,7 +26,7 @@ const MeTrailContext = createContext<MeTrail | null>(null)
  * "뒤로" 는 앞 화면을 내 정보(`/me`)로 정해 루트의 앱 안 이동 기록에 묻는다(`useNavTrail`, docs/conventions.md "화면의 뒤로").
  * 기록은 경로만 보고 쿼리는 보지 않는다(내 정보의 확인 대화상자 `?confirm=` 은 같은 경로라 기록에 들지 않는다).
  *
- * 비밀번호를 바꾸거나 정한 뒤의 알림도 여기 둔다(`leaveNotice` → 내 정보의 `takeNotice`). 주소 쿼리로 넘기면 성공 뒤
+ * 비밀번호 · 내 동네를 바꾼 뒤의 알림도 여기 둔다(`leaveNotice` → 내 정보의 `takeNotice`). 주소 쿼리로 넘기면 성공 뒤
  * `router.back()` 으로 돌아갈 수 없고(돌아갈 기록 항목의 주소를 바꿀 수 없다), replace 하면 기록에 `/me` 가 두 번 남아
  * 휴대폰 뒤로 가기가 한 번 헛돈다. 레이아웃 메모리라 새로고침 · 다른 곳으로 나가면 사라진다 — 알림은 그래도 된다.
  */
