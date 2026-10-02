@@ -95,7 +95,7 @@ describe('SignupEmailScreen', () => {
     await user.click(submit)
 
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/signup/code'))
-    expect(sendEmailCode).toHaveBeenCalledWith('dong@example.com')
+    expect(sendEmailCode).toHaveBeenCalledWith('dong@example.com', 'mock')
     expect(draft().method).toBe('email')
   })
 

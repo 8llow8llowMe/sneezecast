@@ -32,7 +32,7 @@ const GUARDED = [
   '/signup/account',
 ]
 
-const login = () => loginWithEmail('dong@example.com', 'dongne2026')
+const login = () => loginWithEmail('dong@example.com', 'dongne2026', 'mock')
 
 beforeEach(() => {
   search = ''
@@ -181,7 +181,7 @@ describe('GuestOnlyGate', () => {
     // 가입 마무리(S02-3)로 넘어가 가입한다 — 레이아웃은 첫 진입 화면 사이에서 그대로다
     pathname = '/setup/terms'
     view.rerender(<GuestOnlyGate />)
-    await act(() => signup({ kind: 'kakao', consents: [] }))
+    await act(() => signup({ kind: 'kakao', consents: [] }, 'mock'))
     expect(router.replace).not.toHaveBeenCalled()
 
     pathname = '/signup/account'

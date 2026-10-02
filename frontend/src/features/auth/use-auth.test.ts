@@ -51,7 +51,7 @@ describe('useAuth', () => {
     expect(result.current).toBe('member')
 
     search = ''
-    await act(() => loginWithEmail('dong@example.com', 'dongne2026'))
+    await act(() => loginWithEmail('dong@example.com', 'dongne2026', 'mock'))
     rerender()
     expect(result.current).toBe('member-no-consent')
   })
@@ -59,7 +59,7 @@ describe('useAuth', () => {
   it('실데이터 모드는 ?mock-auth= 와 목 세션을 듣지 않고 세션 저장소를 따른다', async () => {
     selectApiSource()
     search = 'mock-auth=member'
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     const { result } = renderHook(() => useAuth())
     expect(result.current).toBe('guest')
 

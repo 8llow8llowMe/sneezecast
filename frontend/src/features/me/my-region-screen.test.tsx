@@ -59,7 +59,7 @@ beforeEach(async () => {
   pathname = '/me/region'
   resetMockSession()
   vi.clearAllMocks()
-  await loginWithEmail('dong@example.com', 'dongne2026')
+  await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
   await saveRegion(YEOKSAM1)
   vi.mocked(saveRegion).mockClear()
 })

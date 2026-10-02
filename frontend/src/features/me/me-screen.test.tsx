@@ -77,7 +77,7 @@ function notificationSection() {
 
 /** 동의한 회원으로 로그인해 둔다 (목 세션) */
 async function loginAsMember(email = 'dong@example.com') {
-  await loginWithEmail(email, 'dongne2026')
+  await loginWithEmail(email, 'dongne2026', 'mock')
   await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
 }
 
@@ -145,7 +145,7 @@ describe('MeScreen 회원 상태별 화면', () => {
   })
 
   it('카카오 회원이 비밀번호를 설정하면 행이 "비밀번호 변경" 으로 바뀐다', async () => {
-    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] })
+    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] }, 'mock')
     renderMe()
     expect(screen.getByRole('link', { name: /^비밀번호 설정/ })).toBeDefined()
 
@@ -273,7 +273,7 @@ describe('MeScreen 회원 상태별 화면', () => {
   it('긴 이메일은 제목을 줄이지 않고 값만 한 줄로 자르며, 전체 값을 title 로 남긴다', async () => {
     const email = 'a.very.long.email.address.for.testing@example.com'
     expect(email.length).toBeGreaterThanOrEqual(32)
-    await loginWithEmail(email, 'dongne2026')
+    await loginWithEmail(email, 'dongne2026', 'mock')
     renderMe()
 
     const value = screen.getByText(`이메일 · ${email}`)
@@ -356,7 +356,7 @@ describe('MeScreen 메뉴', () => {
   })
 
   it('보고 동네 행은 둘러보는 동네가 아니라 내 동네를 보이고 내 동네 바꾸기로 간다', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     await saveRegion({ code: '11680640', name: '역삼1동' })
     search = 'region=11440660&mock-provider=email'
     renderMe({ regionCode: '11440660' })
@@ -367,13 +367,13 @@ describe('MeScreen 메뉴', () => {
   })
 
   it('내 동네를 모르면(가입 없이 이메일 로그인) 보고 동네 값을 비운다', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     renderMe()
     expect(screen.getByRole('link', { name: /^보고 동네/ }).textContent).toBe('보고 동네')
   })
 
   it('머리줄 동네 이름은 둘러보기 동네가 없으면 내 동네이고, 내 정보로 돌아올 둘러볼 동네 고르기를 연다', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     await saveRegion({ code: '11680640', name: '역삼1동' })
     renderMe()
 
@@ -524,6 +524,7 @@ describe('MeScreen 확인 대화상자', () => {
     const dialog = screen.getByRole('dialog', { name: '로그아웃할까요?' })
     await userEvent.setup().click(within(dialog).getByRole('button', { name: '로그아웃' }))
 
+    expect(logout).toHaveBeenCalledWith('mock')
     expect(getMockSession()).toBe('guest')
     expect(getMockProfile()).toBeNull()
     // 세션이 먼저 비회원이 되어도 보내는 중에는 가드가 멈춰 로그인이 아니라 홈으로만 간다

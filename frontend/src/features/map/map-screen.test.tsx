@@ -259,7 +259,7 @@ async function loginAsMember(
   region: { code: string; name: string } | null = YEOKSAM1,
   email = 'dong@example.com',
 ) {
-  await loginWithEmail(email, 'dongne2026')
+  await loginWithEmail(email, 'dongne2026', 'mock')
   if (region) await saveRegion(region)
   vi.mocked(saveRegion).mockClear()
 }

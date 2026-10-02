@@ -26,7 +26,7 @@ describe('SessionExpiryWatcher', () => {
     router.replace.mockClear()
     clearSessionExpiring()
     resetMockSession()
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
   })
 
   afterEach(() => {
@@ -95,7 +95,7 @@ describe('SessionExpiryWatcher', () => {
     act(() => notifySessionExpired())
     expect(isSessionExpiring()).toBe(true)
 
-    await act(() => loginWithEmail('dong@example.com', 'dongne2026'))
+    await act(() => loginWithEmail('dong@example.com', 'dongne2026', 'mock'))
     expect(isSessionExpiring()).toBe(false)
   })
 })
@@ -107,7 +107,7 @@ describe('SessionExpiryWatcher 실데이터 모드', () => {
     router.replace.mockClear()
     clearSessionExpiring()
     resetMockSession()
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     selectApiSource()
   })
 
@@ -155,7 +155,7 @@ describe('SessionExpiryWatcher 와 앱 안 이동 기록', () => {
     router.back.mockClear()
     clearSessionExpiring()
     resetMockSession()
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
   })
 
   afterEach(() => {

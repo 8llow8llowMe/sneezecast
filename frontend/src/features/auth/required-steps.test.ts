@@ -190,13 +190,13 @@ describe('targetAfter', () => {
   })
 
   it('목 프로필의 결과를 읽는다 — 재동의를 마친 프로필은 다시 재동의로 보내지 않는다', async () => {
-    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
     await agreeTermsReconsent(consentFor('TERMS_OF_SERVICE'))
     expect(targetAfter('terms', 'member-no-consent', new URLSearchParams('next=/me'))).toBe('/me')
   })
 
   it('마친 조건은 프로필에 아직 남아 있어도 다시 넣지 않는다(되돌이 방지)', async () => {
-    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
     expect(targetAfter('terms', 'member-no-consent', new URLSearchParams())).toBe('/')
   })
 })

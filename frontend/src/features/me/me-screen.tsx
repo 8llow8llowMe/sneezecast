@@ -17,8 +17,10 @@ import { REPORT_GATE, reportButtonLabel } from '@/features/home/report-gate'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { REPORT_PARAM } from '@/features/report/report-flow'
 import { useSubmittedReport } from '@/features/report/use-submitted-report'
+import type { DataSource } from '@/lib/data-source'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useDataSource } from '@/lib/use-data-source'
 import { useHydrated } from '@/lib/use-hydrated'
 import { useModalParam } from '@/lib/use-modal-param'
 import { useNavTrail } from '@/lib/use-nav-trail'
@@ -50,8 +52,11 @@ import { useMemberRegion, useShownRegionName } from './member-region'
 import { PushUnavailable } from './push-unavailable'
 import { MenuRow, sectionTitleId, SettingsSection, SwitchRow } from './settings-row'
 
-/** 대화상자별 목 API. 성공하면 `auth-client` 가 목 세션을 바꾼다(로그아웃 · 탈퇴 · 동의 철회 → guest) */
-const CONFIRM_ACTIONS: Record<ConfirmKind, () => Promise<void>> = {
+/**
+ * 대화상자별 API. 데이터 출처를 넘긴다 — 로그아웃은 실데이터면 세션 저장소, 목이면 목 세션을 비운다. 동의 철회 · 탈퇴는 아직 목이라
+ * 출처를 쓰지 않는다. 성공하면 `auth-client` 가 세션을 바꾼다(로그아웃 · 탈퇴 · 동의 철회 → guest)
+ */
+const CONFIRM_ACTIONS: Record<ConfirmKind, (source: DataSource) => Promise<void>> = {
   logout,
   'consent-withdraw': withdrawHealthConsent,
   withdraw: withdrawMembership,
@@ -116,6 +121,7 @@ export function MeScreen({
   const navTrail = useNavTrail()
   const searchParams = useSearchParams()
   const active = useActiveRef()
+  const source = useDataSource()
   const { toast, show, dismiss } = useToast()
   const auth = useMockAuth()
   const profile = useMockProfile()
@@ -195,7 +201,7 @@ export function MeScreen({
     setPending(kind)
     setFailed(null)
     try {
-      await CONFIRM_ACTIONS[kind]()
+      await CONFIRM_ACTIONS[kind](source)
     } catch {
       if (!active.current) return
       setPending(null)

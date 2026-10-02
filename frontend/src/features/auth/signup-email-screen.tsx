@@ -2,6 +2,7 @@
 
 import { NO_MEMBERSHIP, useOnboarding } from '@/features/onboarding/onboarding-context'
 import { LOGIN_EMAIL_PATH, LOGIN_PATH, SIGNUP_CODE_PATH } from '@/features/onboarding/paths'
+import { useDataSource } from '@/lib/use-data-source'
 
 import { sendEmailCode } from './auth-client'
 import { EmailStep } from './email-step'
@@ -21,6 +22,7 @@ export function SignupEmailScreen({
   verificationExpired?: boolean
 }) {
   const { signup, updateSignup, updateMembership } = useOnboarding()
+  const source = useDataSource()
 
   return (
     <EmailStep
@@ -28,7 +30,7 @@ export function SignupEmailScreen({
       initialEmail={signup.email}
       // 코드를 새로 보낸 뒤 "이메일 바꾸기" 로 돌아오면 주소에 쿼리가 남아 있어도 안내를 다시 띄우지 않는다
       showVerificationExpired={verificationExpired && signup.codeSentAt === null}
-      sendCode={sendEmailCode}
+      sendCode={(email) => sendEmailCode(email, source)}
       onSent={(email, sentAt) => {
         updateSignup({ method: 'email', email, codeSentAt: sentAt, verifiedAt: null })
         updateMembership(NO_MEMBERSHIP)

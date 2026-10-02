@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { OnboardingProvider, useOnboarding } from '@/features/onboarding/onboarding-context'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
+import { resetApiSession, selectApiSource } from '@/test/api-session'
 
 import type * as authClient from './auth-client'
 import { loginWithEmail } from './auth-client'
@@ -60,6 +61,45 @@ describe('LoginEmailScreen', () => {
     vi.mocked(loginWithEmail).mockReset()
   })
 
+  afterEach(() => resetApiSession())
+
+  it('실데이터 모드면 출처 api 로 로그인한다', async () => {
+    selectApiSource()
+    vi.mocked(loginWithEmail).mockResolvedValueOnce({ status: 'ok' })
+    const { user, email, password, submit } = setup()
+    await fill(user, email, password, 'dong@example.com', 'dongne2026')
+    await user.click(submit)
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'))
+    expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026', 'api')
+  })
+
+  it('limited(IP 상한)면 잠시 뒤 다시 하라고 alert 로 알리되 로그인을 끄지 않고, 칸을 고치면 지운다', async () => {
+    const { user, email, password, submit } = setup()
+    await fill(user, email, password, 'limit@example.com', 'dongne2026')
+    await user.click(submit)
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '로그인 시도가 많아 잠시 막혔어요. 잠시 뒤 다시 시도해 주세요.',
+    )
+    expect(isOff(submit)).toBe(false)
+
+    await user.type(password, '1')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('suspended(정지)면 정지된 계정이라고 알리고 칸을 고치면 지운다', async () => {
+    const { user, email, password, submit } = setup()
+    await fill(user, email, password, 'suspended@example.com', 'dongne2026')
+    await user.click(submit)
+
+    expect((await screen.findByRole('alert')).textContent).toBe('이용이 정지된 계정이에요.')
+    expect(router.replace).not.toHaveBeenCalled()
+
+    await user.type(password, '1')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('입력칸은 로그인 자동 완성 값을 쓴다', () => {
     const { email, password } = setup()
     expect(email.getAttribute('type')).toBe('email')
@@ -86,7 +126,7 @@ describe('LoginEmailScreen', () => {
     await user.click(submit)
 
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'))
-    expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026')
+    expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026', 'mock')
   })
 
   it('돌아갈 곳(?next=/me)이 있으면 성공한 뒤 동네를 남긴 내 정보로 기록을 바꿔 간다', async () => {

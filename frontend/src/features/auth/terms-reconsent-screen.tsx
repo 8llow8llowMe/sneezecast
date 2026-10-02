@@ -14,6 +14,7 @@ import { formatMonthDay } from '@/lib/format'
 import { navHref } from '@/lib/nav'
 import { isSessionExpiring } from '@/lib/session-expiry'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useDataSource } from '@/lib/use-data-source'
 
 import { agreeTermsReconsent, logout } from './auth-client'
 import { LEGAL_TEXT_NOT_READY } from './consent-row'
@@ -48,6 +49,7 @@ export function TermsReconsentScreen() {
   const { steps } = useMemberRequirements()
   const { replace } = useOnboarding()
   const active = useActiveRef()
+  const source = useDataSource()
   const { toast, show, dismiss } = useToast()
   const [checked, setChecked] = useState(false)
   // 보내는 중인 동작 · 실패한 동작. 이동할 때까지 보내는 중으로 둔다(조건 · 세션이 먼저 바뀌어도 여기서 한 번 더 보내지 않게)
@@ -94,7 +96,7 @@ export function TermsReconsentScreen() {
     setPending('logout')
     setFailed(null)
     try {
-      await logout()
+      await logout(source)
     } catch {
       if (active.current) {
         setFailed('logout')

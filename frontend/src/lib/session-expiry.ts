@@ -40,7 +40,10 @@ export function isSessionExpiring(): boolean {
   return expiring
 }
 
-/** 로그인 화면에 닿으면 만료 진행 표시를 끈다. 받는 쪽(`session-expiry-watcher.tsx`)만 부른다 */
+/**
+ * 만료 진행 표시를 끈다. 받는 쪽(`session-expiry-watcher.tsx`)이 로그인 화면에 닿으면 부르고, 사용자가 고른 로그아웃
+ * (`features/auth/auth-client.ts` 의 `logout`)이 끝났을 때도 부른다 — 로그아웃 중 재발급이 만료를 알렸어도 로그아웃 이동이 이긴다
+ */
 export function clearSessionExpiring(): void {
   expiring = false
 }

@@ -6,7 +6,12 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { OnboardingProvider } from '@/features/onboarding/onboarding-context'
-import { restoreSession } from '@/lib/session/session-store'
+import {
+  getSessionSnapshot,
+  restoreSession,
+  setSession,
+  startSession,
+} from '@/lib/session/session-store'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 import { holdReissue, memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
 
@@ -56,7 +61,7 @@ beforeEach(async () => {
   router.replace.mockClear()
   vi.mocked(agreeTermsReconsent).mockReset()
   vi.mocked(logout).mockReset()
-  await loginWithEmail('reconsent@example.com', 'dongne2026')
+  await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
 })
 
 describe('TermsReconsentScreen 그림', () => {
@@ -145,7 +150,7 @@ describe('TermsReconsentScreen 보내기', () => {
 
   it('보내지 못하면 빨강 상자로 알리고 다시 누를 수 있다 (재현 이메일)', async () => {
     resetMockSession()
-    await loginWithEmail('reconsent-fail@example.com', 'dongne2026')
+    await loginWithEmail('reconsent-fail@example.com', 'dongne2026', 'mock')
     const user = userEvent.setup()
     render(ui)
     await user.click(screen.getByRole('checkbox', { name: '바뀐 서비스 이용약관에 동의해요' }))
@@ -226,7 +231,7 @@ describe('TermsReconsentScreen 동의하지 않고 로그아웃 (시안에 없�
 
   it('로그아웃하지 못하면 빨강 상자로 알리고 화면에 남는다 (재현 이메일)', async () => {
     resetMockSession()
-    await loginWithEmail('logout-fail@example.com', 'dongne2026')
+    await loginWithEmail('logout-fail@example.com', 'dongne2026', 'mock')
     search = 'mock-required=terms'
     const user = userEvent.setup()
     render(ui)
@@ -267,7 +272,7 @@ describe('TermsReconsentScreen 들어올 수 없을 때', () => {
 
   it('재동의 조건이 없는 회원은 next 로, 목록 밖 next 는 홈으로 보낸다', async () => {
     resetMockSession()
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     search = 'next=https://evil.example'
     render(ui)
     expect(router.replace).toHaveBeenCalledWith('/')
@@ -354,5 +359,41 @@ describe('TermsReconsentScreen 실데이터 모드 (새로고침 뒤 세션 복�
       await restoring
     })
     expect(router.replace.mock.calls).toEqual([['/']])
+  })
+
+  it('로그아웃은 access 를 실어 auth API 로 보낸다 — 일시 장애면 세션을 두고 알리고, 성공하면 비회원 홈으로 간다', async () => {
+    const stop = startSession()
+    act(() => setSession(memberToken({ pendingConsents: ['TERMS_OF_SERVICE'] })))
+    const replies = [
+      { status: 503, code: 'GATEWAY_003' },
+      { status: 200, code: null },
+    ]
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() => {
+      const reply = replies.shift() ?? { status: 200, code: null }
+      const dataHeader = reply.code
+        ? { success: false, resultCode: reply.code, resultMessage: '거절', fieldErrors: null }
+        : { success: true, resultCode: null, resultMessage: null, fieldErrors: null }
+      return Promise.resolve(
+        new Response(JSON.stringify({ dataHeader, dataBody: null }), { status: reply.status }),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    render(ui)
+
+    await user.click(logoutButton())
+    expect((await screen.findByRole('alert')).textContent).toContain('로그아웃하지 못했어요.')
+    expect(getSessionSnapshot().status).toBe('member')
+    expect(router.replace).not.toHaveBeenCalled()
+
+    await user.click(logoutButton())
+    await vi.waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'))
+    expect(getSessionSnapshot().status).toBe('guest')
+    expect(logout).toHaveBeenLastCalledWith('api')
+    const [url, init] = fetchMock.mock.calls[1] ?? []
+    expect(new URL(url ?? '').pathname).toBe('/api/v1/auth/logout')
+    expect(init?.method).toBe('POST')
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer access-1')
+    stop()
   })
 })
