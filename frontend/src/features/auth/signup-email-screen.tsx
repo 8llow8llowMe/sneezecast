@@ -1,7 +1,7 @@
 'use client'
 
 import { NO_MEMBERSHIP, useOnboarding } from '@/features/onboarding/onboarding-context'
-import { LOGIN_PATH, SIGNUP_CODE_PATH } from '@/features/onboarding/paths'
+import { LOGIN_EMAIL_PATH, LOGIN_PATH, SIGNUP_CODE_PATH } from '@/features/onboarding/paths'
 
 import { sendEmailCode } from './auth-client'
 import { EmailStep } from './email-step'
@@ -33,7 +33,9 @@ export function SignupEmailScreen({
         updateSignup({ method: 'email', email, codeSentAt: sentAt, verifiedAt: null })
         updateMembership(NO_MEMBERSHIP)
       }}
-      backPath={LOGIN_PATH}
+      // 로그인 방법 고르기 · 이메일 로그인 둘 다 이 화면으로 온다. 앱 안에서 왔으면 그 화면(돌아갈 곳 쿼리 포함)으로 되돌리고,
+      // 주소로 바로 들어왔으면 로그인 방법 고르기로 바꿔 간다
+      backPath={[LOGIN_PATH, LOGIN_EMAIL_PATH]}
       nextPath={SIGNUP_CODE_PATH}
     />
   )

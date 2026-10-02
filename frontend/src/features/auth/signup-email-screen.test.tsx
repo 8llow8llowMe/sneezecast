@@ -9,15 +9,17 @@ import {
   type SignupDraft,
   useOnboarding,
 } from '@/features/onboarding/onboarding-context'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import type * as authClient from './auth-client'
 import { sendEmailCode } from './auth-client'
 import { SignupEmailScreen } from './signup-email-screen'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
+const pathname = vi.hoisted(() => ({ value: '/signup/email' }))
 vi.mock('next/navigation', () => ({
   useRouter: () => router,
-  usePathname: () => '/signup/email',
+  usePathname: () => pathname.value,
 }))
 
 vi.mock('./auth-client', async (importOriginal) => {
@@ -204,6 +206,46 @@ describe('SignupEmailScreen', () => {
   it('주소로 바로 들어왔으면 뒤로는 로그인으로 바꿔 간다', async () => {
     const { user } = setup()
     await user.click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.replace).toHaveBeenCalledWith('/login')
+  })
+})
+
+describe('SignupEmailScreen 뒤로 — 앱 안 이동 기록', () => {
+  beforeEach(() => {
+    router.replace.mockClear()
+    router.back.mockClear()
+  })
+
+  /** 앱 안에서 앞 화면(`from`)을 지나 가입에 온 것처럼 그린다 */
+  function visitSignup(from: string) {
+    pathname.value = from
+    const tree = () => (
+      <NavTrailProvider>
+        <OnboardingProvider>
+          {pathname.value === '/signup/email' ? <SignupEmailScreen /> : <div />}
+        </OnboardingProvider>
+      </NavTrailProvider>
+    )
+    const { rerender } = render(tree())
+    pathname.value = '/signup/email'
+    rerender(tree())
+  }
+
+  // 돌아갈 곳(`?next=` · `?intent=report`)은 앞 화면 주소에 있다 — 기록을 되돌려야 그 쿼리가 남는다(#136)
+  it.each(['/login', '/login/email'])(
+    '%s 에서 왔으면 기록을 되돌린다 (돌아갈 곳 쿼리가 남는다)',
+    async (from) => {
+      visitSignup(from)
+      await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+      expect(router.back).toHaveBeenCalledOnce()
+      expect(router.replace).not.toHaveBeenCalled()
+    },
+  )
+
+  it('다른 화면에서 왔으면 로그인 방법 고르기로 바꿔 간다', async () => {
+    visitSignup('/')
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).not.toHaveBeenCalled()
     expect(router.replace).toHaveBeenCalledWith('/login')
   })
 })
