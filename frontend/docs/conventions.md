@@ -138,7 +138,7 @@ frontend/
 - **같은 문서 안 `#` 링크(`<a href="#id">`)를 쓰지 않는다.** Next 가 모르는 기록 항목(`history.state` 가 null)이 생겨, 그 뒤 연 시트 · 대화상자의 닫기(`history.go(-1)`)가 그 항목으로 돌아가고 Next 가 무시해 첫 닫기에 닫히지 않는다. 섹션 바로가기는 버튼으로 `scrollIntoView` 한 뒤 제목(`tabIndex={-1}`)에 포커스를 준다(`features/me/me-screen.tsx`).
 - **마운트 effect 에서 history 를 바꾸지 않는다.** 하이드레이션 첫 커밋에서는 Next 가 아직 history 를 감싸지 않는다(최상위 라우터 effect 보다 자식 effect 가 먼저 돈다) — 그때 바꾼 주소는 `useSearchParams` 가 모른다. 미뤄야 하면 `setTimeout(0)` 으로 미루고 cleanup 에서 취소한다(`features/home/home-screen.tsx` 의 보고 진입 정리). 열림처럼 그 값으로 그리는 것은 바뀔 값으로 미리 계산해 첫 그림부터 맞춘다.
 - 서버에 보내는 동작(보고 보내기 · 고치기 · 되돌리기)은 연동 전에도 `features/<도메인>/*-client.ts` 에 Promise 를 돌려주는 함수로 둔다. 연동 때 함수 안만 `src/lib/api/` 호출로 바꾸고 화면 코드는 그대로 둔다 (`features/report/report-client.ts`).
-- API 연동 전 화면은 `features/<도메인>/mock.ts` 의 목 데이터로 만든다. 목 데이터의 기본값은 `자료 부족` 처럼 수치를 지어내지 않는 상태로 둔다. 연동 이슈에서 목 데이터를 지운다.
+- API 연동 전 화면은 `features/<도메인>/mock.ts` 의 목 데이터로 만든다. 목 데이터의 기본값은 `자료 부족` 처럼 수치를 지어내지 않는 상태로 둔다. 연동 이슈에서는 목 데이터를 지우지 않고 데이터 출처 장치(아래 "API 계층" 의 "데이터 출처")의 목 갈래로 남긴다.
 
 - 화면 코드(`app/`, `src/features/`, `src/components/`)에서 `fetch` 를 직접 부르지 않는다. API 호출은 `src/lib/api/` 로 모은다 (ESLint 로 막는다, 아래 "API 계층").
 - 공개 환경변수는 `src/lib/env.client.ts` 에서만 읽는다. `process.env.NEXT_PUBLIC_X` 는 리터럴로 읽어야 빌드 때 치환된다.
@@ -168,6 +168,26 @@ frontend/
 - 401 처리(연동 이슈에서 만든다): `reissue`(`SECURITY_002/003/004/005/007`)면 재발급하고 한 번 다시 보낸다. `reissue-conflict`(`AUTH_016`)면 재발급을 한 번 다시 한다. 재발급이 `relogin`(`AUTH_014/015`)이면 `notifySessionExpired()`(`src/lib/session-expiry.ts`)를 부른다. 화면 코드는 401 을 따로 다루지 않는다.
 - 로그를 남기지 않는다. 요청 바디 · 토큰 · 응답을 `console` 에 찍지 않고, 비밀번호 · 토큰 · 인증 코드 · 건강 정보는 `query` 가 아니라 `body` 로 보낸다.
 - 테스트는 `vi.stubGlobal('fetch', …)` 로 가짜 `fetch` 를 끼운다(`src/lib/api/client.test.ts`). 도메인 클라이언트 테스트는 `apiRequest` 를 `vi.mock` 으로 바꾼다.
+
+### 데이터 출처 (실데이터 · 목데이터)
+
+개발 서버가 없거나 백엔드가 준비되지 않은 동안에도 화면을 확인하고, 준비되면 같은 화면으로 실제 응답을 확인하려고 **도메인 클라이언트가 출처(`api` | `mock`)를 인자로 받아** 백엔드 호출과 목 데이터 중 하나로 답한다. 행정동(`features/region/region-client.ts`)이 처음이고, **세션 · 로그인 · 보고 등 새로 연동하는 도메인도 이 장치를 쓴다**(목 갈래를 지우지 않는다).
+
+| 모듈                                    | 하는 일                                                                                                                 |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/data-source.ts`                | `DataSource` · 쿠키 이름 · 해석(`resolveDataSource`) · 전환 허용 목록 · 브라우저 쿠키 읽기/쓰기. 서버 · 클라이언트 공용 |
+| `src/lib/data-source.server.ts`         | 서버 컴포넌트 전용 `readServerDataSource()` (`next/headers` 의 `cookies()`)                                             |
+| `src/lib/use-data-source.ts`            | 클라이언트 컴포넌트의 `useDataSource()`. 토글로 바꾸면 바로 따라간다                                                    |
+| `src/components/data-source-toggle.tsx` | 화면 오른쪽 아래 토글(개발용). 루트 레이아웃이 전환할 수 있는 사이트에서만 body 마지막에 그린다                         |
+
+- 고른 값은 1st-party 쿠키 **`sc_data_source=api|mock`** 에 둔다. `Path=/` · `SameSite=Lax` · 1년 · HTTPS 면 `Secure`. 화면 토글이 읽고 써야 해 `HttpOnly` 가 아니다. 출처 이름뿐이라 개인을 알아보는 값이 없다.
+- 쿠키가 없거나 모르는 값이면 기본값 — 공개 환경변수 `NEXT_PUBLIC_DATA_SOURCE`(`.env.example`), 그것도 없거나 모르는 값이면 `mock` 이다.
+- **전환은 허용 목록의 사이트에서만 된다(`isDataSourceSwitchable`).** `clientEnv.siteUrl` 이 dev 웹 `https://dev.sneezecast.com` 이거나, `http:` 이면서 호스트가 `localhost` · `127.0.0.1` · `[::1]` · `*.localhost` 일 때만이다. 그 밖(운영 · 빈 값 · 오타 · 주소가 아님)은 쿠키 · 환경변수를 무시하고 늘 `api` 이고 토글을 그리지 않는다. 막을 곳이 아니라 열 곳을 적는다 — 운영 빌드에 사이트 주소를 잘못 넣어도 토글이 열리지 않게 한다. 쿠키는 누구나 고칠 수 있어, 운영에서 목으로 바꿀 수 있으면 지어낸 수치 · 안내가 실제 정보처럼 보이고 목 회원 상태로 회원 화면이 열린다.
+- **출처는 부르는 쪽이 정해 넘긴다.** 서버 페이지는 `readServerDataSource()`, 클라이언트 훅은 `useDataSource()` 로 읽어 도메인 클라이언트 함수에 넘긴다(`districtFromParam(value, source)` · `useDistrictSearch`). 도메인 클라이언트는 쿠키를 직접 읽지 않는다 — 서버 · 클라이언트 양쪽에서 같은 함수를 쓰고 테스트가 출처를 정해 부를 수 있게.
+- **루트 레이아웃에서 `cookies()` 를 부르지 않는다** — 모든 라우트가 동적 렌더링이 된다. 쿠키는 이미 동적인(`searchParams` 를 await 하는) 페이지에서만 읽는다. 그래서 루트 레이아웃의 토글과 `useDataSource()` 는 서버 그림 · 하이드레이션 첫 그림에서 기본값이고 그 뒤 쿠키 값을 읽는다(토글은 하이드레이션 뒤에만 그린다). 출처로 요청하는 effect 는 출처를 의존값에 넣는다.
+- 토글은 쿠키를 쓰고 `router.refresh()` 로 서버 컴포넌트를 다시 그린다. 클라이언트 화면은 `useDataSource()` 로 따라간다.
+- 토글은 body 마지막 자식이다(맨 앞이면 Tab 첫 포커스가 된다). z-index 를 주지 않는다 — z-index 가 있는 시트 · 버튼 묶음 · 가림막(z-10 · z-20)은 DOM 순서와 무관하게 토글 위에 온다. 모바일은 탭바 · 화면 아래 버튼 묶음보다 위(`bottom-dev-toggle`)에 띄운다.
+- 백엔드에 아직 없는 API(BE 미정)는 출처와 무관하게 목이다(예: `listSuccessorDistricts`, 동네 안내 내용). 함수 주석에 적는다.
 
 ## 테스트
 
