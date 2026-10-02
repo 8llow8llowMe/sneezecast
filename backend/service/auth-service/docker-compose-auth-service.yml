@@ -29,6 +29,8 @@ x-auth-service-environment: &auth_service_environment
   SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
   # 게이트웨이 라우트(lb://${AUTH_SERVICE_APP_NAME})와 같은 값이어야 해서 공통 키를 그대로 쓴다.
   SPRING_APPLICATION_NAME: ${AUTH_SERVICE_APP_NAME}
+  # 내 동네 코드 검증 Feign 대상(surveillance)의 Eureka 등록명. 게이트웨이와 같은 공통 키다. 기본값은 application.yml 과 같다.
+  SURVEILLANCE_SERVICE_APP_NAME: ${SURVEILLANCE_SERVICE_APP_NAME:-surveillance-service}
   AUTH_SERVICE_PORT: ${AUTH_SERVICE_PORT}
   SERVICE_DISCOVERY_HOSTNAME: ${SERVICE_DISCOVERY_HOSTNAME}
   SERVICE_DISCOVERY_PORT: ${SERVICE_DISCOVERY_PORT}
