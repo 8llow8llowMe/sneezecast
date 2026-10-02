@@ -13,14 +13,16 @@ import {
   revokeOtherSessions,
   revokeSession,
 } from '@/features/auth/auth-client'
+import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { formatMonthDayTime } from '@/lib/format'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
 
 import { AccountPageLayout } from './account-page-layout'
-import { ME_PATH, meSearch, regionSearch, reportHrefFor } from './me-paths'
+import { ME_DEVICES_PATH, ME_PATH, meSearch, regionSearch, reportHrefFor } from './me-paths'
 import { useMeTrail } from './me-trail'
 import { useMemberGate } from './member-gate'
+import { useShownRegionName } from './member-region'
 
 type Load =
   | { status: 'loading' }
@@ -81,6 +83,8 @@ function Devices({
   const router = useRouter()
   const searchParams = useSearchParams()
   const { goBack } = useMeTrail()
+  const openBrowseRegion = useBrowseRegion(ME_DEVICES_PATH, regionCode)
+  const shownRegionName = useShownRegionName(regionName, regionCode)
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const [load, setLoad] = useState<Load>({ status: 'loading' })
@@ -145,10 +149,10 @@ function Devices({
   return (
     <AccountPageLayout
       title="로그인한 기기"
-      regionName={regionName}
+      regionName={shownRegionName}
       navSearch={regionSearch(regionCode)}
       onBack={() => goBack(backHref)}
-      onRegionClick={() => notReady('동네 바꾸기')}
+      onRegionClick={openBrowseRegion}
       onNotificationClick={() => notReady('알림 설정')}
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
       footer={

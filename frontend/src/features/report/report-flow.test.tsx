@@ -120,6 +120,7 @@ describe('ReportFlow', () => {
     expect(screen.getByText('2 / 2')).toBeDefined()
     expect(screen.getByText('증상 있음 · 발열·기침·인후통, 구토·설사')).toBeDefined()
     expect(screen.getByText('11월 17일~23일 · ○○1동')).toBeDefined()
+    expect(screen.queryByText(/둘러보는 동네와 달라요/)).toBeNull()
     expect(
       screen.getByText('행정동 단위로만 집계돼요. 이름·주소·위치는 받지 않아요.'),
     ).toBeDefined()
@@ -188,6 +189,24 @@ describe('ReportFlow', () => {
     expect(
       screen.getByRole('button', { name: '발열·기침·인후통' }).getAttribute('aria-pressed'),
     ).toBe('false')
+  })
+
+  it('다른 동네를 둘러보는 중이면 시작 단계에 보고 동네를 알리고, 확인 단계의 동네 앞에 "보고 동네" 를 붙인다', async () => {
+    const user = userEvent.setup()
+    const tree = () => (
+      <ReportFlow week={WEEK} regionCode="11440660" reportingElsewhere onNotReady={onNotReady} />
+    )
+    const { rerender } = render(tree())
+    expect(
+      screen.getByText('보고는 내 동네 ○○1동 기준이에요. 둘러보는 동네와 달라요.'),
+    ).toBeDefined()
+
+    await user.click(screen.getByRole('button', { name: '증상이 있었어요' }))
+    rerender(tree())
+    await user.click(screen.getByRole('button', { name: '구토·설사' }))
+    await user.click(screen.getByRole('button', { name: '다음' }))
+    rerender(tree())
+    expect(screen.getByText('11월 17일~23일 · 보고 동네 ○○1동')).toBeDefined()
   })
 
   it('아직 없는 화면(함께 채우기)은 onNotReady 로 알린다', async () => {

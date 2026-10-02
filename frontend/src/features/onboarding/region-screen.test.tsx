@@ -8,6 +8,7 @@ import { searchDistricts } from '@/features/region/region-client'
 import type { District } from '@/features/region/types'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
+import type { BrowseReturn } from './browse-return'
 import {
   EMPTY_SIGNUP,
   type Membership,
@@ -34,13 +35,14 @@ vi.mock('@/features/region/region-client', async (importOriginal) => {
 
 function setup({
   browse = false,
+  browseReturn = null,
   initial = null,
-}: { browse?: boolean; initial?: District | null } = {}) {
+}: { browse?: boolean; browseReturn?: BrowseReturn | null; initial?: District | null } = {}) {
   const user = userEvent.setup()
   render(
     <NavTrailProvider>
       <OnboardingProvider initialDistrict={initial}>
-        <RegionScreen browse={browse} />
+        <RegionScreen browse={browse} browseReturn={browseReturn} />
       </OnboardingProvider>
     </NavTrailProvider>,
   )
@@ -192,14 +194,59 @@ describe('RegionScreen', () => {
     expect(router.replace).toHaveBeenCalledWith('/start')
   })
 
+  const MAP_RETURN: BrowseReturn = { next: '/map', region: '11440680', carried: 'mock-auth=member' }
+
+  it('머리줄에서 왔으면(?next=) 고른 동네를 붙여 그 화면으로 기록을 바꿔 간다 (덮어쓰기는 남긴다)', async () => {
+    location.pathname = '/browse/region'
+    const { user, input, next } = setup({ browse: true, browseReturn: MAP_RETURN })
+    await user.type(input, '서교')
+    await user.click(await screen.findByRole('radio', { name: /서교동/ }))
+    await user.click(next)
+
+    expect(router.replace).toHaveBeenCalledWith('/map?region=11440660&mock-auth=member')
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('머리줄에서 왔는데 주소로 바로 들어왔으면 뒤로는 둘러보던 동네의 그 화면으로 바꿔 간다', async () => {
+    location.pathname = '/browse/region'
+    const { user } = setup({ browse: true, browseReturn: MAP_RETURN })
+    await user.click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.replace).toHaveBeenCalledWith('/map?region=11440680&mock-auth=member')
+    expect(router.back).not.toHaveBeenCalled()
+  })
+
+  it('머리줄에서 왔으면 앞 화면이 어디든(동네 안내 등) 뒤로는 기록을 되돌린다', async () => {
+    renderAfterNavigation('/notice/11440660/2025-W47', '/browse/region', true, {
+      ...MAP_RETURN,
+      next: '/',
+    })
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).toHaveBeenCalledTimes(1)
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('가입 동네 선택(둘러보기가 아님)은 돌아갈 곳을 받아도 쓰지 않는다', async () => {
+    const { user, input, next } = setup({ browseReturn: MAP_RETURN })
+    await user.type(input, '서교')
+    await user.click(await screen.findByRole('radio', { name: /서교동/ }))
+    await user.click(next)
+    expect(router.push).toHaveBeenCalledWith('/setup/adult')
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
   /** 앞 화면(`from`)에서 앱 안 이동으로 지금 화면(`to`)에 온 상태로 그린다 */
-  function renderAfterNavigation(from: string, to: string, browse = false) {
+  function renderAfterNavigation(
+    from: string,
+    to: string,
+    browse = false,
+    browseReturn: BrowseReturn | null = null,
+  ) {
     location.pathname = from
     // 같은 요소 객체를 다시 넘기면 React 가 다시 그리지 않아 매번 새로 만든다
     const tree = () => (
       <NavTrailProvider>
         <OnboardingProvider>
-          <RegionScreen browse={browse} />
+          <RegionScreen browse={browse} browseReturn={browseReturn} />
         </OnboardingProvider>
       </NavTrailProvider>
     )

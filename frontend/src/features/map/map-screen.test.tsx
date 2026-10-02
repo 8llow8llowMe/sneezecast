@@ -213,4 +213,15 @@ describe('MapScreen', () => {
     expect(screen.getByRole('status').textContent).toContain('행정동 찾기는 준비하고 있어요')
     expect(screen.getByRole('button', { name: '알림 설정' })).toBeTruthy()
   })
+
+  it('머리줄 동네 이름은 지도로 돌아올 둘러볼 동네 고르기를 연다 (동네 · 덮어쓰기를 남기고 목 자료는 뺀다)', async () => {
+    search = 'mock=example&mock-auth=member'
+    const seogyo = DISTRICT_MOCKS.find((district) => district.code === SEOGYO) ?? null
+    render(<MapScreen map={pickMapMock('example', seogyo)} regionCode={SEOGYO} />)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '동네 바꾸기, 현재 서교동' }))
+    expect(router.push).toHaveBeenCalledWith(
+      `/browse/region?next=%2Fmap&region=${SEOGYO}&mock-auth=member`,
+    )
+  })
 })

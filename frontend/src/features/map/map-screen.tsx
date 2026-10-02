@@ -10,6 +10,7 @@ import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { ExplainSheet } from '@/features/home/explain-sheet'
 import { useExplainParam } from '@/features/home/use-explain-param'
 import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
+import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 
 import { DistrictPanel } from './district-panel'
 import { MapView } from './map-view'
@@ -28,7 +29,9 @@ import type { MapWeek } from './types'
  * - 처음에는 처음 고른 동네(내 동네 · 둘러보기 동네)를 접어서 보인다. 다른 동네를 고르면 펼친다(Map-expanded).
  * - 동네는 사용자가 고른다 — 위치 권한을 묻지 않는다. 공식 정보(질병관리청)는 이 화면에 섞지 않는다.
  * - 둘러보기 동네(`regionCode`)는 탭바 · 메뉴 · 보고 진입 · 동네 안내 링크에 남긴다(다른 화면과 같다).
- * - 동네 바꾸기 · 알림 설정 · 행정동 찾기 · 내 동네로 설정은 화면이 생기기 전이라 "준비하고 있어요" 알림이다.
+ * - 머리줄 동네 이름은 둘러볼 동네 고르기(`/browse/region?next=/map`)로 가고, 고르면 `/map?region=<새 코드>` 로 돌아온다(#141).
+ *   지도의 처음 고른 동네는 둘러보기 동네 · 목 예시 동네다(회원의 내 동네는 집계 API 연동 뒤).
+ * - 알림 설정 · 행정동 찾기 · 내 동네로 설정은 아직 "준비하고 있어요" 알림이다. 내 동네로 설정은 회원 내 동네 저장과 붙이는 후속이다.
  */
 export function MapScreen({
   map,
@@ -44,6 +47,7 @@ export function MapScreen({
   const explain = useExplainParam()
   const { toast, show, dismiss } = useToast()
   const navSearch = regionSearch(regionCode)
+  const openBrowseRegion = useBrowseRegion('/map', regionCode)
 
   const [selectedCode, setSelectedCode] = useState(map.mineCode)
   const [expanded, setExpanded] = useState(false)
@@ -65,7 +69,7 @@ export function MapScreen({
         <AppHeader
           regionName={map.mineName}
           current="map"
-          onRegionClick={() => notReady('동네 바꾸기 화면은 준비하고 있어요')}
+          onRegionClick={openBrowseRegion}
           onNotificationClick={
             guest ? undefined : () => notReady('알림 설정 화면은 준비하고 있어요')
           }
@@ -91,7 +95,7 @@ export function MapScreen({
             mine={selected.code === map.mineCode}
             expanded={expanded}
             onExpandedChange={setExpanded}
-            onSetMine={() => notReady('동네 바꾸기 화면은 준비하고 있어요')}
+            onSetMine={() => notReady('내 동네로 설정은 준비하고 있어요')}
             onExplain={explain.openExplain}
             navSearch={navSearch}
           />

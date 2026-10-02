@@ -294,6 +294,22 @@ describe('NoticeScreen — 이동', () => {
     expect(router.replace).toHaveBeenCalledWith('/?region=1111051500')
   })
 
+  it('머리줄 동네 이름은 안내의 동네를 보이고, 둘러볼 동네를 고른 뒤 홈으로 돌아오게 연다', async () => {
+    search = 'mock-auth=member&mock=published'
+    render(
+      <NavTrailProvider>
+        <NoticeScreen data={data('published')} regionCode="1111051500" />
+      </NavTrailProvider>,
+    )
+
+    await userEvent.click(
+      screen.getByRole('button', { name: `동네 바꾸기, 현재 ${data('published').regionName}` }),
+    )
+    expect(router.push).toHaveBeenLastCalledWith(
+      '/browse/region?next=%2F&region=1111051500&mock-auth=member',
+    )
+  })
+
   it.each([
     ['비회원', '', 0],
     ['동의 전 회원', 'mock-auth=member-no-consent', 2],

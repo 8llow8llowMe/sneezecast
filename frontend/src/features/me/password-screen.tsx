@@ -11,13 +11,22 @@ import { changePassword, type MockAuthState, setupPassword } from '@/features/au
 import { confirmProblem, passwordProblem } from '@/features/auth/signup-rules'
 import { useMockProfile } from '@/features/auth/use-mock-auth'
 import { PASSWORD_RESET_PATH } from '@/features/onboarding/paths'
+import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
 
 import { AccountPageLayout } from './account-page-layout'
-import { ME_PATH, type MeNotice, meSearch, regionSearch, reportHrefFor } from './me-paths'
+import {
+  ME_PASSWORD_PATH,
+  ME_PATH,
+  type MeNotice,
+  meSearch,
+  regionSearch,
+  reportHrefFor,
+} from './me-paths'
 import { useMeTrail } from './me-trail'
 import { useMemberGate } from './member-gate'
+import { useShownRegionName } from './member-region'
 
 /** 바꾸기(이메일 회원 · 비밀번호를 정한 카카오 회원) · 설정(아직 비밀번호가 없는 카카오 회원) */
 type Mode = 'change' | 'setup'
@@ -108,6 +117,8 @@ function PasswordForm({
   const router = useRouter()
   const searchParams = useSearchParams()
   const { goBack, leaveNotice } = useMeTrail()
+  const openBrowseRegion = useBrowseRegion(ME_PASSWORD_PATH, regionCode)
+  const shownRegionName = useShownRegionName(regionName, regionCode)
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const formId = useId()
@@ -172,13 +183,13 @@ function PasswordForm({
   return (
     <AccountPageLayout
       title={copy.title}
-      regionName={regionName}
+      regionName={shownRegionName}
       navSearch={regionSearch(regionCode)}
       onBack={() => {
         if (!busy) goBack(navHref(ME_PATH, meSearch(regionCode, searchParams)))
       }}
       backDisabled={busy}
-      onRegionClick={() => notReady('동네 바꾸기')}
+      onRegionClick={openBrowseRegion}
       onNotificationClick={() => notReady('알림 설정')}
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
       footer={

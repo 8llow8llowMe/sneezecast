@@ -11,6 +11,8 @@ export const ME_PATH = '/me'
 export const ME_DEVICES_PATH = '/me/devices'
 /** 비밀번호 변경 · 설정 (Settings-password). 카카오 회원이 아직 비밀번호가 없으면 설정 화면이다 */
 export const ME_PASSWORD_PATH = '/me/password'
+/** 내 동네 바꾸기 (#141, 시안 없음). 보고 · 알림 기준인 회원의 동네를 검색으로 직접 고른다 */
+export const ME_REGION_PATH = '/me/region'
 
 /** 둘러보기 동네 (`?region=<행정동 코드>`). 홈 · 내 정보와 같은 쿼리다 */
 const REGION_PARAM = 'region'
@@ -61,6 +63,7 @@ export function reportHrefFor(auth: MockAuthState, regionCode: string | null): s
 export const ME_NOTICES = {
   'password-changed': '비밀번호를 바꿨어요',
   'password-set': '비밀번호를 설정했어요. 이제 이메일로도 로그인할 수 있어요',
+  'region-changed': '내 동네를 바꿨어요',
 } as const
 
 export type MeNotice = keyof typeof ME_NOTICES
