@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { AlertBox } from '@/components/alert-box'
 import { AppHeader } from '@/components/app-header'
 import { Button } from '@/components/button'
+import { OfflineNotice } from '@/components/offline-notice'
 import { SectionBand } from '@/components/section'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
@@ -16,12 +17,13 @@ import { HOME_PATH } from '@/features/onboarding/paths'
 import { REPORT_PARAM, ReportFlow } from '@/features/report/report-flow'
 import type { SubmittedReport } from '@/features/report/types'
 import { useModalParam } from '@/lib/use-modal-param'
+import { useOnline } from '@/lib/use-online'
 
 import { ExplainSheet } from './explain-sheet'
 import { MapPlaceholder } from './map-placeholder'
 import { NoticeSection } from './notice-section'
 import { officialHref, OfficialPanel, OfficialRow } from './official'
-import { PushInappNotice } from './push-inapp-notice'
+import { HOME_TOP_NOTICE_CLASS, PushInappNotice } from './push-inapp-notice'
 import { guardReportEntry, REPORT_GATE, reportEntryFor } from './report-gate'
 import { StatusCard } from './status-card'
 import { SymptomTrends } from './symptom-trends'
@@ -49,16 +51,26 @@ import { useExplainParam } from './use-explain-param'
  * 태블릿 · 데스크톱은 본문 맨 위에 안내 상자를 둔다. 둘러보기에서 고른 동네(`regionCode`)는 메뉴 링크에 붙여 잃지 않게 한다.
  *
  * 다시 들어온 회원에게 약관 재동의 · 동네 다시 고르기 조건이 있으면 그 화면으로 먼저 보낸다(`useRequiredStepsGate`, 내 정보와 같다).
+ *
+ * 홈 상단 안내 줄(모바일 주차 줄 아래, 태블릿 · 데스크톱 공식 정보 행 아래)에는 오프라인 띠(State-offline) → 알림 대체 안내
+ * (State-push-inapp) 순서로 놓는다. 연결이 끊겼다는 건 아래 모든 정보(알림 대체 안내 포함)가 받아 둔 그대로라는 뜻이라 먼저 읽힌다.
  */
 export function HomeScreen({
   week,
   regionCode = null,
+  receivedAt = null,
 }: {
   week: HomeWeekly
   /** 둘러보기(`?region=`)로 고른 행정동 코드. `app/(home)/page.tsx` 가 아는 코드일 때만 넘긴다 */
   regionCode?: string | null
+  /**
+   * 지금 보이는 홈 자료를 받은 시각(ISO). `app/(home)/page.tsx` 가 넘긴다. 오프라인 띠가 "○월 ○일 00:00에 받은 정보예요" 로 쓰고,
+   * 모르면(null) 시각 없이 "오프라인이에요" 만 보인다
+   */
+  receivedAt?: string | null
 }) {
   const { toast, show, dismiss } = useToast()
+  const online = useOnline()
   const explain = useExplainParam()
   const report = useModalParam(REPORT_PARAM)
   const auth = useMockAuth()
@@ -108,6 +120,8 @@ export function HomeScreen({
         <OfficialRow official={week.official} navSearch={navSearch} />
       </div>
 
+      {/* 오프라인 띠가 알림 대체 안내보다 위다. 띠의 live 영역은 온라인일 때도 빈 채로 그려 두고, 여백은 띠 상자에만 붙는다 */}
+      <OfflineNotice offline={!online} receivedAt={receivedAt} className={HOME_TOP_NOTICE_CLASS} />
       <PushInappNotice week={week} signedIn={!guest} />
 
       <main className="flex grow flex-col tablet:gap-7 tablet:p-6 desktop:flex-row desktop:gap-8 desktop:px-8">
