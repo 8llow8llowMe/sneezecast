@@ -122,7 +122,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 컨텍스트 | 책임 |
 |----------|------|
 | `auth` | 이메일 + 비밀번호 가입·로그인, 카카오 소셜 로그인, 이메일 인증 코드, 비밀번호 재설정, 토큰 발급·재발급·폐기, 세션(기기) 관리 |
-| `member` | 회원 (닉네임·프로필 이미지), 내 정보 수정, 비밀번호 변경·설정, 탈퇴 |
+| `member` | 회원 (닉네임·프로필 이미지), 내 정보 수정, 비밀번호 변경, 탈퇴 |
 | `consent` | 민감정보 처리 동의와 철회 이력 (알림 수신 동의는 2단계) |
 | `region` | 회원이 선택한 행정동 (내 동네 저장 · 조회 — 코드 검증과 이름 · 폐지 여부는 surveillance 내부 API 를 Feign 으로 부른다) |
 | `notification` | PWA 푸시 구독, 안내 발행 시 팬아웃 발송, 발송 로그 (2단계) |
@@ -136,8 +136,9 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 구분 | API |
 |------|-----|
 | 가입 | `POST /email/send-code` · `POST /email/verify-code` · `POST /signup` |
-| 로그인 | `POST /login` · `GET /{provider}/authorize` · `GET /{provider}/login` · `POST /token/reissue` · `POST /logout` |
-| 비밀번호 | `POST /password/reset/send-code` · `POST /password/reset/verify-code` (일회용 재설정 토큰) · `POST /password/reset` · `POST /me/password` (변경) · `POST /me/password/setup` (소셜 가입자 최초 설정) |
+| 로그인 | `POST /login` · `POST /token/reissue` · `POST /logout` |
+| 카카오 | `GET /kakao/authorize?switchAccount=` · `POST /kakao/login` · `POST /kakao/signup` · `POST /kakao/link` |
+| 비밀번호 | `POST /password/reset/send-code` · `POST /password/reset/verify-code` (일회용 재설정 토큰) · `POST /password/reset` · `POST /me/password` (변경) |
 | 세션 | `GET /sessions` · `DELETE /sessions/{sessionId}` · `DELETE /sessions` (현재 기기를 뺀 전부) |
 | 내 정보 | `GET /me` · `PATCH /me` · `POST /me/withdraw` (#59) · 프로필 이미지 업로드 · `DELETE /me/profile-image` (#112) |
 | 내 동네 | `GET /me/region` · `PUT /me/region` |
@@ -150,7 +151,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | MySQL `member_consent` | 동의 종류 · 문서 버전 · 동의/철회 이력 |
 | MySQL `member_region` | 선택한 행정동 (회원당 1개) |
 | MySQL `report_purge_request` | 탈퇴 · 건강정보 동의 철회 시 surveillance 원시 보고 파기 요청 (완료될 때까지 재시도) |
-| Redis (TTL) | 이메일 인증 코드, 비밀번호 재설정 코드 · 재설정 토큰(해시), 로그인 · 비밀번호 확인 시도 횟수, OAuth state, refresh 세션 |
+| Redis (TTL) | 이메일 인증 코드, 비밀번호 재설정 코드 · 재설정 토큰(해시), 로그인 · 비밀번호 확인 시도 횟수, OAuth state · 카카오 가입표 · 연결 확인표(해시), refresh 세션 |
 | MinIO | 업로드한 프로필 이미지 |
 
 - 탈퇴 회원은 30일 보존 후 스케줄러가 파기한다. **보고 파기 요청이 모두 완료된 회원만** 지운다. 고아 프로필 이미지는 정리 스케줄러가 지운다.
@@ -166,7 +167,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - IP 상한의 키는 `X-Real-IP` 다 (nginx 가 덮어쓰고, nginx 가 아닌 출발지면 게이트웨이가 접속 주소로 덮어쓴다). `X-Forwarded-For` 는 앞쪽 값을 클라이언트가 바꿀 수 있고 마지막 값은 게이트웨이가 덧붙인 nginx 주소라 쓰지 않는다.
 - 메일은 `authMailTaskExecutor` 에서 비동기로 보내고(SMTP 접속 · 응답 · 쓰기 timeout 5초), 실패는 로그만 남긴다. 큐가 차면 그 메일을 로그만 남기고 버린다(요청은 성공). Boot 기본 `applicationTaskExecutor` 는 `AuthServiceAsyncConfig` 가 같은 이름으로 따로 두고 한정자 없는 `@Async` 기본값에 연결한다. health 는 SMTP 를 보지 않는다(`management.health.mail.enabled: false`).
 - 가입: 인증 완료 확인(Redis) → 비밀번호 BCrypt 해시(트랜잭션 밖) → 회원 · 동의 저장(`GeneralSignupProcessor` 트랜잭션) → 커밋 뒤 인증 표시 소비. 필수 동의는 이용약관 · 개인정보 · 만 19세 이상, **건강정보 동의는 별도 필드의 선택 항목**이고 동의했을 때만 행을 남긴다. 문서 버전은 `legal.*-version` 설정값. 동시 가입 중복은 `uk_member_email` 이 막고 `MEMBER_001`(409)로 바뀐다. **가입 응답에는 토큰이 없다** — 이어서 로그인한다.
-- 입력 규칙은 시안 Signup-account 와 같다 — 비밀번호 8~20자 · 영문자와 숫자 필수 · 공백 금지 · 특수문자는 선택(상한 20자는 BCrypt 72바이트 한도 안에 두려는 값), 닉네임은 **앞뒤 공백을 지운 뒤 2~10자**(`@StrippedSize` — 원문 길이로 재면 `" 가 "` 가 통과해 1자로 저장된다)이고 지운 값을 저장한다. 규칙 상수의 정본은 member 도메인의 `MemberInputPolicy` 이고, 가입(auth) · 내 정보 수정(member) 검증이 함께 참조한다.
+- 입력 규칙은 시안 Signup-account 와 같다 — 비밀번호 8~20자 · 영문자와 숫자 필수 · 공백 금지 · 특수문자는 선택(상한 20자는 BCrypt 72바이트 한도 안에 두려는 값), 닉네임은 **앞뒤 공백을 지운 뒤 2~10자(코드포인트 기준 — 이모지 하나가 1자)**(`@StrippedSize` — 원문 길이로 재면 `" 가 "` 가 통과해 1자로 저장된다)이고 지운 값을 저장한다. 규칙 상수의 정본은 member 도메인의 `MemberInputPolicy` 이고, 가입(auth) · 내 정보 수정(member) 검증이 함께 참조한다.
 
 **로그인 · 토큰 · 세션**
 
@@ -186,25 +187,40 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 **비밀번호 재설정** (`auth` 컨텍스트, 인증 불필요)
 
 - 인증 코드 발급 · 확인은 가입과 같은 처리기(`EmailCodeProcessor`)를 용도(`EmailCodePurpose` SIGNUP / PASSWORD_RESET)만 바꿔 쓴다. 한도 · 수명도 `auth.email-send.*` 를 그대로 쓴다. 브루트포스 방어를 두 벌로 두면 한쪽만 고쳐져 조용히 어긋나기 때문이다. Redis 키만 따로다: `passwordResetCode` · `passwordResetFail` · `passwordResetCooldown` · `passwordResetSendIp` · `passwordResetVerifyIp`.
-- send-code 응답은 **가입 여부와 무관하게 같다**. 메일만 갈린다: ACTIVE 회원(소셜 포함)에게는 재설정 코드, 가입되지 않은 이메일에는 미끼 코드를 저장하고 "가입된 계정 없음" 안내 메일, 탈퇴 · 정지 회원에게는 미끼 코드만(메일 없음).
+- send-code 응답은 **가입 여부와 무관하게 같다**. 메일만 갈린다: 비밀번호가 있는 ACTIVE 회원(카카오가 연결된 이메일 계정 포함)에게는 재설정 코드, **비밀번호가 없는(카카오만 쓰는) ACTIVE 회원에게는 미끼 코드 + "카카오 로그인으로 가입된 계정" 안내 메일**, 가입되지 않은 이메일에는 미끼 코드 + "가입된 계정 없음" 안내 메일, 탈퇴 · 정지 회원에게는 미끼 코드만(메일 없음). reset 단계에서 회원 비밀번호가 null 이면 `AUTH_018`(균일).
 - verify-code 의 실패 코드는 가입과 같다(`AUTH_003` · `004` · `005` · `010`). 성공하면 일회용 `resetToken` 을 준다 — SecureRandom 32바이트 base64url. Redis 에는 원문이 아니라 SHA-256 해시를 키로(`passwordResetToken:{sha256hex}` → 이메일, TTL `auth.password-reset.token-ttl` 기본 15분) 둔다. 미끼 코드를 맞혀도 같은 모양으로 토큰을 준다.
 - reset `{resetToken, newPassword}`: IP 시도 카운터(`passwordResetIp`, 상한 · 창은 `auth.email-send.verify-ip-*`)를 BCrypt 전에 먼저 올리고 넘으면 `AUTH_019`. 토큰은 Lua GET+DEL 로 원자 소비하고, 없음 · 만료 · 이미 씀 · 그 이메일의 ACTIVE 회원 없음은 모두 `AUTH_018` 이다.
 - 성공 순서: 새 비밀번호 BCrypt(트랜잭션 밖) → **모든 기기 세션 폐기 + access 블랙리스트** → 비밀번호 저장(커밋) → **같은 범위 2차 폐기** → 그 이메일의 로그인 잠금 · 실패 카운터 해제. 1차 폐기가 실패하면(503) 비밀번호는 그대로이고, 토큰은 이미 소비돼 인증 코드부터 다시 한다. 2차 폐기는 폐기와 커밋 사이에 옛 비밀번호로 BCrypt 를 통과한 로그인이 남긴 세션을 지우려는 것이고, 실패해도 로그만 남긴다.
 - 같은 이메일로 verify-code 를 여러 번 통과하면 토큰이 여러 개 함께 살아 있을 수 있다(각각 1회용 · 15분). 메일함 소유가 전제라 받아들였다.
 
-**내 정보 · 비밀번호 변경 · 설정** (`member` 컨텍스트, 인증 필요)
+**카카오 로그인 · 가입 · 연결** (`auth` 컨텍스트, 인증 불필요 — 2026-10-02 결정)
+
+- 회원은 **이메일로 식별**한다(카카오 회원 ID 는 저장하지 않는다 — hondigagae 와 같다). `provider` 가 null 이면 이메일 계정만, `KAKAO` 면 카카오 로그인이 된다. **카카오만 쓰는 회원은 비밀번호가 없다**(`hasPassword=false`). 카카오 이메일은 필수이고, 카카오가 검증하지 않은 이메일은 받지 않는다. 동의 항목(scope)은 `account_email` · `profile_nickname` 뿐이다 — 시안대로 프로필 이미지는 받지 않는다(최소 수집).
+- `GET /kakao/authorize?switchAccount=` — SecureRandom state 를 Redis(`oauthState:{state}`, `auth.oauth.state-ttl` 기본 10분)와 쿠키 `oauthState` 에 함께 두고(double-submit) 카카오 인가 주소를 돌려준다. `switchAccount=true` 면 `prompt=select_account`(시안 "다른 카카오 계정으로 계속하기"). 인증 없이 부를 수 있어 state 를 저장하기 전에 IP 카운터(`oauthAuthorizeIp`, 기본 30회 / 10분)를 먼저 올리고 넘으면 `AUTH_028`(429) — Redis(refresh 세션 · 블랙리스트와 공유)에 state 키가 무한히 쌓이지 않게. 저장소 장애는 fail-open.
+- 카카오는 **프론트 콜백 페이지**(`KAKAO_REDIRECT_URI`, 예: `https://dev.sneezecast.com/login/kakao/callback`)로 돌아온다. 프론트가 같은 사이트 요청으로 `POST /kakao/login {code, state}` 를 보낸다 — 그래서 state 쿠키가 SameSite=Strict 여도 실리고, code 가 접근 로그 쿼리에 남지 않는다.
+- login 은 **쿠키 대조(상수 시간 비교)를 Redis 소비보다 먼저** 한다(불일치 요청이 멀쩡한 state 를 태우지 않게). 쿠키 없음 · 불일치 · 만료 · 재사용은 모두 `AUTH_020`. 이어서 카카오 토큰 교환 · `/v2/user/me` 조회(`RestClient` + connect 1초 · read 2초, 트랜잭션 밖)를 하고, 회원을 이메일로 찾아 넷으로 가른다.
+  - **회원 없음** → 회원 행을 만들지 않고 **가입표**를 준다(SecureRandom 32바이트, Redis 에는 SHA-256 해시 키 `oauthSignupTicket:{sha256}` → 이메일 · 닉네임, `auth.oauth.signup-ticket-ttl` 기본 30분). 개인정보 수집 동의가 수집보다 먼저여야 해서다. 응답 `result=SIGNUP_REQUIRED`.
+  - **ACTIVE + KAKAO** → #57 과 같은 발급(세션 · refresh 쿠키). `result=LOGGED_IN`.
+  - **ACTIVE + provider null(이메일 계정)** → **연결 확인표**(`oauthLinkTicket:{sha256}` → 회원 ID, `auth.oauth.link-ticket-ttl` 기본 10분). 자동 연결하지 않고 "카카오 로그인을 연결할까요?" 를 묻는다. 응답 `result=LINK_REQUIRED` + 가린 이메일.
+  - 탈퇴 · 정지 → `MEMBER_002` · `003`.
+- `POST /kakao/signup {termsAgreed, privacyAgreed, ageOver19Confirmed}` — 가입표를 원자 소비(Lua GET+DEL)하고 회원(provider KAKAO, 비밀번호 null) + 필수 동의를 한 트랜잭션에 저장한 뒤 **바로 로그인 토큰을 준다**(비밀번호가 없어 따로 로그인할 수 없다). 건강정보 동의는 이메일 가입처럼 #59 API 로 따로. 닉네임은 카카오 닉네임을 strip 해 10자(코드포인트)로 자르고, 2자 미만이면 `동네이웃` + 무작위 4자리다.
+- `POST /kakao/link` — 확인표를 소비하고, 같은 트랜잭션에서 회원이 여전히 ACTIVE · provider null 인지 다시 본 뒤(아니면 `AUTH_027`) provider 를 KAKAO 로 바꾼다(조회 후 변경 감지, **비밀번호는 그대로** — 두 방식 모두 로그인된다). "카카오 로그인이 연결됐어요" 메일을 비동기로 보내고(본인이 아니면 바로 알아챌 수 있게) 토큰을 준다. 연결을 끊는 API 는 아직 없다(후속).
+- 쿠키 3종(`oauthState` · `oauthSignupTicket` · `oauthLinkTicket`)은 `OAuthCookieProvider` 한 곳에서 HttpOnly · Secure · Strict · Path=`/api/v1/auth` · Max-Age=TTL 로 다룬다. 일회용 쿠키를 지우는 Set-Cookie 는 처리 전에 응답에 넣어, 뒤 단계가 실패해도 지워진다. 요청 검증 오류는 본문까지 오지 않으므로 쿠키를 건드리지 않는다(동의를 고쳐 다시 보낼 수 있다). 쓰다 만 표가 공용 기기에 남지 않게 authorize 는 두 표 쿠키를 함께 지우고, login 은 결과에 맞지 않는 표 쿠키를 지운다.
+- 카카오 오류 본문의 `error_description` 에는 인가 코드가 실려 와 로그에 남기지 않는다. code · state · 표 · 카카오 토큰은 어디에도 남기지 않는다. 서킷브레이커는 아직 씌우지 않았다(resilience4j 는 #60 으로 auth 에 들어왔다 — 카카오 호출에 서킷을 씌우는 것은 후속) — 로그인 한 번에 카카오를 두 번(토큰 교환 · 사용자 정보) 부르므로 최악 약 6초를 기다린다 — 게이트웨이 response-timeout(10초)보다 짧게 두려고 timeout 을 1초 · 2초로 잡았다.
+- 오류 코드: `AUTH_020` state 무효(400) · `021` 카카오가 code 거부(400) · `022` 카카오 장애 · timeout(503) · `023` 이메일 미제공(400) · `024` 이메일 미검증(400) · `025` 가입표 만료(400) · `026` 연결 확인표 만료(400) · `027` 연결할 수 없는 계정(409) · `028` authorize IP 상한(429), 검증 `AUTH_117~120`(code · state 필수 · 길이). 저장소 장애는 `AUTH_006`.
+
+**내 정보 · 비밀번호 변경** (`member` 컨텍스트, 인증 필요)
 
 - `GET /members/me` → `{memberId, email, nickname, provider(EMAIL | KAKAO — DB 값이 null 이면 EMAIL), hasPassword, role, pendingConsents, reportWritable}`. 재동의 · 보고 가능 여부는 토큰과 같은 계산(`MemberConsentProcessor.currentStatus` + auth 의 `ReportScopePolicy` — member 는 `MemberReportScopePort` 로 부른다)이다. 내 동네는 `/me` 에 싣지 않고 `GET /members/me/region`(#60)으로 따로 읽는다 — 이름 · 폐지 여부를 surveillance 에서 읽으므로 `/me` 가 surveillance 장애에 묶이지 않게 한다. 프로필 이미지는 #112 에서 더한다.
 - `PATCH /members/me` 는 닉네임만 바꾼다(가입과 같은 2~10자). 수정은 엔티티를 조회해 변경 감지로 한다 — 리포지토리의 수정 메서드는 `@Transactional(MANDATORY)` 라 트랜잭션 밖에서 부르면 바로 실패한다.
-- 비밀번호 변경 `{currentPassword, newPassword}` · 최초 설정 `{newPassword}`: 소셜 계정이 변경을 부르면 `MEMBER_007`, 이미 비밀번호가 있는데 설정을 부르면 `MEMBER_008`. 새 비밀번호 규칙은 가입과 같다(현재와 같아도 막지 않는다).
+- 비밀번호 변경 `{currentPassword, newPassword}`: 비밀번호가 없는(카카오만 쓰는) 계정이 부르면 `MEMBER_007`. 새 비밀번호 규칙은 가입과 같다(현재와 같아도 막지 않는다). **비밀번호 최초 설정 API 는 #61 에서 없앴다** — 카카오 회원은 비밀번호가 필요 없고(사용자 결정), 탈취된 access 로 이메일 로그인 자격을 만드는 경로도 함께 사라진다.
 - 현재 비밀번호 확인은 회원 단위로 횟수를 제한한다(`passwordChangeFail:{memberId}`, 상한 · 잠금은 `auth.login.*` 5회 · 10분). 로그인처럼 **BCrypt 전에 먼저 올리고**, 상한째 틀린 시도부터 `MEMBER_006`(429)이다. 틀리면 `MEMBER_005`.
 - 성공 순서: 현재 비밀번호 확인 → 새 비밀번호 BCrypt(트랜잭션 밖) → **지금 기기(access `sid`)를 뺀 다른 기기 세션 폐기 + access 블랙리스트**(sid 가 없으면 전부) → 저장(커밋) → 같은 범위 2차 폐기(실패해도 로그만 — 재설정과 같은 이유). 1차 폐기가 실패하면 저장하지 않고 `MEMBER_009`(503) — member 컨트롤러에는 auth 의 예외 처리기가 걸리지 않아 auth 의 `AUTH_017` 을 member 코드로 바꿔 낸다.
-- 비밀번호 최초 설정은 지금은 access 만으로 된다. 탈취된 access(15분 이하)로 이메일 로그인 자격을 만들 수 있다는 위험이 있지만, 소셜(카카오) 회원이 아직 없어(#61) 노출이 없다. 재인증(이메일 코드 · 최근 로그인)을 요구할지는 #61 에서 정한다.
 - member 요청 검증은 `MemberRequestExceptionHandler`(member 패키지 전용) 가 `MEMBER_1xx` 로 낸다. auth 검증 오류가 MEMBER 코드로 새지 않게 처리기를 나눴다.
-- **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향). `region` 은 다른 컨텍스트와 서로 import 하지 않는다(회원은 JWT 의 `memberId` 로만 안다).
-- 오류 코드: `AUTH_018` 재설정 인증 만료(400) · `AUTH_019` 재설정 IP 상한(429) · 검증 `AUTH_115` · `116`(resetToken), `MEMBER_004` 회원 없음(404) · `005` 현재 비밀번호 불일치(400) · `006` 확인 잠금(429) · `007` 비밀번호 미설정(409) · `008` 이미 설정됨(409) · `009` 세션 저장소 장애(503) · `100` · `198` · `199` 요청 형식, 검증 `MEMBER_101~107`.
+- **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장과 카카오 연결의 provider 변경 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향). `region` 은 다른 컨텍스트와 서로 import 하지 않는다(회원은 JWT 의 `memberId` 로만 안다).
+- 오류 코드: `AUTH_018` 재설정 인증 만료(400) · `AUTH_019` 재설정 IP 상한(429) · 검증 `AUTH_115` · `116`(resetToken), `MEMBER_004` 회원 없음(404) · `005` 현재 비밀번호 불일치(400) · `006` 확인 잠금(429) · `007` 비밀번호 없는 계정(409) · `008` 비운 번호(#61 에서 최초 설정 API 를 없앰 — 재사용 금지) · `009` 세션 저장소 장애(503) · `100` · `198` · `199` 요청 형식, 검증 `MEMBER_101~107`.
 
-**화면 계약** (2026-10-01 결정, 프론트 S13-2~6 · S02-2~4 · S10)
+**화면 계약** (2026-10-01 결정, 프론트 S13-1~6 · S02-1~4 · S10)
 
 - 이메일 단계(S13-2)에 **"이미 가입된 이메일" 상태를 두지 않는다.** send-code 는 가입 여부와 무관하게 같은 응답이라, 화면은 늘 코드 단계(S13-3)로 넘어가고 "이미 가입한 이메일이면 코드 대신 안내 메일이 가요" 같은 중립 문구를 함께 보여 준다.
 - **가입 요청(`POST /api/v1/auth/signup`)은 동의 단계 뒤에 보낸다.** 개인정보 수집 동의가 수집보다 먼저여야 해서다. 계정 입력(S13-4)은 화면이 들고 있다가 S02-2 성인 확인 · S02-3 가입 동의를 마친 뒤(S02-3 `가입하기`) 동의 값과 함께 한 번에 보낸다. 가입 응답에 토큰이 없으므로 화면은 이어서 로그인(#57)하고 동네를 저장(#60)한다.
@@ -219,8 +235,14 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 로그인 기기(S10 Settings-devices)는 `GET /sessions` 의 `current` 로 "이 기기" 를 표시하고, "다른 기기에서 모두 로그아웃" 은 `DELETE /sessions` 다.
 - FE 로컬(`http://localhost:*`)에서 dev API 를 부르면 교차 사이트라 SameSite=Strict 쿠키가 실리지 않는다 — 로그인은 되지만 재발급은 안 된다(access 만료 15분 뒤 재로그인). 로컬 개발은 목을 기본으로 한다.
 - 비밀번호 재설정(S13-6)은 프론트 제안 1 이다: verify-code 가 `{resetToken}` 을 주고, 새 비밀번호는 `{resetToken, newPassword}` 로만 보낸다. 토큰은 메모리에만 둔다. `AUTH_018` 이면 `/password/reset?reason=verification-expired`. 토큰은 1회용이라 토큰당 시도 상한은 두지 않았다(제안과 다른 점). 재설정에 성공하면 **모든 기기가 로그아웃**되므로 화면은 이메일 로그인으로 보낸다.
-- 비밀번호 변경 · 설정(S10)에 성공하면 **이 기기는 유지되고 다른 기기는 로그아웃**된다(2026-10-02 결정). 화면에 "다른 기기에서는 로그아웃돼요" 안내가 필요하다. `MEMBER_005` → 현재 비밀번호 틀림, `MEMBER_006` → 잠시 막힘, `MEMBER_007` · `008` 은 `hasPassword` 와 어긋난 호출이라 내 정보를 다시 불러온다.
-- 내 정보 `GET /members/me` 의 `provider` 는 `EMAIL` / `KAKAO`, `hasPassword` 로 `비밀번호 변경` / `비밀번호 설정` 을 가른다. 재동의 조건은 로그인 응답과 같은 `pendingConsents` 다.
+- 비밀번호 변경(S10)에 성공하면 **이 기기는 유지되고 다른 기기는 로그아웃**된다(2026-10-02 결정). 화면에 "다른 기기에서는 로그아웃돼요" 안내가 필요하다. `MEMBER_005` → 현재 비밀번호 틀림, `MEMBER_006` → 잠시 막힘, `MEMBER_007` 은 `hasPassword` 와 어긋난 호출이라 내 정보를 다시 불러온다.
+- 내 정보 `GET /members/me` 의 `provider` 는 `EMAIL` / `KAKAO`(카카오가 연결된 이메일 계정도 `KAKAO`), `hasPassword` 가 false 면 **비밀번호 메뉴를 숨긴다**(카카오만 쓰는 회원 — `비밀번호 설정` 화면은 없앴다). 재동의 조건은 로그인 응답과 같은 `pendingConsents` 다.
+- 카카오(S13-1): `GET /kakao/authorize` 의 `authorizeUrl` 로 이동 → 카카오가 프론트 콜백 페이지로 `code` · `state` 를 붙여 돌아옴 → 콜백 페이지가 `POST /kakao/login {code, state}`(`credentials: 'include'` — state 쿠키) → `result` 로 가른다.
+  - `LOGGED_IN`: 로그인 응답과 같은 필드 → 홈(또는 `next`).
+  - `SIGNUP_REQUIRED`: `/setup/region?from=kakao` → S02-1 · S02-2 · S02-3 → S02-3 `가입하기` 에서 `POST /kakao/signup {termsAgreed, privacyAgreed, ageOver19Confirmed}`(가입표 쿠키, 30분 안에). 응답은 로그인 응답과 같고 바로 로그인된 상태다 → 동네 저장(#60) → S02-4(건강정보 동의 #59).
+  - `LINK_REQUIRED`: 시안 Login-kakao-exists 자리에 **"이 이메일로 가입된 계정이 있어요. 카카오 로그인을 연결할까요?"** 확인(가린 `email` 표시). `연결하고 계속하기` → `POST /kakao/link`(10분 안에, 응답은 로그인 응답) · `다른 카카오 계정으로 계속하기` → `GET /kakao/authorize?switchAccount=true`. 연결하면 비밀번호 로그인도 그대로 된다.
+  - 실패는 모두 `/login?error=kakao-fail` 이다 — `AUTH_020`(state, 처음부터) · `021` · `022` · `023`(카카오 이메일 제공 동의 필요) · `024`(카카오 이메일 미인증) · `025` · `026`(시간 지남, 카카오 로그인부터) · `027` · `028`(요청 많음, 잠시 뒤). 탈퇴 · 정지는 `MEMBER_002` · `003`.
+  - **iOS 홈 화면(standalone) PWA 는 실기기 확인이 필요하다** — 외부 도메인(kauth.kakao.com)이 앱 안 Safari 시트로 열리면 PWA 와 쿠키 저장소가 달라 state 쿠키가 없을 수 있다(→ `AUTH_020`). 연동 때 iOS Safari · PWA 에서 먼저 확인한다.
 
 **내 동네** (`region` 컨텍스트, `/api/v1/members/me/region`)
 
@@ -236,6 +258,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - access token 블랙리스트 키는 게이트웨이와 같은 `{prefix}:auth:accessTokenBlacklist:{jti}`, TTL 은 토큰 남은 만료 시간. Redis 장애는 항상 503 `SECURITY_008` (fail-closed).
 - SMTP 계정 `MAIL_USERNAME` · `MAIL_PASSWORD` 는 기본값이 없다(auth 전용 필수 키). 동의 문서 버전 `legal.*-version` 은 비거나 20자를 넘으면 기동 실패(`LegalDocumentProperties`).
 - 재설정 토큰 수명 `auth.password-reset.token-ttl`(env `AUTH_PASSWORD_RESET_TOKEN_TTL`, 기본 PT15M)은 0 이하면 기동 실패다. 필수 키가 아니다.
+- 카카오 앱 키 `KAKAO_CLIENT_ID`(REST API 키) · `KAKAO_CLIENT_SECRET` · `KAKAO_REDIRECT_URI`(프론트 콜백 페이지, 카카오 개발자 콘솔에 등록한 값과 같아야 함)는 **기본값이 없는 auth 필수 키**다 — 비거나 공백이거나 `${...}` 가 풀리지 않으면 기동 실패(`KakaoOAuthProperties`, `toString` 에서 secret 을 가린다). 카카오 앱은 동의 항목 `account_email` · `profile_nickname` 을 켜야 한다. timeout `KAKAO_CONNECT_TIMEOUT`(PT1S) · `KAKAO_READ_TIMEOUT`(PT2S), authorize IP 상한 `AUTH_OAUTH_AUTHORIZE_IP_MAX_COUNT`(30) · `AUTH_OAUTH_AUTHORIZE_IP_WINDOW`(PT10M)과 `AUTH_OAUTH_STATE_TTL` · `AUTH_OAUTH_SIGNUP_TICKET_TTL` · `AUTH_OAUTH_LINK_TICKET_TTL` 은 기본값이 있고 0 이하면 기동 실패다.
 - persistence-core 의 Snowflake · QueryDSL · JPA Auditing 을 `AuthServiceBeansConfig` 에서 켠다. Snowflake 는 기본 datacenter 0 / worker 0 — 인스턴스를 늘리면 `SNOWFLAKE_WORKER_ID` 를 인스턴스마다 다르게 준다.
 
 ## service/surveillance-service

@@ -180,14 +180,14 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
 |--------|---------------|-----------------|
 | service-discovery | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_PORT` | (경로 없음) |
 | api-gateway | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD`, `AUTH_SERVICE_APP_NAME`, `SURVEILLANCE_SERVICE_APP_NAME` | `API_GATEWAY_PORT`, `GATEWAY_TRUSTED_PROXIES` |
-| auth-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `AUTH_SERVICE_APP_NAME`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD` | `AUTH_SERVICE_PORT`, `AUTH_DB_URL`, `AUTH_DB_USERNAME`, `AUTH_DB_PASSWORD`, `JWT_REFRESH_KEY`, `MINIO_ENDPOINT`, `MINIO_PUBLIC_URL`, `MINIO_BUCKET`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MAIL_USERNAME`, `MAIL_PASSWORD` |
+| auth-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `AUTH_SERVICE_APP_NAME`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD` | `AUTH_SERVICE_PORT`, `AUTH_DB_URL`, `AUTH_DB_USERNAME`, `AUTH_DB_PASSWORD`, `JWT_REFRESH_KEY`, `MINIO_ENDPOINT`, `MINIO_PUBLIC_URL`, `MINIO_BUCKET`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI` |
 | surveillance-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `SURVEILLANCE_SERVICE_APP_NAME`, `JWT_ACCESS_KEY` | `SURVEILLANCE_SERVICE_PORT`, `SURVEILLANCE_DB_URL`, `SURVEILLANCE_DB_USERNAME`, `SURVEILLANCE_DB_PASSWORD`, `REPORTER_KEY_PEPPER` |
 | batch-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT` | `BATCH_SERVICE_PORT`, `BATCH_DB_URL`, `BATCH_DB_USERNAME`, `BATCH_DB_PASSWORD` |
 
 - `JASYPT_ENCRYPTOR_KEY` 는 쓰지 않는다 (yml 에 자리표시자도 `ENC(...)` 값도 없다).
 - 파이프라인은 키가 **어느 층**에 있는지까지는 보지 않는다(전용 키 제외). 위 표의 층은 Infra 키 표를 따른 것이다.
 - 기본값이 있는 키(`GATEWAY_*_TIMEOUT*`, `JWT_*_EXPIRATION`, `REDIS_KEY_PREFIX`, `MINIO_MAX_FILE_BYTES`, auth 의 `MAIL_HOST` · `MAIL_PORT` ·
-  `MAIL_FROM_*` · `LEGAL_*_VERSION` · `AUTH_EMAIL_SEND_*` · `AUTH_LOGIN_*` · `AUTH_SESSION_*` · `AUTH_PASSWORD_RESET_TOKEN_TTL` · `SNOWFLAKE_*` 등)는 넣지 않아도 된다. compose 가 yml 과 같은 기본값을 넘긴다 — 빈 문자열을
+  `MAIL_FROM_*` · `LEGAL_*_VERSION` · `AUTH_EMAIL_SEND_*` · `AUTH_LOGIN_*` · `AUTH_SESSION_*` · `AUTH_PASSWORD_RESET_TOKEN_TTL` · `AUTH_OAUTH_*` · `KAKAO_*_TIMEOUT` · `SNOWFLAKE_*` 등)는 넣지 않아도 된다. compose 가 yml 과 같은 기본값을 넘긴다 — 빈 문자열을
   넘기면 yml 기본값이 적용되지 않기 때문이다.
 - `BATCH_SCHEDULE_ENABLED` 는 batch-service 경로의 Vault 값을 그대로 쓰고, 없으면 compose 가 dev `true` / prod `false` 를 넘긴다.
 - auth 메일: `MAIL_USERNAME` / `MAIL_PASSWORD` 는 SMTP 계정과 앱 비밀번호다(auth 전용, 서비스 경로). `MAIL_HOST` · `MAIL_PORT` 기본값은
@@ -199,6 +199,8 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
 - auth 로그인 제한 `AUTH_LOGIN_*`(이메일 실패 허용 횟수 · 잠금 시간, IP 실패 상한 · 윈도우)과 세션 `AUTH_SESSION_*`(회원당 기기 상한, 동시 재발급 허용 시간)도
   같은 규칙이다. 잠금 시간을 바꾸면 프론트 로그인 잠금 문구("10분 뒤")도 함께 바꾼다. 비밀번호 변경의 현재 비밀번호 확인 제한도 이 값을 쓴다.
 - auth 비밀번호 재설정 토큰 수명 `AUTH_PASSWORD_RESET_TOKEN_TTL`(기본 `PT15M`)도 같은 규칙이다. 재설정 코드 한도는 `AUTH_EMAIL_SEND_*` 를 함께 쓴다.
+- auth 카카오 로그인 `KAKAO_CLIENT_ID`(REST API 키) · `KAKAO_CLIENT_SECRET` · `KAKAO_REDIRECT_URI`(프론트 콜백 페이지 — 예: `https://dev.sneezecast.com/login/kakao/callback`)는 auth 전용 필수 키다(서비스 경로). 카카오 개발자 콘솔에
+  같은 콜백 주소를 등록하고 동의 항목 `account_email` · `profile_nickname` 을 켠다. 비거나 공백이면 기동 실패다.
 - `TIME_ZONE` 은 Vault 키가 아니다. 비면 `Asia/Seoul` 이다 (compose · Dockerfile).
 - 무작위 비밀값(JWT 키 · pepper · DB 비밀번호)은 `$` · 따옴표가 섞이지 않게 만든다. `openssl rand -base64` 출력은 해당 없다.
 
