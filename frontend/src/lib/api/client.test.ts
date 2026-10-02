@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { clientEnv } from '@/lib/env.client'
 
-import { setAccessTokenProvider } from './access-token'
+import { setAccessTokenProvider, setAccessTokenRefresher } from './access-token'
 import { ApiError, UNAVAILABLE_CODE, UNAVAILABLE_MESSAGE } from './api-error'
 import { API_TIMEOUT_MS, apiRequest } from './client'
 
@@ -66,6 +66,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setAccessTokenProvider(null)
+  setAccessTokenRefresher(null)
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
@@ -169,6 +170,121 @@ describe('apiRequest 인증 헤더', () => {
 
     await expect(apiRequest('/api/v1/members/me')).rejects.toBe(failure)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('apiRequest 401 재시도', () => {
+  const expired = () => jsonResponse(failure('SECURITY_002', '만료된 토큰입니다.'), 401)
+
+  /** fetch 호출마다 실린 Authorization */
+  function sentTokens(): (string | null)[] {
+    return fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get('Authorization'))
+  }
+
+  it('reissue 갈래(SECURITY_002)면 갈아 끼운 토큰으로 같은 요청을 한 번 다시 보낸다', async () => {
+    fetchMock.mockResolvedValueOnce(expired()).mockResolvedValueOnce(jsonResponse(success('ok')))
+    setAccessTokenProvider(() => 'old-access')
+    const refresher = vi.fn(() => Promise.resolve('new-access'))
+    setAccessTokenRefresher(refresher)
+
+    await expect(
+      apiRequest('/api/v1/reports', { method: 'POST', body: { week: '2026-W40' } }),
+    ).resolves.toBe('ok')
+
+    expect(refresher).toHaveBeenCalledExactlyOnceWith('old-access')
+    expect(sentTokens()).toEqual(['Bearer old-access', 'Bearer new-access'])
+    // 주소 · 메서드 · 바디 · Content-Type 은 같다
+    const [first, second] = fetchMock.mock.calls
+    expect(second?.[0]).toBe(first?.[0])
+    expect(second?.[1]?.method).toBe('POST')
+    expect(second?.[1]?.body).toBe(first?.[1]?.body)
+    expect(new Headers(second?.[1]?.headers).get('Content-Type')).toBe('application/json')
+  })
+
+  it('다시 보낸 요청도 401 이면 그 오류를 던지고 더 재발급하지 않는다', async () => {
+    fetchMock.mockResolvedValueOnce(expired()).mockResolvedValueOnce(expired())
+    setAccessTokenProvider(() => 'old-access')
+    const refresher = vi.fn(() => Promise.resolve('new-access'))
+    setAccessTokenRefresher(refresher)
+
+    const error = await caught(apiRequest('/api/v1/members/me'))
+
+    expect(error).toMatchObject({ status: 401, code: 'SECURITY_002' })
+    expect(refresher).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('갈아 끼우지 못하면(null · 갈아 끼우기 없음) 원래 오류를 던진다', async () => {
+    setAccessTokenProvider(() => 'old-access')
+    fetchMock.mockResolvedValueOnce(expired())
+    await expect(apiRequest('/api/v1/members/me')).rejects.toMatchObject({ code: 'SECURITY_002' })
+
+    setAccessTokenRefresher(() => Promise.resolve(null))
+    fetchMock.mockResolvedValueOnce(expired())
+    await expect(apiRequest('/api/v1/members/me')).rejects.toMatchObject({ code: 'SECURITY_002' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    ['SECURITY_001', 401],
+    ['SECURITY_006', 403],
+    ['AUTH_014', 401],
+  ])('%s(%i)는 다시 보내지 않는다', async (code, status) => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(failure(code, '거절'), status))
+    setAccessTokenProvider(() => 'access')
+    const refresher = vi.fn(() => Promise.resolve('new-access'))
+    setAccessTokenRefresher(refresher)
+
+    await expect(apiRequest('/api/v1/members/me')).rejects.toMatchObject({ code })
+    expect(refresher).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('토큰을 싣지 않은 요청(auth: false · 공급자 없음)은 401 이어도 다시 보내지 않는다', async () => {
+    const refresher = vi.fn(() => Promise.resolve('new-access'))
+    setAccessTokenRefresher(refresher)
+
+    fetchMock.mockResolvedValueOnce(expired())
+    await expect(apiRequest('/api/v1/districts')).rejects.toMatchObject({ code: 'SECURITY_002' })
+
+    setAccessTokenProvider(() => 'access')
+    fetchMock.mockResolvedValueOnce(expired())
+    await expect(
+      apiRequest('/api/v1/auth/token/reissue', { method: 'POST', auth: false }),
+    ).rejects.toMatchObject({ code: 'SECURITY_002' })
+
+    expect(refresher).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('갈아 끼우기가 던진 오류(재발급 일시 장애)는 그대로 넘기고 다시 보내지 않는다', async () => {
+    fetchMock.mockResolvedValueOnce(expired())
+    setAccessTokenProvider(() => 'old-access')
+    const failure = new ApiError({
+      status: 0,
+      code: UNAVAILABLE_CODE,
+      message: UNAVAILABLE_MESSAGE,
+    })
+    setAccessTokenRefresher(() => Promise.reject(failure))
+
+    await expect(apiRequest('/api/v1/members/me')).rejects.toBe(failure)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('재발급을 기다리는 동안 취소하면 다시 보내지 않고 취소 사유를 던진다', async () => {
+    fetchMock.mockResolvedValueOnce(expired())
+    setAccessTokenProvider(() => 'old-access')
+    const controller = new AbortController()
+    const reason = new Error('화면을 떠남')
+    setAccessTokenRefresher(() => {
+      controller.abort(reason)
+      return Promise.resolve('new-access')
+    })
+
+    await expect(apiRequest('/api/v1/members/me', { signal: controller.signal })).rejects.toBe(
+      reason,
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
 
