@@ -4,9 +4,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { resolveAccessToken } from '@/lib/api/access-token'
 import { writeBrowserDataSource } from '@/lib/data-source'
-import { getSessionSnapshot, resetSessionForTests, setSession } from '@/lib/session/session-store'
-import { memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
+import {
+  clearSession,
+  getSessionSnapshot,
+  resetSessionForTests,
+  setSession,
+} from '@/lib/session/session-store'
+import { holdRequests, memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
 
+import { getMemberInfoSnapshot, resetMemberInfoForTests } from './member-info'
 import { SessionBootstrap } from './session-bootstrap'
 
 beforeEach(() => {
@@ -14,6 +20,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetMemberInfoForTests()
   resetApiSession()
 })
 
@@ -35,6 +42,15 @@ describe('SessionBootstrap', () => {
 
     act(() => writeBrowserDataSource('api'))
     expect(getSessionSnapshot()).toEqual({ status: 'guest' })
+  })
+
+  it('회원 정보 저장소를 세션에 잇는다 — 회원이 되면 읽기 시작하고 비회원이 되면 지운다', () => {
+    holdRequests()
+    render(<SessionBootstrap />)
+    act(() => setSession(memberToken()))
+    expect(getMemberInfoSnapshot()).toMatchObject({ info: { status: 'loading' } })
+    act(() => clearSession('logout'))
+    expect(getMemberInfoSnapshot()).toBeNull()
   })
 
   it('API 계층에 공급자를 끼우고, 해제하면 슬롯을 비운다', async () => {
