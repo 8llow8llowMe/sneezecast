@@ -310,7 +310,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | period_week | TINYINT | N | 원천 주차 (질병관리청 주차 그대로). YEAR 면 0 |
 | period_start | DATE | N | 기간 시작일 (가공). WEEK 는 [data-api-analysis.md §5](data-api-analysis.md#5-주차-정의) 규칙, YEAR 는 1월 1일 |
 | period_end | DATE | N | 기간 종료일 (가공). WEEK 는 시작일 + 6일, YEAR 는 12월 31일 |
-| value | DECIMAL(12,2) | Y | 값. **원천이 빈 칸이면 null** (0 과 구분한다) |
+| metric_value | DECIMAL(12,2) | Y | 값 (단위는 `metric`). **원천이 빈 칸이면 null** (0 과 구분한다). `value` 는 H2 예약어라 피했다 |
 | source_snapshot_id | BIGINT | N | 마지막으로 이 값을 쓴 실행 (FK: official_source_snapshot.id) |
 | synced_at | TIMESTAMP | N | 마지막 적재 시각 (응답 · 화면의 "수집 시각") |
 
@@ -322,10 +322,11 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - 전수신고 응답의 `계` 행(주별 합)은 적재하지 않는다. 시도 값을 더해 전국 · 권역을 만들지 않는다 (광주 · 전남 · 전남광주 코드가 기간에 따라 겹친다).
 - 표시 대상(감염병 · 병원체 목록)은 1단계에서 설정값으로 둔다.
 - 라이선스 **공공누리 제4유형(출처표시 · 상업적 이용금지 · 변경금지)** — 화면에 출처를 밝히고 원값을 그대로 보인다. 파생값(예: 전주 대비)을 보이면 파생값임을 밝힌다.
+- 정본은 surveillance `domainlayer/official` 의 `OfficialSurveillanceEntity` (§3-3 은 `OfficialSourceSnapshotEntity`). `id` 는 batch 가 Snowflake 로 할당하고 surveillance 는 이 두 테이블을 `save` 하지 않으므로 `Persistable` 을 구현하지 않는다 — [coding-conventions.md §8-1](coding-conventions.md#8-1-엔티티) 의 판정은 `save` 경로에서만 의미가 있다 (#74 가 `BaseEntity` 로 올리면 함께 적용된다). enum 은 같은 패키지 `domain/enums` 에 두고, 저장 값(`name()`)이 batch 와의 DB 계약이라 테스트로 고정한다.
 
 ### 3-3. official_source_snapshot — 외부 원천 적재 이력
 
-실행 한 번(조회 조건 하나)에 한 행. **수정하지 않고 쌓기만 한다.** 운영자가 "언제 무슨 조건으로 무엇을 받았고 몇 건을 넣었나" 를 되짚는 근거다 (hondigagae `import_source_snapshot` 과 같은 역할). 멱등은 `official_surveillance` UK 가 보장하므로, 1단계는 "같은 내용이면 건너뛰기" 를 두지 않는다 — 조회 범위가 매주 움직여서(최근 8주) 비교 기준이 되지 않는다.
+실행 한 번의 조회 조건 하나에 한 행 — 원천 요청 하나가 한 행이고, 페이지를 넘긴 응답은 한 행으로 합친다 (전수신고는 실행당 약 74행 — `/PeriodBasic` 연도마다 1 + `/Region` 연도 × 지표 × 시도마다 1, [data-api-analysis.md §2-5](data-api-analysis.md#2-5-실행당-호출-수-notifiableimportjob)). **수정하지 않고 쌓기만 한다.** 운영자가 "언제 무슨 조건으로 무엇을 받았고 몇 건을 넣었나" 를 되짚는 근거다 (hondigagae `import_source_snapshot` 과 같은 역할). 멱등은 `official_surveillance` UK 가 보장하므로, 1단계는 "같은 내용이면 건너뛰기" 를 두지 않는다 — 조회 범위가 매주 움직여서(최근 8주) 비교 기준이 되지 않는다.
 
 | 컬럼 | 타입 | Null | 설명 |
 |------|------|------|------|
@@ -446,5 +447,5 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | advisory · advisory_history | 계속 (발행 · 승인 증빙) | — |
 | district | 계속 (폐지 코드도 과거 행이 참조) | — |
 | official_surveillance | 계속 | — |
-| official_source_snapshot | 계속 (`official_surveillance.source_snapshot_id` 가 참조한다. 주 몇 행이라 작다) | — |
+| official_source_snapshot | 계속 (`official_surveillance.source_snapshot_id` 가 참조한다. 실행당 수십 행 · 연 수천 행이라 작다) | — |
 | Redis (인증 코드 · 세션 · 블랙리스트) | 각 TTL | 자동 만료 |
