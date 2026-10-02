@@ -15,7 +15,18 @@ import {
   signup,
 } from '@/features/auth/auth-client'
 import { consentFor } from '@/features/auth/legal'
+import { resetMemberInfoForTests, startMemberInfo } from '@/features/auth/member-info'
+import { resetSessionForTests, setSession } from '@/lib/session/session-store'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
+import {
+  errorResponse,
+  holdRequests,
+  memberToken,
+  myInfoBody,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
 import { MeScreen } from './me-screen'
 import { MeTrailProvider } from './me-trail'
@@ -401,5 +412,43 @@ describe('PasswordScreen → 내 정보 (알림 · 기록)', () => {
       screen.getByText('비밀번호를 설정했어요. 이제 이메일로도 로그인할 수 있어요'),
     ).toBeDefined()
     expect(screen.getByRole('link', { name: '비밀번호 변경' })).toBeDefined()
+  })
+})
+
+describe('PasswordScreen 실데이터 (#164)', () => {
+  let stopMemberInfo: () => void = () => {}
+  beforeEach(() => {
+    resetSessionForTests()
+    resetMemberInfoForTests()
+    stopMemberInfo = startMemberInfo()
+    selectApiSource()
+  })
+  afterEach(() => {
+    stopMemberInfo()
+    resetMemberInfoForTests()
+    resetApiSession()
+  })
+
+  const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
+  it('프로필을 읽는 동안은 그리지 않고, 읽지 못하면 오류 화면 · 다시 시도로 받으면 폼을 그린다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    renderPassword()
+    await flush()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('heading', { name: '정보를 불러오지 못했어요' })).toBeNull()
+
+    act(() => server.reply('GET /api/v1/members/me', errorResponse('GATEWAY_003', 503)))
+    await flush()
+    expect(screen.getByRole('heading', { name: '정보를 불러오지 못했어요' })).toBeDefined()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '다시 시도' }))
+    await flush()
+    act(() => server.reply('GET /api/v1/members/me', okResponse(myInfoBody())))
+    await flush()
+    expect(
+      screen.getAllByRole('heading', { level: 1, name: '비밀번호 변경' }).length,
+    ).toBeGreaterThan(0)
   })
 })

@@ -6,8 +6,9 @@ import {
   TERMS_RECONSENT_PATH,
 } from '@/features/onboarding/paths'
 import { ABOLISHED_DISTRICT_EXAMPLE } from '@/features/region/mock'
+import type { DataSource } from '@/lib/data-source'
 import { navHref } from '@/lib/nav'
-import type { SessionSnapshot } from '@/lib/session/session-store'
+import { getSessionSnapshot, type SessionSnapshot } from '@/lib/session/session-store'
 
 import {
   getMockProfile,
@@ -15,6 +16,7 @@ import {
   type MockAuthState,
   type MockProfile,
 } from './auth-client'
+import { getMemberInfoSnapshot, memberInfoOf, type MemberInfoSnapshot } from './member-info'
 import { MOCK_AUTH_PARAM, MOCK_PROVIDER_PARAM } from './use-mock-auth'
 
 /* ── 다시 들어온 회원이 먼저 거칠 화면 (Setup-3-reconsent · Setup-1-reselect) ─────────────────────────
@@ -44,12 +46,27 @@ export function parseMockRequired(value: string | null): RequiredStep[] | null {
   return steps.length > 0 ? steps : null
 }
 
+/** 폐지된 옛 동네. 실데이터는 행정동 서비스에 코드가 없으면 이름을 모른다(null) */
+export type AbolishedRegion = { code: string; name: string | null }
+
 export type MemberRequirements = {
   /** 거칠 화면. 순서대로다(`REQUIRED_STEP_ORDER`). 비었으면 바로 들어간다 */
   steps: RequiredStep[]
   /** 동네 조건이 있을 때 옛 동네(다시 고르기 안내에 이름을 쓴다). 없으면 null */
-  abolishedRegion: MemberRegion | null
+  abolishedRegion: AbolishedRegion | null
+  /**
+   * 동네 조건까지 판단했는지. 실데이터 회원의 내 동네를 아직 읽는 중이면 false 다 — 그동안 `steps` 에는 동네 조건이 없다.
+   * 동네 화면은 이 값이 true 일 때만 내보낼 곳을 정한다(읽기 전의 "조건 없음" 으로 내보내지 않게). 읽지 못했으면(일시 장애)
+   * 판단을 접고 true 다 — 다시 고르게 할지 모르는 채로 화면을 막지 않는다. 목데이터 · 비회원은 늘 true 다
+   */
+  settled: boolean
 }
+
+const NO_REQUIREMENTS: MemberRequirements = Object.freeze({
+  steps: [],
+  abolishedRegion: null,
+  settled: true,
+})
 
 const EXAMPLE_ABOLISHED_REGION: MemberRegion = {
   code: ABOLISHED_DISTRICT_EXAMPLE.code,
@@ -65,7 +82,7 @@ export function memberRequirements(
   profile: MockProfile | null,
   override: readonly RequiredStep[] | null,
 ): MemberRequirements {
-  if (auth === 'guest') return { steps: [], abolishedRegion: null }
+  if (auth === 'guest') return NO_REQUIREMENTS
   const terms = override ? override.includes('terms') : profile?.termsReconsentRequired === true
   const region = override ? override.includes('region') : profile?.regionAbolished === true
   const steps = REQUIRED_STEP_ORDER.filter((step) => (step === 'terms' ? terms : region))
@@ -74,18 +91,28 @@ export function memberRequirements(
     : profile?.regionAbolished && profile.region
       ? profile.region
       : EXAMPLE_ABOLISHED_REGION
-  return { steps, abolishedRegion }
+  return { steps, abolishedRegion, settled: true }
 }
 
 /**
- * 실데이터 세션으로 거칠 화면을 정한다. 회원이 아니면(복원 중 포함) 없다. 다시 동의할 항목(`pendingConsents`)이 있으면 약관 재동의다.
- * 동네 조건(폐지된 동네)은 내 동네 API 를 연동할 때 더한다 — 지금은 없다.
+ * 실데이터 세션 · 회원 정보 저장소로 거칠 화면을 정한다. 회원이 아니면(복원 중 포함) 없다.
+ *
+ * - 약관 재동의: 세션의 다시 동의할 항목(`pendingConsents` — 로그인 · 재발급 응답)이 있으면
+ * - 동네 다시 고르기: 내 동네(`GET /api/v1/members/me/region`)가 폐지됐으면(`abolished`). 아직 고르지 않았으면(null) 다시 고르게
+ *   하지 않는다. 읽는 중이면 판단하지 않고(`settled: false`), 읽지 못했으면 동네 조건 없이 정해진 것으로 본다
  */
-export function sessionRequirements(session: SessionSnapshot): MemberRequirements {
-  if (session.status !== 'member') return { steps: [], abolishedRegion: null }
+export function sessionRequirements(
+  session: SessionSnapshot,
+  memberInfo: MemberInfoSnapshot | null,
+): MemberRequirements {
+  if (session.status !== 'member') return NO_REQUIREMENTS
+  const load = memberInfoOf(session, memberInfo)?.region ?? { status: 'loading' }
+  const region = load.status === 'ready' && load.value?.abolished ? load.value : null
+  const terms = session.summary.pendingConsents.length > 0
   return {
-    steps: session.summary.pendingConsents.length > 0 ? ['terms'] : [],
-    abolishedRegion: null,
+    steps: REQUIRED_STEP_ORDER.filter((step) => (step === 'terms' ? terms : region !== null)),
+    abolishedRegion: region ? { code: region.code, name: region.name } : null,
+    settled: load.status !== 'loading',
   }
 }
 
@@ -161,20 +188,25 @@ export function stepTarget(
 }
 
 /**
- * `completed` 를 마친 뒤 갈 곳. 마친 결과(목 프로필)를 바로 읽어 남은 조건이 있으면 그 화면으로, 없으면 `?next=` 로 간다.
- * 화면 상태(hook)는 응답을 기다리는 동안 낡을 수 있어 목 세션 프로필을 직접 읽는다. 마친 조건은 다시 넣지 않는다.
+ * `completed` 를 마친 뒤 갈 곳. 마친 결과를 바로 읽어 남은 조건이 있으면 그 화면으로, 없으면 `?next=` 로 간다.
+ * 화면 상태(hook)는 응답을 기다리는 동안 낡을 수 있어 저장소를 직접 읽는다 — 목데이터는 목 세션 프로필, 실데이터는 세션 ·
+ * 회원 정보 저장소(`sessionRequirements`)다. 마친 조건은 다시 넣지 않는다.
  */
 export function targetAfter(
   completed: RequiredStep,
   auth: MockAuthState,
   searchParams: Pick<URLSearchParams, 'get'>,
+  source: DataSource,
 ): string {
   const params = carriedParams(searchParams, completed)
-  const { steps } = memberRequirements(
-    auth,
-    getMockProfile(),
-    parseMockRequired(params.get(MOCK_REQUIRED_PARAM)),
-  )
+  const { steps } =
+    source === 'api'
+      ? sessionRequirements(getSessionSnapshot(), getMemberInfoSnapshot())
+      : memberRequirements(
+          auth,
+          getMockProfile(),
+          parseMockRequired(params.get(MOCK_REQUIRED_PARAM)),
+        )
   return stepTarget(
     steps.filter((step) => step !== completed),
     safeNextPath(searchParams.get(NEXT_PARAM)),

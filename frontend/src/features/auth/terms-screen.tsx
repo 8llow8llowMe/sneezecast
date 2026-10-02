@@ -23,6 +23,7 @@ import { useDataSource } from '@/lib/use-data-source'
 import {
   loginWithEmail,
   saveRegion,
+  type SaveRegionResult,
   signup,
   type SignupRequest,
   type SignupResult,
@@ -31,7 +32,7 @@ import { ConsentRow, LEGAL_TEXT_NOT_READY } from './consent-row'
 import { type Consent, consentFor } from './legal'
 import { NO_CHECKS, requiredAgreed, setAll, type TermsChecks } from './terms-checks'
 
-type Failure = 'signup' | 'email-taken' | 'login' | 'region' | null
+type Failure = 'signup' | 'email-taken' | 'login' | 'region' | 'region-invalid' | null
 
 /**
  * S02-3 가입 동의 (3 / 4). 여기서 회원 가입 요청을 보내고, 이메일 가입이면 로그인한 뒤 내 동네를 저장하고
@@ -47,7 +48,9 @@ type Failure = 'signup' | 'email-taken' | 'login' | 'region' | null
  *   (이메일 · 닉네임은 남긴다) 이메일 단계로 기록을 바꿔 간다. 이메일 화면이 안내를 띄운다
  * - 가입된 이메일(`email-taken`, `MEMBER_001`)이면 빨강 상자로 알리고 `이메일로 로그인` 을 둔다(시안 없음 — Signup-email 의
  *   exists 문구를 옮겼다). 누르면 비밀번호를 지우고 이메일 로그인으로 기록을 바꿔 간다
- * - 실데이터 · 목데이터는 `useDataSource()` 로 정해 가입 · 로그인에 넘긴다
+ * - 실데이터 · 목데이터는 `useDataSource()` 로 정해 가입 · 로그인 · 동네 저장에 넘긴다
+ * - 고른 동네를 서버가 받지 않으면(`invalid` — 없는 코드 · 폐지) 빨강 상자로 앞 단계에서 다시 고르게 한다. 계정 · 로그인은 남아
+ *   다시 고른 뒤 누르면 동네 저장만 보낸다
  * - 증상 보고 동의로는 기록을 바꿔 간다 — 뒤로 가기로 이 화면에 돌아와 다시 가입하지 않게 한다
  * - 값이 없으면(바로 들어옴 · 새로고침) 앞 단계로 보낸다: 동네 → 성인 확인 → 가입 종류(모르면 로그인 방법 선택) →
  *   이메일 가입의 인증 · 비밀번호(없으면 이메일 단계). 이미 가입을 마쳤으면 다음 단계로 보낸다
@@ -180,10 +183,15 @@ export function TermsScreen() {
       }
     }
 
+    let saved: SaveRegionResult
     try {
-      await saveRegion(district)
+      saved = await saveRegion(district, source)
     } catch {
       fail('region')
+      return
+    }
+    if (saved.status === 'invalid') {
+      fail('region-invalid')
       return
     }
     updateMembership({ regionSaved: true })
@@ -281,6 +289,11 @@ export function TermsScreen() {
         )}
         {failure === 'region' && (
           <AlertBox tone="danger">동네를 저장하지 못했어요. 잠시 뒤 다시 눌러 주세요.</AlertBox>
+        )}
+        {failure === 'region-invalid' && (
+          <AlertBox tone="danger">
+            고른 동네를 저장할 수 없어요. 앞 단계에서 동네를 다시 골라 주세요.
+          </AlertBox>
         )}
       </div>
 

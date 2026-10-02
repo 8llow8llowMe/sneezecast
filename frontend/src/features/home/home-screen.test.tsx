@@ -686,7 +686,7 @@ describe('HomeScreen 둘러보기 동네 · 내 동네 (#141)', () => {
   /** 내 동네가 역삼1동이고 건강정보 동의를 한 목 회원 */
   async function signInWithRegion() {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
-    await saveRegion(YEOKSAM1)
+    await saveRegion(YEOKSAM1, 'mock')
     await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
   }
 

@@ -200,7 +200,7 @@ describe('TermsScreen', () => {
       'mock',
     )
     expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026', 'mock')
-    expect(saveRegion).toHaveBeenCalledWith(DISTRICT)
+    expect(saveRegion).toHaveBeenCalledWith(DISTRICT, 'mock')
     // 로그인한 뒤 저장하므로 목 프로필이 내 동네를 들고 있다(재선택 판단 · 내 정보가 쓴다)
     expect(getMockProfile()?.region).toEqual({ code: '11680640', name: '역삼1동' })
     const [signedUp] = vi.mocked(signup).mock.invocationCallOrder
@@ -301,12 +301,16 @@ describe('TermsScreen', () => {
     expect(state().draft.password).toBe('')
   })
 
-  it('실데이터 모드면 가입 → 로그인을 auth API 로 보내고 로그인 응답으로 회원이 된다', async () => {
+  it('실데이터 모드면 가입 → 로그인 → 동네 저장을 API 로 보내고 로그인 응답으로 회원이 된다', async () => {
     selectApiSource()
-    const fetchMock = vi.fn((url: string) => {
+    // 두 번째 인자(요청 설정)는 아래에서 동네 저장 본문을 확인하려고 받는다
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      void init
       const body = url.endsWith('/api/v1/auth/login')
         ? memberToken({ reportWritable: false })
-        : null
+        : url.endsWith('/api/v1/members/me/region')
+          ? { code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구', abolished: false }
+          : null
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -323,9 +327,19 @@ describe('TermsScreen', () => {
 
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
     const calls = fetchMock.mock.calls.map(([url]) => new URL(url).pathname)
-    expect(calls).toEqual(['/api/v1/auth/signup', '/api/v1/auth/login'])
+    expect(calls).toEqual([
+      '/api/v1/auth/signup',
+      '/api/v1/auth/login',
+      '/api/v1/members/me/region',
+    ])
+    // 동네는 코드만 보낸다
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({ code: '11680640' }),
+    })
     expect(signup).toHaveBeenCalledWith(expect.objectContaining({ kind: 'email' }), 'api')
     expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026', 'api')
+    expect(saveRegion).toHaveBeenCalledWith(DISTRICT, 'api')
     expect(getSessionSnapshot()).toMatchObject({
       status: 'member',
       summary: { reportWritable: false },
@@ -374,6 +388,18 @@ describe('TermsScreen', () => {
     expect(signup).toHaveBeenCalledTimes(1)
     expect(loginWithEmail).toHaveBeenCalledTimes(1)
     expect(saveRegion).toHaveBeenCalledTimes(2)
+  })
+
+  it('고른 동네를 서버가 받지 않으면(invalid) 앞 단계에서 다시 고르라고 알리고 다음 단계로 가지 않는다', async () => {
+    vi.mocked(saveRegion).mockResolvedValueOnce({ status: 'invalid' })
+    const { user } = setup({ draft: EMAIL_DRAFT })
+    await agreeAndSubmit(user)
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '고른 동네를 저장할 수 없어요. 앞 단계에서 동네를 다시 골라 주세요.',
+    )
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(state().membership).toMatchObject({ accountCreated: true, loggedIn: true })
+    expect(state().membership.regionSaved).toBe(false)
   })
 
   describe('새 가입 시도는 앞선 가입 마무리 진행을 쓰지 않는다', () => {

@@ -15,14 +15,15 @@ import {
   sessionRequirements,
 } from './required-steps'
 import { useAuth } from './use-auth'
+import { useMemberInfo } from './use-member-info'
 
 const serverProfileSnapshot = (): MockProfile | null => null
 
 /**
  * 지금 회원이 먼저 거칠 화면.
  *
- * - 실데이터: 세션 요약으로 정한다(`sessionRequirements` — 재동의할 항목이 있으면 약관 재동의). 동네 조건은 내 동네 연동 전이라 없다.
- *   `?mock-required=` 는 듣지 않는다
+ * - 실데이터: 세션 요약 · 회원 정보 저장소로 정한다(`sessionRequirements` — 재동의할 항목이 있으면 약관 재동의, 내 동네가
+ *   폐지됐으면 동네 다시 고르기). 내 동네를 읽는 중이면 동네 조건을 판단하지 않는다(`settled: false`). `?mock-required=` 는 듣지 않는다
  * - 목데이터: 회원 상태(`useAuth`) · 목 세션 프로필의 조건 · QA 덮어쓰기(`?mock-required=`)로 정한다. 프로필은 `?mock-provider=`
  *   덮어쓰기와 무관하게 목 세션 것을 읽는다. 응답 뒤 갈 곳(`targetAfter`)도 같은 값을 읽는다
  *
@@ -34,6 +35,7 @@ export function useMemberRequirements(): MemberRequirements {
   const auth = useAuth()
   const override = parseMockRequired(useSearchParams().get(MOCK_REQUIRED_PARAM))
   const profile = useSyncExternalStore(subscribeMockSession, getMockProfile, serverProfileSnapshot)
-  if (source === 'api') return sessionRequirements(session)
+  const memberInfo = useMemberInfo()
+  if (source === 'api') return sessionRequirements(session, memberInfo)
   return memberRequirements(auth, profile, override)
 }

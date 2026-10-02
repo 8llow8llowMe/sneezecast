@@ -10,6 +10,7 @@ import {
   MOCK_RESELECT_FAIL_EMAIL,
   resetMockSession,
   saveRegion,
+  type SaveRegionResult,
 } from '@/features/auth/auth-client'
 import { NOTICE_EXAMPLE_DISTRICT } from '@/features/notice/mock'
 import { DISTRICT_MOCKS } from '@/features/region/mock'
@@ -247,8 +248,8 @@ const EXAMPLE = NOTICE_EXAMPLE_DISTRICT
 function deferred() {
   let resolve: () => void = () => {}
   let reject: () => void = () => {}
-  const promise = new Promise<void>((done, fail) => {
-    resolve = done
+  const promise = new Promise<SaveRegionResult>((done, fail) => {
+    resolve = () => done({ status: 'ok' })
     reject = () => fail(new Error('mock failure'))
   })
   return { promise, resolve, reject }
@@ -260,7 +261,7 @@ async function loginAsMember(
   email = 'dong@example.com',
 ) {
   await loginWithEmail(email, 'dongne2026', 'mock')
-  if (region) await saveRegion(region)
+  if (region) await saveRegion(region, 'mock')
   vi.mocked(saveRegion).mockClear()
 }
 
@@ -331,7 +332,7 @@ describe('MapScreen 내 동네로 설정', () => {
     await user.click(within(dialog).getByRole('button', { name: '설정하기' }))
 
     expect(saveRegion).toHaveBeenCalledTimes(1)
-    expect(saveRegion).toHaveBeenCalledWith({ code: SEOGYO, name: '서교동' })
+    expect(saveRegion).toHaveBeenCalledWith({ code: SEOGYO, name: '서교동' }, 'mock')
     expect(getMockProfile()?.region).toEqual({ code: SEOGYO, name: '서교동' })
     expect(replaceState).toHaveBeenCalledWith({ sneezecastModalDepth: 0 }, '', '/map')
     expect(screen.getByRole('status').textContent).toContain('서교동을 내 동네로 설정했어요')
@@ -389,6 +390,23 @@ describe('MapScreen 내 동네로 설정', () => {
     expect(action.getAttribute('aria-disabled')).toBeNull()
     expect(getMockProfile()?.region).toEqual(before)
     expect(replaceState).not.toHaveBeenCalled()
+    expect(screen.queryByRole('status')?.textContent ?? '').not.toContain('설정했어요')
+  })
+
+  it('서버가 그 동네를 받지 않으면(invalid) 대화상자 안에 설정할 수 없다고 알린다', async () => {
+    await loginAsMember()
+    const before = getMockProfile()?.region
+    vi.mocked(saveRegion).mockResolvedValueOnce({ status: 'invalid' })
+    search = 'confirm=set-mine'
+    render(<MapScreen map={pickMapMock('example', null)} />)
+
+    const dialog = screen.getByRole('dialog', { name: `${EXAMPLE.name}을 내 동네로 설정할까요?` })
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: '설정하기' }))
+
+    expect(within(dialog).getByRole('alert').textContent).toBe(
+      '이 동네는 내 동네로 설정할 수 없어요. 다른 동네를 골라 주세요.',
+    )
+    expect(getMockProfile()?.region).toEqual(before)
     expect(screen.queryByRole('status')?.textContent ?? '').not.toContain('설정했어요')
   })
 

@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
+import { AlertBox } from '@/components/alert-box'
 import { AppHeader } from '@/components/app-header'
+import { Button } from '@/components/button'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
 import {
@@ -12,7 +14,8 @@ import {
   withdrawHealthConsent,
   withdrawMembership,
 } from '@/features/auth/auth-client'
-import { useMockAuth, useMockProfile } from '@/features/auth/use-mock-auth'
+import { type LoadStatus, retryMemberInfo } from '@/features/auth/member-info'
+import { useMockAuth, useMockProfile, useMockProfileStatus } from '@/features/auth/use-mock-auth'
 import { REPORT_GATE, reportButtonLabel } from '@/features/home/report-gate'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { REPORT_PARAM } from '@/features/report/report-flow'
@@ -48,7 +51,7 @@ import {
 } from './me-paths'
 import { useMeTrail } from './me-trail'
 import { useMemberGate, useRequiredStepsTarget } from './member-gate'
-import { useMemberRegion, useShownRegionName } from './member-region'
+import { useMemberRegion, useMemberRegionStatus, useShownRegionName } from './member-region'
 import { PushUnavailable } from './push-unavailable'
 import { MenuRow, sectionTitleId, SettingsSection, SwitchRow } from './settings-row'
 
@@ -107,6 +110,10 @@ function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label
  *
  * **보고 동네 행은 늘 회원의 내 동네**다(#141). 머리줄 동네 이름은 둘러보기 동네(`?region=`)가 있으면 그 동네, 없으면 내 동네이고
  * 누르면 둘러볼 동네 고르기(`/browse/region?next=/me`)로 간다 — 내 동네는 바꾸지 않는다. 내 동네를 모르면 행의 값을 비운다.
+ *
+ * **실데이터는 프로필(`GET /api/v1/members/me`)과 내 동네(`GET /api/v1/members/me/region`)를 따로 읽는다**(#164). 읽는 동안은
+ * 계정 섹션 위에 "내 정보를 불러오고 있어요", 하나라도 읽지 못하면 빨강 상자와 `다시 시도`(실패한 쪽만 다시 읽음)를 두고, 모르는
+ * 값(닉네임 · 로그인 방법 · 보고 동네)은 비운다 — 예시 값을 채우지 않는다. 목데이터는 늘 읽은 상태다.
  */
 export function MeScreen({
   regionName,
@@ -138,6 +145,7 @@ export function MeScreen({
   // 비회원이면 로그인으로 보낸다(돌아올 곳 /me). 보내는 중(로그아웃 · 탈퇴 · 동의 철회 성공 뒤 홈으로 가는 중)에는 멈춘다
   const member = useMemberGate({ next: ME_PATH, paused: pending !== null })
   const memberRegion = useMemberRegion()
+  const infoLoad = combineLoad(useMockProfileStatus(), useMemberRegionStatus())
   const shownRegionName = useShownRegionName(regionName, regionCode)
   const openBrowseRegion = useBrowseRegion(ME_PATH, regionCode)
 
@@ -267,6 +275,7 @@ export function MeScreen({
             {member && (
               <>
                 <SettingsSection id="me-account" title="계정">
+                  <InfoLoadNotice status={infoLoad} />
                   <MenuRow
                     title="닉네임"
                     value={profile?.nickname}
@@ -403,6 +412,42 @@ export function MeScreen({
         className="fixed inset-x-0 bottom-20 px-page-mobile tablet:mx-auto tablet:w-dialog-tablet tablet:px-0 desktop:bottom-8"
       />
     </div>
+  )
+}
+
+/** 프로필 · 내 동네 읽기를 하나로. 하나라도 읽지 못했으면 `failed`, 읽는 중이 있으면 `loading` 이다 */
+function combineLoad(profile: LoadStatus, region: LoadStatus): LoadStatus {
+  if (profile === 'failed' || region === 'failed') return 'failed'
+  if (profile === 'loading' || region === 'loading') return 'loading'
+  return 'ready'
+}
+
+/**
+ * 내 정보를 읽는 중 · 읽지 못함 안내(로그인한 기기 목록과 같은 모양). 읽는 중 안내 영역(role=status)은 스크린리더가 이미 있던 영역의
+ * 내용이 바뀔 때 읽으므로 늘 그려 둔다 — 비어 있으면 높이가 없다
+ */
+function InfoLoadNotice({ status }: { status: LoadStatus }) {
+  return (
+    <>
+      <div role="status">
+        {status === 'loading' && (
+          <p className="py-2 text-body text-fg-sub">내 정보를 불러오고 있어요</p>
+        )}
+      </div>
+      {status === 'failed' && (
+        <AlertBox
+          tone="danger"
+          className="my-2"
+          action={
+            <Button variant="secondary" size="sm" className="self-start" onClick={retryMemberInfo}>
+              다시 시도
+            </Button>
+          }
+        >
+          내 정보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
+        </AlertBox>
+      )}
+    </>
   )
 }
 

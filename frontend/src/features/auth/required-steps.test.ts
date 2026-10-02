@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { ME_DEVICES_PATH, ME_PASSWORD_PATH, ME_PATH, ME_REGION_PATH } from '@/features/me/me-paths'
+import type { SessionSnapshot } from '@/lib/session/session-store'
 
 import {
   agreeTermsReconsent,
@@ -10,6 +11,8 @@ import {
   resetMockSession,
 } from './auth-client'
 import { consentFor } from './legal'
+import type { MyRegion } from './member-client'
+import type { MemberInfoSnapshot } from './member-info'
 import {
   carriedParams,
   memberRequirements,
@@ -17,6 +20,7 @@ import {
   parseMockRequired,
   requiredStepHref,
   safeNextPath,
+  sessionRequirements,
   stepTarget,
   targetAfter,
 } from './required-steps'
@@ -49,6 +53,7 @@ describe('memberRequirements', () => {
     expect(memberRequirements('guest', conditions, ['terms', 'region'])).toEqual({
       steps: [],
       abolishedRegion: null,
+      settled: true,
     })
   })
 
@@ -59,17 +64,18 @@ describe('memberRequirements', () => {
         profile({ termsReconsentRequired: true, regionAbolished: true, region: OLD }),
         null,
       ),
-    ).toEqual({ steps: ['terms', 'region'], abolishedRegion: OLD })
+    ).toEqual({ steps: ['terms', 'region'], abolishedRegion: OLD, settled: true })
     expect(
       memberRequirements(
         'member-no-consent',
         profile({ regionAbolished: true, region: OLD }),
         null,
       ),
-    ).toEqual({ steps: ['region'], abolishedRegion: OLD })
+    ).toEqual({ steps: ['region'], abolishedRegion: OLD, settled: true })
     expect(memberRequirements('member', profile({}), null)).toEqual({
       steps: [],
       abolishedRegion: null,
+      settled: true,
     })
   })
 
@@ -78,11 +84,13 @@ describe('memberRequirements', () => {
     expect(memberRequirements('member', conditions, ['region'])).toEqual({
       steps: ['region'],
       abolishedRegion: { code: '99990110', name: '○○1동' },
+      settled: true,
     })
     // 덮어쓰기만 있어 세션 프로필이 없어도 같다
     expect(memberRequirements('member', null, ['terms'])).toEqual({
       steps: ['terms'],
       abolishedRegion: null,
+      settled: true,
     })
   })
 
@@ -91,6 +99,75 @@ describe('memberRequirements', () => {
       memberRequirements('member', profile({ regionAbolished: true, region: OLD }), ['region'])
         .abolishedRegion,
     ).toEqual(OLD)
+  })
+})
+
+describe('sessionRequirements (실데이터)', () => {
+  const session = (pendingConsents: string[] = []): SessionSnapshot => ({
+    status: 'member',
+    summary: { memberId: 'm1', role: 'USER', pendingConsents, reportWritable: true },
+  })
+  const info = (region: MemberInfoSnapshot['region'], memberId = 'm1'): MemberInfoSnapshot => ({
+    memberId,
+    info: { status: 'loading' },
+    region,
+  })
+  const myRegion = (patch: Partial<MyRegion>): MyRegion => ({
+    code: '11680640',
+    name: '역삼1동',
+    sigungu: '서울특별시 강남구',
+    abolished: false,
+    ...patch,
+  })
+
+  it('비회원(복원 중 포함)은 조건이 없고 정해진 것이다', () => {
+    expect(sessionRequirements({ status: 'restoring' }, null)).toEqual({
+      steps: [],
+      abolishedRegion: null,
+      settled: true,
+    })
+  })
+
+  it('내 동네를 읽는 중이면 동네 조건을 판단하지 않는다 — 재동의는 세션으로 바로 정한다', () => {
+    expect(sessionRequirements(session(['TERMS_OF_SERVICE']), info({ status: 'loading' }))).toEqual(
+      { steps: ['terms'], abolishedRegion: null, settled: false },
+    )
+    // 저장소가 아직 앞 회원 것이면 읽는 중과 같다
+    expect(
+      sessionRequirements(
+        session(),
+        info({ status: 'ready', value: myRegion({ abolished: true }) }, 'm0'),
+      ),
+    ).toEqual({ steps: [], abolishedRegion: null, settled: false })
+    expect(sessionRequirements(session(), null).settled).toBe(false)
+  })
+
+  it('내 동네가 폐지됐으면 재동의 뒤에 동네 다시 고르기다 (이름을 모르면 null)', () => {
+    expect(
+      sessionRequirements(
+        session(['TERMS_OF_SERVICE']),
+        info({ status: 'ready', value: myRegion({ abolished: true }) }),
+      ),
+    ).toEqual({
+      steps: ['terms', 'region'],
+      abolishedRegion: { code: '11680640', name: '역삼1동' },
+      settled: true,
+    })
+    expect(
+      sessionRequirements(
+        session(),
+        info({ status: 'ready', value: myRegion({ name: null, sigungu: null, abolished: true }) }),
+      ).abolishedRegion,
+    ).toEqual({ code: '11680640', name: null })
+  })
+
+  it('내 동네가 현행이거나 아직 고르지 않았거나 읽지 못했으면 다시 고르게 하지 않는다', () => {
+    const none = { steps: [], abolishedRegion: null, settled: true }
+    expect(sessionRequirements(session(), info({ status: 'ready', value: myRegion({}) }))).toEqual(
+      none,
+    )
+    expect(sessionRequirements(session(), info({ status: 'ready', value: null }))).toEqual(none)
+    expect(sessionRequirements(session(), info({ status: 'failed' }))).toEqual(none)
   })
 })
 
@@ -177,26 +254,30 @@ describe('targetAfter', () => {
 
   it('재동의를 마쳤는데 덮어쓰기에 동네가 남았으면 동네 다시 고르기로 이어 간다', () => {
     const search = new URLSearchParams('next=/me&mock-auth=member&mock-required=terms,region')
-    expect(targetAfter('terms', 'member', search)).toBe(
+    expect(targetAfter('terms', 'member', search, 'mock')).toBe(
       '/setup/region?reselect=1&next=%2Fme&mock-auth=member&mock-required=region',
     )
   })
 
   it('마친 뒤 남은 조건이 없으면 next 로, 목록 밖 next 는 홈으로 간다', () => {
     expect(
-      targetAfter('region', 'member', new URLSearchParams('next=/me&mock-required=region')),
+      targetAfter('region', 'member', new URLSearchParams('next=/me&mock-required=region'), 'mock'),
     ).toBe('/me')
-    expect(targetAfter('terms', 'member', new URLSearchParams('next=//evil.example'))).toBe('/')
+    expect(targetAfter('terms', 'member', new URLSearchParams('next=//evil.example'), 'mock')).toBe(
+      '/',
+    )
   })
 
   it('목 프로필의 결과를 읽는다 — 재동의를 마친 프로필은 다시 재동의로 보내지 않는다', async () => {
     await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
     await agreeTermsReconsent(consentFor('TERMS_OF_SERVICE'))
-    expect(targetAfter('terms', 'member-no-consent', new URLSearchParams('next=/me'))).toBe('/me')
+    expect(targetAfter('terms', 'member-no-consent', new URLSearchParams('next=/me'), 'mock')).toBe(
+      '/me',
+    )
   })
 
   it('마친 조건은 프로필에 아직 남아 있어도 다시 넣지 않는다(되돌이 방지)', async () => {
     await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
-    expect(targetAfter('terms', 'member-no-consent', new URLSearchParams())).toBe('/')
+    expect(targetAfter('terms', 'member-no-consent', new URLSearchParams(), 'mock')).toBe('/')
   })
 })

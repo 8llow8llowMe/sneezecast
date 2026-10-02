@@ -41,6 +41,7 @@ import {
   withdrawMembership,
 } from './auth-client'
 import { consentFor, LEGAL_VERSIONS } from './legal'
+import { setMemberRegion } from './member-info'
 
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
 vi.mock('@/lib/session/session-store', () => ({
@@ -48,12 +49,14 @@ vi.mock('@/lib/session/session-store', () => ({
   clearSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
 }))
+vi.mock('./member-info', () => ({ setMemberRegion: vi.fn() }))
 
 beforeEach(() => {
   vi.mocked(apiRequest).mockReset()
   vi.mocked(setSession).mockReset()
   vi.mocked(clearSession).mockReset()
   vi.mocked(getSessionSnapshot).mockReset()
+  vi.mocked(setMemberRegion).mockReset()
   vi.mocked(getSessionSnapshot).mockReturnValue({
     status: 'member',
     summary: { memberId: '1', role: 'USER', pendingConsents: [], reportWritable: true },
@@ -241,7 +244,7 @@ describe('signup · saveRegion · agreeHealthConsent (목)', () => {
   })
 
   it('내 동네 저장 · 건강정보 동의는 성공한다', async () => {
-    await expect(saveRegion(YEOKSAM1)).resolves.toBeUndefined()
+    await expect(saveRegion(YEOKSAM1, 'mock')).resolves.toEqual({ status: 'ok' })
     await expect(agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))).resolves.toBeUndefined()
   })
 })
@@ -665,7 +668,7 @@ describe('약관 재동의 · 동네 다시 저장 (목)', () => {
 
   it('동네를 저장하면 프로필의 동네를 바꾸고 폐지 표시를 끈다', async () => {
     await loginWithEmail('reselect@example.com', 'dongne2026', 'mock')
-    await saveRegion({ code: '99990111', name: '○○새1동' })
+    await saveRegion({ code: '99990111', name: '○○새1동' }, 'mock')
     expect(getMockProfile()).toMatchObject({
       region: { code: '99990111', name: '○○새1동' },
       regionAbolished: false,
@@ -674,7 +677,7 @@ describe('약관 재동의 · 동네 다시 저장 (목)', () => {
 
   it('재현 이메일이면 동네 저장이 거부되고 옛 동네 · 폐지 표시는 그대로다', async () => {
     await loginWithEmail('reselect-fail@example.com', 'dongne2026', 'mock')
-    await expect(saveRegion(YEOKSAM1)).rejects.toThrow()
+    await expect(saveRegion(YEOKSAM1, 'mock')).rejects.toThrow()
     expect(getMockProfile()).toMatchObject({
       region: { code: '99990110', name: '○○1동' },
       regionAbolished: true,
@@ -682,7 +685,7 @@ describe('약관 재동의 · 동네 다시 저장 (목)', () => {
   })
 
   it('프로필이 없으면(덮어쓰기만 있음) 세션을 바꾸지 않는다', async () => {
-    await saveRegion(YEOKSAM1)
+    await saveRegion(YEOKSAM1, 'mock')
     await agreeTermsReconsent(consentFor('TERMS_OF_SERVICE'))
     expect(getMockSession()).toBe('guest')
     expect(getMockProfile()).toBeNull()
@@ -1013,5 +1016,78 @@ describe('logout (API)', () => {
     expect(apiRequest).not.toHaveBeenCalled()
     expect(clearSession).not.toHaveBeenCalled()
     expect(getMockSession()).toBe('guest')
+  })
+})
+
+describe('saveRegion (API)', () => {
+  const SAVED = {
+    code: '11680640',
+    name: '역삼1동',
+    sigungu: '서울특별시 강남구',
+    abolished: false,
+  }
+
+  it('코드만 PUT 으로 보내고, 응답을 보낸 회원의 내 동네로 넣는다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(SAVED)
+    expect(await saveRegion({ code: '11680640', name: '역삼1동' }, 'api')).toEqual({ status: 'ok' })
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/members/me/region', {
+      method: 'PUT',
+      body: { code: '11680640' },
+    })
+    expect(setMemberRegion).toHaveBeenCalledWith('1', SAVED)
+  })
+
+  it.each([
+    ['REGION_001', 400],
+    ['REGION_002', 400],
+    ['REGION_101', 400],
+    ['REGION_102', 400],
+  ])('%s 면 invalid 이고 내 동네를 바꾸지 않는다', async (code, status) => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, status))
+    expect(await saveRegion(YEOKSAM1, 'api')).toEqual({ status: 'invalid' })
+    expect(apiRequest).toHaveBeenCalledTimes(1)
+    expect(setMemberRegion).not.toHaveBeenCalled()
+  })
+
+  it('동시 첫 저장 경합(REGION_003)이면 한 번만 다시 보낸다', async () => {
+    vi.mocked(apiRequest)
+      .mockRejectedValueOnce(apiError('REGION_003', 409))
+      .mockResolvedValueOnce(SAVED)
+    expect(await saveRegion(YEOKSAM1, 'api')).toEqual({ status: 'ok' })
+    expect(apiRequest).toHaveBeenCalledTimes(2)
+    expect(setMemberRegion).toHaveBeenCalledWith('1', SAVED)
+
+    vi.mocked(apiRequest).mockReset()
+    const conflict = apiError('REGION_003', 409)
+    vi.mocked(apiRequest).mockRejectedValueOnce(conflict).mockRejectedValueOnce(conflict)
+    await expect(saveRegion(YEOKSAM1, 'api')).rejects.toBe(conflict)
+    expect(apiRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('행정동 확인 장애(REGION_004) · 일시 장애면 거부하고 내 동네를 바꾸지 않는다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('REGION_004', 503))
+    await expect(saveRegion(YEOKSAM1, 'api')).rejects.toThrow(ApiError)
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('timeout', 0))
+    await expect(saveRegion(YEOKSAM1, 'api')).rejects.toThrow(ApiError)
+    expect(apiRequest).toHaveBeenCalledTimes(2)
+    expect(setMemberRegion).not.toHaveBeenCalled()
+  })
+
+  it.each([{ status: 'guest' }, { status: 'restoring' }, { status: 'idle' }] as const)(
+    '실데이터 세션이 회원이 아니면($status) 요청 없이 거부한다 — 목 세션만 있는 카카오 가입 포함, 목 프로필은 그대로다',
+    async (session) => {
+      await loginWithEmail('reselect@example.com', 'dongne2026', 'mock')
+      vi.mocked(getSessionSnapshot).mockReturnValue(session)
+      await expect(saveRegion(YEOKSAM1, 'api')).rejects.toThrow()
+      expect(apiRequest).not.toHaveBeenCalled()
+      expect(setMemberRegion).not.toHaveBeenCalled()
+      expect(getMockProfile()).toMatchObject({ regionAbolished: true })
+    },
+  )
+
+  it('목데이터면 API 를 부르지 않는다', async () => {
+    await saveRegion(YEOKSAM1, 'mock')
+    expect(apiRequest).not.toHaveBeenCalled()
+    expect(setMemberRegion).not.toHaveBeenCalled()
   })
 })
