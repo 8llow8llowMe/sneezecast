@@ -92,8 +92,12 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
 | `GET /{code}`     | `{ code, name, sigungu, active }` (폐지 코드도 200 · `active=false`) | `DISTRICT_001` 없는 코드(404), `103` 형식(숫자 8자리, 400) | `findDistrict`                  |
 
 - `code` 는 SGIS 행정동 코드 8자리, `sigungu` 는 `서울특별시 강남구` 처럼 시도 · 시군구 표기다. 검색어는 앞뒤 공백을 뺀 1~20자이고 `%` · `_` 도 글자 그대로 찾는다. 일치하는 동이 없으면 빈 배열이다.
-- 연동 때 `findDistrict` 는 404(`DISTRICT_001`)를 null 로 옮긴다. `active=false` 면 화면에서 다시 고르게 한다.
-- **BE 미정**: 폐지된 동의 후속 후보(`listSuccessorDistricts`).
+- **프론트 연동 (#135)**: 두 API 모두 `region-client.ts` 가 데이터 출처(`api` | `mock`, [conventions.md](conventions.md) "데이터 출처")를 받아 부른다. 공개 API 라 `auth: false` 로 Authorization 없이 보낸다(만료된 access 로 게이트웨이가 거절하지 않게).
+  - `searchDistricts(query, source, signal?)`: 앞뒤 공백을 뺀 검색어로 부른다. 빈 검색어 · 20자 초과는 요청 없이 빈 배열이다(`DISTRICT_101` · `102` 를 받지 않는다). 검색 화면(`useDistrictSearch`)은 검색어가 바뀌면 앞 요청을 취소하고, 실패하면 다시 검색하라고 안내한다. 검색 입력칸에는 아직 `maxLength` 가 없다.
+  - `findDistrict(code, source)`: 숫자 8자리가 아니면 요청 없이 null(`DISTRICT_103` 을 받지 않는다), 404(`DISTRICT_001`)면 null, 그 밖의 실패는 거부한다. 돌려주는 값은 `{ code, name, sigungu, active }` 다(목은 늘 `active: true`).
+  - 둘러보기 동네(`?region=`, `districtFromParam`)는 폐지 코드 · API 실패를 모르는 동네(null)로 보고 원래 동네로 그린다. 동네 안내(`getRegionNotice`)는 폐지 코드면 404, 동네 확인이 실패하면 페이지 오류 경계로 보낸다.
+  - 내 동네가 폐지됐을 때 다시 고르게 하는 흐름(Setup-1-reselect)은 내 동네 API(#60) 연동 때 `active=false` 로 잇는다.
+- **BE 미정**: 폐지된 동의 후속 후보(`listSuccessorDistricts`) — 출처와 무관하게 목이다.
 
 ## BE 미정 — 프론트 초안
 
