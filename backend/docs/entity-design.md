@@ -359,7 +359,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | 잡 | 원천 | 기본 주기 (KST) | 조회 범위 | upsert 키 | 비고 |
 |----|------|-----------------|-----------|-----------|------|
 | `districtImportJob` | SGIS 경계 · 단계별 주소 | **수동** (연 1회, SGIS 기준 연도 공개 후) | 지정한 `year` 전체 (경계 시도별 17회, 약 33MB + 단계별 주소 18회) | district.code | 사라지는 코드 비율이 임계값을 넘으면 폐지 처리 없이 실패 (§3-1) |
-| `notifiableImportJob` | 전수신고 API `PeriodBasic`(주) · `Region`(연) | 매주 화 05:00 | 올해 + 전년 | §3-2 UK | 실행당 약 74건 (시도마다 1회) — 개발계정 일 1,000건의 7% |
+| `notifiableImportJob` | 전수신고 API `PeriodBasic`(주) · `Region`(연) | 매주 화 05:00 | 올해 + 전년 (`year` 로 백필) | §3-2 UK | 실행당 약 74건 (시도마다 1회) — 개발계정 일 1,000건의 7%. 요청별로 격리하고 키 · 게이트웨이 · 호출 상한 · DB 오류에서만 멈춘다. 실패가 있으면 `NOTIFIABLE_IMPORT_020` 으로 FAILED ([modules.md](modules.md#servicebatch-service)) |
 | `sentinelImportJob` | 감염병포털 표본감시 (인플루엔자 · 급성호흡기 · 장관) | 매주 금 06:00 | 최근 8주 (인플루엔자는 현재 절기) | §3-2 UK | 포털 요청 간격 ≥ 3초, 실행당 요청 상한 (설정) |
 
 - 주기는 전부 설정값(`batch.schedule.*-cron`)이다. 표본감시 공표 요일은 확인되지 않았다 — 2026-09-30(수) 기준 38주(09-13 ~ 09-19)까지 공개돼 있었다. 몇 주 적재해 보고 조정한다.
@@ -372,7 +372,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - 잡 스토어는 in-memory, 스레드 1개 — 잡끼리 겹치지 않는다. misfire 는 `FireAndProceed` 지만 **프로세스가 떠 있는 동안 늦어진 발화만** 보충한다. in-memory 스토어라 배포 · 장애로 내려가 있던 동안의 발화는 재기동 뒤 보충되지 않는다 → 배포는 발화 시각을 피하고, 놓쳤으면 수동 실행한다.
 - 같은 잡은 `@DisallowConcurrentExecution`, 다른 잡 · 수동 실행 JVM 과의 겹침은 배치 메타데이터의 실행 중(STARTING · STARTED · STOPPING) 실행으로 판정해 이번 주기를 건너뛴다. 시작한 지 `batch.schedule.stale-running-after`(기본 6h)를 넘긴 실행은 죽은 JVM 의 잔재로 보고 무시한다 (ERROR 로그). 실행 브리지 구성은 [modules.md](modules.md#servicebatch-service).
 - 스케줄 발화는 예정 발화 시각을 `batch.schedule.time-zone`(기본 KST) 기준 초 단위로 자른 `runAt`(예: `2026-10-06T05:00:00`)을 identifying 파라미터로, `trigger=quartz` 를 기록용(non-identifying)으로 넘긴다.
-- 스케줄 스위치 `batch.schedule.enabled` 는 dev 만 true. 수동 실행은 `--spring.batch.job.name=<잡> runAt=<ISO 시각>` 로 한다 (`runAt` 을 새 값으로 주지 않으면 이미 완료된 JobInstance 로 거절된다). `districtImportJob` 은 `year=<기준 연도>` 가 필수이고, 대규모 폐지를 허용할 때만 `allowMassRetire=true` 를 더한다.
+- 스케줄 스위치 `batch.schedule.enabled` 는 dev 만 true. 수동 실행은 `--spring.batch.job.name=<잡> runAt=<ISO 시각>` 로 한다 (`runAt` 을 새 값으로 주지 않으면 이미 완료된 JobInstance 로 거절된다). `districtImportJob` 은 `year=<기준 연도>` 가 필수이고, 대규모 폐지를 허용할 때만 `allowMassRetire=true` 를 더한다. `notifiableImportJob` 은 `runAt` 만 필수이고, 지난해를 다시 받을 때 `year=<올해로 볼 연도>`(2000 ~ `runAt` 의 연도)를 더한다 — 그 해와 전년을 받는다. 예: `runAt=2026-10-07T10:30:00 year=2025`. 같은 `runAt` 이 COMPLETED 면 거절되고, FAILED 면 같은 실행을 재시작한다(74건을 처음부터 다시 부르고 이력의 `run_started_at` 이 두 시도에 걸친다). 다시 받을 때는 새 `runAt`(현재 시각)을 준다.
 - 적재는 JDBC `batchUpdate` + `ON DUPLICATE KEY UPDATE`, 500건 단위 (배치 대량 쓰기는 JDBC 허용 — [coding-conventions.md §8-4](coding-conventions.md#8-4-쿼리-수단-순서)).
 - 원천 하나가 실패해도 다른 잡은 계속 돈다. 실패한 원천의 기존 데이터는 지우지 않는다.
 
