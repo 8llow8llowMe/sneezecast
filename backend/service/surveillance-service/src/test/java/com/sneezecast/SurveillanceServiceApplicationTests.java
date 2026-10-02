@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sneezecast.domainlayer.report.application.service.ReporterKeyGenerator;
-import com.sneezecast.security.auth.jwt.JwtAuthProperties;
 import com.sneezecast.security.auth.jwt.JwtAuthProvider;
 import com.sneezecast.security.common.constant.SecurityScope;
 import com.sneezecast.security.common.enums.SecurityRole;
@@ -50,7 +49,7 @@ import org.springframework.web.bind.annotation.RestController;
  * </ul>
  * Redis · MinIO 를 쓰지 않으므로 바꿔 끼울 외부 클라이언트 빈이 없다.
  *
- * <p>토큰은 auth-service 와 같은 발급 코드(security-core {@link JwtAuthProvider})로 같은 access key 에 서명한다. 발급 쪽과 검증 쪽의
+ * <p>토큰은 auth-service 와 같은 발급 코드(security-core {@link JwtAuthProvider}, {@link JwtTestTokens})로 같은 access key 에 서명한다. 발급 쪽과 검증 쪽의
  * 알고리즘(HS512) · 키 바이트 · claim(sub / role / scope / jti) 해석이 어긋나면 여기서 깨진다.
  *
  * <p>URL 수준은 security-core 가 전부 열어 두므로 보호는 {@code @PreAuthorize} 에만 달려 있다. 테스트 전용 컨트롤러
@@ -111,7 +110,7 @@ class SurveillanceServiceApplicationTests {
     @Test
     @DisplayName("다른 키로 서명한 토큰은 401 봉투다 — 검증 키가 JWT_ACCESS_KEY 에서 온다")
     void tokenSignedWithOtherKeyIsUnauthorized() throws Exception {
-        String token = provider(OTHER_ACCESS_KEY).issueAccessToken(1L, SecurityRole.USER, Set.of(SecurityScope.REPORT_WRITE), null).value();
+        String token = JwtTestTokens.provider(OTHER_ACCESS_KEY).issueAccessToken(1L, SecurityRole.USER, Set.of(SecurityScope.REPORT_WRITE), null).value();
 
         mockMvc.perform(get(MethodSecurityProbeController.AUTHENTICATED_PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
             .andExpect(status().isUnauthorized())
@@ -200,7 +199,7 @@ class SurveillanceServiceApplicationTests {
     }
 
     private static String bearer(SecurityRole role, String... scopes) {
-        return "Bearer " + provider(ACCESS_KEY).issueAccessToken(1L, role, Set.of(scopes), null).value();
+        return JwtTestTokens.bearer(ACCESS_KEY, 1L, role, scopes);
     }
 
     private static String signDirectly(Map<String, Object> claims, Instant expiration) {
@@ -212,10 +211,6 @@ class SurveillanceServiceApplicationTests {
             .expiration(Date.from(expiration))
             .signWith(Keys.hmacShaKeyFor(ACCESS_KEY.getBytes(StandardCharsets.UTF_8)), Jwts.SIG.HS512)
             .compact();
-    }
-
-    private static JwtAuthProvider provider(String accessKey) {
-        return new JwtAuthProvider(new JwtAuthProperties(accessKey, Duration.ofMinutes(5), accessKey, Duration.ofDays(1)));
     }
 
     /** 메서드 보안 확인용. 테스트 소스에만 있고 {@code @Import} 로만 올라간다. */
