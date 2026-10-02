@@ -86,6 +86,8 @@ x-auth-service-environment: &auth_service_environment
   AUTH_LOGIN_IP_WINDOW: ${AUTH_LOGIN_IP_WINDOW:-PT1H}
   AUTH_SESSION_MAX_DEVICES: ${AUTH_SESSION_MAX_DEVICES:-5}
   AUTH_SESSION_ROTATION_GRACE: ${AUTH_SESSION_ROTATION_GRACE:-PT10S}
+  # 비밀번호 재설정 토큰 수명 (auth.password-reset.token-ttl). 0 이하면 기동 실패. 기본값은 application.yml 과 같다.
+  AUTH_PASSWORD_RESET_TOKEN_TTL: ${AUTH_PASSWORD_RESET_TOKEN_TTL:-PT15M}
   # Snowflake ID. 환경당 인스턴스 하나라 기본값(0/0)으로 충분하다. 인스턴스를 늘리면 인스턴스마다 다른 worker-id 를 준다.
   SNOWFLAKE_DATACENTER_ID: ${SNOWFLAKE_DATACENTER_ID:-0}
   SNOWFLAKE_WORKER_ID: ${SNOWFLAKE_WORKER_ID:-0}
