@@ -3,8 +3,12 @@ package com.sneezecast.domainlayer.auth.application.info;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.request.AuthGeneralLoginRequest;
+import com.sneezecast.domainlayer.auth.adapter.in.web.dto.request.AuthPasswordResetRequest;
+import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthPasswordResetTokenResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthTokenResponse;
 import com.sneezecast.domainlayer.auth.application.command.AuthGeneralLoginCommand;
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.request.MemberPasswordChangeRequest;
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.request.MemberPasswordSetupRequest;
 import com.sneezecast.security.common.enums.SecurityRole;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -38,5 +42,17 @@ class TokenRecordToStringTest {
         assertThat(new AuthGeneralLoginRequest("user@example.com", "P@ssw0rd!").toString()).doesNotContain("P@ssw0rd!");
         assertThat(AuthGeneralLoginCommand.builder().email("user@example.com").password("P@ssw0rd!").clientIp("203.0.113.10").deviceLabel("Mac · Chrome")
             .build().toString()).doesNotContain("P@ssw0rd!").doesNotContain("203.0.113.10");
+    }
+
+    @Test
+    @DisplayName("비밀번호 변경 · 설정 · 재설정 요청과 재설정 토큰 응답은 비밀번호 · 토큰을 가린다")
+    void passwordInputsAndResetTokenAreMasked() {
+        String token = "q3J9x0b2V7mZkR1sT8uYw4nE6cA5dH0gLpF2iO9jK3M";
+        List<Object> holders = List.of(new MemberPasswordChangeRequest("P@ssw0rd!", "Sneeze2026!"), new MemberPasswordSetupRequest("Sneeze2026!"),
+            new AuthPasswordResetRequest(token, "Sneeze2026!"), new AuthPasswordResetTokenResponse(token));
+
+        for (Object holder : holders) {
+            assertThat(holder.toString()).doesNotContain("P@ssw0rd!").doesNotContain("Sneeze2026!").doesNotContain(token).contains("****");
+        }
     }
 }

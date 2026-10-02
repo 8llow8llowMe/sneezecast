@@ -1,5 +1,7 @@
 package com.sneezecast.domainlayer.auth.application.exception;
 
+import com.sneezecast.domainlayer.member.domain.policy.MemberInputPolicy;
+
 /**
  * 인증 · 가입 요청 검증 메시지 카탈로그 (AUTH_1xx).
  *
@@ -26,12 +28,15 @@ public final class AuthValidationMessage {
     // 큰 입력에 쓰지 않으려는 것이다.
     public static final String LOGIN_PASSWORD_LENGTH_INVALID = "AUTH_113:비밀번호는 100자 이하여야 합니다.";
     public static final String SESSION_ID_FORMAT_INVALID = "AUTH_114:세션 아이디 형식이 올바르지 않습니다.";
+    public static final String RESET_TOKEN_REQUIRED = "AUTH_115:재설정 토큰은 필수입니다.";
+    // 발급 토큰은 43자(32바이트 base64url)다. 상한은 무의미하게 큰 값을 해시 · 저장소 조회에 쓰지 않으려는 것이다.
+    public static final String RESET_TOKEN_LENGTH_INVALID = "AUTH_116:재설정 토큰은 100자 이하여야 합니다.";
 
     /**
      * 비밀번호 문자 구성 규칙 — 시안(Signup-account "8자 이상 · 영문과 숫자 포함")대로 영문자 · 숫자 필수, 특수문자는 써도 되지만 요구하지 않는다.
-     * 길이는 @Size 가 맡으므로 여기서는 구성만 본다 (같은 의미를 두 제약으로 중복 검사하지 않는다).
+     * 규칙의 정본은 회원 입력 정책({@link MemberInputPolicy})이다 — 가입 · 재설정(auth)과 비밀번호 변경 · 설정(member)이 같은 규칙을 쓴다.
      */
-    public static final String PASSWORD_REGEXP = "^(?=.*[A-Za-z])(?=.*\\d)\\S+$";
+    public static final String PASSWORD_REGEXP = MemberInputPolicy.PASSWORD_REGEXP;
 
     /** 세션 아이디는 로그인 때 만든 UUID 다(소문자 hex). 그 밖의 값을 Redis 키에 넣지 않는다. */
     public static final String SESSION_ID_REGEXP = "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";

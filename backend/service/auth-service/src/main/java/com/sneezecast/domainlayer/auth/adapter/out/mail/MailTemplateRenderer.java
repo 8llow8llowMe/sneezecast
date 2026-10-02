@@ -31,6 +31,14 @@ public class MailTemplateRenderer {
         return render("already-registered", Map.of());
     }
 
+    public String renderPasswordResetCode(String code) {
+        return render("password-reset-code", Map.of("code", code));
+    }
+
+    public String renderPasswordResetNoAccount() {
+        return render("password-reset-no-account", Map.of());
+    }
+
     private String render(String templateName, Map<String, Object> variables) {
         Context context = new Context(Locale.KOREAN);
         context.setVariables(variables);

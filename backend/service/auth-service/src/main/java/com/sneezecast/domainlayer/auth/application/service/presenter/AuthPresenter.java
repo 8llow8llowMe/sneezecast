@@ -1,6 +1,7 @@
 package com.sneezecast.domainlayer.auth.application.service.presenter;
 
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.item.AuthSessionItem;
+import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthPasswordResetTokenResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthSessionsResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthTokenResponse;
 import com.sneezecast.domainlayer.auth.application.info.AuthSessionInfo;
@@ -24,6 +25,10 @@ public class AuthPresenter {
             .pendingConsents(info.pendingConsents().stream().map(Enum::name).toList())
             .reportWritable(info.reportWritable())
             .build();
+    }
+
+    public AuthPasswordResetTokenResponse toPasswordResetTokenResponse(String resetToken) {
+        return new AuthPasswordResetTokenResponse(resetToken);
     }
 
     /** 시각은 초 단위로 자른다 — 화면은 "몇 분 전" 정도만 쓰고, 저장소의 ms 정밀도를 내보낼 이유가 없다. */

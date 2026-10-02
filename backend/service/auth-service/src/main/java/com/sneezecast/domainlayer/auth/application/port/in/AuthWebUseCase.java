@@ -1,5 +1,6 @@
 package com.sneezecast.domainlayer.auth.application.port.in;
 
+import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthPasswordResetTokenResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthSessionsResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthTokenResponse;
 import com.sneezecast.domainlayer.auth.application.command.AuthGeneralLoginCommand;
@@ -31,4 +32,13 @@ public interface AuthWebUseCase {
     void revokeSession(long memberId, String sessionId);
 
     void revokeOtherSessions(long memberId, String currentSessionId);
+
+    /** 응답은 가입 여부와 무관하게 같다. clientIp 는 IP 기준 발송 상한 검사에만 쓴다. */
+    void sendPasswordResetCode(String email, String clientIp);
+
+    /** 코드를 확인하고 1회용 재설정 토큰을 돌려준다. clientIp 는 IP 기준 검증 상한 검사에만 쓴다. */
+    AuthPasswordResetTokenResponse verifyPasswordResetCode(String email, String code, String clientIp);
+
+    /** 재설정 토큰을 소비하고 비밀번호를 바꾼다. 성공하면 그 회원의 모든 기기를 로그아웃시킨다. clientIp 는 IP 기준 시도 상한 검사에만 쓴다. */
+    void resetPassword(String resetToken, String newPassword, String clientIp);
 }

@@ -5,6 +5,8 @@ import com.sneezecast.domainlayer.auth.adapter.in.web.dto.request.AuthEmailCodeS
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.request.AuthEmailCodeVerifyRequest;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.request.AuthGeneralLoginRequest;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.request.AuthGeneralSignupRequest;
+import com.sneezecast.domainlayer.auth.adapter.in.web.dto.request.AuthPasswordResetRequest;
+import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthPasswordResetTokenResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthSessionsResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthTokenResponse;
 import com.sneezecast.domainlayer.auth.adapter.in.web.support.ClientIpResolver;
@@ -41,7 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/auth")
-@Tag(name = "인증", description = "이메일 인증, 회원가입, 로그인 · 토큰 재발급 · 로그아웃, 로그인 기기(세션) API")
+@Tag(name = "인증", description = "이메일 인증, 회원가입, 로그인 · 토큰 재발급 · 로그아웃, 로그인 기기(세션), 비밀번호 재설정 API")
 public class AuthWebController {
 
     private final AuthWebUseCase authWebUseCase;
@@ -207,6 +209,55 @@ public class AuthWebController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Response<Void>> revokeOtherSessions(@AuthenticationPrincipal MemberLoginActive loginActive) {
         authWebUseCase.revokeOtherSessions(loginActive.memberId(), loginActive.sessionId());
+        return ResponseEntity.ok(Response.success());
+    }
+
+    @Operation(summary = "비밀번호 재설정 인증코드 발송", description = """
+        비밀번호 재설정용 인증코드(숫자 6자리, 5분)를 메일로 보냅니다. 한도는 가입 인증과 같습니다 — 이메일당 재발송 쿨다운(AUTH_001, 429)과
+        IP당 발송 상한(AUTH_002, 429). 가입 인증 코드와는 따로 세고 따로 저장합니다(서로 대신 쓸 수 없습니다).
+        **응답은 가입 여부와 무관하게 항상 같습니다.** 가입된 계정이 없으면 코드 대신 "가입된 계정이 없다" 는 안내 메일이 갑니다.
+        화면은 늘 코드 입력 단계로 넘어갑니다.
+
+        인증 불필요. **필수: 요청 바디의 email.**
+
+        호출 예: `POST /api/v1/auth/password/reset/send-code` `{"email":"user@example.com"}`""")
+    @PostMapping("/password/reset/send-code")
+    public ResponseEntity<Response<Void>> sendPasswordResetCode(@Valid @RequestBody AuthEmailCodeSendRequest request, HttpServletRequest httpServletRequest) {
+        authWebUseCase.sendPasswordResetCode(request.email(), clientIpResolver.resolve(httpServletRequest));
+        return ResponseEntity.ok(Response.success());
+    }
+
+    @Operation(summary = "비밀번호 재설정 인증코드 확인", description = """
+        메일로 받은 재설정 인증코드를 확인하고 1회용 재설정 토큰(`resetToken`, 기본 15분)을 돌려줍니다. 화면은 토큰을 메모리에만 들고
+        주소 · 로그 · 브라우저 저장소에 남기지 않습니다.
+        실패 코드는 가입 인증과 같습니다 — 불일치 AUTH_003, 코드가 없거나 만료 AUTH_004, 정해진 횟수(기본 5회) 틀리면 코드가 무효화되고 AUTH_005,
+        IP당 검증 상한 AUTH_010(429). 어느 응답도 가입 여부를 뜻하지 않습니다. 앞뒤 공백은 무시합니다.
+
+        인증 불필요. **필수: 요청 바디의 email, code.**
+
+        호출 예: `POST /api/v1/auth/password/reset/verify-code` `{"email":"user@example.com","code":"482913"}`""")
+    @PostMapping("/password/reset/verify-code")
+    public ResponseEntity<Response<AuthPasswordResetTokenResponse>> verifyPasswordResetCode(@Valid @RequestBody AuthEmailCodeVerifyRequest request,
+        HttpServletRequest httpServletRequest) {
+        return ResponseEntity.ok(Response.success(
+            authWebUseCase.verifyPasswordResetCode(request.email(), request.code(), clientIpResolver.resolve(httpServletRequest))));
+    }
+
+    @Operation(summary = "비밀번호 재설정", description = """
+        재설정 토큰으로 새 비밀번호를 정합니다. 토큰은 1회용입니다 — 서버가 토큰을 확인한 요청은 뒤 단계가 실패해도 토큰이 사라집니다
+        (요청 검증 오류 · IP 상한에 막힌 요청은 토큰을 건드리지 않습니다). 새 비밀번호 규칙은 가입과 같습니다.
+        **성공하면 그 계정의 모든 기기가 로그아웃되고**(access token 도 바로 폐기), 이메일 로그인 잠금이 풀립니다 — 화면은 이메일 로그인으로 보냅니다.
+
+        토큰이 없거나 만료 · 이미 썼으면 AUTH_018(400) — 화면은 `/password/reset?reason=verification-expired` 로 보내 인증코드부터 다시 합니다.
+        IP당 시도 상한을 넘으면 AUTH_019(429). 세션 저장소 장애는 AUTH_017(503)이고 비밀번호는 바뀌지 않습니다(토큰은 소비됐으니 처음부터 다시).
+        검증: 토큰 누락 AUTH_115 · 100자 초과 AUTH_116, 새 비밀번호 누락 AUTH_105 · 길이 AUTH_106 · 구성 AUTH_107.
+
+        인증 불필요. **필수: 요청 바디의 resetToken, newPassword.**
+
+        호출 예: `POST /api/v1/auth/password/reset` `{"resetToken":"q3J9x0b2V7mZkR1sT8uYw4nE6cA5dH0gLpF2iO9jK3M","newPassword":"Sneeze2026!"}`""")
+    @PostMapping("/password/reset")
+    public ResponseEntity<Response<Void>> resetPassword(@Valid @RequestBody AuthPasswordResetRequest request, HttpServletRequest httpServletRequest) {
+        authWebUseCase.resetPassword(request.resetToken(), request.newPassword(), clientIpResolver.resolve(httpServletRequest));
         return ResponseEntity.ok(Response.success());
     }
 

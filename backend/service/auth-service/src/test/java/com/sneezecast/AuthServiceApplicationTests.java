@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -19,6 +20,7 @@ import com.sneezecast.domainlayer.auth.adapter.out.persistence.RedisAccessTokenB
 import com.sneezecast.domainlayer.auth.application.port.out.MailSendPort;
 import com.sneezecast.global.properties.AuthSessionProperties;
 import com.sneezecast.global.properties.LoginAttemptProperties;
+import com.sneezecast.global.properties.PasswordResetProperties;
 import com.sneezecast.persistence.util.SnowflakeIdGenerator;
 import com.sneezecast.security.auth.blacklist.AccessTokenBlacklistVerifier;
 import com.sneezecast.security.auth.jwt.JwtAuthProvider;
@@ -49,6 +51,7 @@ import org.springframework.data.redis.connection.RedisNode;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -262,6 +265,56 @@ class AuthServiceApplicationTests {
         mockMvc.perform(request)
             .andExpect(status().isUnauthorized())
             .andExpect(jsonPath("$.dataHeader.resultCode").value("SECURITY_001"));
+    }
+
+    /**
+     * 바디가 있는 API 는 올바른 바디를 싣는다 — 바디 역직렬화 · 검증은 메서드 보안보다 먼저라, 바디가 틀리면 401 대신 400 이 먼저 나온다.
+     */
+    @ParameterizedTest(name = "{0} {1}")
+    @CsvSource(delimiter = '|', value = {
+        "GET | /api/v1/members/me | ",
+        "PATCH | /api/v1/members/me | {\"nickname\":\"재채기탐정\"}",
+        "POST | /api/v1/members/me/password | {\"currentPassword\":\"P@ssw0rd!\",\"newPassword\":\"Sneeze2026!\"}",
+        "POST | /api/v1/members/me/password/setup | {\"newPassword\":\"Sneeze2026!\"}"})
+    @DisplayName("내 정보 · 비밀번호 변경 · 설정 API 는 토큰이 없으면 401 SECURITY_001 봉투다 — @PreAuthorize 가 실제로 걸려 있다")
+    void memberApisRequireAuthentication(String method, String path, String body) throws Exception {
+        MockHttpServletRequestBuilder request = switch (method) {
+            case "POST" -> post(path);
+            case "PATCH" -> patch(path);
+            default -> get(path);
+        };
+        if (body != null) {
+            request.contentType(MediaType.APPLICATION_JSON).content(body);
+        }
+
+        mockMvc.perform(request)
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("SECURITY_001"));
+    }
+
+    @Test
+    @DisplayName("비밀번호 재설정 API 는 인증 없이 열려 있다 — 토큰 없이 불러도 401 이 아니라 요청 검증(AUTH_115)까지 간다")
+    void passwordResetIsPublic() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/password/reset").contentType(MediaType.APPLICATION_JSON).content("{\"newPassword\":\"Sneeze2026!\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("AUTH_115"));
+    }
+
+    @Test
+    @DisplayName("member 컨트롤러의 검증 오류도 MEMBER 대역 봉투다 — member 전용 advice 가 실제로 등록돼 있다")
+    void memberValidationIsEnveloped() throws Exception {
+        when(stringRedisTemplate.hasKey(anyString())).thenReturn(false);
+
+        mockMvc.perform(patch("/api/v1/members/me").header(HttpHeaders.AUTHORIZATION, bearer()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"nickname\":\"탐\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_102"));
+    }
+
+    @Test
+    @DisplayName("비밀번호 재설정 토큰 수명 기본값(15분)이 바인딩된다")
+    void bindsPasswordResetDefaults() {
+        assertThat(context.getBean(PasswordResetProperties.class)).isEqualTo(new PasswordResetProperties(Duration.ofMinutes(15)));
     }
 
     @Test

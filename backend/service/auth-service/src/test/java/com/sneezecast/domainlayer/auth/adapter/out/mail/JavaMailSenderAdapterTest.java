@@ -62,6 +62,29 @@ class JavaMailSenderAdapterTest {
     }
 
     @Test
+    @DisplayName("비밀번호 재설정 코드 메일은 재설정 제목이고 본문에 코드와 5분 안내가 들어간다")
+    void sendsPasswordResetCodeMail() throws Exception {
+        adapter(new AuthMailProperties(null, null)).sendPasswordResetCode(EMAIL, "135790");
+
+        MimeMessage message = sentMessage();
+        assertThat(message.getRecipients(Message.RecipientType.TO)).extracting(Object::toString).containsExactly(EMAIL);
+        assertThat(message.getSubject()).isEqualTo(JavaMailSenderAdapter.PASSWORD_RESET_CODE_SUBJECT);
+        assertThat(message.getContent().toString()).contains("135790").contains("5분").contains("본인이 요청하지 않았다면");
+    }
+
+    @Test
+    @DisplayName("가입된 계정이 없다는 재설정 안내 메일에는 코드가 없고, 본인이 요청하지 않았으면 무시하라는 문구가 있다")
+    void sendsPasswordResetNoAccountNotice() throws Exception {
+        adapter(new AuthMailProperties(null, null)).sendPasswordResetNoAccountNotice(EMAIL);
+
+        MimeMessage message = sentMessage();
+        assertThat(message.getSubject()).isEqualTo(JavaMailSenderAdapter.PASSWORD_RESET_NOTICE_SUBJECT);
+        assertThat(message.getContent().toString()).contains("가입된 계정이 없습니다").contains("본인이 요청하지 않았다면")
+            // 코드 칸(글자 간격을 벌린 셀)이 없다 — 색상 값(#596069 등) 때문에 숫자 6자리로는 가를 수 없다.
+            .doesNotContain("letter-spacing:6px");
+    }
+
+    @Test
     @DisplayName("SMTP 발송 실패는 호출자에게 올리지 않는다 — 비동기 워커에서 로그로만 남는다")
     void swallowsSendFailure() {
         doThrow(new MailSendException("smtp down")).when(javaMailSender).send(any(MimeMessage.class));

@@ -47,6 +47,13 @@ public enum AuthErrorCode {
     // 세션 저장소(Redis) 장애. 봉투 없는 500 대신 재시도 가능한 503 으로 알린다.
     SESSION_STORE_UNAVAILABLE("AUTH_017", "일시적으로 로그인 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE),
 
+    // 비밀번호 재설정
+    // 재설정 토큰이 없거나 · 만료됐거나 · 이미 썼다. 토큰의 이메일에 정상 회원이 없어도 같은 코드다 — 가입 여부 · 계정 상태를 드러내지 않는다.
+    // 화면은 인증코드 단계부터 다시 하게 한다.
+    PASSWORD_RESET_EXPIRED("AUTH_018", "비밀번호 재설정 인증이 만료되었습니다. 인증코드를 다시 요청해주세요.", HttpStatus.BAD_REQUEST),
+    // 재설정 요청의 IP 기준 시도 상한 — 토큰 대입 · 대량 재설정을 늦춘다.
+    PASSWORD_RESET_IP_LIMITED("AUTH_019", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
+
     // 요청 검증 대역 — 필드별 코드(AUTH_101~)는 AuthValidationMessage 가 단일 기준점이며 여기서 중복 정의하지 않는다.
     INVALID_REQUEST("AUTH_100", "요청 값이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
     // 프레임워크 2종은 대역 끝에 둔다 — 필드별 코드가 늘어도 번호가 끼어들지 않는다.
