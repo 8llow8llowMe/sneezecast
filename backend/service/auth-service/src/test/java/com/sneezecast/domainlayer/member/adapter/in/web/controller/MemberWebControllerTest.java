@@ -173,20 +173,11 @@ class MemberWebControllerTest {
     }
 
     @Test
-    @DisplayName("비밀번호 설정은 세션 ID 와 새 비밀번호를 넘기고, 이미 있으면 409 MEMBER_008 봉투다 · 새 비밀번호 검증은 변경과 같은 코드다")
-    void setupPassword() throws Exception {
+    @DisplayName("비밀번호 최초 설정 API 는 없다(#61 — 카카오 회원은 비밀번호가 필요 없다) — 경로가 매핑되지 않아 404 이고 유스케이스를 부르지 않는다")
+    void passwordSetupEndpointIsGone() throws Exception {
         sendJson(post("/api/v1/members/me/password/setup"), "{\"newPassword\":\"Sneeze2026!\"}")
-            .andExpect(status().isOk());
-        verify(memberWebUseCase).setupPassword(42L, SESSION_ID, "Sneeze2026!");
-
-        doThrow(new MemberException(MemberErrorCode.PASSWORD_ALREADY_SET)).when(memberWebUseCase).setupPassword(anyLong(), any(), any());
-        sendJson(post("/api/v1/members/me/password/setup"), "{\"newPassword\":\"Sneeze2026!\"}")
-            .andExpect(status().isConflict())
-            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_008"));
-
-        sendJson(post("/api/v1/members/me/password/setup"), "{\"newPassword\":\"12345678\"}")
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_107"));
+            .andExpect(status().isNotFound());
+        verifyNoInteractions(memberWebUseCase);
     }
 
     private static MemberMyInfoResponse myInfo(String nickname) {

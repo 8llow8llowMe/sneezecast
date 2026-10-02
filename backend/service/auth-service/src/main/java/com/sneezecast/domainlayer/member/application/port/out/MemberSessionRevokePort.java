@@ -1,7 +1,7 @@
 package com.sneezecast.domainlayer.member.application.port.out;
 
 /**
- * 회원 보안 이벤트(비밀번호 변경 · 설정) 때 로그인 세션을 끊는 계약. member 컨텍스트가 auth 컨텍스트 구현(세션 저장소 · 블랙리스트)에 직접 의존하지
+ * 회원 보안 이벤트(비밀번호 변경) 때 로그인 세션을 끊는 계약. member 컨텍스트가 auth 컨텍스트 구현(세션 저장소 · 블랙리스트)에 직접 의존하지
  * 않도록 경계를 둔다.
  */
 public interface MemberSessionRevokePort {

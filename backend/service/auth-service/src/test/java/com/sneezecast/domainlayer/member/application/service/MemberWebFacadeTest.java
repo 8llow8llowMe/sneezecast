@@ -203,22 +203,6 @@ class MemberWebFacadeTest {
         verify(memberCommandProcessor, never()).changePassword(anyLong(), anyString());
     }
 
-    @Test
-    @DisplayName("비밀번호 설정 — 이미 있으면 MEMBER_008(409), 소셜 계정이면 다른 기기 세션 폐기 → 저장 → 2차 폐기")
-    void setupPassword() {
-        givenMember(emailMember(MemberStatus.ACTIVE));
-        assertThat(failure(() -> facade.setupPassword(42L, SESSION_ID, NEW_PASSWORD))).isEqualTo(MemberErrorCode.PASSWORD_ALREADY_SET);
-        verify(memberSessionRevokePort, never()).revokeOtherSessions(anyLong(), any());
-
-        givenMember(socialMember());
-        facade.setupPassword(42L, SESSION_ID, NEW_PASSWORD);
-
-        InOrder order = inOrder(memberSessionRevokePort, memberCommandProcessor);
-        order.verify(memberSessionRevokePort).revokeOtherSessions(42L, SESSION_ID);
-        order.verify(memberCommandProcessor).changePassword(eq(42L), anyString());
-        order.verify(memberSessionRevokePort).revokeOtherSessions(42L, SESSION_ID);
-    }
-
     private void givenMember(Member member) {
         when(memberRepositoryPort.findById(42L)).thenReturn(Optional.of(member));
     }

@@ -3,7 +3,6 @@ package com.sneezecast.domainlayer.member.adapter.in.web.controller;
 import com.sneezecast.common.dto.Response;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.request.MemberMyInfoUpdateRequest;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.request.MemberPasswordChangeRequest;
-import com.sneezecast.domainlayer.member.adapter.in.web.dto.request.MemberPasswordSetupRequest;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
 import com.sneezecast.domainlayer.member.application.port.in.MemberWebUseCase;
 import com.sneezecast.security.common.dto.MemberLoginActive;
@@ -25,14 +24,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/members")
-@Tag(name = "회원", description = "내 정보 조회 · 수정, 비밀번호 변경 · 설정 API")
+@Tag(name = "회원", description = "내 정보 조회 · 수정, 비밀번호 변경 API")
 public class MemberWebController {
 
     private final MemberWebUseCase memberWebUseCase;
 
     @Operation(summary = "내 정보 조회", description = """
-        로그인한 회원의 내 정보를 돌려줍니다 — 이메일, 닉네임, 가입 방법(`provider`: EMAIL · KAKAO), 비밀번호가 있는지(`hasPassword`), 역할.
-        `hasPassword` 가 false 면(소셜 가입) 비밀번호 설정을, true 면 비밀번호 변경을 보여 줍니다.
+        로그인한 회원의 내 정보를 돌려줍니다 — 이메일, 닉네임, 로그인 방법(`provider`: EMAIL · KAKAO — 카카오를 연결한 이메일 계정도 KAKAO,
+        비밀번호 로그인 가능 여부는 `hasPassword`), 비밀번호가 있는지(`hasPassword`), 역할.
+        `hasPassword` 가 true 면 비밀번호 변경을 보여 주고, false 면(카카오로만 로그인하는 계정) 비밀번호 메뉴를 보여 주지 않습니다 — 카카오 회원은
+        비밀번호가 필요 없습니다.
         `pendingConsents` · `reportWritable` 은 로그인 · 재발급 응답과 같은 계산입니다. 내 동네 · 프로필 이미지는 아직 싣지 않습니다.
 
         회원 행이 없으면 MEMBER_004(404), 탈퇴 MEMBER_002 · 정지 MEMBER_003(403).
@@ -66,7 +67,7 @@ public class MemberWebController {
         현재 비밀번호를 확인하고 새 비밀번호로 바꿉니다. 새 비밀번호 규칙은 가입과 같습니다(8~20자 · 영문자와 숫자 · 공백 금지). 현재와 같아도 됩니다.
         **성공하면 지금 기기는 로그인 상태로 남고, 다른 모든 기기는 로그아웃됩니다**(그 기기들의 access token 도 바로 폐기).
 
-        비밀번호가 없는 소셜 계정은 MEMBER_007(409) — 비밀번호 설정을 이용합니다. 현재 비밀번호가 틀리면 MEMBER_005(400),
+        카카오로만 로그인하는(비밀번호가 없는) 계정은 MEMBER_007(409) 입니다. 현재 비밀번호가 틀리면 MEMBER_005(400),
         정해진 횟수(기본 5회) 틀리면 잠기고 MEMBER_006(429, 기본 10분). 다른 기기 로그아웃에 실패하면(세션 저장소 장애) 비밀번호를 바꾸지 않고
         MEMBER_009(503) — 다시 시도하면 됩니다. 검증: 현재 비밀번호 누락 MEMBER_103 · 100자 초과 MEMBER_104, 새 비밀번호 누락 MEMBER_105 ·
         길이 MEMBER_106 · 구성 MEMBER_107.
@@ -80,25 +81,6 @@ public class MemberWebController {
     public ResponseEntity<Response<Void>> changePassword(@AuthenticationPrincipal MemberLoginActive loginActive,
         @Valid @RequestBody MemberPasswordChangeRequest request) {
         memberWebUseCase.changePassword(loginActive.memberId(), loginActive.sessionId(), request.currentPassword(), request.newPassword());
-        return ResponseEntity.ok(Response.success());
-    }
-
-    @Operation(summary = "비밀번호 설정", description = """
-        비밀번호가 없는 소셜 가입 계정에 비밀번호를 정합니다. 설정하면 이메일 + 비밀번호로도 로그인할 수 있습니다. 규칙은 가입과 같습니다.
-        세션 처리는 비밀번호 변경과 같습니다 — 지금 기기는 남고 다른 모든 기기는 로그아웃됩니다.
-
-        이미 비밀번호가 있으면 MEMBER_008(409) — 비밀번호 변경을 이용합니다. 다른 기기 로그아웃 실패는 MEMBER_009(503).
-        검증: 새 비밀번호 누락 MEMBER_105 · 길이 MEMBER_106 · 구성 MEMBER_107.
-
-        **인증 필요: Authorization 헤더. 필수: 요청 바디의 newPassword.**
-
-        호출 예: `POST /api/v1/members/me/password/setup` `{"newPassword":"Sneeze2026!"}`""",
-        security = @SecurityRequirement(name = "bearerAuth"))
-    @PostMapping("/me/password/setup")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Response<Void>> setupPassword(@AuthenticationPrincipal MemberLoginActive loginActive,
-        @Valid @RequestBody MemberPasswordSetupRequest request) {
-        memberWebUseCase.setupPassword(loginActive.memberId(), loginActive.sessionId(), request.newPassword());
         return ResponseEntity.ok(Response.success());
     }
 }

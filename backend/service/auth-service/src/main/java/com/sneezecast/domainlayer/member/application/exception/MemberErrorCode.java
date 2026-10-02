@@ -23,10 +23,9 @@ public enum MemberErrorCode {
     CURRENT_PASSWORD_MISMATCH("MEMBER_005", "현재 비밀번호가 일치하지 않습니다.", HttpStatus.BAD_REQUEST),
     // 현재 비밀번호 확인 실패가 쌓였다(회원 단위, 로그인 잠금과 같은 횟수 · 시간). 잠금 시간은 설정값이라 메시지에 못 박지 않는다.
     PASSWORD_CHANGE_LOCKED("MEMBER_006", "비밀번호 확인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
-    // 비밀번호가 없는(소셜 가입) 계정의 변경 요청 — 설정 API 로 안내한다.
-    PASSWORD_NOT_SET("MEMBER_007", "비밀번호가 설정되지 않은 계정입니다. 비밀번호 설정을 이용해주세요.", HttpStatus.CONFLICT),
-    // 이미 비밀번호가 있는 계정의 설정 요청 — 변경 API 로 안내한다.
-    PASSWORD_ALREADY_SET("MEMBER_008", "이미 비밀번호가 설정된 계정입니다. 비밀번호 변경을 이용해주세요.", HttpStatus.CONFLICT),
+    // 비밀번호가 없는(카카오로만 로그인하는) 계정의 변경 요청. 카카오 회원은 비밀번호가 필요 없어 설정 API 를 두지 않는다(#61).
+    PASSWORD_NOT_SET("MEMBER_007", "카카오로 로그인하는 계정은 비밀번호가 없습니다.", HttpStatus.CONFLICT),
+    // MEMBER_008 은 #61 에서 비밀번호 최초 설정(POST /members/me/password/setup)을 없애며 비운 번호다. 다른 의미로 다시 쓰지 않는다.
     // 다른 기기 세션을 끊지 못했다(세션 저장소 장애). 비밀번호는 바꾸지 않았으니 다시 시도하면 된다.
     SESSION_REVOKE_UNAVAILABLE("MEMBER_009", "일시적으로 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE),
 

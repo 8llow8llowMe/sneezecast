@@ -3,7 +3,7 @@ package com.sneezecast.global.validation;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 
-/** {@link StrippedSize} 검사기. 길이는 {@code @Size} 와 같은 {@link String#length()} 기준이다. */
+/** {@link StrippedSize} 검사기. 길이는 코드포인트 기준이다({@link String#codePointCount}) — 이모지도 한 글자다({@code @Size} 의 UTF-16 단위와 다르다). */
 public class StrippedSizeValidator implements ConstraintValidator<StrippedSize, CharSequence> {
 
     private int min;
@@ -24,6 +24,7 @@ public class StrippedSizeValidator implements ConstraintValidator<StrippedSize, 
         if (stripped.isEmpty()) {
             return true;
         }
-        return stripped.length() >= min && stripped.length() <= max;
+        int length = stripped.codePointCount(0, stripped.length());
+        return length >= min && length <= max;
     }
 }
