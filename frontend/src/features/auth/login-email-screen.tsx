@@ -2,7 +2,6 @@
 
 import { type FormEvent, useEffect, useId, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 
 import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
@@ -43,8 +42,7 @@ type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'failed'
  * 시안: docs/design/auth/screens/ 의 Login-email (+ -T · -D)
  */
 export function LoginEmailScreen({ resetDone = false }: { resetDone?: boolean }) {
-  const router = useRouter()
-  const { goBack, passwordReset, clearPasswordReset } = useOnboarding()
+  const { goBack, replace, passwordReset, clearPasswordReset } = useOnboarding()
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const formId = useId()
@@ -87,7 +85,7 @@ export function LoginEmailScreen({ resetDone = false }: { resetDone?: boolean })
       // 기다리는 동안 화면을 떠났으면 늦은 응답으로 이동하지 않는다
       if (!active.current) return
       if (result.status === 'ok') {
-        router.replace(HOME_PATH)
+        replace(HOME_PATH)
         return
       }
       setStatus(result.status)

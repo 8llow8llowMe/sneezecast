@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { loginWithEmail, resetMockSession } from '@/features/auth/auth-client'
 import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
+import { NavTrailProvider, useNavTrail } from '@/lib/use-nav-trail'
 
 import { MeRequiredStepsGate, useMemberGate, useRequiredStepsGate } from './member-gate'
 
@@ -142,5 +143,36 @@ describe('useMemberGate', () => {
 
     expect(router.replace).toHaveBeenLastCalledWith('/login?reason=expired')
     expect(router.replace).not.toHaveBeenCalledWith('/login')
+  })
+})
+
+describe('가드의 replace 와 앱 안 이동 기록', () => {
+  let navTrail: ReturnType<typeof useNavTrail> | null = null
+  function Probe() {
+    navTrail = useNavTrail()
+    return null
+  }
+
+  it('바로 연 공식 정보 → 홈(가드가 재동의로 replace) → 휴대폰 뒤로 → 공식 정보의 뒤로가 사이트 밖으로 나가지 않는다', async () => {
+    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    // 같은 요소 객체를 다시 넘기면 React 가 다시 그리지 않아 매번 새로 만든다
+    const tree = () => (
+      <NavTrailProvider>
+        <Probe />
+        {pathname === '/' && <HomeGate />}
+      </NavTrailProvider>
+    )
+    pathname = '/official'
+    const { rerender } = render(tree())
+    for (const next of ['/', '/terms/reconsent', '/official']) {
+      pathname = next
+      rerender(tree())
+    }
+    expect(router.replace).toHaveBeenCalledWith('/terms/reconsent')
+
+    router.replace.mockClear()
+    navTrail?.goBack('/')
+    expect(router.back).not.toHaveBeenCalled()
+    expect(router.replace).toHaveBeenCalledWith('/')
   })
 })

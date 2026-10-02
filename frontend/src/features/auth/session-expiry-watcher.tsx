@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 
 import { LOGIN_EXPIRED_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { clearSessionExpiring, notifySessionExpired, onSessionExpired } from '@/lib/session-expiry'
 import { useHydrated } from '@/lib/use-hydrated'
+import { useNavTrail } from '@/lib/use-nav-trail'
 
 import { expireMockSession, getMockSession, subscribeMockSession } from './auth-client'
 
@@ -21,6 +22,7 @@ export const MOCK_SESSION_EXPIRED = 'expired'
  *
  * 만료 알림(`src/lib/session-expiry.ts` 의 `notifySessionExpired`)을 받으면 목 세션을 비우고(`guest`) 로그인 화면
  * `/login?reason=expired` 로 **기록을 바꿔** 간다 — 뒤로 가기로 만료된 화면에 돌아와 다시 튕기지 않게 한다(회원 가드와 같은 이유).
+ * 바꿔 가는 일은 앱 안 이동 기록을 거친다(`useNavTrail().replace`) — 그래서 레이아웃에서 `NavTrailProvider` 안에 둔다.
  * 로그인 화면(S13-1)이 그 쿼리로 "다시 로그인해 주세요" 토스트를 띄운다. 이동은 Next 라우터로 한다.
  *
  * 목 재현 입력 `?mock-session=expired` 는 **하이드레이션을 마친 뒤에** 알린다. 하이드레이션 첫 커밋에서는 Next 가 아직 history 를
@@ -34,7 +36,7 @@ export const MOCK_SESSION_EXPIRED = 'expired'
  * `useSearchParams` 를 읽으므로 레이아웃에서는 `<Suspense>` 로 감싼다(정적 생성이 멈추지 않게).
  */
 export function SessionExpiryWatcher(): null {
-  const router = useRouter()
+  const { replace } = useNavTrail()
   const pathname = usePathname()
   const hydrated = useHydrated()
   // 만료를 받은 횟수. 이미 로그인 화면에서 만료돼 경로가 그대로여도 아래 표시 끄기를 다시 돌린다
@@ -45,10 +47,10 @@ export function SessionExpiryWatcher(): null {
     () =>
       onSessionExpired(() => {
         expireMockSession()
-        router.replace(LOGIN_EXPIRED_PATH)
+        replace(LOGIN_EXPIRED_PATH)
         setExpiredCount((count) => count + 1)
       }),
-    [router],
+    [replace],
   )
 
   useEffect(() => {

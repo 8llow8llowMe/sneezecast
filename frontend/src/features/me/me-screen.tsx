@@ -20,6 +20,7 @@ import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
 import { useHydrated } from '@/lib/use-hydrated'
 import { useModalParam } from '@/lib/use-modal-param'
+import { useNavTrail } from '@/lib/use-nav-trail'
 import { usePushSupport } from '@/lib/use-push-support'
 
 import {
@@ -108,6 +109,7 @@ export function MeScreen({
   regionCode?: string | null
 }) {
   const router = useRouter()
+  const navTrail = useNavTrail()
   const searchParams = useSearchParams()
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
@@ -191,7 +193,7 @@ export function MeScreen({
     if (!active.current) return
     // 로그아웃 · 탈퇴는 비회원 홈, 동의 철회는 홈으로 간다.
     // 동의 철회는 원래 "동의 철회 직후 홈"(Home-purging, 다음 이슈)이다 — 그 화면이 생기면 이동할 곳을 바꾼다
-    router.replace(navHref('/', navSearch))
+    navTrail.replace(navHref('/', navSearch))
   }
 
   // 머리줄 보고 버튼: 비회원은 로그인, 회원은 홈의 보고 진입(미동의면 동의 시트, 동의했으면 보고 흐름)
