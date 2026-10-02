@@ -13,11 +13,13 @@ import { ProgressBar } from '@/components/progress-bar'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
+import { reportButtonLabel } from '@/features/home/report-gate'
 import { GROUP_LABEL, scaleMax, TREND_LABEL, TREND_TEXT_CLASS } from '@/features/home/symptom'
 import { TrendBars } from '@/features/home/symptom-trends'
 import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
+import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { formatCount, formatMonthDay } from '@/lib/format'
 import { formatIsoWeekOfMonth, formatIsoWeekRange } from '@/lib/iso-week'
 import { navHref } from '@/lib/nav'
@@ -62,7 +64,7 @@ const suffix = (value: string | null, word: string) => (value === null ? null : 
  * - **안내는 운영자가 검토 · 발행한 주에만 보인다.** 발행된 안내를 보일 때는 `운영자 검토` 배지와 AI 초안 고지를 늘 함께 보인다.
  * - 정정된 안내는 배지 줄에 마지막 정정일을 적고, 제목 위에 정정 이력(최근 것부터)을 모두 보인다.
  * - 안내가 없는 주는 `시민 자가보고` 배지로 집계만 보인다. `자료 부족` 이면 수치 · 상태색 없이 참여 진행 막대만 보인다.
- * - 질병관리청 정보는 자가보고 집계와 다른 요소(공식 배지가 달린 링크)로 공식 정보 화면(S08)에 잇는다.
+ * - 질병관리청 정보는 자가보고 집계와 다른 요소(공식 배지가 달린 링크)로 공식 정보 화면(S08)에 잇는다. 링크는 둘러보기 동네(`?region=`)를 잇는다.
  * - "뒤로" 는 앱 안에서 거쳐 왔으면 기록을 되돌리고, 주소로 바로 들어왔거나 새로고침 · 새 탭으로 열었으면
  *   홈으로 기록을 바꿔 간다(`useNavTrail`).
  */
@@ -92,12 +94,14 @@ export function NoticeScreen({
   // 알림(종)은 회원에게만 그린다 — 데스크톱 머리줄(AppHeader)과 모바일 · 태블릿 머리줄이 같은 규칙이다 (#123)
   const notify = auth === 'guest' ? undefined : () => notReady('알림 설정')
   const openReport = () => router.push(reportHrefFor(auth, regionCode))
-  const reportLabel = auth === 'guest' ? '로그인하고 보고하기' : '이번 주 건강 보고하기'
+  const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
   const findOpenClinics = () => notReady('야간·휴일 문 연 곳 찾기')
 
   const weekOfMonth = formatIsoWeekOfMonth(data.isoWeek)
   const weekRange = formatIsoWeekRange(data.isoWeek)
   const statsTitle = `이번 주 ${data.regionName} 집계`
+  // 공식 정보 화면도 둘러보기 동네를 받는다 — 홈의 공식 정보 진입(`officialHref`)처럼 이어 붙인다. 경로의 동네(안내 대상)가 아니다
+  const officialLink = navHref(data.officialHref, navSearch)
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -150,7 +154,7 @@ export function NoticeScreen({
                 <NoneArticle
                   stats={data.stats}
                   statsTitle={statsTitle}
-                  officialHref={data.officialHref}
+                  officialHref={officialLink}
                   weekOfMonth={weekOfMonth}
                   weekRange={weekRange}
                 />
@@ -171,7 +175,7 @@ export function NoticeScreen({
               </section>
 
               <Link
-                href={data.officialHref}
+                href={officialLink}
                 className="flex min-h-14 items-center gap-2.5 border-y border-divider text-fg tablet:rounded-button tablet:border tablet:px-4"
               >
                 <Badge kind="official" />

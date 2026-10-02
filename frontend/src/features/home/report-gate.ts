@@ -23,6 +23,29 @@ export function reportEntryFor(auth: MockAuthState): string {
 }
 
 /**
+ * 보고 버튼 글자. 홈 하단 버튼과 모든 머리줄(홈 · 지도 · 동네 안내 · 공식 정보 · 내 정보 · 계정 화면)이 이 값을 쓴다.
+ *
+ * | 회원 상태 | 보낸 보고 | 글자 |
+ * | --- | --- | --- |
+ * | 비회원 | - | 로그인하고 보고하기 (Home-guest) |
+ * | 회원 | 없음 | 이번 주 건강 보고하기 |
+ * | 동의한 회원 | 있음 | 이번 주 보고 완료 · 수정하기 (Flow 의 reported) |
+ *
+ * 보낸 보고는 동의한 회원에게만 보인다 — 미동의 회원의 버튼은 동의 시트를 열므로(덮어쓰기 `?mock-auth=` 로 보낸 보고가 남아 있어도)
+ * 완료로 보이지 않는다. 누르면 갈 곳은 그대로다(`reportEntryFor` — 보낸 뒤면 보고 흐름이 수정으로 열린다).
+ */
+export function reportButtonLabel(auth: MockAuthState, submitted: boolean): string {
+  if (auth === 'guest') return '로그인하고 보고하기'
+  if (reportDone(auth, submitted)) return '이번 주 보고 완료 · 수정하기'
+  return '이번 주 건강 보고하기'
+}
+
+/** 보고 버튼이 "보낸 뒤" 모양인지. 홈 하단 버튼은 이때 회색 보조 버튼이다(Flow 의 reported) */
+export function reportDone(auth: MockAuthState, submitted: boolean): boolean {
+  return auth === 'member' && submitted
+}
+
+/**
  * 주소의 `?report=` 값이 지금 회원 상태에 맞지 않으면 바꿀 값을 돌려준다. 맞으면 null 이다.
  * 주소로 바로 들어온 비회원 · 미동의 회원에게 보고 흐름을 열지 않고 맞는 시트로 바꾼다.
  * 모르는 값은 그대로 둔다(아무 것도 열리지 않는다).

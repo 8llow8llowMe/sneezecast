@@ -5,6 +5,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { cancelReport, submitReport } from '@/features/report/report-client'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import { NOTICE_MOCKS, type NoticeMockKey } from './mock'
@@ -39,8 +40,9 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-afterEach(() => {
+afterEach(async () => {
   vi.useRealTimers()
+  await cancelReport()
 })
 
 describe('NoticeScreen — 발행된 안내 (Guide-published)', () => {
@@ -252,6 +254,47 @@ describe('NoticeScreen — 이동', () => {
     render(<NoticeScreen data={data('published')} />)
     await userEvent.click(screen.getAllByRole('button', { name: '이번 주 건강 보고하기' })[0]!)
     expect(router.push).toHaveBeenLastCalledWith('/?report=start')
+  })
+
+  it('동의한 회원이 이번 주 보고를 보냈으면 보고 버튼(데스크톱 · 태블릿 머리줄)이 완료 · 수정하기다', async () => {
+    await submitReport({ kind: 'none' })
+    search = 'mock-auth=member'
+    render(<NoticeScreen data={data('published')} />)
+
+    const buttons = screen.getAllByRole('button', { name: '이번 주 보고 완료 · 수정하기' })
+    expect(buttons).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: '이번 주 건강 보고하기' })).toBeNull()
+    // 갈 곳은 같다 — 홈의 보고 흐름이 보낸 보고를 보고 수정으로 연다
+    await userEvent.click(buttons[0]!)
+    expect(router.push).toHaveBeenLastCalledWith('/?report=start')
+  })
+
+  it.each(['published', 'none'] as const)(
+    '공식 정보 링크(%s)는 경로의 동네가 아니라 둘러보기 동네(?region=)를 잇는다',
+    (key) => {
+      render(<NoticeScreen data={data(key)} regionCode="1111051500" />)
+
+      const official = screen.getByRole('link', { name: /질병관리청 발표 보기/ })
+      expect(official.getAttribute('href')).toBe('/official?region=1111051500')
+      if (key === 'none') {
+        expect(screen.getByRole('link', { name: '공식 예방수칙 보기' }).getAttribute('href')).toBe(
+          '/official?region=1111051500',
+        )
+      }
+    },
+  )
+
+  it('공식 정보 주소에 이미 쿼리가 있으면 둘러보기 동네를 & 로 잇는다', () => {
+    render(
+      <NoticeScreen
+        data={data('none', { officialHref: '/official?mock=published' })}
+        regionCode="1111051500"
+      />,
+    )
+
+    expect(screen.getByRole('link', { name: '공식 예방수칙 보기' }).getAttribute('href')).toBe(
+      '/official?mock=published&region=1111051500',
+    )
   })
 
   it('문 연 곳 찾기는 아직 없어 준비 중 알림을 띄운다', async () => {

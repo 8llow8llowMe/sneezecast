@@ -10,10 +10,12 @@ import { BellIcon, ChevronLeftIcon } from '@/components/icons'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
+import { reportButtonLabel } from '@/features/home/report-gate'
 import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
 import { useShownRegionName } from '@/features/me/member-region'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
+import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { navHref } from '@/lib/nav'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
@@ -59,7 +61,7 @@ export function OfficialScreen({
   const navSearch = regionSearch(regionCode)
   const shownRegionName = useShownRegionName(regionName, regionCode)
   const openBrowseRegion = useBrowseRegion(OFFICIAL_PATH, regionCode)
-  const reportLabel = auth === 'guest' ? '로그인하고 보고하기' : '이번 주 건강 보고하기'
+  const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
 
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
   const openReport = () => router.push(reportHrefFor(auth, regionCode))

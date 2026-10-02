@@ -14,6 +14,7 @@ import {
   revokeOtherSessions,
   revokeSession,
 } from '@/features/auth/auth-client'
+import { submitReport } from '@/features/report/report-client'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import { DevicesScreen } from './devices-screen'
@@ -309,6 +310,19 @@ describe('DevicesScreen 뒤로 가기 · 셸', () => {
     await userEvent.setup().click(reports[0] as HTMLElement)
     // 이메일 로그인은 건강정보 동의 전이다
     expect(router.push).toHaveBeenCalledWith('/?region=11440660&report=health-consent')
+  })
+
+  it('동의한 회원이 이번 주 보고를 보냈으면 머리줄 보고 버튼(태블릿 · 데스크톱)이 완료 · 수정하기다', async () => {
+    // 로그인한 세션에 보낸 보고를 둔다. 다음 테스트의 resetMockSession 이 세션을 바꾸며 지운다
+    await submitReport({ kind: 'none' })
+    search = 'mock-auth=member'
+    renderDevices({ regionCode: '11440660' })
+    await screen.findByRole('list', { name: '로그인한 기기 목록' })
+
+    const reports = screen.getAllByRole('button', { name: '이번 주 보고 완료 · 수정하기' })
+    expect(reports).toHaveLength(2)
+    await userEvent.setup().click(reports[0] as HTMLElement)
+    expect(router.push).toHaveBeenCalledWith('/?region=11440660&report=start')
   })
 
   it('화면 제목(h1)은 폭마다 하나다 — 모바일 · 태블릿은 머리줄, 데스크톱은 본문 위', async () => {

@@ -15,6 +15,7 @@ import {
 } from '@/features/auth/auth-client'
 import { consentFor } from '@/features/auth/legal'
 import { leaveHomeNotice, takeHomeNotice } from '@/features/me/leave-notice'
+import { cancelReport, submitReport } from '@/features/report/report-client'
 
 import { HomeScreen } from './home-screen'
 import { HOME_MOCKS } from './mock'
@@ -185,13 +186,16 @@ function dialogTitled(title: string) {
 const REPORT_BUTTONS = {
   guest: '로그인하고 보고하기',
   member: '이번 주 건강 보고하기',
+  reported: '이번 주 보고 완료 · 수정하기',
 } as const
 
 describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     search = ''
     window.history.replaceState(null, '', '/')
     resetMockSession()
+    // 덮어쓰기(?mock-auth=)로 보낸 보고는 세션이 바뀌지 않아 남는다
+    await cancelReport()
     router.push.mockClear()
     vi.mocked(agreeHealthConsent).mockClear()
   })
@@ -440,6 +444,83 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     await act(() => loginWithEmail('dong@example.com', 'dongne2026'))
     expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.member })).toHaveLength(2)
     expect(screen.queryByText('로그인하면 이번 주 보고를 할 수 있어요')).toBeNull()
+  })
+})
+
+describe('HomeScreen 보낸 뒤 보고 버튼 (Flow 의 reported)', () => {
+  beforeEach(async () => {
+    search = 'mock-auth=member'
+    window.history.replaceState(null, '', '/?mock-auth=member')
+    resetMockSession()
+    await cancelReport()
+  })
+
+  afterEach(async () => {
+    vi.restoreAllMocks()
+    await cancelReport()
+  })
+
+  it('보낸 뒤면 하단 · 머리줄 버튼이 완료 · 수정하기이고, 하단은 회색 보조 버튼이다', async () => {
+    await submitReport({ kind: 'none' })
+    render(<HomeScreen week={HOME_MOCKS.high} />)
+
+    const buttons = screen.getAllByRole('button', { name: REPORT_BUTTONS.reported })
+    expect(buttons).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: REPORT_BUTTONS.member })).toBeNull()
+    // DOM 순서: 머리줄(태블릿 · 데스크톱) → 하단(모바일)
+    const [header, bottom] = buttons
+    expect(header?.className).toContain('bg-brand')
+    expect(bottom?.className).toContain('bg-section')
+    expect(bottom?.className).not.toContain('bg-brand')
+  })
+
+  it('보낸 뒤 버튼을 누르면 보고 흐름(?report=start)을 연다 — 보고 흐름이 보낸 보고를 보고 수정으로 연다', async () => {
+    await submitReport({ kind: 'none' })
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const user = userEvent.setup()
+    render(<HomeScreen week={HOME_MOCKS.high} />)
+
+    for (const button of screen.getAllByRole('button', { name: REPORT_BUTTONS.reported })) {
+      await user.click(button)
+    }
+    expect(pushState).toHaveBeenNthCalledWith(
+      1,
+      { sneezecastModalDepth: 1 },
+      '',
+      '?mock-auth=member&report=start',
+    )
+    expect(pushState).toHaveBeenCalledTimes(2)
+  })
+
+  it('보내면 같은 홈의 버튼이 바로 바뀌고, 되돌리면 다시 보고하기다', async () => {
+    render(<HomeScreen week={HOME_MOCKS.high} />)
+    expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.member })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.member })[1]?.className).toContain(
+      'bg-brand',
+    )
+
+    await act(() => submitReport({ kind: 'none' }))
+    expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.reported })).toHaveLength(2)
+
+    await act(() => cancelReport())
+    expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.member })).toHaveLength(2)
+  })
+
+  it('미동의 회원(덮어쓰기)은 보낸 보고가 남아 있어도 보고하기다 — 누르면 동의 시트다', async () => {
+    await submitReport({ kind: 'none' })
+    search = 'mock-auth=member-no-consent'
+    render(<HomeScreen week={HOME_MOCKS.high} />)
+
+    expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.member })).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: REPORT_BUTTONS.reported })).toBeNull()
+  })
+
+  it('서버 그림(하이드레이션 첫 그림)은 보낸 보고가 있어도 보고하기로 그린다', async () => {
+    await submitReport({ kind: 'none' })
+    const html = renderToString(<HomeScreen week={HOME_MOCKS.high} />)
+
+    expect(html).toContain(REPORT_BUTTONS.member)
+    expect(html).not.toContain(REPORT_BUTTONS.reported)
   })
 })
 

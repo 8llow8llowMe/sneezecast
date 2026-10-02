@@ -22,6 +22,8 @@ export type AccountPageLayoutProps = {
   onRegionClick: () => void
   onNotificationClick: () => void
   onReportClick: () => void
+  /** 머리줄 보고 버튼 글자 (태블릿 · 데스크톱). 화면이 `reportButtonLabel` 로 회원 상태 · 보낸 보고에 맞춰 넘긴다 */
+  reportLabel: string
   /** 화면 아래 버튼 영역. 모바일은 아래 고정, 태블릿 · 데스크톱은 본문 바로 아래(위 8) */
   footer?: ReactNode
   children: ReactNode
@@ -47,6 +49,7 @@ export function AccountPageLayout({
   onRegionClick,
   onNotificationClick,
   onReportClick,
+  reportLabel,
   footer,
   children,
 }: AccountPageLayoutProps) {
@@ -60,6 +63,7 @@ export function AccountPageLayout({
           onRegionClick={onRegionClick}
           onNotificationClick={onNotificationClick}
           onReportClick={onReportClick}
+          reportLabel={reportLabel}
           navSearch={navSearch}
         />
       </div>
@@ -78,7 +82,7 @@ export function AccountPageLayout({
         <span className="hidden tablet:contents">
           <IconButton label="알림 설정" icon={<BellIcon />} onClick={onNotificationClick} />
           <Button size="sm" onClick={onReportClick}>
-            이번 주 건강 보고하기
+            {reportLabel}
           </Button>
         </span>
       </header>

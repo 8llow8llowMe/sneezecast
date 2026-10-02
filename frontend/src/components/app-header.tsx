@@ -18,7 +18,10 @@ export type AppHeaderProps = {
    */
   onNotificationClick?: (() => void) | undefined
   onReportClick: () => void
-  /** 보고 버튼 글자. 기본은 "이번 주 건강 보고하기", 비회원 홈은 "로그인하고 보고하기" (Home-guest 시안) */
+  /**
+   * 보고 버튼 글자. 화면은 `reportButtonLabel`(`features/home/report-gate.ts`)로 회원 상태 · 보낸 보고에 맞춰 넘긴다 —
+   * 비회원 "로그인하고 보고하기"(Home-guest), 회원 "이번 주 건강 보고하기", 보낸 뒤 "이번 주 보고 완료 · 수정하기"(Flow). 기본은 "이번 주 건강 보고하기"
+   */
   reportLabel?: string | undefined
   /**
    * 데스크톱 서비스명 · 메뉴 링크 뒤에 붙일 쿼리(앞 `?` 없이). 둘러보기 동네(`region=<코드>`)를 메뉴를 옮겨도 잃지 않게 한다

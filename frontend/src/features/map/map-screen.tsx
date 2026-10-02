@@ -10,6 +10,7 @@ import { type MemberRegion, saveRegion } from '@/features/auth/auth-client'
 import { loginHref } from '@/features/auth/login-return'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { ExplainSheet } from '@/features/home/explain-sheet'
+import { reportButtonLabel } from '@/features/home/report-gate'
 import { useExplainParam } from '@/features/home/use-explain-param'
 import { CONFIRM_PARAM } from '@/features/me/confirm'
 import { ConfirmModal } from '@/features/me/confirm-dialog'
@@ -17,6 +18,7 @@ import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
 import { useMemberRegion, useShownRegionName } from '@/features/me/member-region'
 import { HOME_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
+import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { withEulReul } from '@/lib/korean'
 import { useActiveRef } from '@/lib/use-active-ref'
 import { useModalParam } from '@/lib/use-modal-param'
@@ -66,6 +68,7 @@ export function MapScreen({
   const router = useRouter()
   const auth = useMockAuth()
   const guest = auth === 'guest'
+  const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
   const explain = useExplainParam()
   const { toast, show, dismiss } = useToast()
   const navSearch = regionSearch(regionCode)
@@ -167,7 +170,7 @@ export function MapScreen({
             guest ? undefined : () => notReady('알림 설정 화면은 준비하고 있어요')
           }
           onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
-          reportLabel={guest ? '로그인하고 보고하기' : undefined}
+          reportLabel={reportLabel}
           navSearch={navSearch}
         />
       </div>
