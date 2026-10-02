@@ -3,8 +3,8 @@
  * 이름 · 주소 · 위치 · 자유 서술은 받지 않는다 — 고르는 값만 있다.
  */
 
-/** 보고 증상군. `other` 는 "그 외 증상만 있었어요" 로, 다른 둘과 함께 고를 수 없다 */
-export type ReportSymptom = 'respiratory' | 'gastrointestinal' | 'other'
+/** 보고 증상군. 백엔드 `SymptomGroup`(호흡기 · 장관)과 같다 */
+export type ReportSymptom = 'respiratory' | 'gastrointestinal'
 
 export type ReportAnswer =
   { kind: 'none' } | { kind: 'symptom'; symptoms: readonly [ReportSymptom, ...ReportSymptom[]] }

@@ -134,22 +134,6 @@ describe('ReportFlow', () => {
     expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull()
   })
 
-  it('"그 외 증상만" 을 고르면 다른 선택이 풀린다', async () => {
-    const { user, refresh } = await setup()
-    await user.click(screen.getByRole('button', { name: '증상이 있었어요' }))
-    refresh()
-
-    await user.click(screen.getByRole('button', { name: '발열·기침·인후통' }))
-    await user.click(screen.getByRole('button', { name: /그 외 증상만 있었어요/ }))
-
-    expect(
-      screen.getByRole('button', { name: '발열·기침·인후통' }).getAttribute('aria-pressed'),
-    ).toBe('false')
-    expect(
-      screen.getByRole('button', { name: /그 외 증상만 있었어요/ }).getAttribute('aria-pressed'),
-    ).toBe('true')
-  })
-
   it('이미 보낸 주에는 수정 안내를 보이고, 고쳐 보내면 되돌리기 알림을 주지 않는다', async () => {
     const { user, refresh } = await setup({ kind: 'none' })
 

@@ -35,18 +35,11 @@ describe('ChoiceButton', () => {
 
   it('보조 문구는 설명으로 연결하고, 누르면 onClick 을 부른다', async () => {
     const onClick = vi.fn()
-    render(
-      <ChoiceButton
-        label="그 외 증상만 있었어요"
-        hint="두통, 근육통 등"
-        selected={false}
-        onClick={onClick}
-      />,
-    )
+    render(<ChoiceButton label="구토·설사" hint="보조 문구" selected={false} onClick={onClick} />)
 
     const button = screen.getByRole('button', {
-      name: /그 외 증상만 있었어요/,
-      description: '두통, 근육통 등',
+      name: /구토·설사/,
+      description: '보조 문구',
     })
     await userEvent.setup().click(button)
     expect(onClick).toHaveBeenCalledTimes(1)

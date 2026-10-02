@@ -102,12 +102,6 @@ export function OverlayDemo() {
             }
           />
         ))}
-        <ChoiceButton
-          label="그 외 증상만 있었어요"
-          hint="두통, 근육통 등 · 위 두 가지와 함께 고를 수 없어요"
-          size="md"
-          selected={false}
-        />
       </Modal>
 
       <Modal
