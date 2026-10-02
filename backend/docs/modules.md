@@ -137,9 +137,9 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 |------|-----|
 | 가입 | `POST /email/send-code` · `POST /email/verify-code` · `POST /signup` |
 | 로그인 | `POST /login` · `GET /{provider}/authorize` · `GET /{provider}/login` · `POST /token/reissue` · `POST /logout` |
-| 비밀번호 | `POST /password/reset/send-code` · `POST /password/reset` · `POST /me/password` (변경) · `POST /me/password/setup` (소셜 가입자 최초 설정) |
+| 비밀번호 | `POST /password/reset/send-code` · `POST /password/reset/verify-code` (일회용 재설정 토큰) · `POST /password/reset` · `POST /me/password` (변경) · `POST /me/password/setup` (소셜 가입자 최초 설정) |
 | 세션 | `GET /sessions` · `DELETE /sessions/{sessionId}` · `DELETE /sessions` (현재 기기를 뺀 전부) |
-| 내 정보 | `GET /me` · `PATCH /me` · `DELETE /me/profile-image` · `POST /me/withdraw` |
+| 내 정보 | `GET /me` · `PATCH /me` · `POST /me/withdraw` (#59) · 프로필 이미지 업로드 · `DELETE /me/profile-image` (#112) |
 
 **저장소**
 
@@ -149,7 +149,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | MySQL `member_consent` | 동의 종류 · 문서 버전 · 동의/철회 이력 |
 | MySQL `member_region` | 선택한 행정동 (회원당 1개) |
 | MySQL `report_purge_request` | 탈퇴 · 건강정보 동의 철회 시 surveillance 원시 보고 파기 요청 (완료될 때까지 재시도) |
-| Redis (TTL) | 이메일 인증 코드, 비밀번호 재설정 코드, 로그인 시도 횟수, OAuth state, refresh 토큰 · 세션 |
+| Redis (TTL) | 이메일 인증 코드, 비밀번호 재설정 코드 · 재설정 토큰(해시), 로그인 · 비밀번호 확인 시도 횟수, OAuth state, refresh 세션 |
 | MinIO | 업로드한 프로필 이미지 |
 
 - 탈퇴 회원은 30일 보존 후 스케줄러가 파기한다. **보고 파기 요청이 모두 완료된 회원만** 지운다. 고아 프로필 이미지는 정리 스케줄러가 지운다.
@@ -165,7 +165,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - IP 상한의 키는 `X-Real-IP` 다 (nginx 가 덮어쓰고, nginx 가 아닌 출발지면 게이트웨이가 접속 주소로 덮어쓴다). `X-Forwarded-For` 는 앞쪽 값을 클라이언트가 바꿀 수 있고 마지막 값은 게이트웨이가 덧붙인 nginx 주소라 쓰지 않는다.
 - 메일은 `authMailTaskExecutor` 에서 비동기로 보내고(SMTP 접속 · 응답 · 쓰기 timeout 5초), 실패는 로그만 남긴다. 큐가 차면 그 메일을 로그만 남기고 버린다(요청은 성공). Boot 기본 `applicationTaskExecutor` 는 `AuthServiceAsyncConfig` 가 같은 이름으로 따로 두고 한정자 없는 `@Async` 기본값에 연결한다. health 는 SMTP 를 보지 않는다(`management.health.mail.enabled: false`).
 - 가입: 인증 완료 확인(Redis) → 비밀번호 BCrypt 해시(트랜잭션 밖) → 회원 · 동의 저장(`GeneralSignupProcessor` 트랜잭션) → 커밋 뒤 인증 표시 소비. 필수 동의는 이용약관 · 개인정보 · 만 19세 이상, **건강정보 동의는 별도 필드의 선택 항목**이고 동의했을 때만 행을 남긴다. 문서 버전은 `legal.*-version` 설정값. 동시 가입 중복은 `uk_member_email` 이 막고 `MEMBER_001`(409)로 바뀐다. **가입 응답에는 토큰이 없다** — 이어서 로그인한다.
-- 입력 규칙은 시안 Signup-account 와 같다 — 비밀번호 8~20자 · 영문자와 숫자 필수 · 공백 금지 · 특수문자는 선택(상한 20자는 BCrypt 72바이트 한도 안에 두려는 값), 닉네임 2~10자(앞뒤 공백을 지우고 저장).
+- 입력 규칙은 시안 Signup-account 와 같다 — 비밀번호 8~20자 · 영문자와 숫자 필수 · 공백 금지 · 특수문자는 선택(상한 20자는 BCrypt 72바이트 한도 안에 두려는 값), 닉네임은 **앞뒤 공백을 지운 뒤 2~10자**(`@StrippedSize` — 원문 길이로 재면 `" 가 "` 가 통과해 1자로 저장된다)이고 지운 값을 저장한다. 규칙 상수의 정본은 member 도메인의 `MemberInputPolicy` 이고, 가입(auth) · 내 정보 수정(member) 검증이 함께 참조한다.
 
 **로그인 · 토큰 · 세션**
 
@@ -182,7 +182,28 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 오류 코드: `AUTH_011` 로그인 실패(401) · `012` 이메일 잠금(429) · `013` IP 상한(429) · `014` refresh 없음 · 만료 · 세션 없음(401, 재로그인) · `015` refresh 위조 · 재사용(401) · `016` 동시 재발급 경합(409, 한 번 재시도) · `017` 세션 저장소 장애(503), 검증 `AUTH_113`(로그인 비밀번호 100자 초과) · `AUTH_114`(sessionId 가 UUID 형식이 아님), `MEMBER_002` 탈퇴 · `MEMBER_003` 정지(403).
 - Lua 스크립트는 다른 세션의 해시 키를 스크립트 안에서 조립한다(밀어내기 · 전체 삭제). Redis 를 Sentinel 로 쓰는 한 문제없지만, Cluster 로 옮기면 회원 단위 해시태그(`{memberId}`)로 키를 묶어야 한다.
 
-**화면 계약** (2026-10-01 결정, 프론트 S13-2~5 · S02-2~4 · S10)
+**비밀번호 재설정** (`auth` 컨텍스트, 인증 불필요)
+
+- 인증 코드 발급 · 확인은 가입과 같은 처리기(`EmailCodeProcessor`)를 용도(`EmailCodePurpose` SIGNUP / PASSWORD_RESET)만 바꿔 쓴다. 한도 · 수명도 `auth.email-send.*` 를 그대로 쓴다. 브루트포스 방어를 두 벌로 두면 한쪽만 고쳐져 조용히 어긋나기 때문이다. Redis 키만 따로다: `passwordResetCode` · `passwordResetFail` · `passwordResetCooldown` · `passwordResetSendIp` · `passwordResetVerifyIp`.
+- send-code 응답은 **가입 여부와 무관하게 같다**. 메일만 갈린다: ACTIVE 회원(소셜 포함)에게는 재설정 코드, 가입되지 않은 이메일에는 미끼 코드를 저장하고 "가입된 계정 없음" 안내 메일, 탈퇴 · 정지 회원에게는 미끼 코드만(메일 없음).
+- verify-code 의 실패 코드는 가입과 같다(`AUTH_003` · `004` · `005` · `010`). 성공하면 일회용 `resetToken` 을 준다 — SecureRandom 32바이트 base64url. Redis 에는 원문이 아니라 SHA-256 해시를 키로(`passwordResetToken:{sha256hex}` → 이메일, TTL `auth.password-reset.token-ttl` 기본 15분) 둔다. 미끼 코드를 맞혀도 같은 모양으로 토큰을 준다.
+- reset `{resetToken, newPassword}`: IP 시도 카운터(`passwordResetIp`, 상한 · 창은 `auth.email-send.verify-ip-*`)를 BCrypt 전에 먼저 올리고 넘으면 `AUTH_019`. 토큰은 Lua GET+DEL 로 원자 소비하고, 없음 · 만료 · 이미 씀 · 그 이메일의 ACTIVE 회원 없음은 모두 `AUTH_018` 이다.
+- 성공 순서: 새 비밀번호 BCrypt(트랜잭션 밖) → **모든 기기 세션 폐기 + access 블랙리스트** → 비밀번호 저장(커밋) → **같은 범위 2차 폐기** → 그 이메일의 로그인 잠금 · 실패 카운터 해제. 1차 폐기가 실패하면(503) 비밀번호는 그대로이고, 토큰은 이미 소비돼 인증 코드부터 다시 한다. 2차 폐기는 폐기와 커밋 사이에 옛 비밀번호로 BCrypt 를 통과한 로그인이 남긴 세션을 지우려는 것이고, 실패해도 로그만 남긴다.
+- 같은 이메일로 verify-code 를 여러 번 통과하면 토큰이 여러 개 함께 살아 있을 수 있다(각각 1회용 · 15분). 메일함 소유가 전제라 받아들였다.
+
+**내 정보 · 비밀번호 변경 · 설정** (`member` 컨텍스트, 인증 필요)
+
+- `GET /members/me` → `{memberId, email, nickname, provider(EMAIL | KAKAO — DB 값이 null 이면 EMAIL), hasPassword, role, pendingConsents, reportWritable}`. 재동의 · 보고 가능 여부는 토큰과 같은 계산(`MemberConsentProcessor.currentStatus` + auth 의 `ReportScopePolicy` — member 는 `MemberReportScopePort` 로 부른다)이다. 내 동네는 #60, 프로필 이미지는 #112 에서 더한다.
+- `PATCH /members/me` 는 닉네임만 바꾼다(가입과 같은 2~10자). 수정은 엔티티를 조회해 변경 감지로 한다 — 리포지토리의 수정 메서드는 `@Transactional(MANDATORY)` 라 트랜잭션 밖에서 부르면 바로 실패한다.
+- 비밀번호 변경 `{currentPassword, newPassword}` · 최초 설정 `{newPassword}`: 소셜 계정이 변경을 부르면 `MEMBER_007`, 이미 비밀번호가 있는데 설정을 부르면 `MEMBER_008`. 새 비밀번호 규칙은 가입과 같다(현재와 같아도 막지 않는다).
+- 현재 비밀번호 확인은 회원 단위로 횟수를 제한한다(`passwordChangeFail:{memberId}`, 상한 · 잠금은 `auth.login.*` 5회 · 10분). 로그인처럼 **BCrypt 전에 먼저 올리고**, 상한째 틀린 시도부터 `MEMBER_006`(429)이다. 틀리면 `MEMBER_005`.
+- 성공 순서: 현재 비밀번호 확인 → 새 비밀번호 BCrypt(트랜잭션 밖) → **지금 기기(access `sid`)를 뺀 다른 기기 세션 폐기 + access 블랙리스트**(sid 가 없으면 전부) → 저장(커밋) → 같은 범위 2차 폐기(실패해도 로그만 — 재설정과 같은 이유). 1차 폐기가 실패하면 저장하지 않고 `MEMBER_009`(503) — member 컨트롤러에는 auth 의 예외 처리기가 걸리지 않아 auth 의 `AUTH_017` 을 member 코드로 바꿔 낸다.
+- 비밀번호 최초 설정은 지금은 access 만으로 된다. 탈취된 access(15분 이하)로 이메일 로그인 자격을 만들 수 있다는 위험이 있지만, 소셜(카카오) 회원이 아직 없어(#61) 노출이 없다. 재인증(이메일 코드 · 최근 로그인)을 요구할지는 #61 에서 정한다.
+- member 요청 검증은 `MemberRequestExceptionHandler`(member 패키지 전용) 가 `MEMBER_1xx` 로 낸다. auth 검증 오류가 MEMBER 코드로 새지 않게 처리기를 나눴다.
+- **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향).
+- 오류 코드: `AUTH_018` 재설정 인증 만료(400) · `AUTH_019` 재설정 IP 상한(429) · 검증 `AUTH_115` · `116`(resetToken), `MEMBER_004` 회원 없음(404) · `005` 현재 비밀번호 불일치(400) · `006` 확인 잠금(429) · `007` 비밀번호 미설정(409) · `008` 이미 설정됨(409) · `009` 세션 저장소 장애(503) · `100` · `198` · `199` 요청 형식, 검증 `MEMBER_101~107`.
+
+**화면 계약** (2026-10-01 결정, 프론트 S13-2~6 · S02-2~4 · S10)
 
 - 이메일 단계(S13-2)에 **"이미 가입된 이메일" 상태를 두지 않는다.** send-code 는 가입 여부와 무관하게 같은 응답이라, 화면은 늘 코드 단계(S13-3)로 넘어가고 "이미 가입한 이메일이면 코드 대신 안내 메일이 가요" 같은 중립 문구를 함께 보여 준다.
 - **가입 요청(`POST /api/v1/auth/signup`)은 동의 단계 뒤에 보낸다.** 개인정보 수집 동의가 수집보다 먼저여야 해서다. 계정 입력(S13-4)은 화면이 들고 있다가 S02-2 성인 확인 · S02-3 가입 동의를 마친 뒤(S02-3 `가입하기`) 동의 값과 함께 한 번에 보낸다. 가입 응답에 토큰이 없으므로 화면은 이어서 로그인(#57)하고 동네를 저장(#60)한다.
@@ -196,6 +217,9 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 재발급 `AUTH_016`(409)은 여러 탭이 동시에 재발급한 경합이다 — 한 번 다시 부르면 된다(브라우저가 이긴 쪽의 새 쿠키를 보낸다). 탭이 셋 이상이거나 응답이 늦게 오면 한 번의 재시도로 부족하거나 늦게 도착한 옛 토큰이 재사용으로 판정될 수 있으니, **탭 사이 재발급을 Web Locks(`navigator.locks`)로 한 번에 하나만** 돌리기를 권한다. 409 가 연달아 오면 재로그인으로 처리한다. `AUTH_014` · `AUTH_015` 는 재로그인(S13-1 `?reason=expired`).
 - 로그인 기기(S10 Settings-devices)는 `GET /sessions` 의 `current` 로 "이 기기" 를 표시하고, "다른 기기에서 모두 로그아웃" 은 `DELETE /sessions` 다.
 - FE 로컬(`http://localhost:*`)에서 dev API 를 부르면 교차 사이트라 SameSite=Strict 쿠키가 실리지 않는다 — 로그인은 되지만 재발급은 안 된다(access 만료 15분 뒤 재로그인). 로컬 개발은 목을 기본으로 한다.
+- 비밀번호 재설정(S13-6)은 프론트 제안 1 이다: verify-code 가 `{resetToken}` 을 주고, 새 비밀번호는 `{resetToken, newPassword}` 로만 보낸다. 토큰은 메모리에만 둔다. `AUTH_018` 이면 `/password/reset?reason=verification-expired`. 토큰은 1회용이라 토큰당 시도 상한은 두지 않았다(제안과 다른 점). 재설정에 성공하면 **모든 기기가 로그아웃**되므로 화면은 이메일 로그인으로 보낸다.
+- 비밀번호 변경 · 설정(S10)에 성공하면 **이 기기는 유지되고 다른 기기는 로그아웃**된다(2026-10-02 결정). 화면에 "다른 기기에서는 로그아웃돼요" 안내가 필요하다. `MEMBER_005` → 현재 비밀번호 틀림, `MEMBER_006` → 잠시 막힘, `MEMBER_007` · `008` 은 `hasPassword` 와 어긋난 호출이라 내 정보를 다시 불러온다.
+- 내 정보 `GET /members/me` 의 `provider` 는 `EMAIL` / `KAKAO`, `hasPassword` 로 `비밀번호 변경` / `비밀번호 설정` 을 가른다. 재동의 조건은 로그인 응답과 같은 `pendingConsents` 다.
 
 **설정 · 기동 규칙**
 
@@ -204,6 +228,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 기동 시 JWT 설정 검사 — 키 길이(access · refresh 키 UTF-8 64바이트 이상, null · 공백 금지)는 security-core `JwtAuthProperties` 가 바인딩 시점에, 만료 정책(access 15분 이하, 0 이하 금지)은 auth 의 `JwtAuthPropertiesValidator` 가 검사한다. 어느 쪽이든 어기면 기동 실패 (짧은 키는 모든 토큰을 조용히 401 로 만든다).
 - access token 블랙리스트 키는 게이트웨이와 같은 `{prefix}:auth:accessTokenBlacklist:{jti}`, TTL 은 토큰 남은 만료 시간. Redis 장애는 항상 503 `SECURITY_008` (fail-closed).
 - SMTP 계정 `MAIL_USERNAME` · `MAIL_PASSWORD` 는 기본값이 없다(auth 전용 필수 키). 동의 문서 버전 `legal.*-version` 은 비거나 20자를 넘으면 기동 실패(`LegalDocumentProperties`).
+- 재설정 토큰 수명 `auth.password-reset.token-ttl`(env `AUTH_PASSWORD_RESET_TOKEN_TTL`, 기본 PT15M)은 0 이하면 기동 실패다. 필수 키가 아니다.
 - persistence-core 의 Snowflake · QueryDSL · JPA Auditing 을 `AuthServiceBeansConfig` 에서 켠다. Snowflake 는 기본 datacenter 0 / worker 0 — 인스턴스를 늘리면 `SNOWFLAKE_WORKER_ID` 를 인스턴스마다 다르게 준다.
 
 ## service/surveillance-service

@@ -187,7 +187,7 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
 - `JASYPT_ENCRYPTOR_KEY` 는 쓰지 않는다 (yml 에 자리표시자도 `ENC(...)` 값도 없다).
 - 파이프라인은 키가 **어느 층**에 있는지까지는 보지 않는다(전용 키 제외). 위 표의 층은 Infra 키 표를 따른 것이다.
 - 기본값이 있는 키(`GATEWAY_*_TIMEOUT*`, `JWT_*_EXPIRATION`, `REDIS_KEY_PREFIX`, `MINIO_MAX_FILE_BYTES`, auth 의 `MAIL_HOST` · `MAIL_PORT` ·
-  `MAIL_FROM_*` · `LEGAL_*_VERSION` · `AUTH_EMAIL_SEND_*` · `AUTH_LOGIN_*` · `AUTH_SESSION_*` · `SNOWFLAKE_*` 등)는 넣지 않아도 된다. compose 가 yml 과 같은 기본값을 넘긴다 — 빈 문자열을
+  `MAIL_FROM_*` · `LEGAL_*_VERSION` · `AUTH_EMAIL_SEND_*` · `AUTH_LOGIN_*` · `AUTH_SESSION_*` · `AUTH_PASSWORD_RESET_TOKEN_TTL` · `SNOWFLAKE_*` 등)는 넣지 않아도 된다. compose 가 yml 과 같은 기본값을 넘긴다 — 빈 문자열을
   넘기면 yml 기본값이 적용되지 않기 때문이다.
 - `BATCH_SCHEDULE_ENABLED` 는 batch-service 경로의 Vault 값을 그대로 쓰고, 없으면 compose 가 dev `true` / prod `false` 를 넘긴다.
 - auth 메일: `MAIL_USERNAME` / `MAIL_PASSWORD` 는 SMTP 계정과 앱 비밀번호다(auth 전용, 서비스 경로). `MAIL_HOST` · `MAIL_PORT` 기본값은
@@ -197,7 +197,8 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
 - auth 이메일 인증 한도 `AUTH_EMAIL_SEND_*`(IP 발송 상한 · 윈도우, 재발송 쿨다운, 코드 수명, 인증 완료 수명, 오입력 허용 횟수, IP 검증 상한 · 윈도우)는
   기본값(application.yml)으로 충분하다. 바꿀 때만 서비스 경로에 넣는다. 0 이하면 기동 실패, 기간은 ISO-8601(`PT1H`) 형식이다.
 - auth 로그인 제한 `AUTH_LOGIN_*`(이메일 실패 허용 횟수 · 잠금 시간, IP 실패 상한 · 윈도우)과 세션 `AUTH_SESSION_*`(회원당 기기 상한, 동시 재발급 허용 시간)도
-  같은 규칙이다. 잠금 시간을 바꾸면 프론트 로그인 잠금 문구("10분 뒤")도 함께 바꾼다.
+  같은 규칙이다. 잠금 시간을 바꾸면 프론트 로그인 잠금 문구("10분 뒤")도 함께 바꾼다. 비밀번호 변경의 현재 비밀번호 확인 제한도 이 값을 쓴다.
+- auth 비밀번호 재설정 토큰 수명 `AUTH_PASSWORD_RESET_TOKEN_TTL`(기본 `PT15M`)도 같은 규칙이다. 재설정 코드 한도는 `AUTH_EMAIL_SEND_*` 를 함께 쓴다.
 - `TIME_ZONE` 은 Vault 키가 아니다. 비면 `Asia/Seoul` 이다 (compose · Dockerfile).
 - 무작위 비밀값(JWT 키 · pepper · DB 비밀번호)은 `$` · 따옴표가 섞이지 않게 만든다. `openssl rand -base64` 출력은 해당 없다.
 
