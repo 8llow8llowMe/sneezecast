@@ -61,6 +61,14 @@ sgis:
   consumer-key: ${SGIS_CONSUMER_KEY:}
   consumer-secret: ${SGIS_CONSUMER_SECRET:}
 
+# Snowflake ID (official_surveillance · official_source_snapshot PK). 범위는 0~31, 밖이면 기동 실패.
+# batch 프로세스끼리는 worker-id 가 겹치면 안 된다 — upsert(ON DUPLICATE KEY UPDATE)가 PK 충돌도 UPDATE 로 처리해 다른 행을 덮어쓴다.
+# 그래서 수동 실행 JVM(spring.batch.job.enabled=true)은 자동으로 +1 을 쓴다 (상주 1 → 수동 2, BatchServiceBeansConfig).
+# surveillance · auth 와는 쓰는 테이블이 달라 겹쳐도 된다. 배포 파일은 이 값을 넘기지 않아 기본값으로 돈다.
+snowflake:
+  datacenter-id: ${SNOWFLAKE_DATACENTER_ID:0}
+  worker-id: ${SNOWFLAKE_WORKER_ID:1}
+
 # 공개 API 가 없다. common-core 가 springdoc 을 끌고 오므로 빈 API 문서 엔드포인트가 열리지 않게 끈다.
 springdoc:
   api-docs:
