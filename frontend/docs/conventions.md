@@ -26,7 +26,7 @@ frontend/
 ├── src/
 │   ├── components/      # 도메인을 모르는 공통 UI (버튼, 리스트 행, 바텀시트 …)
 │   ├── features/<도메인>/ # 화면별 UI (home, report, onboarding, region, map, notice, official, admin …)
-│   ├── lib/             # 로직. api/ 는 API 호출 계층, env.client.ts 는 공개 환경변수
+│   ├── lib/             # 로직. api/ 는 API 호출 계층, session/ 은 세션 저장소, env.client.ts 는 공개 환경변수
 │   ├── styles/          # tokens.css (토큰 정본) 와 토큰 검사 테스트
 │   └── types/           # 공용 타입
 ├── public/              # 정적 파일. 시안에서 뽑은 그림(onboarding/neighborhood.svg)
@@ -128,12 +128,12 @@ frontend/
     | 동네 안내 · 설치 안내 | 진입 링크가 남긴 표시를 화면이 마운트 때 소비 | 진입 링크마다 표시를 남겨야 함. 휴대폰 뒤로 · 앞으로로 다시 그리면 앞 기록이 있어도 홈이 두 번 남음                                            |
 - **로딩 경계(`loading.tsx`)는 루트에 두지 않고 주요 메뉴 화면에만 둔다** (`app/(home)/loading.tsx` · `app/map/loading.tsx` · `app/me/loading.tsx`). 루트에 두면 모든 경로가 Suspense 안에서 스트리밍되어 `notFound()` 가 404 대신 200 으로 나간다. 홈을 괄호 폴더 `(home)` 에 둔 것도 경계를 홈에만 걸기 위해서다(주소는 `/`). 지도 · 내 정보는 경로 폴더(`app/map` · `app/me`)라 그 경로에만 걸려 괄호 폴더가 필요 없다.
 - **브라우저 연결 상태는 `src/lib/use-online.ts` 의 `useOnline()` 으로만 읽는다.** 서버 그림과 하이드레이션 첫 그림은 늘 온라인이다(SSR 불일치 방지). 오프라인 안내는 화면 전체를 바꾸지 않고 띠(`OfflineNotice`)로 보인다.
-- **로그인 만료는 `src/lib/session-expiry.ts` 의 `notifySessionExpired()` 하나로 알린다.** 루트 레이아웃의 `features/auth/session-expiry-watcher.tsx` 가 세션을 비우고 `/login?reason=expired` 로 `replace` 한다. 연동 때 API 계층의 401 처리가 부르고, 화면 코드는 401 을 따로 다루지 않는다.
-- **회원만 보는 화면의 가드는 하이드레이션을 마친 뒤 판단한다.** 서버와 하이드레이션 첫 그림의 회원 상태는 늘 `guest` 라(`useMockAuth`) 그 값으로 로그인에 보내면 회원도 튕긴다. `src/lib/use-hydrated.ts` 가 true 인 그림의 상태로만 판단하고 Next 라우터(`router.replace`)로 보낸다 (`features/me/member-gate.ts`).
-  - 반대 방향(회원이 연 시작 · 로그인 · 가입 화면 → 홈 또는 `?next=`)은 첫 진입 레이아웃의 `features/auth/guest-only-gate.tsx` 다. 같은 이유로 하이드레이션 뒤에 판단하고, **화면에 닿을 때의 상태로 한 번만** 판단한다 — 그 화면에서 회원이 되는 것(로그인 성공)은 화면이 스스로 이동하므로 두 이동이 겹치지 않게 끼어들지 않는다(docs/design/SCREENS.md "첫 진입").
+- **로그인 만료는 `src/lib/session-expiry.ts` 의 `notifySessionExpired()` 하나로 알린다.** 루트 레이아웃의 `features/auth/session-expiry-watcher.tsx` 가 (목데이터 모드면 목 세션을 비우고) `/login?reason=expired` 로 `replace` 한다. 실데이터 모드는 세션 저장소가 재발급에 실패했을 때 세션을 먼저 비우고 부른다(아래 "세션 저장소"). 화면 코드는 401 을 따로 다루지 않는다.
+- **회원만 보는 화면의 가드는 회원 상태가 정해진 뒤 판단한다.** 서버와 하이드레이션 첫 그림의 회원 상태는 늘 `guest` 이고(`useAuth`), 실데이터 모드는 새로고침 뒤 세션을 되살리는(재발급) 동안에도 `guest` 다. 그 값으로 로그인에 보내면 회원도 튕긴다. `features/auth/use-auth.ts` 의 `useAuthSettled()`(하이드레이션을 마쳤고, 목데이터이거나 실데이터 세션이 `member` · `guest` 로 정해짐)가 true 인 그림의 상태로만 판단하고 Next 라우터(`router.replace`)로 보낸다 (`features/me/member-gate.ts`, 약관 재동의 · 동네 다시 고르기 화면도 같다).
+  - 반대 방향(회원이 연 시작 · 로그인 · 가입 화면 → 홈 또는 `?next=`)은 첫 진입 레이아웃의 `features/auth/guest-only-gate.tsx` 다. 같은 이유로 `useAuthSettled()` 가 true 일 때 판단하고, **화면에 닿을 때의 상태로 한 번만** 판단한다 — 그 화면에서 회원이 되는 것(로그인 성공)은 화면이 스스로 이동하므로 두 이동이 겹치지 않게 끼어들지 않는다(docs/design/SCREENS.md "첫 진입").
 - **router 내비게이션이 대기 중일 때 `history.replaceState` · `pushState` 를 부르면 Next 가 그 내비게이션을 버린다 — 가드가 보낼 곳이 있으면 주소 정리를 하지 않는다.** 원시 history 변경이 Next 의 복원(ACTION_RESTORE)을 일으켜 대기 중인 `router.replace` 가 버려진다(프로덕션 빌드에서 재현). 같은 그림에서 주소 쿼리를 정리하는 화면(홈의 `?report=` · 내 정보의 `?confirm=` 정리)은 `useRequiredStepsGate` · `useRequiredStepsTarget`(`features/me/member-gate.ts`)이 돌려준 보낼 곳이 있으면 정리를 건너뛴다.
 - **레이아웃 · 정적 라우트에서 `useSearchParams` 를 읽는 클라이언트 컴포넌트는 `<Suspense>` 로 감싼다.** 감싸지 않으면 `next build` 의 정적 생성이 `missing-suspense-with-csr-bailout` 으로 멈춘다(dev 서버에서는 드러나지 않는다). 하이드레이션 뒤에야 그리는 화면은 대체 그림을 비워 둔다(`app/me/layout.tsx` 의 가드, `app/(onboarding)/terms/reconsent/page.tsx`). 페이지가 `searchParams` 를 await 하면 동적 라우트라 필요 없다.
-- **돌아갈 곳(`?next=`)은 허용 목록 안의 경로만 받는다.** 가드가 다른 화면으로 보냈다가 돌려보낼 때 `?next=` 를 쓰고, 받는 쪽은 `features/auth/required-steps.ts` 의 `safeNextPath` 로 정확히 같은 경로(`NEXT_PATHS`: `/` · `/me` · `/me/devices` · `/me/password` · `/me/region`)일 때만 따른다. 머리줄 동네 이름이 여는 둘러볼 동네 고르기(`/browse/region?next=`)는 따로 둔 허용 목록(`features/onboarding/browse-return.ts` 의 `BROWSE_NEXT_PATHS`, 머리줄에 동네 이름이 있는 화면)을 같은 방식으로 받는다(#141). 로그인 화면(`/login` → `/login/email`)도 `features/auth/login-return.ts` 로 `?next=` 를 받아 로그인 뒤 그곳으로 간다(내 정보 가드가 씀). 보고하려던 로그인은 `?intent=report` 를 더 받아 로그인 뒤 같은 동네 홈의 보고 진입(`/?region=…&report=start`)으로 간다 — 받는 값은 `report` 하나, 돌아갈 곳이 홈일 때만 받고(그 밖이면 버림) `NEXT_PATHS` 규칙은 그대로이며, 회원 상태에 맞는 시트는 홈의 `guardReportEntry` 가 고친다(#136). 회원이 그 로그인 화면에 닿으면(사실상 로그인 성공 뒤 브라우저 뒤로) 첫 진입 가드는 보고 진입을 붙이지 않고 홈으로만 보낸다 — 뒤로 가려는 사람을 붙잡지 않는다. 로그인으로 넘기는 쿼리는 `next` 와 둘러보기 동네뿐이고 목 덮어쓰기는 넘기지 않는다(로그인이 세션을 바꾸므로). 쿼리 · `#` 가 붙었거나 다른 오리진(`//…` · `https://…`)이면 홈으로 보낸다(오픈 리다이렉트 방지). 함께 넘길 쿼리는 둘러보기 동네(`region`)와 QA 용 목 덮어쓰기(`mock-auth` · `mock-provider` · `mock-required`)뿐이다(`carriedParams`). 새 화면을 가드에 걸면 목록에 더한다.
+- **돌아갈 곳(`?next=`)은 허용 목록 안의 경로만 받는다.** 가드가 다른 화면으로 보냈다가 돌려보낼 때 `?next=` 를 쓰고, 받는 쪽은 `features/auth/required-steps.ts` 의 `safeNextPath` 로 정확히 같은 경로(`NEXT_PATHS`: `/` · `/me` · `/me/devices` · `/me/password` · `/me/region`)일 때만 따른다. 머리줄 동네 이름이 여는 둘러볼 동네 고르기(`/browse/region?next=`)는 따로 둔 허용 목록(`features/onboarding/browse-return.ts` 의 `BROWSE_NEXT_PATHS`, 머리줄에 동네 이름이 있는 화면)을 같은 방식으로 받는다(#141). 로그인 화면(`/login` → `/login/email`)도 `features/auth/login-return.ts` 로 `?next=` 를 받아 로그인 뒤 그곳으로 간다(내 정보 가드가 씀). 보고하려던 로그인은 `?intent=report` 를 더 받아 로그인 뒤 같은 동네 홈의 보고 진입(`/?region=…&report=start`)으로 간다 — 받는 값은 `report` 하나, 돌아갈 곳이 홈일 때만 받고(그 밖이면 버림) `NEXT_PATHS` 규칙은 그대로이며, 회원 상태에 맞는 시트는 홈의 `guardReportEntry` 가 고친다(#136). 회원이 그 로그인 화면에 닿으면(사실상 로그인 성공 뒤 브라우저 뒤로) 첫 진입 가드는 보고 진입을 붙이지 않고 홈으로만 보낸다 — 뒤로 가려는 사람을 붙잡지 않는다. 로그인으로 넘기는 쿼리는 `next` 와 둘러보기 동네뿐이고 목 덮어쓰기는 넘기지 않는다(로그인이 세션을 바꾸므로). 쿼리 · `#` 가 붙었거나 다른 오리진(`//…` · `https://…`)이면 홈으로 보낸다(오픈 리다이렉트 방지). 함께 넘길 쿼리는 둘러보기 동네(`region`)와 QA 용 목 덮어쓰기(`mock-auth` · `mock-provider` · `mock-required`, 목데이터 모드에서만 듣는다 — 아래 "데이터 출처")뿐이다(`carriedParams`). 새 화면을 가드에 걸면 목록에 더한다.
 - **화면 위에 뜨는 시트 · 대화상자의 열림 상태는 주소 쿼리에 둔다** (`docs/design/SCREENS.md` 의 제안 라우트, 예: 판단 기준 `/?explain=1`). 새로고침 · 공유해도 같은 화면이 열린다. `src/lib/use-modal-param.ts` 를 쓴다. 단계마다 `push` 로 기록을 쌓아 휴대폰 뒤로 가기가 이전 단계 · 닫기로 이어지게 하고, 보낸 뒤 완료처럼 되돌아오면 안 되는 단계는 `replace` 로 바꾼다(`remove` 로 다른 쿼리를 같은 기록 항목에서 함께 지울 수 있다). `close` 는 이 훅이 쌓은 깊이만큼만 되돌린다 — 깊이는 `history.state` 에 두어 뒤로 가기로 단계를 되돌린 뒤 닫아도 홈 앞까지만 간다. 주소로 바로 들어와 쌓은 기록이 없으면 쿼리만 지운다. `router.push` 는 서버에 화면을 다시 요청하므로 쓰지 않는다.
 - **같은 문서 안 `#` 링크(`<a href="#id">`)를 쓰지 않는다.** Next 가 모르는 기록 항목(`history.state` 가 null)이 생겨, 그 뒤 연 시트 · 대화상자의 닫기(`history.go(-1)`)가 그 항목으로 돌아가고 Next 가 무시해 첫 닫기에 닫히지 않는다. 섹션 바로가기는 버튼으로 `scrollIntoView` 한 뒤 제목(`tabIndex={-1}`)에 포커스를 준다(`features/me/me-screen.tsx`).
 - **마운트 effect 에서 history 를 바꾸지 않는다.** 하이드레이션 첫 커밋에서는 Next 가 아직 history 를 감싸지 않는다(최상위 라우터 effect 보다 자식 effect 가 먼저 돈다) — 그때 바꾼 주소는 `useSearchParams` 가 모른다. 미뤄야 하면 `setTimeout(0)` 으로 미루고 cleanup 에서 취소한다(`features/home/home-screen.tsx` 의 보고 진입 정리). 열림처럼 그 값으로 그리는 것은 바뀔 값으로 미리 계산해 첫 그림부터 맞춘다.
@@ -163,11 +163,33 @@ frontend/
 - 타임아웃은 12초다 — 게이트웨이 업스트림 상한(10초)보다 길게 두어 게이트웨이의 `GATEWAY_004`(504) 봉투를 먼저 받는다. 호출한 쪽의 취소(`signal`)는 일시 장애로 바꾸지 않고 그 사유를 그대로 던진다.
 - 결과: 성공 봉투 → `dataBody`(본문 없는 API 는 null). 실패 봉투 → `ApiError`(서버 `resultCode` · `resultMessage` · `fieldErrors`, HTTP 상태). 봉투가 없는 응답(Spring 기본 오류 · HTML · 빈 본문) · 네트워크 실패 · 타임아웃 → `ApiError` 코드 `UNAVAILABLE`(응답을 못 받았으면 상태 0).
 - 검증 오류는 `fieldErrors` 의 `field` 별 첫 오류를 그 입력 옆에 보인다. 서버가 순서를 고정해 준다(`resultCode` 는 첫 오류).
-- **access token 은 메모리에만 둔다.** 브라우저 저장소 · 주소에 두지 않는다. refresh 토큰은 HttpOnly 쿠키라 화면이 다루지 않는다. 세션 저장소(토큰 · 만료 시각, 만료 전 재발급)는 연동 이슈에서 만들고 `setAccessTokenProvider` 로 끼운다. 공급자가 토큰을 주면 래퍼가 `Authorization: Bearer` 를 싣는다.
+- **access token 은 메모리에만 둔다.** 브라우저 저장소 · 주소에 두지 않는다. refresh 토큰은 HttpOnly 쿠키라 화면이 다루지 않는다. 세션 저장소(아래 "세션 저장소")가 `setAccessTokenProvider` · `setAccessTokenRefresher` 로 자신을 끼운다. 공급자가 토큰을 주면 래퍼가 `Authorization: Bearer` 를 싣는다.
 - **재발급(`POST /api/v1/auth/token/reissue`)은 `auth: false` 로 Authorization 없이 부른다.** 게이트웨이와 auth 필터는 경로와 무관하게 헤더가 있으면 access 를 검사해, 만료된 access 를 실으면 refresh 가 멀쩡해도 `SECURITY_002` 로 끝난다.
 - 401 처리: 토큰을 실어 보낸 요청이 `reissue`(`SECURITY_002/003/004/005/007`)로 거절되면 `client.ts` 가 갈아 끼우기(`setAccessTokenRefresher` 로 끼운 함수)로 새 토큰을 받아 **같은 요청을 한 번만** 다시 보낸다(주소 · 메서드 · 바디 같음, 다시 받은 오류는 그대로 던짐). 토큰을 싣지 않은 요청 · `SECURITY_001` · 403 · `auth: false` 는 다시 보내지 않는다 — 재발급이 재발급을 부르는 고리가 없다. 갈아 끼우기가 없거나 null 을 주면 원래 오류를 던진다. 화면 코드는 401 을 따로 다루지 않는다.
 - 로그를 남기지 않는다. 요청 바디 · 토큰 · 응답을 `console` 에 찍지 않고, 비밀번호 · 토큰 · 인증 코드 · 건강 정보는 `query` 가 아니라 `body` 로 보낸다.
 - 테스트는 `vi.stubGlobal('fetch', …)` 로 가짜 `fetch` 를 끼운다(`src/lib/api/client.test.ts`). 도메인 클라이언트 테스트는 `apiRequest` 를 `vi.mock` 으로 바꾼다.
+
+### 세션 저장소 (실데이터 모드)
+
+`src/lib/session/` 이 로그인 · 재발급 응답(`AuthToken { memberId, role, accessToken, accessTokenExpiresIn, pendingConsents, reportWritable }`)을 들고 API 계층에 토큰을 준다. 루트 레이아웃의 `features/auth/session-bootstrap.tsx` 가 켠다.
+
+| 모듈               | 하는 일                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `session-store.ts` | 스냅숏(`idle` · `restoring` · `guest` · `member`+요약) · `setSession` · `clearSession` · `restoreSession` · `startSession`(슬롯 설치) |
+| `session-hint.ts`  | 힌트 쿠키 `sc_session` 읽기 · 쓰기                                                                                                    |
+| `session-sync.ts`  | 탭 사이 알림(`BroadcastChannel` `sneezecast:session`) · 재발급 잠금(`navigator.locks` `sneezecast:session-reissue`). 없으면 강등      |
+| `use-session.ts`   | `useSession()` — 서버 · 하이드레이션 첫 그림은 늘 `idle`                                                                              |
+
+- **토큰은 `session-store.ts` 의 지역 변수에만 둔다.** 화면이 읽는 스냅숏에는 회원 요약(아이디 · 역할 · 재동의 항목 · 보고 가능)만 있다. 쿠키 · 브라우저 저장소 · 주소 · `console` 에 남기지 않고, 같은 오리진의 다른 탭에만 알림으로 넘긴다.
+- 만료 시각은 `accessTokenExpiresIn`(초)으로 정한다(JWT 를 풀지 않음). 요청 직전에 만료 30초 전(`ACCESS_EXPIRY_MARGIN_MS`)이면 먼저 재발급한다 — 타이머는 없다. 재발급은 `POST /api/v1/auth/token/reissue` 를 `auth: false` 로 부른다.
+- 재발급은 탭 안에서 하나로 묶고(동시 401 여러 건 → 재발급 1회), 탭 사이는 잠금으로 줄 세운다. 잠금을 잡았을 때 그사이 다른 탭 알림으로 세션이 바뀌었으면 재발급하지 않고 그 토큰을 쓴다. 응답을 기다리는 동안 로그아웃했으면 늦은 응답을 버린다.
+- 재발급 결과: 경합(`reissue-conflict`, `AUTH_016`)이면 `REISSUE_CONFLICT_RETRY_DELAY_MS`(300ms — 이긴 탭의 새 refresh 쿠키가 반영될 틈)를 기다려 한 번 다시 한다. 재로그인(`relogin`, `AUTH_014/015`) · 탈퇴 · 정지(`MEMBER_002/003`)면 세션을 비우고 다른 탭에 알리며 `notifySessionExpired()`(`src/lib/session-expiry.ts`)를 부른다. 두 번째 경합은 **이 탭만** 비우고 다른 탭에 알리지 않는다(이긴 탭의 세션은 멀쩡할 수 있다 — 잠금이 없는 환경).
+- 재발급이 일시 장애(`unavailable`)이거나 분류에 없는 오류면 세션을 끝내지 않는다 — 회원 요약은 두고 토큰만 버린다. 세션 중이면 공급자 · 갈아 끼우기가 일시 장애(`UNAVAILABLE`)를 던져 요청이 "잠시 뒤 다시" 로 끝난다(토큰 없이 보내 `SECURITY_001` 로 보이지 않게). 다음 요청이 다시 재발급한다.
+- **새로고침 복원**: refresh 쿠키는 게이트웨이 호스트 · `Path=/api/v1/auth` 전용 HttpOnly 라 화면이 있는지 모른다. 로그인 · 재발급에 성공하면 1st-party 힌트 쿠키 **`sc_session=1`**(`Path=/` · `SameSite=Lax` · HTTPS 면 `Secure` · 14일, 값은 고정 `1`)을 남기고, 로그아웃 · 만료 · 재로그인 응답이면 지운다. 앱을 열 때 실데이터 모드이고 힌트가 있을 때만 재발급을 한 번 한다(`restoring` → `member`). `SessionBootstrap` 은 하이드레이션 커밋의 effect 에서 출처 쿠키를 직접 읽어(`readBrowserDataSource`) 바로 시작한다 — 훅 값(첫 그림은 서버 기본값)을 기다리면 `idle` 동안 나간 회원 요청이 토큰 없이 나간다. 힌트가 없으면 요청 없이 `guest` 다. 복원이 재로그인 · 탈퇴 · 정지 · 두 번째 경합으로 끝나면 알리지 않고(방송도 없음) 힌트를 지우며, 일시 장애면 힌트를 남긴 채 `guest` 로 보인다. 복원 중 요청은 복원을 기다려 그 토큰을 싣는다.
+- 만료 알림(`notifySessionExpired`)은 이 탭에 세션이 있었을 때만 부른다. 다른 탭의 로그아웃 · 만료 알림을 받으면 조용히 `guest` 가 된다.
+- 화면은 `features/auth/use-auth.ts` 의 `useAuth()`(회원 상태) · `useAuthSettled()`(정해졌는지)로 읽는다. `useMockAuth` 는 같은 훅의 옛 이름이다(이름 정리는 로그인 연동 PR).
+- **지금(#158)은 실데이터 모드에서 회원이 될 수 없다.** 로그인 · 가입 · 로그아웃 · 재동의 · 프로필(`features/auth/auth-client.ts`)은 아직 목이라 `setSession` 을 부르는 곳이 없다 — 실데이터 모드는 늘 `guest` 이고, 세션 저장소는 로그인 연동(다음 PR)부터 채워진다. 새로고침 복원 · 재발급은 단위 테스트로만 확인했다.
+- 한계(로그인 연동 뒤): FE 로컬(`http://localhost`)은 교차 사이트라 refresh 쿠키가 실리지 않는다 — 로그인은 되지만 새로고침하면 재발급이 `AUTH_014` 로 끝나 `guest` 다. 새로고침 복원은 dev 웹에서 확인한다.
 
 ### 데이터 출처 (실데이터 · 목데이터)
 
@@ -188,6 +210,8 @@ frontend/
 - 토글은 쿠키를 쓰고 `router.refresh()` 로 서버 컴포넌트를 다시 그린다. 클라이언트 화면은 `useDataSource()` 로 따라간다.
 - 토글은 body 마지막 자식이다(맨 앞이면 Tab 첫 포커스가 된다). z-index 를 주지 않는다 — z-index 가 있는 시트 · 버튼 묶음 · 가림막(z-10 · z-20)은 DOM 순서와 무관하게 토글 위에 온다. 모바일은 탭바 · 화면 아래 버튼 묶음보다 위(`bottom-dev-toggle`)에 띄운다.
 - 백엔드에 아직 없는 API(BE 미정)는 출처와 무관하게 목이다(예: `listSuccessorDistricts`, 동네 안내 내용). 함수 주석에 적는다.
+- **회원 상태도 출처를 따른다.** 실데이터는 세션 저장소(위), 목데이터는 목 세션(`features/auth/auth-client.ts`)이다. 둘은 따로라 토글은 어느 쪽도 지우지 않고, 토글로 실데이터가 되면 `SessionBootstrap` 이 세션을 되살린다(여러 번 불러도 한 번).
+- **QA 덮어쓰기(`?mock-auth=` · `?mock-provider=` · `?mock-required=` · `?mock-session=`)는 목데이터 모드에서만 듣는다.** 실데이터에서 들으면 주소만으로 회원 · 동의 확인을 건너뛴다. 운영은 늘 실데이터라 덮어쓰기가 듣지 않는다. 홈 자료 덮어쓰기(`?mock=`) · 알림 덮어쓰기(`?mock-push=`)는 회원 확인과 무관해 그대로다.
 
 ## 테스트
 
