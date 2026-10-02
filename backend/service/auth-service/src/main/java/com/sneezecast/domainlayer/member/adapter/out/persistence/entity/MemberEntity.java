@@ -104,4 +104,14 @@ public class MemberEntity extends BaseEntity implements Persistable<Long> {
     public boolean isNew() {
         return getCreatedAt() == null;
     }
+
+    /** 조회한 엔티티의 닉네임을 바꾼다 — 트랜잭션 안에서 변경 감지로 UPDATE 된다 ({@link #isNew()} 주의 참고). */
+    public void changeNickname(String nickname) {
+        this.nickname = nickname;
+    }
+
+    /** 조회한 엔티티의 비밀번호 해시를 바꾼다 — 트랜잭션 안에서 변경 감지로 UPDATE 된다. 해시만 받는다(원문 금지). */
+    public void changePassword(String encodedPassword) {
+        this.password = encodedPassword;
+    }
 }

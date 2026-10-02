@@ -1,6 +1,8 @@
 package com.sneezecast.domainlayer.auth.adapter.in.web.dto.request;
 
 import com.sneezecast.domainlayer.auth.application.exception.AuthValidationMessage;
+import com.sneezecast.domainlayer.member.domain.policy.MemberInputPolicy;
+import com.sneezecast.global.validation.StrippedSize;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
@@ -31,9 +33,11 @@ public record AuthGeneralSignupRequest(
     @Pattern(regexp = AuthValidationMessage.PASSWORD_REGEXP, message = AuthValidationMessage.PASSWORD_PATTERN_INVALID)
     String password,
 
-    @Schema(description = "닉네임 (2~10자). 성명은 받지 않는다", example = "재채기탐정", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "닉네임 (앞뒤 공백을 지운 뒤 2~10자, 앞뒤 공백은 지우고 저장한다). 성명은 받지 않는다", example = "재채기탐정",
+        requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank(message = AuthValidationMessage.NICKNAME_REQUIRED)
-    @Size(min = 2, max = 10, message = AuthValidationMessage.NICKNAME_LENGTH_INVALID)
+    @StrippedSize(min = MemberInputPolicy.NICKNAME_MIN_LENGTH, max = MemberInputPolicy.NICKNAME_MAX_LENGTH,
+        message = AuthValidationMessage.NICKNAME_LENGTH_INVALID)
     String nickname,
 
     @Schema(description = "이용약관 동의. 필수라 true 가 아니면 가입할 수 없다", example = "true", requiredMode = Schema.RequiredMode.REQUIRED)

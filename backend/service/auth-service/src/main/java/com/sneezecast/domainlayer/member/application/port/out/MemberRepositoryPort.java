@@ -20,4 +20,19 @@ public interface MemberRepositoryPort {
     Optional<Member> findByEmail(String email);
 
     Optional<Member> findById(long memberId);
+
+    /**
+     * 기존 회원 행의 닉네임을 바꾼다. 엔티티를 조회해 변경 감지로 고친다(coding-conventions §8-1) — <b>호출자 트랜잭션이 있어야 한다.</b>
+     *
+     * @return 바꾼 회원. 행이 없으면 empty
+     */
+    Optional<Member> updateNickname(long memberId, String nickname);
+
+    /**
+     * 기존 회원 행의 비밀번호 해시를 바꾼다. 엔티티를 조회해 변경 감지로 고친다 — <b>호출자 트랜잭션이 있어야 한다.</b>
+     *
+     * @param encodedPassword 트랜잭션 밖에서 계산한 BCrypt 해시
+     * @return 바꾼 회원. 행이 없으면 empty
+     */
+    Optional<Member> updatePassword(long memberId, String encodedPassword);
 }
