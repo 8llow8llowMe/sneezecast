@@ -39,12 +39,9 @@ const CONTENT: Record<
 
 /**
  * 내 정보의 확인 대화상자 (Confirm-logout · Confirm-consent-withdraw · Confirm-withdraw, + -T · -D).
- * 모바일은 바텀시트, 태블릿 · 데스크톱은 가운데 대화상자다(`Modal`). 회색 상자 안 점 목록 · 취소 + 동작 버튼 두 개.
+ * 모양은 `ConfirmModal` 이고, 이 컴포넌트는 종류별 문구 · 실패 문구만 고른다.
  *
  * 보내는 상태는 부모(`MeScreen`)가 갖는다 — 성공한 뒤 이동할 때까지, 응답 전에 대화상자가 닫혀도 결과를 잃지 않게 한다.
- * - `pending`: 두 버튼이 꺼진다(`aria-disabled` — 포커스를 지킨다). 닫기 · Esc · 바깥 누르기도 부모가 막는다
- * - `failed`: 대화상자 안 빨강 상자(`role="alert"`)로 알리고 다시 누를 수 있다
- *
  * 탈퇴 사유 같은 입력은 받지 않는다(자유 서술 금지 — 루트 CLAUDE.md "개인정보").
  */
 export function ConfirmDialog({
@@ -64,10 +61,55 @@ export function ConfirmDialog({
 }) {
   const content = CONTENT[kind]
   return (
+    <ConfirmModal
+      open={open}
+      title={content.title}
+      items={content.items}
+      action={content.action}
+      danger={content.danger}
+      pending={pending}
+      failure={failed ? CONFIRM_FAILURE[kind] : null}
+      onConfirm={onConfirm}
+      onClose={onClose}
+    />
+  )
+}
+
+/**
+ * 확인 대화상자의 모양. 내 정보의 확인 대화상자와 지도의 `내 동네로 설정` 확인(#145)이 같이 쓴다.
+ * 모바일은 바텀시트, 태블릿 · 데스크톱은 가운데 대화상자다(`Modal`). 회색 상자 안 점 목록 · 취소 + 동작 버튼 두 개.
+ *
+ * - `pending`: 두 버튼이 꺼진다(`aria-disabled` — 포커스를 지킨다). 닫기 · Esc · 바깥 누르기는 부모가 막는다
+ * - `failure`: 있으면 대화상자 안 빨강 상자(`role="alert"`)로 알리고 다시 누를 수 있다
+ */
+export function ConfirmModal({
+  open,
+  title,
+  items,
+  action,
+  danger = false,
+  pending,
+  failure,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean
+  title: ReactNode
+  items: ReactNode[]
+  /** 동작 버튼 글자 */
+  action: string
+  /** 되돌릴 수 없는 동작이면 빨강 버튼이다 */
+  danger?: boolean
+  pending: boolean
+  failure: string | null
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  return (
     <Modal
       open={open}
       onClose={onClose}
-      title={content.title}
+      title={title}
       // 시안은 머리줄이 없다. 모바일 시트는 숨기고, 태블릿 · 데스크톱은 공통 Modal 대로 닫기 버튼을 둔다
       compactSheet
       footer={
@@ -83,27 +125,27 @@ export function ConfirmDialog({
             취소
           </Button>
           <Button
-            variant={content.danger ? 'danger' : 'primary'}
+            variant={danger ? 'danger' : 'primary'}
             className="flex-1"
             aria-disabled={pending || undefined}
             onClick={() => {
               if (!pending) onConfirm()
             }}
           >
-            {content.action}
+            {action}
           </Button>
         </div>
       }
     >
       <ul className="flex flex-col gap-2.5 rounded-button bg-section px-4.5 py-4">
-        {content.items.map((item, index) => (
+        {items.map((item, index) => (
           <li key={index} className="flex gap-2.5 text-body leading-[1.55] text-fg">
             <span aria-hidden="true" className="mt-2.25 size-1.5 shrink-0 rounded-chip bg-fg-sub" />
             <span>{item}</span>
           </li>
         ))}
       </ul>
-      {failed && <AlertBox tone="danger">{CONFIRM_FAILURE[kind]}</AlertBox>}
+      {failure && <AlertBox tone="danger">{failure}</AlertBox>}
     </Modal>
   )
 }
