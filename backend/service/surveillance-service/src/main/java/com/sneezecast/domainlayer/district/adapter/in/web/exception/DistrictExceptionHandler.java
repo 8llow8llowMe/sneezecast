@@ -5,6 +5,7 @@ import com.sneezecast.common.exception.ValidationErrorSupport;
 import com.sneezecast.domainlayer.district.application.exception.DistrictErrorCode;
 import com.sneezecast.domainlayer.district.application.exception.DistrictException;
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -18,8 +19,9 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  * district 컨텍스트 전용 advice. 범위가 컨텍스트 패키지 전체라 공개 API({@code adapter.in.web})와 내부 API({@code adapter.in.internal})를
  * 함께 덮는다 — 내부 API 의 오류도 Feign 호출자가 읽을 수 있는 {@code Response} 봉투로 나간다.
  *
- * <p>surveillance 에 advice 가 하나뿐이라 {@code @Order} 를 두지 않는다. 컨텍스트 advice 가 늘면 coding-conventions §6-1 대로 순서를 준다.
+ * <p>컨텍스트 advice({@code ReportExceptionHandler})와 범위가 겹치지 않아 auth 의 컨텍스트별 advice 와 같이 순서 0 으로 둔다 (coding-conventions §6-1).
  */
+@Order(0)
 @RestControllerAdvice(basePackages = "com.sneezecast.domainlayer.district")
 public class DistrictExceptionHandler {
 

@@ -11,6 +11,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  *
  * <p>컨텍스트 구성은 {@code SurveillanceServiceApplicationTests} 와 같다. 컨텍스트 자체를 검사하는 그 테스트와 엔티티별 스키마 테스트 일부는
  * 일부러 따로 띄운다.
+ *
+ * <p>보안 필터를 거치는 테스트는 {@link JwtTestTokens#bearer} 에 {@link #ACCESS_KEY} 를 넘겨 토큰을 만든다.
  */
 @SpringBootTest(properties = {
     "spring.profiles.active=dev",
@@ -23,11 +25,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
     "SURVEILLANCE_DB_USERNAME=sa",
     "SURVEILLANCE_DB_PASSWORD=",
     "spring.jpa.hibernate.ddl-auto=create-drop",
-    "JWT_ACCESS_KEY=sneezecast-surveillance-h2-test-access-key-0123456789-0123456789-0123456789",
+    "JWT_ACCESS_KEY=" + SurveillanceH2TestSupport.ACCESS_KEY,
     "REPORTER_KEY_PEPPER=sneezecast-surveillance-h2-test-pepper-0123456789"
 })
 @AutoConfigureMockMvc
 public abstract class SurveillanceH2TestSupport {
+
+    /** 이 컨텍스트의 {@code JWT_ACCESS_KEY}. */
+    protected static final String ACCESS_KEY = "sneezecast-surveillance-h2-test-access-key-0123456789-0123456789-0123456789";
 
     @Autowired
     protected JdbcTemplate jdbcTemplate;
