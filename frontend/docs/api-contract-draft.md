@@ -66,6 +66,13 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
 - 재발급 요청에 `Authorization` 을 실으면 게이트웨이가 만료된 access 를 검사해 refresh 가 멀쩡해도 `SECURITY_002` 로 끝난다.
 - 비밀번호 규칙: 8~20자 · 영문자와 숫자 포함 · 공백 금지(특수문자 선택). 로그인 비밀번호는 100자 상한만 본다(`AUTH_113`). 닉네임 2~10자.
 - 재설정 토큰(`resetToken`)은 메모리에만 들고 주소 · 로그 · 브라우저 저장소에 남기지 않는다. 발송 제한은 남은 시간을 주지 않는다 — 문구에 시간을 못 박지 않는다.
+- **프론트 연동 (#163)**: `sendEmailCode` · `verifyEmailCode` · `signup`(이메일 가입) · `loginWithEmail` · `logout` 이 데이터 출처(`api` | `mock`, [conventions.md](conventions.md) "데이터 출처")를 마지막 인자로 받아 부른다. 부르는 화면이 `useDataSource()` 로 넘긴다.
+  - 인증이 필요 없는 send-code · verify-code · signup · login 은 `auth: false` 로 Authorization 없이 보낸다(만료된 access 로 게이트웨이가 `SECURITY_002` 로 거절하지 않게). logout 만 access 를 싣는다.
+  - 오류 매핑: send-code `AUTH_001` · `002` → `limit`. verify-code `AUTH_003` → `wrong`(남은 시도는 서버가 주지 않아 `auth-client.ts` 가 이메일별 실패 수를 메모리에 세어 채운다 — 코드를 받거나 · 인증을 마치거나 · `004` · `005` 면 0 으로), `AUTH_004` → `expired`, `AUTH_005` · `010` → `locked`. signup `AUTH_007` → `verification-expired`, `MEMBER_001` → `email-taken`(S02-3 에서 이메일 로그인으로 안내). login `AUTH_011` · `MEMBER_002` · 검증 `AUTH_102` · `103` · `113` → `wrong`, `AUTH_012` → `locked`, `AUTH_013` → `limited`, `MEMBER_003` → `suspended`. 그 밖(503 `AUTH_006` · `017` · 일시 장애 `UNAVAILABLE` · 분류 밖 검증 오류)은 거부하고, 화면은 "잠시 뒤 다시 시도" 안내를 띄운다.
+  - 로그인 성공 → 응답(`AuthToken`)을 그대로 `setSession`. 가입 응답에는 토큰이 없어 S02-3 이 가입 → 로그인 → 동네 저장 순서로 잇고 비밀번호는 로그인 뒤 지운다. 가입 본문의 동의 값은 화면의 동의 목록(`legal.ts` `Consent`)에서 만들고 문서 버전은 보내지 않는다(서버의 `legal.*-version`). `sensitiveHealthInfoAgreed` 는 S02-4 에서 따로 받으므로 false 다.
+  - **로그아웃 실패 정책**: 성공 · 토큰이 이미 무효(`login-required` · `reissue` · `relogin` — API 계층의 재발급이 재로그인으로 끝나 세션을 이미 비운 경우 포함)면 `clearSession('logout')`. 일시 장애 · 분류 밖 오류면 거부하고 세션을 그대로 둔다 — 서버의 refresh 세션이 살아 있는데 화면만 로그아웃된 것처럼 보이지 않게 한다. 화면(내 정보 · 재동의)은 로그아웃 실패 안내를 띄운다.
+  - 세션이 사라진 갈래는 세션 저장소가 아직 회원일 때만 비운다(재발급이 재로그인으로 끝나 `clearSession('expired')` 로 이미 비웠으면 로그아웃을 다시 방송하지 않는다). 성공 · 세션 사라짐 모두 만료 진행 표시(`clearSessionExpiring`)를 꺼 화면의 홈 이동이 이기고 만료 토스트가 남지 않게 한다.
+  - 카카오 가입(`signup({ kind: 'kakao' })`) · 비밀번호 재설정 · 기기 · 동의(건강정보 · 재동의) · 탈퇴 · 내 동네(`saveRegion`) · 프로필 함수는 아직 출처와 무관하게 목이다.
 - **BE 미정**: 카카오 로그인(`/kakao/*`, 백엔드 #61), 건강정보 동의 · 철회 · 약관 재동의 · 탈퇴(#59). 프론트 `startKakaoLogin` · `agreeHealthConsent` · `withdrawHealthConsent` · `agreeTermsReconsent` · `withdrawMembership` 은 목이다.
 
 ## 회원 `/api/v1/members` (확정)
