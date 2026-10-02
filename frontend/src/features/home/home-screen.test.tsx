@@ -331,12 +331,30 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     )
   })
 
-  it('로그인 안내 시트의 이메일로 시작하기는 이메일 로그인으로 간다', async () => {
-    search = 'report=login'
-    render(<HomeScreen week={HOME_MOCKS.high} />)
+  it('로그인 안내 시트의 이메일로 시작하기는 둘러보기 동네를 넘겨 보고하려던 이메일 로그인으로 간다', async () => {
+    search = 'region=11680640&report=login'
+    render(<HomeScreen week={HOME_MOCKS.high} regionCode="11680640" />)
 
     await userEvent.setup().click(screen.getByRole('button', { name: '이메일로 시작하기' }))
-    expect(router.push).toHaveBeenCalledWith('/login/email')
+    expect(router.push).toHaveBeenCalledWith('/login/email?region=11680640&intent=report')
+  })
+
+  // 보고하려던 로그인(#136)은 로그인 뒤 `/?region=…&report=start` 로 온다. 목 로그인은 늘 미동의 회원이라 홈이 동의 시트로 고친다
+  it('로그인 뒤 보고 진입(?report=start)으로 돌아온 미동의 회원(목 세션)에게는 동의 시트를 열고 주소를 고친다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    search = 'region=11680640&report=start'
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    render(<HomeScreen week={HOME_MOCKS.high} regionCode="11680640" />)
+
+    expect(dialogTitled('증상 보고에 동의해 주세요')?.open).toBe(true)
+    expect(dialogTitled('건강은 어땠나요?')).toBeNull()
+    await waitFor(() =>
+      expect(replaceState).toHaveBeenCalledWith(
+        { sneezecastModalDepth: 0 },
+        '',
+        '?region=11680640&report=health-consent',
+      ),
+    )
   })
 
   it('동의 시트에서 동의하면 동의를 한 번 보내고 보고 시작으로 바꾼다 — 덮어쓰기 쿼리도 지운다', async () => {
@@ -463,6 +481,16 @@ describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 
     expect(router.replace).toHaveBeenCalledWith(
       '/terms/reconsent?mock-auth=member-no-consent&mock-required=terms',
     )
+  })
+
+  // 보고하려던 로그인(#136)은 로그인 뒤 `?report=start` 로 온다. 조건이 남았으면 보내기 전 그림에 동의 시트가 비치지 않아야 한다
+  it('보낼 곳이 있으면 보고 진입 시트를 열지 않는다 (보고하려던 로그인 뒤 재동의가 남은 회원)', async () => {
+    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    search = 'region=11680640&report=start'
+    render(<HomeScreen week={HOME_MOCKS.normal} regionCode="11680640" />)
+
+    expect(dialogTitled('증상 보고에 동의해 주세요')?.open ?? false).toBe(false)
+    expect(router.replace).toHaveBeenCalledWith('/terms/reconsent?region=11680640')
   })
 
   it('하이드레이션으로 열어도 첫 그림(비회원)의 보고 진입 정리가 남지 않는다', async () => {

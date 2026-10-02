@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { OnboardingProvider, useOnboarding } from '@/features/onboarding/onboarding-context'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import type * as authClient from './auth-client'
 import { loginWithEmail } from './auth-client'
@@ -11,9 +12,10 @@ import { LoginEmailScreen } from './login-email-screen'
 import type { LoginReturn } from './login-return'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
+const pathname = vi.hoisted(() => ({ value: '/login/email' }))
 vi.mock('next/navigation', () => ({
   useRouter: () => router,
-  usePathname: () => '/login/email',
+  usePathname: () => pathname.value,
 }))
 
 // 실제 목을 쓰되 응답 지연 · 실패를 흉내 낼 수 있게 감싼다
@@ -89,7 +91,11 @@ describe('LoginEmailScreen', () => {
 
   it('돌아갈 곳(?next=/me)이 있으면 성공한 뒤 동네를 남긴 내 정보로 기록을 바꿔 간다', async () => {
     vi.mocked(loginWithEmail).mockResolvedValueOnce({ status: 'ok' })
-    const { user, email, password, submit } = setup(false, { next: '/me', region: '11440660' })
+    const { user, email, password, submit } = setup(false, {
+      next: '/me',
+      region: '11440660',
+      intent: null,
+    })
     await fill(user, email, password, 'dong@example.com', 'dongne2026')
     await user.click(submit)
 
@@ -97,8 +103,29 @@ describe('LoginEmailScreen', () => {
     expect(router.replace).toHaveBeenCalledTimes(1)
   })
 
+  it('보고하려던 로그인(?intent=report)이면 성공한 뒤 같은 동네 홈의 보고 진입으로 기록을 바꿔 간다', async () => {
+    const { user, email, password, submit } = setup(false, {
+      next: '/',
+      region: '11680640',
+      intent: 'report',
+    })
+    await fill(user, email, password, 'dong@example.com', 'dongne2026')
+    await user.click(submit)
+
+    await waitFor(() =>
+      expect(router.replace).toHaveBeenCalledWith('/?region=11680640&report=start'),
+    )
+    expect(router.replace).toHaveBeenCalledTimes(1)
+  })
+
+  it('보고하려던 로그인을 주소로 바로 열었으면 뒤로는 그 돌아갈 곳을 붙인 로그인 방법 고르기로 바꿔 간다', async () => {
+    const { user } = setup(false, { next: '/', region: '11680640', intent: 'report' })
+    await user.click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.replace).toHaveBeenCalledWith('/login?region=11680640&intent=report')
+  })
+
   it('주소로 바로 들어왔으면 뒤로는 돌아갈 곳을 붙인 로그인 방법 고르기로 바꿔 간다', async () => {
-    const { user } = setup(false, { next: '/me', region: '11440660' })
+    const { user } = setup(false, { next: '/me', region: '11440660', intent: null })
     await user.click(screen.getByRole('button', { name: '뒤로' }))
     expect(router.replace).toHaveBeenCalledWith('/login?next=%2Fme&region=11440660')
   })
@@ -264,5 +291,51 @@ describe('LoginEmailScreen', () => {
     expect(screen.getByRole('link', { name: '이메일로 가입하기' }).getAttribute('href')).toBe(
       '/signup/email',
     )
+  })
+})
+
+describe('LoginEmailScreen 뒤로 — 앱 안 이동 기록', () => {
+  beforeEach(() => {
+    router.replace.mockClear()
+    router.back.mockClear()
+  })
+
+  /** 앱 안에서 앞 화면(`from`)을 지나 이메일 로그인에 온 것처럼 그린다 */
+  function visitLoginEmail(from: string, loginReturn?: LoginReturn) {
+    pathname.value = from
+    const tree = () => (
+      <NavTrailProvider>
+        <OnboardingProvider>
+          {pathname.value === '/login/email' ? (
+            <LoginEmailScreen {...(loginReturn ? { loginReturn } : {})} />
+          ) : (
+            <div />
+          )}
+        </OnboardingProvider>
+      </NavTrailProvider>
+    )
+    const { rerender } = render(tree())
+    pathname.value = '/login/email'
+    rerender(tree())
+  }
+
+  it('보고하려던 로그인을 홈(로그인 안내 시트)에서 열었으면 기록을 되돌려 시트로 돌아간다', async () => {
+    visitLoginEmail('/', { next: '/', region: null, intent: 'report' })
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).toHaveBeenCalledOnce()
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('그 밖의 로그인은 홈에서 왔어도 로그인 방법 고르기로 바꿔 간다 (지금과 같다)', async () => {
+    visitLoginEmail('/')
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).not.toHaveBeenCalled()
+    expect(router.replace).toHaveBeenCalledWith('/login')
+  })
+
+  it('로그인 방법 고르기에서 왔으면 기록을 되돌린다', async () => {
+    visitLoginEmail('/login', { next: '/', region: '11680640', intent: 'report' })
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).toHaveBeenCalledOnce()
   })
 })

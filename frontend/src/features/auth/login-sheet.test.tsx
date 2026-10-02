@@ -92,11 +92,18 @@ describe('LoginSheet', () => {
     expect(router.push).not.toHaveBeenCalled()
   })
 
-  it('이메일로 시작하기는 이메일 로그인으로 간다 (가입하기 링크가 그 화면에 있다)', async () => {
+  it('이메일로 시작하기는 보고하려던 이메일 로그인으로 간다 (가입하기 링크가 그 화면에 있다)', async () => {
     render(<LoginSheet open onClose={() => {}} />)
 
     await userEvent.setup().click(screen.getByRole('button', { name: '이메일로 시작하기' }))
-    expect(router.push).toHaveBeenCalledWith('/login/email')
+    expect(router.push).toHaveBeenCalledWith('/login/email?intent=report')
+  })
+
+  it('둘러보기 동네가 있으면 이메일 로그인에 함께 넘겨 로그인 뒤 같은 동네로 돌아온다', async () => {
+    render(<LoginSheet open onClose={() => {}} regionCode="11680640" />)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '이메일로 시작하기' }))
+    expect(router.push).toHaveBeenCalledWith('/login/email?region=11680640&intent=report')
   })
 
   it('닫기를 누르면 onClose 를 부른다', async () => {

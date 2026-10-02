@@ -11,12 +11,14 @@ import {
   SIGNUP_EMAIL_PATH,
   START_PATH,
 } from '@/features/onboarding/paths'
+import { navHref } from '@/lib/nav'
 import { useHydrated } from '@/lib/use-hydrated'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
 import type { MockAuthState } from './auth-client'
 import { isResetDone } from './login-notice'
-import { carriedParams, NEXT_PARAM, safeNextPath, stepTarget } from './required-steps'
+import { afterLoginQuery, loginReturnFromSearch } from './login-return'
+import { carriedParams } from './required-steps'
 import { useMockAuth } from './use-mock-auth'
 
 /* ── 회원이 연 로그인 · 가입 화면은 홈으로 (#127) ─────────────────────────────────────────────────
@@ -40,6 +42,11 @@ import { useMockAuth } from './use-mock-auth'
  *
  * 보낼 곳에는 둘러보기 동네와 QA 덮어쓰기(`?mock-auth=` 등)를 남긴다(`carriedParams`). 세션을 바꾸는 이동이 아니라 같은 회원으로 보여야 하고,
  * `/login?mock-auth=member` 에서 덮어쓰기를 버리면 홈이 비회원으로 보인다.
+ *
+ * **보고하려던 로그인(`?intent=report`, #136)이어도 보고 진입(`report=start`)을 붙이지 않는다** — `next`(허용 목록) · 동네 · QA 덮어쓰기만 남기고
+ * `intent` 는 버린다. 이 가드는 닿을 때의 상태로 한 번만 판단해 로그인 성공 이동(화면이 스스로 보고 진입으로 감)과 겹치지 않는다. 회원이
+ * `/login?intent=report` 에 닿는 것은 사실상 로그인 성공 뒤 브라우저 뒤로뿐이고, 그때 보고 시트를 다시 열면 뒤로 가려는 사람을 붙잡는다.
+ * 같은 까닭으로 `intent` 를 `carriedParams` 에도 넣지 않는다(그 목록은 재동의 · 동네 다시 고르기 화면을 오가며 남기는 쿼리다).
  */
 
 /** 회원이 열면 홈(또는 `next`)으로 보내는 경로 */
@@ -58,9 +65,17 @@ export function isGuestOnly(pathname: string, searchParams: Pick<URLSearchParams
   return !(pathname === LOGIN_EMAIL_PATH && isResetDone(searchParams.get('reason') ?? undefined))
 }
 
-/** 회원을 보낼 곳. `?next=` 가 허용 목록 안이면 그곳, 아니면 홈이다. 둘러보기 동네 · QA 덮어쓰기를 남긴다 */
+/**
+ * 회원을 보낼 곳. `?next=` 가 허용 목록 안이면 그곳, 아니면 홈이다. 둘러보기 동네 · QA 덮어쓰기를 남기고,
+ * 보고하려던 로그인이어도 보고 진입은 붙이지 않는다(위 — 브라우저 뒤로를 붙잡지 않게)
+ */
 export function memberTarget(searchParams: Pick<URLSearchParams, 'get'>): string {
-  return stepTarget([], safeNextPath(searchParams.get(NEXT_PARAM)), carriedParams(searchParams))
+  const loginReturn = loginReturnFromSearch(searchParams)
+  const query = afterLoginQuery({ ...loginReturn, intent: null })
+  carriedParams(searchParams).forEach((value, key) => {
+    if (!query.has(key)) query.set(key, value)
+  })
+  return navHref(loginReturn.next, query.toString())
 }
 
 type Arrival = { path: string; auth: MockAuthState }

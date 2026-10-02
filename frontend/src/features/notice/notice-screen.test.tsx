@@ -242,10 +242,10 @@ describe('NoticeScreen — 이동', () => {
     expect(router.back).not.toHaveBeenCalled()
   })
 
-  it('보고 버튼은 비회원이면 로그인, 동의한 회원이면 홈의 보고 흐름으로 간다', async () => {
+  it('보고 버튼은 비회원이면 보고하려던 로그인, 동의한 회원이면 홈의 보고 흐름으로 간다', async () => {
     const { unmount } = render(<NoticeScreen data={data('published')} />)
     await userEvent.click(screen.getAllByRole('button', { name: '로그인하고 보고하기' })[0]!)
-    expect(router.push).toHaveBeenLastCalledWith('/login')
+    expect(router.push).toHaveBeenLastCalledWith('/login?intent=report')
     unmount()
 
     search = 'mock-auth=member'

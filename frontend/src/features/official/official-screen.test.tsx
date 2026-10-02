@@ -189,14 +189,14 @@ describe('OfficialScreen 이동', () => {
     )
   })
 
-  it('비회원의 보고 버튼은 로그인으로 간다', async () => {
+  it('비회원의 보고 버튼은 보고하려던 로그인(?intent=report)으로 간다', async () => {
     renderOfficial(OFFICIAL_MOCKS.published)
 
     const buttons = screen.getAllByRole('button', { name: '로그인하고 보고하기' })
     // 태블릿 머리줄 · 데스크톱 머리줄에 하나씩 있다
     expect(buttons).toHaveLength(2)
     await userEvent.setup().click(buttons[0] as HTMLElement)
-    expect(router.push).toHaveBeenCalledWith('/login')
+    expect(router.push).toHaveBeenCalledWith('/login?intent=report')
   })
 
   it('동의한 회원의 보고 버튼은 홈의 보고 흐름으로 간다', async () => {

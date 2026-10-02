@@ -7,10 +7,11 @@ import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
 import { KakaoButton } from '@/components/kakao-button'
 import { Modal } from '@/components/modal'
-import { LOGIN_EMAIL_PATH } from '@/features/onboarding/paths'
+import { HOME_PATH, LOGIN_EMAIL_PATH } from '@/features/onboarding/paths'
 import { useActiveRef } from '@/lib/use-active-ref'
 
 import { startKakaoLogin } from './auth-client'
+import { loginHref } from './login-return'
 
 /**
  * 로그인 안내 시트 (S03 Login-sheet). 비회원이 홈에서 보고를 누르면 홈 위에 뜬다.
@@ -18,22 +19,33 @@ import { startKakaoLogin } from './auth-client'
  *
  * - 카카오로 계속하기: `startKakaoLogin` 이 돌려준 주소로 간다. 보내는 중에는 다시 누를 수 없다
  * - 이메일로 시작하기: 이메일 로그인(S13-5)으로 간다. 홈을 둘러보다 보고하려는 사람은 이미 회원인 경우가 많고,
- *   이메일 로그인 화면에 "이메일로 가입하기" 링크가 있어 처음인 사람도 한 번에 가입으로 갈 수 있다
+ *   이메일 로그인 화면에 "이메일로 가입하기" 링크가 있어 처음인 사람도 한 번에 가입으로 갈 수 있다.
+ *   보고하려던 로그인(`?intent=report`)과 둘러보기 동네를 넘겨 로그인 뒤 같은 동네 홈의 보고 진입으로 돌아온다(#136, `login-return.ts`).
+ *   카카오는 아직 이어 넘기지 않는다(가입 · 로그인을 마치면 홈 — 후속)
  *
  * 시작하지 못하면 시트 안에 빨강 상자(`role="alert"`)로 알린다 — 시트가 뒤 화면을 막아 홈의 알림은 읽히지 않는다.
  * 내용은 열려 있을 때만 그린다. 닫으면 보내는 중 상태가 지워지고, 닫힌 뒤 늦게 온 응답은 버린다(`useActiveRef`).
  *
  * 시안: docs/design/auth/screens/ 의 Login-sheet (+ -T · -D)
  */
-export function LoginSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function LoginSheet({
+  open,
+  onClose,
+  regionCode = null,
+}: {
+  open: boolean
+  onClose: () => void
+  /** 둘러보기 동네 코드. 로그인 뒤 돌아올 홈에 남긴다 */
+  regionCode?: string | null
+}) {
   return (
     <Modal open={open} onClose={onClose} title="보고는 회원만 할 수 있어요">
-      {open && <LoginSheetBody />}
+      {open && <LoginSheetBody regionCode={regionCode} />}
     </Modal>
   )
 }
 
-function LoginSheetBody() {
+function LoginSheetBody({ regionCode }: { regionCode: string | null }) {
   const router = useRouter()
   const active = useActiveRef()
   const [pending, setPending] = useState(false)
@@ -68,7 +80,15 @@ function LoginSheetBody() {
       <KakaoButton disabled={pending} onClick={() => void continueWithKakao()}>
         카카오로 계속하기
       </KakaoButton>
-      <Button variant="secondary" fullWidth onClick={() => router.push(LOGIN_EMAIL_PATH)}>
+      <Button
+        variant="secondary"
+        fullWidth
+        onClick={() =>
+          router.push(
+            loginHref(LOGIN_EMAIL_PATH, { next: HOME_PATH, region: regionCode, intent: 'report' }),
+          )
+        }
+      >
         이메일로 시작하기
       </Button>
       <p className="text-center text-sub text-fg-sub">

@@ -31,7 +31,8 @@ import { isReturning, loginHref, type LoginReturn, NO_LOGIN_RETURN } from './log
  * **돌아갈 곳**(`?next=` · `?region=`, #123): 회원만 쓰는 화면(내 정보)의 가드가 붙여 보낸다. 이메일 로그인 링크에 그대로 넘겨
  * 로그인에 성공하면 그곳으로 간다(`login-return.ts`). 이때 뒤로는 앞 화면을 따지지 않고 되돌린다 — 가드가 기록을 바꿔 보내
  * 바로 앞이 내 정보 링크를 누른 화면이다. 돌아갈 곳이 없으면 지금처럼 시작 화면(S01)에서 왔을 때만 되돌린다.
- * 카카오 · 이메일 가입은 아직 돌아갈 곳을 이어 받지 않는다(가입을 마치면 홈).
+ * 머리줄 보고 버튼이 보낸 보고하려던 로그인(`?intent=report`, #136)도 같다 — 이메일 로그인에 이어 넘기고, 뒤로는 보고를 누른 화면으로 되돌린다.
+ * 카카오 · 이메일 가입은 아직 돌아갈 곳을 이어 받지 않는다(가입을 마치면 홈). 이메일 가입의 뒤로는 기록을 되돌려 이 주소(쿼리 포함)로 온다.
  *
  * 시안: docs/design/auth/screens/ 의 Login · Login-kakao-fail · Login-kakao-exists (+ -T · -D)
  */
@@ -40,7 +41,7 @@ export function LoginScreen({
   loginReturn = NO_LOGIN_RETURN,
 }: {
   notice: LoginNotice | null
-  /** 로그인 뒤 돌아갈 곳. 라우트가 `?next=` · `?region=` 에서 읽어 넘긴다 */
+  /** 로그인 뒤 돌아갈 곳. 라우트가 `?next=` · `?region=` · `?intent=` 에서 읽어 넘긴다 */
   loginReturn?: LoginReturn
 }) {
   const router = useRouter()
