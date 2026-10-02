@@ -2,6 +2,7 @@ import { type ReactNode, Suspense } from 'react'
 import type { Metadata, Viewport } from 'next'
 
 import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
+import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME } from '@/lib/app-info'
 import { clientEnv } from '@/lib/env.client'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 import { THEME_COLOR } from '@/styles/theme-color'
@@ -15,11 +16,21 @@ export const metadata: Metadata = {
   // 없으면 Next 가 og:image 등을 상대 경로로 내보내 공유 크롤러가 읽지 못한다
   metadataBase: new URL(clientEnv.siteUrl),
   title: {
-    default: '우리동네체온계',
-    template: '%s · 우리동네체온계',
+    default: APP_NAME,
+    template: `%s · ${APP_NAME}`,
   },
-  description: '이웃의 주간 건강 보고로 우리 동네 증상 변화를 확인해요.',
-  applicationName: '우리동네체온계',
+  description: APP_DESCRIPTION,
+  applicationName: APP_NAME,
+  // iOS 홈 화면 앱 표시. 매니페스트(app/manifest.ts)는 Next 가 <link rel="manifest"> 로 넣고,
+  // 아이콘은 app/icon.tsx(파비콘) · app/apple-icon.tsx(apple-touch-icon) 가 넣는다.
+  appleWebApp: {
+    capable: true,
+    // 아이콘 아래 이름. 매니페스트 short_name 과 같다(src/lib/app-info.ts)
+    title: APP_SHORT_NAME,
+    // 흰 바탕에 검은 글자 상태 표시줄. black-translucent 는 화면이 상태 표시줄 밑까지 올라가는데
+    // 머리줄이 위쪽 안전 영역을 비우지 않고, 흰 글자가 흰 화면에 묻힌다
+    statusBarStyle: 'default',
+  },
 }
 
 export const viewport: Viewport = {
