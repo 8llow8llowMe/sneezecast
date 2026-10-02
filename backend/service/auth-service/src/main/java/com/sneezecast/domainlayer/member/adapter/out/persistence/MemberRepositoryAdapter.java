@@ -12,6 +12,8 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -52,6 +54,28 @@ public class MemberRepositoryAdapter implements MemberRepositoryPort {
     @Override
     public Optional<Member> findById(long memberId) {
         return memberRepository.findById(memberId).map(memberMapper::toDomainFromEntity);
+    }
+
+    /**
+     * 조회한 엔티티를 바꿔 변경 감지로 UPDATE 한다. 도메인에서 새로 매핑한 엔티티를 {@code save} 하면 {@code isNew()} 가 true 라 INSERT 로 가서 PK
+     * 위반이다(MemberEntity 주의). 트랜잭션이 없으면 조회한 엔티티가 바로 분리돼 변경이 조용히 사라지므로 {@code MANDATORY} 로 호출자 트랜잭션을 강제한다.
+     */
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<Member> updateNickname(long memberId, String nickname) {
+        return memberRepository.findById(memberId).map(entity -> {
+            entity.changeNickname(nickname);
+            return memberMapper.toDomainFromEntity(entity);
+        });
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<Member> updatePassword(long memberId, String encodedPassword) {
+        return memberRepository.findById(memberId).map(entity -> {
+            entity.changePassword(encodedPassword);
+            return memberMapper.toDomainFromEntity(entity);
+        });
     }
 
     /** MySQL 은 {@code for key 'member.uk_member_email'}, H2 는 {@code PUBLIC.UK_MEMBER_EMAIL ...} 로 싣는다 — 대소문자를 무시하고 본다. */
