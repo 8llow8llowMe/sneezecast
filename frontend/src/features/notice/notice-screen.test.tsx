@@ -262,4 +262,45 @@ describe('NoticeScreen — 이동', () => {
       '야간·휴일 문 연 곳 찾기 화면은 준비하고 있어요',
     )
   })
+
+  it('둘러보기 동네(regionCode)를 서비스명 · 메뉴 · 탭바 · 보고 진입 · 뒤로 주소에 남긴다', async () => {
+    search = 'mock-auth=member'
+    render(
+      <NavTrailProvider>
+        <NoticeScreen data={data('published')} regionCode="1111051500" />
+      </NavTrailProvider>,
+    )
+
+    const hrefs = [
+      ...document.querySelectorAll('nav[aria-label="주요 메뉴"] a, nav[aria-label="계정 메뉴"] a'),
+    ].map((link) => link.getAttribute('href'))
+    // 데스크톱 가운데 메뉴 둘(홈 · 지도) + 오른쪽 끝 내 정보 + 태블릿 탭바 셋
+    expect(hrefs).toEqual([
+      '/?region=1111051500',
+      '/map?region=1111051500',
+      '/me?region=1111051500',
+      '/?region=1111051500',
+      '/map?region=1111051500',
+      '/me?region=1111051500',
+    ])
+    expect(screen.getByRole('link', { name: '우리동네체온계' }).getAttribute('href')).toBe(
+      '/?region=1111051500',
+    )
+
+    await userEvent.click(screen.getAllByRole('button', { name: '이번 주 건강 보고하기' })[0]!)
+    expect(router.push).toHaveBeenLastCalledWith('/?region=1111051500&report=start')
+    // 주소로 바로 들어왔으면 동네를 남긴 홈으로 간다
+    await userEvent.click(screen.getAllByRole('button', { name: '뒤로' })[0]!)
+    expect(router.replace).toHaveBeenCalledWith('/?region=1111051500')
+  })
+
+  it.each([
+    ['비회원', '', 0],
+    ['동의 전 회원', 'mock-auth=member-no-consent', 2],
+    ['동의한 회원', 'mock-auth=member', 2],
+  ])('%s: 알림(종)은 비회원에게만 그리지 않는다 (태블릿 · 데스크톱 머리줄)', (_, base, count) => {
+    search = base
+    render(<NoticeScreen data={data('published')} />)
+    expect(screen.queryAllByRole('button', { name: '알림 설정' })).toHaveLength(count)
+  })
 })

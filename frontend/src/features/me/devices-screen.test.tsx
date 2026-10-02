@@ -287,14 +287,22 @@ describe('DevicesScreen 뒤로 가기 · 셸', () => {
     renderDevices({ regionCode: '11440660' })
     await screen.findByRole('list', { name: '로그인한 기기 목록' })
 
-    const navs = screen.getAllByRole('navigation', { name: '주요 메뉴', hidden: true })
-    for (const nav of navs) {
-      expect([...nav.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual([
-        '/?region=11440660',
-        '/map?region=11440660',
-        '/me?region=11440660',
-      ])
-    }
+    // 데스크톱 머리줄(가운데 홈 · 지도 + 오른쪽 끝 내 정보)과 태블릿 탭바
+    const [desktopMenu, tabBar] = screen.getAllByRole('navigation', {
+      name: '주요 메뉴',
+      hidden: true,
+    })
+    const hrefs = (nav: Element | undefined) =>
+      [...(nav?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href'))
+    expect(hrefs(desktopMenu)).toEqual(['/?region=11440660', '/map?region=11440660'])
+    expect(hrefs(screen.getByRole('navigation', { name: '계정 메뉴', hidden: true }))).toEqual([
+      '/me?region=11440660',
+    ])
+    expect(hrefs(tabBar)).toEqual([
+      '/?region=11440660',
+      '/map?region=11440660',
+      '/me?region=11440660',
+    ])
     // 태블릿 머리줄 · 데스크톱 머리줄 두 곳에 있다 (폭마다 하나만 보인다)
     const reports = screen.getAllByRole('button', { name: '이번 주 건강 보고하기' })
     expect(reports).toHaveLength(2)

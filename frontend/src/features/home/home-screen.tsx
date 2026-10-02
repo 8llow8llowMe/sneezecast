@@ -46,7 +46,7 @@ import { useExplainParam } from './use-explain-param'
  * 동의한 회원은 보고 흐름(`?report=start`)이 열린다. 주소로 바로 들어온 값이 상태에 맞지 않으면 맞는 시트로 바꾼다(replace).
  * 보고 흐름과 보낸 보고는 동의한 회원에게만 그린다.
  *
- * 비회원 홈(Home-guest)은 동네 현황이 같고 보고 버튼 문구가 "로그인하고 보고하기" 다. 모바일은 하단 버튼 위에 한 줄 안내,
+ * 비회원 홈(Home-guest)은 동네 현황이 같고 보고 버튼 문구가 "로그인하고 보고하기" 다. 머리줄 알림(종)은 그리지 않는다(#123). 모바일은 하단 버튼 위에 한 줄 안내,
  * 태블릿 · 데스크톱은 본문 맨 위에 안내 상자를 둔다. 둘러보기에서 고른 동네(`regionCode`)는 메뉴 링크에 붙여 잃지 않게 한다.
  *
  * 다시 들어온 회원에게 약관 재동의 · 동네 다시 고르기 조건이 있으면 그 화면으로 먼저 보낸다(`useRequiredStepsGate`, 내 정보와 같다).
@@ -103,7 +103,7 @@ export function HomeScreen({
         regionName={week.regionName}
         current="home"
         onRegionClick={() => notReady('동네 바꾸기')}
-        onNotificationClick={() => notReady('알림 설정')}
+        onNotificationClick={guest ? undefined : () => notReady('알림 설정')}
         onReportClick={openReport}
         reportLabel={guest ? '로그인하고 보고하기' : undefined}
         navSearch={navSearch}

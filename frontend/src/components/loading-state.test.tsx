@@ -25,14 +25,20 @@ describe('LoadingState', () => {
 
   it('주요 메뉴 화면이면 탭바 · 데스크톱 메뉴에 지금 메뉴를 표시한다', () => {
     render(<LoadingState nav="me" />)
-    const menus = screen.getAllByRole('navigation', { name: '주요 메뉴' })
+    const [desktopMenu, tabBar] = screen.getAllByRole('navigation', { name: '주요 메뉴' })
 
-    // 데스크톱 머리줄 메뉴와 모바일 · 태블릿 탭바
-    expect(menus).toHaveLength(2)
-    menus.forEach((menu) => {
-      const current = within(menu).getByRole('link', { current: 'page' })
-      expect(current.textContent).toContain('내 정보')
-    })
+    // 데스크톱 가운데 메뉴(홈 · 지도)에는 내 정보가 없고, 머리줄 오른쪽 끝(계정 메뉴)이 지금 메뉴다
+    expect(desktopMenu && within(desktopMenu).queryByRole('link', { current: 'page' })).toBeNull()
+    const account = screen.getByRole('navigation', { name: '계정 메뉴' })
+    expect(within(account).getByRole('link', { current: 'page' }).textContent).toBe('내 정보')
+    expect(tabBar && within(tabBar).getByRole('link', { current: 'page' }).textContent).toContain(
+      '내 정보',
+    )
+  })
+
+  it('데스크톱 머리줄의 서비스명은 홈으로 가는 링크다', () => {
+    render(<LoadingState nav="me" />)
+    expect(screen.getByRole('link', { name: '우리동네체온계' }).getAttribute('href')).toBe('/')
   })
 
   it('홈에만 모바일 하단 보고 버튼 자리를 둔다', () => {

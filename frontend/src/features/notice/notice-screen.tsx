@@ -15,10 +15,11 @@ import { ToastRegion, useToast } from '@/components/toast'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { GROUP_LABEL, scaleMax, TREND_LABEL, TREND_TEXT_CLASS } from '@/features/home/symptom'
 import { TrendBars } from '@/features/home/symptom-trends'
-import { reportHrefFor } from '@/features/me/me-paths'
+import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { formatCount, formatMonthDay } from '@/lib/format'
 import { formatIsoWeekOfMonth, formatIsoWeekRange } from '@/lib/iso-week'
+import { navHref } from '@/lib/nav'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
 import type {
@@ -64,17 +65,30 @@ const suffix = (value: string | null, word: string) => (value === null ? null : 
  * - "뒤로" 는 앱 안에서 거쳐 왔으면 기록을 되돌리고, 주소로 바로 들어왔거나 새로고침 · 새 탭으로 열었으면
  *   홈으로 기록을 바꿔 간다(`useNavTrail`).
  */
-export function NoticeScreen({ data }: { data: RegionNotice }) {
+export function NoticeScreen({
+  data,
+  regionCode = null,
+}: {
+  data: RegionNotice
+  /**
+   * 둘러보기(`?region=`)로 고른 행정동 코드. 머리줄 서비스명 · 메뉴 · 탭바 · 뒤로 · 보고 진입 주소에 남긴다(공식 정보와 같다).
+   * 주소 경로의 동네(`[region]`, 이 안내의 동네)와는 다른 값이다
+   */
+  regionCode?: string | null
+}) {
   const router = useRouter()
   const navTrail = useNavTrail()
   const auth = useMockAuth()
   const { toast, show, dismiss } = useToast()
+  const navSearch = regionSearch(regionCode)
 
   const title = `${data.regionName} 이번 주 안내`
-  const goBack = () => navTrail.goBack(HOME_PATH)
+  const goBack = () => navTrail.goBack(navHref(HOME_PATH, navSearch))
   // 동네 바꾸기 · 알림 설정 · 문 연 곳 찾기 화면이 생기면 각각 연결한다
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
-  const openReport = () => router.push(reportHrefFor(auth, null))
+  // 알림(종)은 회원에게만 그린다 — 데스크톱 머리줄(AppHeader)과 모바일 · 태블릿 머리줄이 같은 규칙이다 (#123)
+  const notify = auth === 'guest' ? undefined : () => notReady('알림 설정')
+  const openReport = () => router.push(reportHrefFor(auth, regionCode))
   const reportLabel = auth === 'guest' ? '로그인하고 보고하기' : '이번 주 건강 보고하기'
   const findOpenClinics = () => notReady('야간·휴일 문 연 곳 찾기')
 
@@ -90,9 +104,10 @@ export function NoticeScreen({ data }: { data: RegionNotice }) {
           regionName={data.regionName}
           current="home"
           onRegionClick={() => notReady('동네 바꾸기')}
-          onNotificationClick={() => notReady('알림 설정')}
+          onNotificationClick={notify}
           onReportClick={openReport}
           reportLabel={reportLabel}
+          navSearch={navSearch}
         />
       </div>
 
@@ -103,7 +118,7 @@ export function NoticeScreen({ data }: { data: RegionNotice }) {
         </h1>
         <span className="hidden grow tablet:block" />
         <span className="hidden tablet:contents">
-          <IconButton label="알림 설정" icon={<BellIcon />} onClick={() => notReady('알림 설정')} />
+          {notify && <IconButton label="알림 설정" icon={<BellIcon />} onClick={notify} />}
           <Button size="sm" onClick={openReport}>
             {reportLabel}
           </Button>
@@ -188,7 +203,7 @@ export function NoticeScreen({ data }: { data: RegionNotice }) {
 
       {/* 탭바는 태블릿만. 모바일 시안은 탭바가 없고, 데스크톱은 머리줄 메뉴를 쓴다 */}
       <div className="sticky bottom-0 hidden tablet:block">
-        <TabBar current="home" />
+        <TabBar current="home" navSearch={navSearch} />
       </div>
 
       <ToastRegion
