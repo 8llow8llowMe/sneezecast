@@ -22,6 +22,7 @@ frontend/
 │   ├── layout.tsx       # 서체 · 메타데이터 · 뷰포트
 │   ├── manifest.ts      # 웹 앱 매니페스트. 아이콘 라우트(icon · apple-icon · app-icons/)와 함께 docs/design/SCREENS.md "앱 매니페스트 · 아이콘"
 │   └── globals.css      # Tailwind 진입점 + 토큰 → 테마 매핑
+├── proxy.ts             # Next 16 Proxy(옛 미들웨어). 처음 온 사람을 시작 화면으로 보낸다 — 로직은 features/onboarding/first-visit.ts
 ├── src/
 │   ├── components/      # 도메인을 모르는 공통 UI (버튼, 리스트 행, 바텀시트 …)
 │   ├── features/<도메인>/ # 화면별 UI (home, report, onboarding, region, map, notice, official, admin …)
@@ -129,6 +130,7 @@ frontend/
 - **브라우저 연결 상태는 `src/lib/use-online.ts` 의 `useOnline()` 으로만 읽는다.** 서버 그림과 하이드레이션 첫 그림은 늘 온라인이다(SSR 불일치 방지). 오프라인 안내는 화면 전체를 바꾸지 않고 띠(`OfflineNotice`)로 보인다.
 - **로그인 만료는 `src/lib/session-expiry.ts` 의 `notifySessionExpired()` 하나로 알린다.** 루트 레이아웃의 `features/auth/session-expiry-watcher.tsx` 가 세션을 비우고 `/login?reason=expired` 로 `replace` 한다. 연동 때 API 계층의 401 처리가 부르고, 화면 코드는 401 을 따로 다루지 않는다.
 - **회원만 보는 화면의 가드는 하이드레이션을 마친 뒤 판단한다.** 서버와 하이드레이션 첫 그림의 회원 상태는 늘 `guest` 라(`useMockAuth`) 그 값으로 로그인에 보내면 회원도 튕긴다. `src/lib/use-hydrated.ts` 가 true 인 그림의 상태로만 판단하고 Next 라우터(`router.replace`)로 보낸다 (`features/me/member-gate.ts`).
+  - 반대 방향(회원이 연 시작 · 로그인 · 가입 화면 → 홈 또는 `?next=`)은 첫 진입 레이아웃의 `features/auth/guest-only-gate.tsx` 다. 같은 이유로 하이드레이션 뒤에 판단하고, **화면에 닿을 때의 상태로 한 번만** 판단한다 — 그 화면에서 회원이 되는 것(로그인 성공)은 화면이 스스로 이동하므로 두 이동이 겹치지 않게 끼어들지 않는다(docs/design/SCREENS.md "첫 진입").
 - **router 내비게이션이 대기 중일 때 `history.replaceState` · `pushState` 를 부르면 Next 가 그 내비게이션을 버린다 — 가드가 보낼 곳이 있으면 주소 정리를 하지 않는다.** 원시 history 변경이 Next 의 복원(ACTION_RESTORE)을 일으켜 대기 중인 `router.replace` 가 버려진다(프로덕션 빌드에서 재현). 같은 그림에서 주소 쿼리를 정리하는 화면(홈의 `?report=` · 내 정보의 `?confirm=` 정리)은 `useRequiredStepsGate` · `useRequiredStepsTarget`(`features/me/member-gate.ts`)이 돌려준 보낼 곳이 있으면 정리를 건너뛴다.
 - **레이아웃 · 정적 라우트에서 `useSearchParams` 를 읽는 클라이언트 컴포넌트는 `<Suspense>` 로 감싼다.** 감싸지 않으면 `next build` 의 정적 생성이 `missing-suspense-with-csr-bailout` 으로 멈춘다(dev 서버에서는 드러나지 않는다). 하이드레이션 뒤에야 그리는 화면은 대체 그림을 비워 둔다(`app/me/layout.tsx` 의 가드, `app/(onboarding)/terms/reconsent/page.tsx`). 페이지가 `searchParams` 를 await 하면 동적 라우트라 필요 없다.
 - **돌아갈 곳(`?next=`)은 허용 목록 안의 경로만 받는다.** 가드가 다른 화면으로 보냈다가 돌려보낼 때 `?next=` 를 쓰고, 받는 쪽은 `features/auth/required-steps.ts` 의 `safeNextPath` 로 정확히 같은 경로(`NEXT_PATHS`: `/` · `/me` · `/me/devices` · `/me/password`)일 때만 따른다. 로그인 화면(`/login` → `/login/email`)도 `features/auth/login-return.ts` 로 `?next=` 를 받아 로그인 뒤 그곳으로 간다(내 정보 가드가 씀). 로그인으로 넘기는 쿼리는 `next` 와 둘러보기 동네뿐이고 목 덮어쓰기는 넘기지 않는다(로그인이 세션을 바꾸므로). 쿼리 · `#` 가 붙었거나 다른 오리진(`//…` · `https://…`)이면 홈으로 보낸다(오픈 리다이렉트 방지). 함께 넘길 쿼리는 둘러보기 동네(`region`)와 QA 용 목 덮어쓰기(`mock-auth` · `mock-provider` · `mock-required`)뿐이다(`carriedParams`). 새 화면을 가드에 걸면 목록에 더한다.
