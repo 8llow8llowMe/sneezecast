@@ -23,13 +23,22 @@ export function nextTrail(trail: readonly string[], pathname: string, replaced: 
 }
 
 /**
- * 지금 화면 바로 앞에 앱 안 기록이 있어 기록을 되돌려 갈 수 있는지.
- * `previousPaths` 를 주면 바로 앞이 그 후보 중 하나일 때만, 생략하면 바로 앞이 앱 안 화면이기만 하면 참이다.
+ * 되돌려 갈 바로 앞 화면의 조건. 후보 경로 목록이거나, 후보가 정해지지 않은 화면이면 바로 앞 경로를 받아 판단하는 함수다
+ * (예: 로그인 방법 고르기 — 앞 화면은 아무 화면이나 되지만 그만둔 가입 · 재설정 단계로는 되돌리지 않는다)
  */
-export function canGoBackTo(trail: readonly string[], previousPaths?: readonly string[]): boolean {
+export type PreviousPaths = readonly string[] | ((previous: string) => boolean)
+
+/**
+ * 지금 화면 바로 앞에 앱 안 기록이 있어 기록을 되돌려 갈 수 있는지.
+ * `previousPaths` 를 주면 바로 앞이 그 후보 중 하나일 때만(함수면 그 함수가 참일 때만), 생략하면 바로 앞이 앱 안 화면이기만 하면 참이다.
+ */
+export function canGoBackTo(trail: readonly string[], previousPaths?: PreviousPaths): boolean {
   const before = trail.at(-2)
   if (before === undefined || trail.length < 2) return false
-  return previousPaths === undefined || previousPaths.includes(before)
+  if (previousPaths === undefined) return true
+  return typeof previousPaths === 'function'
+    ? previousPaths(before)
+    : previousPaths.includes(before)
 }
 
 /**

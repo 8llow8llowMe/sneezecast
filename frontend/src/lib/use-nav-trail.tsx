@@ -12,7 +12,13 @@ import {
 } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
-import { canGoBackTo, nextTrail, type PendingReplace, settleReplace } from './nav-trail'
+import {
+  canGoBackTo,
+  nextTrail,
+  type PendingReplace,
+  type PreviousPaths,
+  settleReplace,
+} from './nav-trail'
 
 type NavTrail = {
   /**
@@ -21,8 +27,9 @@ type NavTrail = {
    *
    * `previousPaths` 를 주면 바로 앞이 그 후보 중 하나일 때만 되돌린다. 앞 단계가 정해진 화면(첫 진입 단계 · 내 정보 아래 계정 화면)이 쓴다.
    * 생략하면 앱 안 어느 화면에서 왔든 되돌린다. 여러 화면에서 들어오는 화면(공식 정보 · 동네 안내 · 설치 안내)이 쓴다.
+   * 함수를 주면 바로 앞 경로로 판단한다 — 앞 화면이 정해지지 않았지만 몇몇 화면으로는 되돌리지 않을 때(로그인 방법 고르기) 쓴다.
    */
-  goBack: (fallback: string, previousPaths?: readonly string[]) => void
+  goBack: (fallback: string, previousPaths?: PreviousPaths) => void
   /**
    * 기록을 쌓지 않고 간다. 경로 기록의 맨 끝도 바꾼다 — 기록을 바꾸는 앱 안 이동은 **모두** 이것으로 한다
    * (`router.replace` 를 바로 부르면 기록이 실제보다 길어져 뒤로가 사이트 밖으로 나갈 수 있다. ESLint 가 막는다)
@@ -71,7 +78,7 @@ export function NavTrailProvider({ children }: { children: ReactNode }) {
   )
 
   const goBack = useCallback(
-    (fallback: string, previousPaths?: readonly string[]) => {
+    (fallback: string, previousPaths?: PreviousPaths) => {
       if (canGoBackTo(trail.current, previousPaths)) router.back()
       else replace(fallback)
     },

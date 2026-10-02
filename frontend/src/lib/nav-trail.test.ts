@@ -37,6 +37,13 @@ describe('canGoBackTo', () => {
     expect(canGoBackTo(['/official'])).toBe(false)
     expect(canGoBackTo([])).toBe(false)
   })
+
+  it('후보가 함수면 바로 앞 경로로 판단한다', () => {
+    const notSetup = (previous: string) => !previous.startsWith('/setup/')
+    expect(canGoBackTo(['/me', '/login'], notSetup)).toBe(true)
+    expect(canGoBackTo(['/setup/adult', '/login'], notSetup)).toBe(false)
+    expect(canGoBackTo(['/login'], () => true)).toBe(false)
+  })
 })
 
 describe('settleReplace', () => {
