@@ -327,7 +327,7 @@ describe('MeScreen 메뉴', () => {
 
   it('보낸 뒤면 이번 주 보고 수정(Settings 시안)이고 머리줄 보고 버튼은 완료 · 수정하기다', async () => {
     await loginAsMember()
-    await submitReport({ kind: 'none' })
+    await submitReport({ kind: 'none' }, null, 'mock')
     renderMe()
 
     expect(screen.getByRole('link', { name: '이번 주 보고 수정' }).getAttribute('href')).toBe(
@@ -340,7 +340,7 @@ describe('MeScreen 메뉴', () => {
     expect(router.push).toHaveBeenCalledWith('/?report=start')
 
     // 보고를 되돌리면 같은 화면의 항목 · 버튼이 보내기 전으로 돌아간다
-    await act(() => cancelReport())
+    await act(() => cancelReport('mock'))
     expect(screen.getByRole('link', { name: '이번 주 보고하기' })).toBeDefined()
     expect(screen.getByRole('button', { name: '이번 주 건강 보고하기' })).toBeDefined()
   })
@@ -545,7 +545,7 @@ describe('MeScreen 확인 대화상자', () => {
 
   it('동의 철회에 성공하면 로그아웃되고 홈으로 기록을 바꿔 간다 (region 은 남고 알림을 남긴다)', async () => {
     await loginAsMember()
-    await submitReport({ kind: 'none' })
+    await submitReport({ kind: 'none' }, null, 'mock')
     search = 'region=11440660&mock-provider=email&confirm=consent-withdraw'
     renderMe({ regionCode: '11440660' })
 
@@ -577,7 +577,7 @@ describe('MeScreen 확인 대화상자', () => {
 
   it('동의 철회하지 못하면 세션 · 보고를 그대로 두고 알림도 남기지 않는다', async () => {
     await loginAsMember('consent-withdraw-fail@example.com')
-    const sent = await submitReport({ kind: 'none' })
+    const sent = await submitReport({ kind: 'none' }, null, 'mock')
     search = 'confirm=consent-withdraw'
     renderMe()
 
@@ -588,7 +588,7 @@ describe('MeScreen 확인 대화상자', () => {
       '동의를 철회하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
     )
     expect(getMockSession()).toBe('member')
-    expect(getSubmittedReport()).toBe(sent)
+    expect(sent).toMatchObject({ status: 'ok', report: getSubmittedReport() })
     expect(router.replace).not.toHaveBeenCalled()
     expect(takeHomeNotice()).toBeNull()
   })

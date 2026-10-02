@@ -41,7 +41,7 @@ const QA = 'mock-auth=member&mock-push=needs-install'
 describe('보고 완료 → 홈 화면 추가 안내 → 닫기', () => {
   beforeEach(async () => {
     resetMockSession()
-    await cancelReport()
+    await cancelReport('mock')
     vi.clearAllMocks()
   })
 

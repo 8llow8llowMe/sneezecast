@@ -195,7 +195,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     window.history.replaceState(null, '', '/')
     resetMockSession()
     // 덮어쓰기(?mock-auth=)로 보낸 보고는 세션이 바뀌지 않아 남는다
-    await cancelReport()
+    await cancelReport('mock')
     router.push.mockClear()
     vi.mocked(agreeHealthConsent).mockClear()
   })
@@ -452,16 +452,16 @@ describe('HomeScreen 보낸 뒤 보고 버튼 (Flow 의 reported)', () => {
     search = 'mock-auth=member'
     window.history.replaceState(null, '', '/?mock-auth=member')
     resetMockSession()
-    await cancelReport()
+    await cancelReport('mock')
   })
 
   afterEach(async () => {
     vi.restoreAllMocks()
-    await cancelReport()
+    await cancelReport('mock')
   })
 
   it('보낸 뒤면 하단 · 머리줄 버튼이 완료 · 수정하기이고, 하단은 회색 보조 버튼이다', async () => {
-    await submitReport({ kind: 'none' })
+    await submitReport({ kind: 'none' }, null, 'mock')
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
     const buttons = screen.getAllByRole('button', { name: REPORT_BUTTONS.reported })
@@ -475,7 +475,7 @@ describe('HomeScreen 보낸 뒤 보고 버튼 (Flow 의 reported)', () => {
   })
 
   it('보낸 뒤 버튼을 누르면 보고 흐름(?report=start)을 연다 — 보고 흐름이 보낸 보고를 보고 수정으로 연다', async () => {
-    await submitReport({ kind: 'none' })
+    await submitReport({ kind: 'none' }, null, 'mock')
     const pushState = vi.spyOn(window.history, 'pushState')
     const user = userEvent.setup()
     render(<HomeScreen week={HOME_MOCKS.high} />)
@@ -499,15 +499,15 @@ describe('HomeScreen 보낸 뒤 보고 버튼 (Flow 의 reported)', () => {
       'bg-brand',
     )
 
-    await act(() => submitReport({ kind: 'none' }))
+    await act(() => submitReport({ kind: 'none' }, null, 'mock'))
     expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.reported })).toHaveLength(2)
 
-    await act(() => cancelReport())
+    await act(() => cancelReport('mock'))
     expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.member })).toHaveLength(2)
   })
 
   it('미동의 회원(덮어쓰기)은 보낸 보고가 남아 있어도 보고하기다 — 누르면 동의 시트다', async () => {
-    await submitReport({ kind: 'none' })
+    await submitReport({ kind: 'none' }, null, 'mock')
     search = 'mock-auth=member-no-consent'
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
@@ -516,7 +516,7 @@ describe('HomeScreen 보낸 뒤 보고 버튼 (Flow 의 reported)', () => {
   })
 
   it('서버 그림(하이드레이션 첫 그림)은 보낸 보고가 있어도 보고하기로 그린다', async () => {
-    await submitReport({ kind: 'none' })
+    await submitReport({ kind: 'none' }, null, 'mock')
     const html = renderToString(<HomeScreen week={HOME_MOCKS.high} />)
 
     expect(html).toContain(REPORT_BUTTONS.member)

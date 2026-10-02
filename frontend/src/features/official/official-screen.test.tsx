@@ -218,7 +218,7 @@ describe('OfficialScreen 이동', () => {
   })
 
   it('동의한 회원이 이번 주 보고를 보냈으면 보고 버튼이 완료 · 수정하기이고 갈 곳은 같다', async () => {
-    await submitReport({ kind: 'none' })
+    await submitReport({ kind: 'none' }, null, 'mock')
     search = 'mock-auth=member'
     renderOfficial(OFFICIAL_MOCKS.published, { regionCode: '1111051500' })
 
@@ -228,7 +228,7 @@ describe('OfficialScreen 이동', () => {
     expect(screen.queryByRole('button', { name: '이번 주 건강 보고하기' })).toBeNull()
     await userEvent.setup().click(buttons[0] as HTMLElement)
     expect(router.push).toHaveBeenCalledWith('/?region=1111051500&report=start')
-    await cancelReport()
+    await cancelReport('mock')
   })
 
   it('알림 설정은 준비 중 알림을 띄운다', async () => {

@@ -42,7 +42,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   vi.useRealTimers()
-  await cancelReport()
+  await cancelReport('mock')
 })
 
 describe('NoticeScreen — 발행된 안내 (Guide-published)', () => {
@@ -257,7 +257,7 @@ describe('NoticeScreen — 이동', () => {
   })
 
   it('동의한 회원이 이번 주 보고를 보냈으면 보고 버튼(데스크톱 · 태블릿 머리줄)이 완료 · 수정하기다', async () => {
-    await submitReport({ kind: 'none' })
+    await submitReport({ kind: 'none' }, null, 'mock')
     search = 'mock-auth=member'
     render(<NoticeScreen data={data('published')} />)
 

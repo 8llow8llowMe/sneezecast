@@ -314,7 +314,7 @@ describe('DevicesScreen 뒤로 가기 · 셸', () => {
 
   it('동의한 회원이 이번 주 보고를 보냈으면 머리줄 보고 버튼(태블릿 · 데스크톱)이 완료 · 수정하기다', async () => {
     // 로그인한 세션에 보낸 보고를 둔다. 다음 테스트의 resetMockSession 이 세션을 바꾸며 지운다
-    await submitReport({ kind: 'none' })
+    await submitReport({ kind: 'none' }, null, 'mock')
     search = 'mock-auth=member'
     renderDevices({ regionCode: '11440660' })
     await screen.findByRole('list', { name: '로그인한 기기 목록' })
