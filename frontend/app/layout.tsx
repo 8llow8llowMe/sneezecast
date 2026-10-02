@@ -1,8 +1,10 @@
 import { type ReactNode, Suspense } from 'react'
 import type { Metadata, Viewport } from 'next'
 
+import { DataSourceToggle } from '@/components/data-source-toggle'
 import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
 import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME } from '@/lib/app-info'
+import { isDataSourceSwitchable } from '@/lib/data-source'
 import { clientEnv } from '@/lib/env.client'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 import { THEME_COLOR } from '@/styles/theme-color'
@@ -54,6 +56,9 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
             <SessionExpiryWatcher />
           </Suspense>
         </NavTrailProvider>
+        {/* 데이터 출처 토글(개발용). 전환할 수 있는 사이트(dev 웹 · 로컬)에서만 그린다. body 마지막에 두어 Tab 첫 포커스가 되지 않게 한다.
+            z-index 를 주지 않는다 — z-index 가 있는 시트 · 버튼 묶음 · 가림막은 DOM 순서와 무관하게 위에 온다(components/data-source-toggle.tsx) */}
+        {isDataSourceSwitchable() ? <DataSourceToggle /> : null}
       </body>
     </html>
   )
