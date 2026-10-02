@@ -31,7 +31,7 @@
 ## 기술 스택 (제안, 팀과 확정 후 수정)
 
 - Next.js(App Router) + TypeScript + Tailwind CSS
-- PWA: 서비스 워커 + Web Push. iOS 는 홈 화면에 추가한 뒤에만 알림을 받을 수 있으므로 S12 안내가 꼭 필요하다.
+- PWA: 서비스 워커 + Web Push. iOS 는 홈 화면에 추가한 뒤에만 알림을 받을 수 있으므로 S12 안내가 꼭 필요하다. 매니페스트 · 임시 아이콘 · 서비스 워커 자리(2단계 등록)는 [SCREENS.md](design/SCREENS.md) "앱 매니페스트 · 아이콘 · 서비스 워커 자리" 에 있다.
 - 지도: MapLibre GL + SGIS 행정구역 경계(GeoJSON). 핀 없이 행정동 색칠만 한다.
 - 서체: npm `pretendard`
 - 데이터 패칭: TanStack Query

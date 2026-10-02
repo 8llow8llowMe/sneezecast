@@ -20,6 +20,7 @@
 frontend/
 ├── app/                 # 라우트 (App Router). 화면 조립만 하고 로직은 src/ 로 보낸다
 │   ├── layout.tsx       # 서체 · 메타데이터 · 뷰포트
+│   ├── manifest.ts      # 웹 앱 매니페스트. 아이콘 라우트(icon · apple-icon · app-icons/)와 함께 docs/design/SCREENS.md "앱 매니페스트 · 아이콘"
 │   └── globals.css      # Tailwind 진입점 + 토큰 → 테마 매핑
 ├── src/
 │   ├── components/      # 도메인을 모르는 공통 UI (버튼, 리스트 행, 바텀시트 …)
