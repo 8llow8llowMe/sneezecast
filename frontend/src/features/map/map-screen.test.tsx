@@ -200,7 +200,7 @@ describe('MapScreen', () => {
 
     expect(screen.queryByRole('button', { name: '알림 설정' })).toBeNull()
     await user.click(screen.getByRole('button', { name: '로그인하고 보고하기' }))
-    expect(router.push).toHaveBeenCalledWith('/login')
+    expect(router.push).toHaveBeenCalledWith('/login?intent=report')
     expect(geolocation).not.toHaveBeenCalled()
   })
 

@@ -84,8 +84,10 @@ export function HomeScreen({
   // 이번 그림의 effect 가 모두 끝난 뒤에 바꾼다 — Next 는 history 를 감싸 useSearchParams 와 맞추는 일을 최상위
   // 라우터의 effect 에서 시작하는데, 처음 열 때는 자식(이 화면) effect 가 먼저 돌아 그 전에 바꾸면 Next 가 모른다
   const { value: reportValue, replace: replaceReport } = report
-  // 시트 열림은 바뀔 값으로 미리 정한다. 하이드레이션 직후(replace 전)에도 맞는 시트가 바로 보이고, replace 는 주소 정리만 한다
-  const reportEntry = guardReportEntry(reportValue, auth) ?? reportValue
+  // 시트 열림은 바뀔 값으로 미리 정한다. 하이드레이션 직후(replace 전)에도 맞는 시트가 바로 보이고, replace 는 주소 정리만 한다.
+  // 재동의 · 동네 다시 고르기로 보낼 곳이 있으면 시트를 열지 않는다 — 보고하려던 로그인(#136) 뒤 조건이 남은 회원에게 보내기 전 시트가 비친다
+  const reportEntry =
+    requiredTarget === null ? (guardReportEntry(reportValue, auth) ?? reportValue) : null
   useEffect(() => {
     const fixed = guardReportEntry(reportValue, auth)
     if (fixed === null || requiredTarget !== null) return
@@ -182,7 +184,11 @@ export function HomeScreen({
       </div>
 
       {/* reportEntry 는 회원 상태에 맞춘 값이라 login 은 비회원, health-consent 는 미동의 회원에게만 나온다 */}
-      <LoginSheet open={reportEntry === REPORT_GATE.login} onClose={report.close} />
+      <LoginSheet
+        open={reportEntry === REPORT_GATE.login}
+        onClose={report.close}
+        regionCode={regionCode}
+      />
 
       <HealthConsentSheet
         open={reportEntry === REPORT_GATE.healthConsent}

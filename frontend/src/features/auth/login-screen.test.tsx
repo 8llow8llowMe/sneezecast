@@ -215,7 +215,7 @@ describe('LoginScreen', () => {
   })
 
   it('돌아갈 곳(?next=/me)을 이메일 로그인 링크 · 버튼에 이어 넘긴다', async () => {
-    const ret = { next: '/me', region: '11440660' }
+    const ret = { next: '/me', region: '11440660', intent: null }
     const { unmount } = renderLogin(null, EMPTY_SIGNUP, ret)
     expect(screen.getByRole('link', { name: '이메일로 로그인' }).getAttribute('href')).toBe(
       '/login/email?next=%2Fme&region=11440660',
@@ -225,6 +225,13 @@ describe('LoginScreen', () => {
     renderLogin('kakao-exists', EMPTY_SIGNUP, ret)
     await userEvent.setup().click(screen.getByRole('button', { name: '이메일로 로그인' }))
     expect(router.push).toHaveBeenCalledWith('/login/email?next=%2Fme&region=11440660')
+  })
+
+  it('보고하려던 로그인(?intent=report)을 이메일 로그인 링크에 이어 넘긴다', () => {
+    renderLogin(null, EMPTY_SIGNUP, { next: '/', region: '11680640', intent: 'report' })
+    expect(screen.getByRole('link', { name: '이메일로 로그인' }).getAttribute('href')).toBe(
+      '/login/email?region=11680640&intent=report',
+    )
   })
 
   it('돌아갈 곳이 없으면 이메일 로그인 링크에 쿼리가 없다', () => {
@@ -261,7 +268,14 @@ describe('LoginScreen 뒤로 — 앱 안 이동 기록', () => {
   }
 
   it('내 정보 가드가 보낸 로그인(?next=/me)이면 앞 화면이 무엇이든 기록을 되돌린다', async () => {
-    visitLogin('/', { next: '/me', region: null })
+    visitLogin('/', { next: '/me', region: null, intent: null })
+    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.back).toHaveBeenCalledOnce()
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('보고하려던 로그인(?intent=report)이면 보고 버튼을 누른 화면(지도 등)으로 기록을 되돌린다', async () => {
+    visitLogin('/map', { next: '/', region: '11680640', intent: 'report' })
     await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
     expect(router.back).toHaveBeenCalledOnce()
     expect(router.replace).not.toHaveBeenCalled()

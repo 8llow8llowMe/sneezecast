@@ -41,7 +41,11 @@ export function useMemberGate({
   const loginTarget =
     next === undefined
       ? LOGIN_PATH
-      : loginHref(LOGIN_PATH, { next: safeNextPath(next), region: searchParams.get('region') })
+      : loginHref(LOGIN_PATH, {
+          next: safeNextPath(next),
+          region: searchParams.get('region'),
+          intent: null,
+        })
 
   useEffect(() => {
     // 로그인 만료로 비회원이 됐으면 만료 주소(토스트)로 보낸다. 만료 이동보다 나중에 불려도 같은 곳에 닿는다

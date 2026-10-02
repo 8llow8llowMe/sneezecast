@@ -20,8 +20,9 @@ describe('meSearch', () => {
 })
 
 describe('reportHrefFor', () => {
-  it('비회원은 로그인, 회원은 동네를 남긴 홈의 보고 진입이다', () => {
-    expect(reportHrefFor('guest', '11440660')).toBe('/login')
+  it('비회원은 보고하려던 로그인(동네를 남김), 회원은 동네를 남긴 홈의 보고 진입이다', () => {
+    expect(reportHrefFor('guest', '11440660')).toBe('/login?region=11440660&intent=report')
+    expect(reportHrefFor('guest', null)).toBe('/login?intent=report')
     expect(reportHrefFor('member-no-consent', null)).toBe('/?report=health-consent')
     expect(reportHrefFor('member', '11440660')).toBe('/?region=11440660&report=start')
   })

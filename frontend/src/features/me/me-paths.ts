@@ -1,6 +1,8 @@
 import type { MockAuthState } from '@/features/auth/auth-client'
+import { loginHref } from '@/features/auth/login-return'
 import { MOCK_AUTH_PARAM, MOCK_PROVIDER_PARAM } from '@/features/auth/use-mock-auth'
 import { reportEntryFor } from '@/features/home/report-gate'
+import { HOME_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { REPORT_PARAM } from '@/features/report/report-flow'
 
 /** 내 정보(S10)와 그 아래 계정 화면 주소 (docs/design/SCREENS.md) */
@@ -40,10 +42,13 @@ export function regionSearch(regionCode: string | null): string | undefined {
 
 /**
  * 머리줄 보고 버튼이 갈 곳. 비회원은 로그인, 회원은 홈의 보고 진입(미동의면 동의 시트, 동의했으면 보고 흐름)이다.
- * 동네(`region`)는 남긴다.
+ * 동네(`region`)는 남긴다. 비회원의 로그인은 보고하려던 로그인(`?intent=report`, #136)이라 로그인 뒤 같은 동네 홈의 보고 진입으로 온다
+ * (`features/auth/login-return.ts`).
  */
 export function reportHrefFor(auth: MockAuthState, regionCode: string | null): string {
-  if (auth === 'guest') return '/login'
+  if (auth === 'guest') {
+    return loginHref(LOGIN_PATH, { next: HOME_PATH, region: regionCode, intent: 'report' })
+  }
   const params = new URLSearchParams(regionCode ? { [REGION_PARAM]: regionCode } : {})
   params.set(REPORT_PARAM, reportEntryFor(auth))
   return `/?${params.toString()}`

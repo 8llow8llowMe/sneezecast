@@ -9,7 +9,12 @@ import { TextField } from '@/components/text-field'
 import { ToastRegion, useToast } from '@/components/toast'
 import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
-import { LOGIN_PATH, PASSWORD_RESET_PATH, SIGNUP_EMAIL_PATH } from '@/features/onboarding/paths'
+import {
+  HOME_PATH,
+  LOGIN_PATH,
+  PASSWORD_RESET_PATH,
+  SIGNUP_EMAIL_PATH,
+} from '@/features/onboarding/paths'
 import { useActiveRef } from '@/lib/use-active-ref'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
@@ -34,8 +39,11 @@ type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'failed'
  * 보내는 중에는 칸을 읽기 전용으로 두어, 고치기 전 값의 결과가 고친 값 옆에 뜨지 않게 한다.
  *
  * 성공하면 홈으로 기록을 바꿔 간다 — 뒤로 가기로 로그인 화면에 돌아오지 않게 한다. 돌아갈 곳(`?next=` · `?region=`, #123)이
- * 있으면 그곳(예: `/me?region=…`)으로 간다. 뒤로는 로그인 방법 고르기(S13-1)에서 왔을 때만 되돌리고, 아니면 돌아갈 곳을 붙인
- * 로그인 방법 고르기로 기록을 바꿔 간다.
+ * 있으면 그곳(예: `/me?region=…`)으로 간다. 보고하려던 로그인(`?intent=report`, #136)이면 같은 동네 홈의 보고 진입
+ * (`/?region=…&report=start`)이다. 뒤로는 로그인 방법 고르기(S13-1)에서 왔을 때만 되돌리고, 아니면 돌아갈 곳을 붙인
+ * 로그인 방법 고르기로 기록을 바꿔 간다. 보고하려던 로그인은 홈(로그인 안내 시트)에서 바로 오므로 홈에서 왔을 때도 되돌린다 — 시트로 돌아간다.
+ * 가입 · 비밀번호 재설정 링크는 돌아갈 곳을 넘기지 않는다. 그 화면들의 뒤로가 기록을 되돌려 이 주소(쿼리 포함)로 돌아오고,
+ * 마친 뒤 돌아갈 곳으로 가는 것은 아직이다(가입을 마치면 홈, 재설정을 마치면 `?reason=reset-done`).
  * 비밀번호는 이 화면 상태에만 두고 어디에도 남기지 않는다.
  *
  * 시안: docs/design/auth/screens/ 의 Login-email (+ -T · -D)
@@ -45,7 +53,7 @@ export function LoginEmailScreen({
   loginReturn = NO_LOGIN_RETURN,
 }: {
   resetDone?: boolean
-  /** 로그인 뒤 돌아갈 곳. 라우트가 `?next=` · `?region=` 에서 읽어 넘긴다 */
+  /** 로그인 뒤 돌아갈 곳. 라우트가 `?next=` · `?region=` · `?intent=` 에서 읽어 넘긴다 */
   loginReturn?: LoginReturn
 }) {
   const navTrail = useNavTrail()
@@ -103,7 +111,12 @@ export function LoginEmailScreen({
 
   return (
     <OnboardingLayout
-      onBack={() => navTrail.goBack(loginHref(LOGIN_PATH, loginReturn), [LOGIN_PATH])}
+      onBack={() =>
+        navTrail.goBack(
+          loginHref(LOGIN_PATH, loginReturn),
+          loginReturn.intent === 'report' ? [LOGIN_PATH, HOME_PATH] : [LOGIN_PATH],
+        )
+      }
       panelTitle="다시 오셨네요"
       footer={
         <Button type="submit" form={formId} fullWidth aria-disabled={blocked || undefined}>

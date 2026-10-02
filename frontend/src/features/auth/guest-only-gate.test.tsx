@@ -82,6 +82,17 @@ describe('memberTarget', () => {
     },
   )
 
+  // 회원이 보고하려던 로그인에 닿는 것은 사실상 로그인 성공 뒤 브라우저 뒤로다 — 보고 시트를 다시 열어 붙잡지 않는다
+  it('보고하려던 로그인(?intent=report)이어도 보고 진입을 붙이지 않고 동네 · QA 덮어쓰기만 남긴다', () => {
+    expect(memberTarget(new URLSearchParams('region=11680640&intent=report'))).toBe(
+      '/?region=11680640',
+    )
+    expect(memberTarget(new URLSearchParams('intent=report&mock-auth=member'))).toBe(
+      '/?mock-auth=member',
+    )
+    expect(memberTarget(new URLSearchParams('next=%2Fme&intent=report'))).toBe('/me')
+  })
+
   it('QA 덮어쓰기는 남기고 화면 상태 쿼리(error · reason)는 버린다', () => {
     expect(memberTarget(new URLSearchParams('mock-auth=member&error=kakao-fail'))).toBe(
       '/?mock-auth=member',
@@ -125,6 +136,14 @@ describe('GuestOnlyGate', () => {
     search = 'next=%2Fme&region=11440660'
     render(<GuestOnlyGate />)
     expect(router.replace).toHaveBeenCalledWith('/me?region=11440660')
+  })
+
+  it('회원이 보고하려던 로그인 화면을 열면 같은 동네 홈으로만 간다 (보고 진입 없음)', async () => {
+    await login()
+    pathname = '/login'
+    search = 'region=11680640&intent=report'
+    render(<GuestOnlyGate />)
+    expect(router.replace).toHaveBeenCalledWith('/?region=11680640')
   })
 
   it.each(['/password/reset', '/setup/terms', '/setup/region', '/terms/reconsent'])(
