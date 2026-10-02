@@ -13,9 +13,10 @@ import {
   withdrawMembership,
 } from '@/features/auth/auth-client'
 import { useMockAuth, useMockProfile } from '@/features/auth/use-mock-auth'
-import { REPORT_GATE } from '@/features/home/report-gate'
+import { REPORT_GATE, reportButtonLabel } from '@/features/home/report-gate'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { REPORT_PARAM } from '@/features/report/report-flow'
+import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
 import { useHydrated } from '@/lib/use-hydrated'
@@ -118,6 +119,9 @@ export function MeScreen({
   const { toast, show, dismiss } = useToast()
   const auth = useMockAuth()
   const profile = useMockProfile()
+  // 이번 주에 보낸 보고(목). 머리줄 보고 버튼 글자와 `내 보고` 의 첫 항목이 따른다. 하이드레이션 첫 그림은 없음이다
+  const submitted = useSubmittedReport() !== null
+  const reportLabel = reportButtonLabel(auth, submitted)
   const confirm = useModalParam(CONFIRM_PARAM)
   // 이 기기에서 알림을 받을 수 없으면(Settings-nopush) 알림 섹션에 안내를 두고 스위치는 눌러도 아무 일이 없다
   const push = usePushSupport()
@@ -228,7 +232,7 @@ export function MeScreen({
         onRegionClick={openBrowseRegion}
         onNotificationClick={auth === 'guest' ? undefined : () => notReady('알림 설정')}
         onReportClick={() => router.push(reportHref)}
-        reportLabel={auth === 'guest' ? '로그인하고 보고하기' : undefined}
+        reportLabel={reportLabel}
         navSearch={navSearch}
       />
 
@@ -312,7 +316,12 @@ export function MeScreen({
 
                 {member === 'member' && (
                   <SettingsSection id="me-report" title="내 보고">
-                    <MenuRow title="이번 주 보고 수정" onClick={() => notReady('보고 수정')} />
+                    {/* 보낸 뒤면 수정(Settings 시안), 보내기 전이면 보고하기(시안 없음). 둘 다 홈의 보고 진입으로 간다 —
+                        보낸 뒤면 보고 흐름이 수정으로 열린다 */}
+                    <MenuRow
+                      title={submitted ? '이번 주 보고 수정' : '이번 주 보고하기'}
+                      href={reportHref}
+                    />
                     <MenuRow
                       title="최근 보고 내역"
                       value="52주 보관"

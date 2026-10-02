@@ -13,7 +13,9 @@ import {
   revokeOtherSessions,
   revokeSession,
 } from '@/features/auth/auth-client'
+import { reportButtonLabel } from '@/features/home/report-gate'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
+import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { formatMonthDayTime } from '@/lib/format'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
@@ -85,6 +87,7 @@ function Devices({
   const { goBack } = useMeTrail()
   const openBrowseRegion = useBrowseRegion(ME_DEVICES_PATH, regionCode)
   const shownRegionName = useShownRegionName(regionName, regionCode)
+  const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const [load, setLoad] = useState<Load>({ status: 'loading' })
@@ -155,6 +158,7 @@ function Devices({
       onRegionClick={openBrowseRegion}
       onNotificationClick={() => notReady('알림 설정')}
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
+      reportLabel={reportLabel}
       footer={
         others.length > 0 ? (
           <Button

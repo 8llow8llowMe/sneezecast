@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { cancelReport, submitReport } from '@/features/report/report-client'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import { OFFICIAL_MOCKS } from './mock'
@@ -214,6 +215,20 @@ describe('OfficialScreen 이동', () => {
     const buttons = screen.getAllByRole('button', { name: '이번 주 건강 보고하기' })
     await userEvent.setup().click(buttons[0] as HTMLElement)
     expect(router.push).toHaveBeenCalledWith('/?region=1111051500&report=start')
+  })
+
+  it('동의한 회원이 이번 주 보고를 보냈으면 보고 버튼이 완료 · 수정하기이고 갈 곳은 같다', async () => {
+    await submitReport({ kind: 'none' })
+    search = 'mock-auth=member'
+    renderOfficial(OFFICIAL_MOCKS.published, { regionCode: '1111051500' })
+
+    const buttons = screen.getAllByRole('button', { name: '이번 주 보고 완료 · 수정하기' })
+    // 태블릿 머리줄 · 데스크톱 머리줄에 하나씩 있다
+    expect(buttons).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: '이번 주 건강 보고하기' })).toBeNull()
+    await userEvent.setup().click(buttons[0] as HTMLElement)
+    expect(router.push).toHaveBeenCalledWith('/?region=1111051500&report=start')
+    await cancelReport()
   })
 
   it('알림 설정은 준비 중 알림을 띄운다', async () => {

@@ -7,6 +7,7 @@ import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
 import { ToastRegion, useToast } from '@/components/toast'
 import { type MemberRegion, type MockAuthState, saveRegion } from '@/features/auth/auth-client'
+import { reportButtonLabel } from '@/features/home/report-gate'
 import {
   DistrictOptionList,
   districtOptions,
@@ -17,6 +18,7 @@ import {
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import type { District } from '@/features/region/types'
 import { useDistrictSearch } from '@/features/region/use-district-search'
+import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
 
@@ -82,6 +84,7 @@ function MyRegionForm({
   const { toast, show, dismiss } = useToast()
   const openBrowseRegion = useBrowseRegion(ME_REGION_PATH, regionCode)
   const shownRegionName = useShownRegionName(regionName, regionCode)
+  const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
   const [current] = useState(initialRegion)
   const [query, setQuery] = useState('')
   const search = useDistrictSearch(query)
@@ -122,6 +125,7 @@ function MyRegionForm({
       onRegionClick={openBrowseRegion}
       onNotificationClick={() => notReady('알림 설정')}
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
+      reportLabel={reportLabel}
       footer={
         <Button fullWidth aria-disabled={blocked || undefined} onClick={() => void save()}>
           이 동네로 바꾸기

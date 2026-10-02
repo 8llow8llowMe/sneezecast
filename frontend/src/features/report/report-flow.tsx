@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useState, useSyncExternalStore } from 'react'
+import { type ReactNode, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
@@ -15,13 +15,7 @@ import { navHref } from '@/lib/nav'
 import { useModalParam } from '@/lib/use-modal-param'
 import { usePushSupport } from '@/lib/use-push-support'
 
-import {
-  cancelReport,
-  getSubmittedReport,
-  submitReport,
-  subscribeSubmittedReport,
-  updateReport,
-} from './report-client'
+import { cancelReport, submitReport, updateReport } from './report-client'
 import { summarizeAnswer, SYMPTOM_OPTIONS, toggleSymptom } from './symptoms'
 import {
   REPORT_STEPS,
@@ -31,6 +25,7 @@ import {
   type ReportWeek,
   type SubmittedReport,
 } from './types'
+import { useSubmittedReport } from './use-submitted-report'
 
 /** 보고 흐름을 여는 주소 (docs/design/SCREENS.md S05 `/?report=start`) */
 export const REPORT_PARAM = 'report'
@@ -47,17 +42,6 @@ export type ReportFlowProps = {
   reportingElsewhere?: boolean
   /** 아직 없는 화면(함께 채우기)으로 가는 동작 */
   onNotReady: (screen: string) => void
-}
-
-// 서버는 보낸 보고를 모른다(목 모듈 메모리). 서버와 첫 그림(하이드레이션)은 보낸 보고 없이 그린다
-const serverReportSnapshot = (): SubmittedReport | null => null
-
-/**
- * 이번 주에 보낸 보고 (`report-client` 목). 홈 밖에 두어 홈을 떠났다 돌아와도(설치 안내 → 닫기) 완료 단계가 이어진다.
- * 새로고침하면 비고, 하이드레이션 첫 그림도 비어 있다 — 그때 `?report=done` 은 시작 단계로 보인다(`resolveStep`).
- */
-function useSubmittedReport(): SubmittedReport | null {
-  return useSyncExternalStore(subscribeSubmittedReport, getSubmittedReport, serverReportSnapshot)
 }
 
 /**
@@ -86,6 +70,7 @@ export function ReportFlow({
 }: ReportFlowProps) {
   const param = useModalParam(REPORT_PARAM)
   const searchParams = useSearchParams()
+  // 새로고침하면 비고 하이드레이션 첫 그림도 비어 있다 — 그때 `?report=done` 은 시작 단계로 보인다(`resolveStep`)
   const submitted = useSubmittedReport()
   const pushSupport = usePushSupport()
   const { toast, show, dismiss } = useToast()

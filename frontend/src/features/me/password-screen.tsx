@@ -10,8 +10,10 @@ import { ToastRegion, useToast } from '@/components/toast'
 import { changePassword, type MockAuthState, setupPassword } from '@/features/auth/auth-client'
 import { confirmProblem, passwordProblem } from '@/features/auth/signup-rules'
 import { useMockProfile } from '@/features/auth/use-mock-auth'
+import { reportButtonLabel } from '@/features/home/report-gate'
 import { PASSWORD_RESET_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
+import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
 
@@ -119,6 +121,7 @@ function PasswordForm({
   const { goBack, leaveNotice } = useMeTrail()
   const openBrowseRegion = useBrowseRegion(ME_PASSWORD_PATH, regionCode)
   const shownRegionName = useShownRegionName(regionName, regionCode)
+  const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const formId = useId()
@@ -192,6 +195,7 @@ function PasswordForm({
       onRegionClick={openBrowseRegion}
       onNotificationClick={() => notReady('알림 설정')}
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
+      reportLabel={reportLabel}
       footer={
         <>
           <Button type="submit" form={formId} fullWidth aria-disabled={blocked || undefined}>

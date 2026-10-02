@@ -1,12 +1,32 @@
 import { describe, expect, it } from 'vitest'
 
-import { guardReportEntry, reportEntryFor } from './report-gate'
+import { guardReportEntry, reportButtonLabel, reportEntryFor } from './report-gate'
 
 describe('reportEntryFor', () => {
   it('비회원은 로그인 안내, 미동의 회원은 동의 시트, 동의한 회원은 보고 시작을 연다', () => {
     expect(reportEntryFor('guest')).toBe('login')
     expect(reportEntryFor('member-no-consent')).toBe('health-consent')
     expect(reportEntryFor('member')).toBe('start')
+  })
+})
+
+describe('reportButtonLabel', () => {
+  it('비회원은 로그인하고 보고하기다 — 보낸 보고가 있어도(덮어쓰기) 같다', () => {
+    expect(reportButtonLabel('guest', false)).toBe('로그인하고 보고하기')
+    expect(reportButtonLabel('guest', true)).toBe('로그인하고 보고하기')
+  })
+
+  it('회원이 이번 주 보고를 보내기 전이면 이번 주 건강 보고하기다', () => {
+    expect(reportButtonLabel('member', false)).toBe('이번 주 건강 보고하기')
+    expect(reportButtonLabel('member-no-consent', false)).toBe('이번 주 건강 보고하기')
+  })
+
+  it('동의한 회원이 보낸 뒤면 이번 주 보고 완료 · 수정하기다', () => {
+    expect(reportButtonLabel('member', true)).toBe('이번 주 보고 완료 · 수정하기')
+  })
+
+  it('미동의 회원은 보낸 보고가 있어도(덮어쓰기) 완료로 보이지 않는다 — 누르면 동의 시트다', () => {
+    expect(reportButtonLabel('member-no-consent', true)).toBe('이번 주 건강 보고하기')
   })
 })
 

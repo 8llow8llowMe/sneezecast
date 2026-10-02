@@ -18,6 +18,7 @@ import { useMemberRegion } from '@/features/me/member-region'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { REPORT_PARAM, ReportFlow } from '@/features/report/report-flow'
+import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { useModalParam } from '@/lib/use-modal-param'
 import { useOnline } from '@/lib/use-online'
 
@@ -26,7 +27,13 @@ import { MapPlaceholder } from './map-placeholder'
 import { NoticeSection } from './notice-section'
 import { officialHref, OfficialPanel, OfficialRow } from './official'
 import { HOME_TOP_NOTICE_CLASS, PushInappNotice } from './push-inapp-notice'
-import { guardReportEntry, REPORT_GATE, reportEntryFor } from './report-gate'
+import {
+  guardReportEntry,
+  REPORT_GATE,
+  reportButtonLabel,
+  reportDone,
+  reportEntryFor,
+} from './report-gate'
 import { StatusCard } from './status-card'
 import { SymptomTrends } from './symptom-trends'
 import type { HomeWeekly } from './types'
@@ -49,7 +56,10 @@ import { useExplainParam } from './use-explain-param'
  * 동의한 회원은 보고 흐름(`?report=start`)이 열린다. 주소로 바로 들어온 값이 상태에 맞지 않으면 맞는 시트로 바꾼다(replace).
  * 보고 흐름과 보낸 보고는 동의한 회원에게만 그린다.
  *
- * 비회원 홈(Home-guest)은 동네 현황이 같고 보고 버튼 문구가 "로그인하고 보고하기" 다. 머리줄 알림(종)은 그리지 않는다(#123). 모바일은 하단 버튼 위에 한 줄 안내,
+ * 보고 버튼 글자는 `reportButtonLabel` 이 정한다: 비회원 "로그인하고 보고하기", 회원 "이번 주 건강 보고하기", 동의한 회원이 이번 주 보고를
+ * 보낸 뒤 "이번 주 보고 완료 · 수정하기"(하단 버튼은 회색 보조 버튼, 시안 Flow). 보낸 뒤 누르면 보고 흐름이 수정으로 열린다.
+ *
+ * 비회원 홈(Home-guest)은 동네 현황이 같다. 머리줄 알림(종)은 그리지 않는다(#123). 모바일은 하단 버튼 위에 한 줄 안내,
  * 태블릿 · 데스크톱은 본문 맨 위에 안내 상자를 둔다. 둘러보기에서 고른 동네(`regionCode`)는 메뉴 링크에 붙여 잃지 않게 한다.
  *
  * 다시 들어온 회원에게 약관 재동의 · 동네 다시 고르기 조건이 있으면 그 화면으로 먼저 보낸다(`useRequiredStepsGate`, 내 정보와 같다).
@@ -89,6 +99,10 @@ export function HomeScreen({
   const report = useModalParam(REPORT_PARAM)
   const auth = useMockAuth()
   const guest = auth === 'guest'
+  // 보고 버튼(하단 · 머리줄) 글자. 보낸 뒤면 "이번 주 보고 완료 · 수정하기" 이고 누르면 보고 흐름이 수정으로 열린다.
+  // 하이드레이션 첫 그림은 보낸 보고가 없다(서버 그림과 같다)
+  const submitted = useSubmittedReport() !== null
+  const reportLabel = reportButtonLabel(auth, submitted)
   // 재동의 · 동네 다시 고르기로 보낼 곳. 있으면 아래 보고 진입 정리(원시 history)를 하지 않는다 — 정리가 그 이동을 버리게 한다
   const requiredTarget = useRequiredStepsGate(HOME_PATH)
   const openReport = () => report.open(reportEntryFor(auth))
@@ -128,7 +142,7 @@ export function HomeScreen({
         onRegionClick={openBrowseRegion}
         onNotificationClick={guest ? undefined : () => notReady('알림 설정')}
         onReportClick={openReport}
-        reportLabel={guest ? '로그인하고 보고하기' : undefined}
+        reportLabel={reportLabel}
         navSearch={navSearch}
       />
 
@@ -190,8 +204,13 @@ export function HomeScreen({
               로그인하면 이번 주 보고를 할 수 있어요
             </p>
           )}
-          <Button fullWidth onClick={openReport}>
-            {guest ? '로그인하고 보고하기' : '이번 주 건강 보고하기'}
+          {/* 보낸 뒤에는 회색 보조 버튼이다 (Flow 의 reported) */}
+          <Button
+            fullWidth
+            variant={reportDone(auth, submitted) ? 'secondary' : 'primary'}
+            onClick={openReport}
+          >
+            {reportLabel}
           </Button>
         </div>
         <TabBar current="home" navSearch={navSearch} />

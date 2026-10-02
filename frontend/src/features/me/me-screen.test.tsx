@@ -20,7 +20,7 @@ import {
   withdrawMembership,
 } from '@/features/auth/auth-client'
 import { consentFor } from '@/features/auth/legal'
-import { getSubmittedReport, submitReport } from '@/features/report/report-client'
+import { cancelReport, getSubmittedReport, submitReport } from '@/features/report/report-client'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
@@ -302,6 +302,36 @@ describe('MeScreen 메뉴', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: '이번 주 건강 보고하기' }))
     expect(router.push).toHaveBeenCalledWith('/?region=11440660&report=start')
+  })
+
+  it('내 보고의 첫 항목은 보내기 전이면 이번 주 보고하기이고 홈의 보고 진입으로 간다', () => {
+    search = 'mock-auth=member'
+    renderMe({ regionCode: '11440660' })
+
+    const row = screen.getByRole('link', { name: '이번 주 보고하기' })
+    expect(row.getAttribute('href')).toBe('/?region=11440660&report=start')
+    expect(screen.queryByRole('link', { name: '이번 주 보고 수정' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: '이번 주 건강 보고하기' })).toHaveLength(1)
+  })
+
+  it('보낸 뒤면 이번 주 보고 수정(Settings 시안)이고 머리줄 보고 버튼은 완료 · 수정하기다', async () => {
+    await loginAsMember()
+    await submitReport({ kind: 'none' })
+    renderMe()
+
+    expect(screen.getByRole('link', { name: '이번 주 보고 수정' }).getAttribute('href')).toBe(
+      '/?report=start',
+    )
+    expect(screen.queryByRole('link', { name: '이번 주 보고하기' })).toBeNull()
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: '이번 주 보고 완료 · 수정하기' }))
+    expect(router.push).toHaveBeenCalledWith('/?report=start')
+
+    // 보고를 되돌리면 같은 화면의 항목 · 버튼이 보내기 전으로 돌아간다
+    await act(() => cancelReport())
+    expect(screen.getByRole('link', { name: '이번 주 보고하기' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '이번 주 건강 보고하기' })).toBeDefined()
   })
 
   it('아직 없는 화면은 준비 중 알림을 띄운다', async () => {
