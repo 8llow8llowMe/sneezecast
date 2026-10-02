@@ -34,8 +34,8 @@
 - PWA: 서비스 워커 + Web Push. iOS 는 홈 화면에 추가한 뒤에만 알림을 받을 수 있으므로 S12 안내가 꼭 필요하다. 매니페스트 · 임시 아이콘 · 서비스 워커 자리(2단계 등록)는 [SCREENS.md](design/SCREENS.md) "앱 매니페스트 · 아이콘 · 서비스 워커 자리" 에 있다.
 - 지도: MapLibre GL + SGIS 행정구역 경계(GeoJSON). 핀 없이 행정동 색칠만 한다.
 - 서체: npm `pretendard`
-- 데이터 패칭: TanStack Query
-- 백엔드·인프라·LLM 은 별도 담당이다. API 는 [초안](api-contract-draft.md)이며 백엔드와 맞춘 뒤 확정한다.
+- 데이터 패칭: 라이브러리 없이 `src/lib/api/` 의 얇은 `fetch` 래퍼(#126 에서 결정, [conventions.md](conventions.md) "API 계층")
+- 백엔드·인프라·LLM 은 별도 담당이다. API 계약은 [api-contract-draft.md](api-contract-draft.md) 다(인증 · 회원 · 행정동 확정, 그 밖은 백엔드와 맞춘 뒤 확정).
 
 ## 디자인 규칙
 

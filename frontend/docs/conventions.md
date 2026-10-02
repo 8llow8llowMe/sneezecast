@@ -138,10 +138,34 @@ frontend/
 - 서버에 보내는 동작(보고 보내기 · 고치기 · 되돌리기)은 연동 전에도 `features/<도메인>/*-client.ts` 에 Promise 를 돌려주는 함수로 둔다. 연동 때 함수 안만 `src/lib/api/` 호출로 바꾸고 화면 코드는 그대로 둔다 (`features/report/report-client.ts`).
 - API 연동 전 화면은 `features/<도메인>/mock.ts` 의 목 데이터로 만든다. 목 데이터의 기본값은 `자료 부족` 처럼 수치를 지어내지 않는 상태로 둔다. 연동 이슈에서 목 데이터를 지운다.
 
-- 화면 코드(`app/`, `src/features/`, `src/components/`)에서 `fetch` 를 직접 부르지 않는다. API 호출은 `src/lib/api/` 로 모은다 (ESLint 로 막는다).
+- 화면 코드(`app/`, `src/features/`, `src/components/`)에서 `fetch` 를 직접 부르지 않는다. API 호출은 `src/lib/api/` 로 모은다 (ESLint 로 막는다, 아래 "API 계층").
 - 공개 환경변수는 `src/lib/env.client.ts` 에서만 읽는다. `process.env.NEXT_PUBLIC_X` 는 리터럴로 읽어야 빌드 때 치환된다.
 - 목록은 `.env.example` 에 있다. 로컬 개발도 dev 게이트웨이(`https://api-dev.sneezecast.com`)를 쓴다.
 - `localStorage` · `sessionStorage` 는 ESLint 가 막는다. 건강·증상 정보는 민감정보라 브라우저에 아무렇게나 남기지 않는다. 기기 토큰처럼 꼭 필요한 값은 저장 모듈 하나로 모으고 그 줄에 근거 주석을 남긴다.
+
+## API 계층
+
+백엔드 호출은 `src/lib/api/` 의 얇은 `fetch` 래퍼 하나로 한다. 데이터 패칭 라이브러리(TanStack Query 등)는 쓰지 않는다 — 화면 수가 적고 대부분 한 번 읽고 끝나는 요청이라, 캐시 · 재시도 정책을 라이브러리에 맡기기보다 래퍼 하나에 두는 편이 단순하다. 계약은 [api-contract-draft.md](api-contract-draft.md) 에 있다.
+
+| 모듈              | 하는 일                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------ |
+| `client.ts`       | `apiRequest<T>(path, { method, query, body, auth, signal })` — 주소 결합 · JSON · 타임아웃 · 봉투 풀기 |
+| `envelope.ts`     | 공통 응답 봉투 `{ dataHeader: { success, resultCode, resultMessage, fieldErrors }, dataBody }` 읽기    |
+| `api-error.ts`    | `ApiError { status, code, message, fieldErrors }`, 일시 장애 코드 `UNAVAILABLE`                        |
+| `error-kind.ts`   | `classifyApiError` — 재발급 · 로그인 필요 · 권한 없음 · 재로그인 · 재발급 경합 · 일시 장애 · 그 밖     |
+| `access-token.ts` | access token 공급자를 끼우는 자리(`setAccessTokenProvider`). 토큰 자체는 들지 않는다                   |
+
+- **도메인 클라이언트(`features/<도메인>/*-client.ts`)만 `apiRequest` 를 부른다.** 화면은 도메인 클라이언트의 함수를 부르고, 응답을 화면 모델로 옮기는 일도 도메인 클라이언트가 한다. 래퍼는 `dataBody` 모양을 검사하지 않는다.
+- 주소는 `clientEnv.apiBaseUrl` + `/api/...` 경로다. 경로가 `/` 로 시작하지 않거나 다른 오리진이면 보내지 않는다(토큰이 다른 곳으로 새지 않게).
+- 모든 요청은 `credentials: 'include'`(refresh 쿠키) · `cache: 'no-store'`(회원별 · 주별 응답을 캐시하지 않음) 다.
+- 타임아웃은 12초다 — 게이트웨이 업스트림 상한(10초)보다 길게 두어 게이트웨이의 `GATEWAY_004`(504) 봉투를 먼저 받는다. 호출한 쪽의 취소(`signal`)는 일시 장애로 바꾸지 않고 그 사유를 그대로 던진다.
+- 결과: 성공 봉투 → `dataBody`(본문 없는 API 는 null). 실패 봉투 → `ApiError`(서버 `resultCode` · `resultMessage` · `fieldErrors`, HTTP 상태). 봉투가 없는 응답(Spring 기본 오류 · HTML · 빈 본문) · 네트워크 실패 · 타임아웃 → `ApiError` 코드 `UNAVAILABLE`(응답을 못 받았으면 상태 0).
+- 검증 오류는 `fieldErrors` 의 `field` 별 첫 오류를 그 입력 옆에 보인다. 서버가 순서를 고정해 준다(`resultCode` 는 첫 오류).
+- **access token 은 메모리에만 둔다.** 브라우저 저장소 · 주소에 두지 않는다. refresh 토큰은 HttpOnly 쿠키라 화면이 다루지 않는다. 세션 저장소(토큰 · 만료 시각, 만료 전 재발급)는 연동 이슈에서 만들고 `setAccessTokenProvider` 로 끼운다. 공급자가 토큰을 주면 래퍼가 `Authorization: Bearer` 를 싣는다.
+- **재발급(`POST /api/v1/auth/token/reissue`)은 `auth: false` 로 Authorization 없이 부른다.** 게이트웨이와 auth 필터는 경로와 무관하게 헤더가 있으면 access 를 검사해, 만료된 access 를 실으면 refresh 가 멀쩡해도 `SECURITY_002` 로 끝난다.
+- 401 처리(연동 이슈에서 만든다): `reissue`(`SECURITY_002/003/004/005/007`)면 재발급하고 한 번 다시 보낸다. `reissue-conflict`(`AUTH_016`)면 재발급을 한 번 다시 한다. 재발급이 `relogin`(`AUTH_014/015`)이면 `notifySessionExpired()`(`src/lib/session-expiry.ts`)를 부른다. 화면 코드는 401 을 따로 다루지 않는다.
+- 로그를 남기지 않는다. 요청 바디 · 토큰 · 응답을 `console` 에 찍지 않고, 비밀번호 · 토큰 · 인증 코드 · 건강 정보는 `query` 가 아니라 `body` 로 보낸다.
+- 테스트는 `vi.stubGlobal('fetch', …)` 로 가짜 `fetch` 를 끼운다(`src/lib/api/client.test.ts`). 도메인 클라이언트 테스트는 `apiRequest` 를 `vi.mock` 으로 바꾼다.
 
 ## 테스트
 
