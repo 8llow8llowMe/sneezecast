@@ -149,13 +149,13 @@ frontend/
 
 백엔드 호출은 `src/lib/api/` 의 얇은 `fetch` 래퍼 하나로 한다. 데이터 패칭 라이브러리(TanStack Query 등)는 쓰지 않는다 — 화면 수가 적고 대부분 한 번 읽고 끝나는 요청이라, 캐시 · 재시도 정책을 라이브러리에 맡기기보다 래퍼 하나에 두는 편이 단순하다. 계약은 [api-contract-draft.md](api-contract-draft.md) 에 있다.
 
-| 모듈              | 하는 일                                                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------------------ |
-| `client.ts`       | `apiRequest<T>(path, { method, query, body, auth, signal })` — 주소 결합 · JSON · 타임아웃 · 봉투 풀기 |
-| `envelope.ts`     | 공통 응답 봉투 `{ dataHeader: { success, resultCode, resultMessage, fieldErrors }, dataBody }` 읽기    |
-| `api-error.ts`    | `ApiError { status, code, message, fieldErrors }`, 일시 장애 코드 `UNAVAILABLE`                        |
-| `error-kind.ts`   | `classifyApiError` — 재발급 · 로그인 필요 · 권한 없음 · 재로그인 · 재발급 경합 · 일시 장애 · 그 밖     |
-| `access-token.ts` | access token 공급자를 끼우는 자리(`setAccessTokenProvider`). 토큰 자체는 들지 않는다                   |
+| 모듈              | 하는 일                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `client.ts`       | `apiRequest<T>(path, { method, query, body, auth, signal })` — 주소 결합 · JSON · 타임아웃 · 봉투 풀기                         |
+| `envelope.ts`     | 공통 응답 봉투 `{ dataHeader: { success, resultCode, resultMessage, fieldErrors }, dataBody }` 읽기                            |
+| `api-error.ts`    | `ApiError { status, code, message, fieldErrors }`, 일시 장애 코드 `UNAVAILABLE`                                                |
+| `error-kind.ts`   | `classifyApiError` — 재발급 · 로그인 필요 · 권한 없음 · 재로그인 · 재발급 경합 · 일시 장애 · 그 밖                             |
+| `access-token.ts` | access token 공급자 · 갈아 끼우기를 끼우는 자리(`setAccessTokenProvider` · `setAccessTokenRefresher`). 토큰 자체는 들지 않는다 |
 
 - **도메인 클라이언트(`features/<도메인>/*-client.ts`)만 `apiRequest` 를 부른다.** 화면은 도메인 클라이언트의 함수를 부르고, 응답을 화면 모델로 옮기는 일도 도메인 클라이언트가 한다. 래퍼는 `dataBody` 모양을 검사하지 않는다.
 - 주소는 `clientEnv.apiBaseUrl` + `/api/...` 경로다. 경로가 `/` 로 시작하지 않거나 다른 오리진이면 보내지 않는다(토큰이 다른 곳으로 새지 않게).
@@ -165,7 +165,7 @@ frontend/
 - 검증 오류는 `fieldErrors` 의 `field` 별 첫 오류를 그 입력 옆에 보인다. 서버가 순서를 고정해 준다(`resultCode` 는 첫 오류).
 - **access token 은 메모리에만 둔다.** 브라우저 저장소 · 주소에 두지 않는다. refresh 토큰은 HttpOnly 쿠키라 화면이 다루지 않는다. 세션 저장소(토큰 · 만료 시각, 만료 전 재발급)는 연동 이슈에서 만들고 `setAccessTokenProvider` 로 끼운다. 공급자가 토큰을 주면 래퍼가 `Authorization: Bearer` 를 싣는다.
 - **재발급(`POST /api/v1/auth/token/reissue`)은 `auth: false` 로 Authorization 없이 부른다.** 게이트웨이와 auth 필터는 경로와 무관하게 헤더가 있으면 access 를 검사해, 만료된 access 를 실으면 refresh 가 멀쩡해도 `SECURITY_002` 로 끝난다.
-- 401 처리(연동 이슈에서 만든다): `reissue`(`SECURITY_002/003/004/005/007`)면 재발급하고 한 번 다시 보낸다. `reissue-conflict`(`AUTH_016`)면 재발급을 한 번 다시 한다. 재발급이 `relogin`(`AUTH_014/015`)이면 `notifySessionExpired()`(`src/lib/session-expiry.ts`)를 부른다. 화면 코드는 401 을 따로 다루지 않는다.
+- 401 처리: 토큰을 실어 보낸 요청이 `reissue`(`SECURITY_002/003/004/005/007`)로 거절되면 `client.ts` 가 갈아 끼우기(`setAccessTokenRefresher` 로 끼운 함수)로 새 토큰을 받아 **같은 요청을 한 번만** 다시 보낸다(주소 · 메서드 · 바디 같음, 다시 받은 오류는 그대로 던짐). 토큰을 싣지 않은 요청 · `SECURITY_001` · 403 · `auth: false` 는 다시 보내지 않는다 — 재발급이 재발급을 부르는 고리가 없다. 갈아 끼우기가 없거나 null 을 주면 원래 오류를 던진다. 화면 코드는 401 을 따로 다루지 않는다.
 - 로그를 남기지 않는다. 요청 바디 · 토큰 · 응답을 `console` 에 찍지 않고, 비밀번호 · 토큰 · 인증 코드 · 건강 정보는 `query` 가 아니라 `body` 로 보낸다.
 - 테스트는 `vi.stubGlobal('fetch', …)` 로 가짜 `fetch` 를 끼운다(`src/lib/api/client.test.ts`). 도메인 클라이언트 테스트는 `apiRequest` 를 `vi.mock` 으로 바꾼다.
 
