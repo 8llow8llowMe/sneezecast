@@ -14,6 +14,7 @@ import {
 
 import {
   getMemberInfoSnapshot,
+  reloadMemberInfo,
   reloadMemberRegion,
   resetMemberInfoForTests,
   retryMemberInfo,
@@ -296,6 +297,71 @@ describe('회원 정보 저장소', () => {
       server.reply(REGION, okResponse(YEOKSAM1))
       await flush()
       expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'ready', value: YEOKSAM1 })
+    })
+  })
+
+  describe('reloadMemberInfo — 비밀번호 변경이 비밀번호 없는 계정으로 거절됐을 때 다시 읽기 (#166)', () => {
+    async function readyMember(server: ReturnType<typeof holdRequests>) {
+      setSession(memberToken())
+      await flush()
+      server.reply(INFO, okResponse(myInfoBody()))
+      server.reply(REGION, okResponse(YEOKSAM1))
+      await flush()
+    }
+
+    const hasPassword = () => {
+      const info = getMemberInfoSnapshot()?.info
+      return info?.status === 'ready' ? info.value.hasPassword : null
+    }
+
+    it('이미 읽은 내 정보를 다시 읽는다 — 읽는 동안 지금 값을 두고, 받으면 바꾼다(내 동네는 그대로)', async () => {
+      const server = holdRequests()
+      await readyMember(server)
+
+      reloadMemberInfo()
+      expect(hasPassword()).toBe(true)
+      await flush()
+      expect(server.requests()).toEqual([INFO, REGION, INFO])
+
+      server.reply(INFO, okResponse(myInfoBody({ provider: 'KAKAO', hasPassword: false })))
+      await flush()
+      expect(hasPassword()).toBe(false)
+      expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'ready', value: YEOKSAM1 })
+    })
+
+    it('다시 읽지 못해도 지금 값을 두고, 회원 없음(MEMBER_004)이면 처음 읽을 때처럼 세션을 비운다', async () => {
+      const server = holdRequests()
+      await readyMember(server)
+
+      reloadMemberInfo()
+      await flush()
+      server.reply(INFO, errorResponse('MEMBER_009', 503))
+      await flush()
+      expect(hasPassword()).toBe(true)
+
+      reloadMemberInfo()
+      await flush()
+      server.reply(INFO, errorResponse('MEMBER_004', 404))
+      await flush()
+      expect(getSessionSnapshot().status).toBe('guest')
+      expect(getMemberInfoSnapshot()).toBeNull()
+    })
+
+    it('처음 읽는 중이면 보내지 않고, 읽지 못한 상태면 loading 으로 다시 읽는다', async () => {
+      const server = holdRequests()
+      setSession(memberToken())
+      reloadMemberInfo()
+      await flush()
+      expect(server.requests()).toEqual([INFO, REGION])
+
+      server.reply(INFO, errorResponse('MEMBER_009', 503))
+      await flush()
+      reloadMemberInfo()
+      expect(getMemberInfoSnapshot()?.info).toEqual({ status: 'loading' })
+      await flush()
+      server.reply(INFO, okResponse(myInfoBody()))
+      await flush()
+      expect(hasPassword()).toBe(true)
     })
   })
 })

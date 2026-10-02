@@ -18,7 +18,8 @@ import { fetchMyInfo, fetchMyRegion, type MyInfo, type MyRegion } from './member
  *   다른 회원의 정보가 남지 않게 한다. 기다리던 응답이 그 뒤에 와도 버린다(`infoSeq` · `regionSeq`)
  * - **한 회원에 한 번만 보낸다(single-flight).** 요청은 `loading` 으로 바뀔 때만 나간다 — 세션 알림이 여러 번 와도, 다시 켜도
  *   (`startMemberInfo`) 같은 회원이면 다시 보내지 않는다. 다시 시도(`retryMemberInfo`)는 실패한 쪽만 다시 보낸다.
- *   예외는 보고가 동네로 거절됐을 때의 내 동네 다시 읽기(`reloadMemberRegion`, #165)다
+ *   예외는 보고가 동네로 거절됐을 때의 내 동네 다시 읽기(`reloadMemberRegion`, #165)와 비밀번호 변경이 비밀번호 없는 계정으로
+ *   거절됐을 때의 내 정보 다시 읽기(`reloadMemberInfo`, #166)다
  * - **두 요청은 따로 실패한다.** 내 동네는 행정동 서비스 장애면 `REGION_004`(503)이고 내 정보와 무관하다. 각각 `loading` ·
  *   `ready` · `failed` 다
  * - 내 정보가 `MEMBER_004`(토큰은 유효한데 회원 행이 없음 — 탈퇴 뒤 파기)면 세션을 비운다. 사유는 `withdrawn` 이다 —
@@ -92,7 +93,8 @@ export function memberInfoOf(
   return session.status === 'member' && info?.memberId === session.summary.memberId ? info : null
 }
 
-function loadInfo(memberId: string): void {
+/** 내 정보를 읽는다. `keepOnFailure` 면(다시 읽기) 실패해도 지금 값을 그대로 둔다(세션을 끝내는 오류는 그대로 끝낸다) */
+function loadInfo(memberId: string, keepOnFailure = false): void {
   const sent = infoSeq
   fetchMyInfo().then(
     (info) => {
@@ -110,7 +112,7 @@ function loadInfo(memberId: string): void {
         sync()
         return
       }
-      patch(memberId, { info: FAILED })
+      if (!keepOnFailure) patch(memberId, { info: FAILED })
     },
   )
 }
@@ -199,6 +201,22 @@ export function reloadMemberRegion(): void {
   if (failed) patch(memberId, { region: LOADING })
   regionSeq += 1
   loadRegion(memberId, !failed)
+}
+
+/**
+ * 이미 읽은 내 정보를 서버에서 다시 읽는다. 비밀번호 변경이 `MEMBER_007`(비밀번호 없는 계정)로 거절됐을 때(#166) 부른다 —
+ * 읽은 `hasPassword` 가 서버와 어긋났다. `reloadMemberRegion` 과 같은 규칙이다: 읽는 동안 · 다시 읽지 못해도 지금 값을 둔다,
+ * 마지막 요청의 응답만 넣는다, 처음 읽는 중이면 보내지 않는다, 읽지 못한 상태면 `loading` 으로 다시 읽는다.
+ * 회원 없음 · 탈퇴 · 정지면 처음 읽을 때처럼 세션을 끝낸다
+ */
+export function reloadMemberInfo(): void {
+  const current = snapshot
+  if (!current || current.info.status === 'loading') return
+  const { memberId } = current
+  const failed = current.info.status === 'failed'
+  if (failed) patch(memberId, { info: LOADING })
+  infoSeq += 1
+  loadInfo(memberId, !failed)
 }
 
 /**
