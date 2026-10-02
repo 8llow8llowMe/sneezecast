@@ -44,19 +44,19 @@ describe('useRequiredStepsGate', () => {
   })
 
   it('조건이 없는 회원은 보내지 않는다', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     render(<HomeGate />)
     expect(router.replace).not.toHaveBeenCalled()
   })
 
   it('약관이 개정된 회원은 재동의로 보낸다 (홈이면 next 없음)', async () => {
-    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
     render(<HomeGate />)
     expect(router.replace).toHaveBeenCalledWith('/terms/reconsent')
   })
 
   it('동네가 폐지된 회원은 동네 다시 고르기로 보낸다', async () => {
-    await loginWithEmail('reselect@example.com', 'dongne2026')
+    await loginWithEmail('reselect@example.com', 'dongne2026', 'mock')
     render(<HomeGate />)
     expect(router.replace).toHaveBeenCalledWith('/setup/region?reselect=1')
   })
@@ -79,7 +79,7 @@ describe('useRequiredStepsGate', () => {
   })
 
   it('하이드레이션 첫 그림(비회원)으로는 판단하지 않고, 하이드레이션 뒤 회원 상태로 보낸다', async () => {
-    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
     const container = document.createElement('div')
     document.body.append(container)
     // 서버 그림은 목 세션을 모른다(비회원)
@@ -131,7 +131,7 @@ describe('useMemberGate', () => {
   })
 
   it('회원 화면에서 로그인이 만료되면 마지막 이동이 만료 토스트가 있는 로그인 화면이다', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     render(
       <>
         <DevicesGate />
@@ -163,7 +163,7 @@ describe('useMemberGate', () => {
   })
 
   it('멈춰 두면(paused) 세션이 비회원이 되어도 로그인으로 보내지 않는다 — 로그아웃 뒤 홈으로 가는 중', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     const { rerender } = render(<MeGate paused />)
     act(() => resetMockSession())
     expect(router.replace).not.toHaveBeenCalled()
@@ -247,7 +247,7 @@ describe('가드의 replace 와 앱 안 이동 기록', () => {
   }
 
   it('바로 연 공식 정보 → 홈(가드가 재동의로 replace) → 휴대폰 뒤로 → 공식 정보의 뒤로가 사이트 밖으로 나가지 않는다', async () => {
-    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
     // 같은 요소 객체를 다시 넘기면 React 가 다시 그리지 않아 매번 새로 만든다
     const tree = () => (
       <NavTrailProvider>

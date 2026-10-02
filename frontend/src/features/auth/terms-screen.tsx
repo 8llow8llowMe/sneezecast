@@ -9,6 +9,7 @@ import { ToastRegion, useToast } from '@/components/toast'
 import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
 import {
+  LOGIN_EMAIL_PATH,
   LOGIN_PATH,
   SETUP_ADULT_PATH,
   SETUP_HEALTH_CONSENT_PATH,
@@ -17,6 +18,7 @@ import {
   SIGNUP_EMAIL_VERIFICATION_EXPIRED_PATH,
 } from '@/features/onboarding/paths'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useDataSource } from '@/lib/use-data-source'
 
 import {
   loginWithEmail,
@@ -29,7 +31,7 @@ import { ConsentRow, LEGAL_TEXT_NOT_READY } from './consent-row'
 import { type Consent, consentFor } from './legal'
 import { NO_CHECKS, requiredAgreed, setAll, type TermsChecks } from './terms-checks'
 
-type Failure = 'signup' | 'login' | 'region' | null
+type Failure = 'signup' | 'email-taken' | 'login' | 'region' | null
 
 /**
  * S02-3 가입 동의 (3 / 4). 여기서 회원 가입 요청을 보내고, 이메일 가입이면 로그인한 뒤 내 동네를 저장하고
@@ -43,6 +45,9 @@ type Failure = 'signup' | 'login' | 'region' | null
  *   비밀번호는 로그인까지 마친 뒤에 지운다 — 로그인을 다시 시도할 때 필요하다
  * - 가입이 인증 만료(`verification-expired`, `AUTH_007`)로 돌아오면 인증 · 보낸 시각 · 비밀번호를 지우고
  *   (이메일 · 닉네임은 남긴다) 이메일 단계로 기록을 바꿔 간다. 이메일 화면이 안내를 띄운다
+ * - 가입된 이메일(`email-taken`, `MEMBER_001`)이면 빨강 상자로 알리고 `이메일로 로그인` 을 둔다(시안 없음 — Signup-email 의
+ *   exists 문구를 옮겼다). 누르면 비밀번호를 지우고 이메일 로그인으로 기록을 바꿔 간다
+ * - 실데이터 · 목데이터는 `useDataSource()` 로 정해 가입 · 로그인에 넘긴다
  * - 증상 보고 동의로는 기록을 바꿔 간다 — 뒤로 가기로 이 화면에 돌아와 다시 가입하지 않게 한다
  * - 값이 없으면(바로 들어옴 · 새로고침) 앞 단계로 보낸다: 동네 → 성인 확인 → 가입 종류(모르면 로그인 방법 선택) →
  *   이메일 가입의 인증 · 비밀번호(없으면 이메일 단계). 이미 가입을 마쳤으면 다음 단계로 보낸다
@@ -62,6 +67,7 @@ export function TermsScreen() {
     replace,
   } = useOnboarding()
   const active = useActiveRef()
+  const source = useDataSource()
   const { toast, show, dismiss } = useToast()
   const [checks, setChecks] = useState<TermsChecks>(NO_CHECKS)
   const [pending, setPending] = useState(false)
@@ -133,7 +139,7 @@ export function TermsScreen() {
     if (!membership.accountCreated) {
       let result: SignupResult
       try {
-        result = await signup(buildRequest())
+        result = await signup(buildRequest(), source)
       } catch {
         fail('signup')
         return
@@ -145,6 +151,10 @@ export function TermsScreen() {
         if (active.current) replace(SIGNUP_EMAIL_VERIFICATION_EXPIRED_PATH)
         return
       }
+      if (result.status === 'email-taken') {
+        fail('email-taken')
+        return
+      }
       // 서버도 가입에 쓴 인증 표시를 지운다. 카카오 가입은 이미 로그인한 상태다
       loggedIn = draft.method === 'kakao'
       updateSignup({ verifiedAt: null })
@@ -154,7 +164,7 @@ export function TermsScreen() {
 
     if (!loggedIn && draft.method === 'email') {
       // 맞지 않음 · 잠김 · 응답 없음 모두 같은 안내다. 계정은 이미 있으니 다시 누르면 로그인부터 한다
-      const ok = await loginWithEmail(draft.email, draft.password).then(
+      const ok = await loginWithEmail(draft.email, draft.password, source).then(
         (result) => result.status === 'ok',
         () => false,
       )
@@ -178,6 +188,13 @@ export function TermsScreen() {
     }
     updateMembership({ regionSaved: true })
     if (active.current) replace(SETUP_HEALTH_CONSENT_PATH)
+  }
+
+  /** 가입된 이메일이면 로그인으로 간다. 이동하는 동안은 보내는 중으로 둔다 — 비밀번호를 지우면 값이 없다고 이메일 단계로 보낸다 */
+  function goLogin() {
+    setPending(true)
+    updateSignup({ password: '' })
+    replace(LOGIN_EMAIL_PATH)
   }
 
   return (
@@ -244,6 +261,18 @@ export function TermsScreen() {
 
         {failure === 'signup' && (
           <AlertBox tone="danger">가입하지 못했어요. 잠시 뒤 다시 시도해 주세요.</AlertBox>
+        )}
+        {failure === 'email-taken' && (
+          <AlertBox
+            tone="danger"
+            action={
+              <Button variant="secondary" fullWidth onClick={goLogin}>
+                이메일로 로그인
+              </Button>
+            }
+          >
+            이미 가입된 이메일이에요.
+          </AlertBox>
         )}
         {failure === 'login' && (
           <AlertBox tone="danger">

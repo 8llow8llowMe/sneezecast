@@ -83,7 +83,7 @@ beforeEach(async () => {
   pathname = '/me/password'
   resetMockSession()
   vi.clearAllMocks()
-  await loginWithEmail('dong@example.com', 'dongne2026')
+  await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
 })
 
 afterEach(() => {
@@ -185,7 +185,7 @@ describe('PasswordScreen 이메일 회원 — 비밀번호 변경', () => {
   })
 
   it('보내지 못하면(password-fail@example.com) 빨강 상자로 알리고 다시 누를 수 있다', async () => {
-    await loginWithEmail('password-fail@example.com', 'dongne2026')
+    await loginWithEmail('password-fail@example.com', 'dongne2026', 'mock')
     renderPassword()
     const user = userEvent.setup()
 
@@ -259,7 +259,7 @@ describe('PasswordScreen 카카오 회원 — 비밀번호 설정', () => {
 
   beforeEach(async () => {
     resetMockSession()
-    await signup({ kind: 'kakao', consents })
+    await signup({ kind: 'kakao', consents }, 'mock')
   })
 
   it('현재 비밀번호 칸 없이 설정 제목 · 안내와 두 칸을 보인다', () => {
@@ -383,7 +383,7 @@ describe('PasswordScreen → 내 정보 (알림 · 기록)', () => {
 
   it('카카오 회원이 설정하면 내 정보가 설정 알림을 띄우고 행이 비밀번호 변경이 된다', async () => {
     resetMockSession()
-    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] })
+    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] }, 'mock')
     const user = userEvent.setup()
     pathname = '/me'
     const { rerender } = render(meScreen())

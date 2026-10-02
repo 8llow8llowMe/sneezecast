@@ -260,7 +260,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
   })
 
   it('목 세션이 회원이면 그 상태로 나뉜다 (덮어쓰기가 없을 때)', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     const pushState = vi.spyOn(window.history, 'pushState')
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
@@ -347,7 +347,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
 
   // 보고하려던 로그인(#136)은 로그인 뒤 `/?region=…&report=start` 로 온다. 목 로그인은 늘 미동의 회원이라 홈이 동의 시트로 고친다
   it('로그인 뒤 보고 진입(?report=start)으로 돌아온 미동의 회원(목 세션)에게는 동의 시트를 열고 주소를 고친다', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     search = 'region=11680640&report=start'
     const replaceState = vi.spyOn(window.history, 'replaceState')
     render(<HomeScreen week={HOME_MOCKS.high} regionCode="11680640" />)
@@ -392,7 +392,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
   })
 
   it('목 세션으로 미동의 회원이 동의하면 바로 동의한 회원이 되어 보고 시작으로 바뀐다', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     search = 'report=health-consent'
     const replaceState = vi.spyOn(window.history, 'replaceState')
     const user = userEvent.setup()
@@ -441,7 +441,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     render(<HomeScreen week={HOME_MOCKS.high} />)
     expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.guest })).toHaveLength(2)
 
-    await act(() => loginWithEmail('dong@example.com', 'dongne2026'))
+    await act(() => loginWithEmail('dong@example.com', 'dongne2026', 'mock'))
     expect(screen.getAllByRole('button', { name: REPORT_BUTTONS.member })).toHaveLength(2)
     expect(screen.queryByText('로그인하면 이번 주 보고를 할 수 있어요')).toBeNull()
   })
@@ -568,7 +568,7 @@ describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 
 
   // 보고하려던 로그인(#136)은 로그인 뒤 `?report=start` 로 온다. 조건이 남았으면 보내기 전 그림에 동의 시트가 비치지 않아야 한다
   it('보낼 곳이 있으면 보고 진입 시트를 열지 않는다 (보고하려던 로그인 뒤 재동의가 남은 회원)', async () => {
-    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
     search = 'region=11680640&report=start'
     render(<HomeScreen week={HOME_MOCKS.normal} regionCode="11680640" />)
 
@@ -577,7 +577,7 @@ describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 
   })
 
   it('하이드레이션으로 열어도 첫 그림(비회원)의 보고 진입 정리가 남지 않는다', async () => {
-    await loginWithEmail('reconsent@example.com', 'dongne2026')
+    await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
     search = 'report=start'
     window.history.replaceState(null, '', `/?${search}`)
     const replaceState = vi.spyOn(window.history, 'replaceState')
@@ -595,7 +595,7 @@ describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 
   })
 
   it('동네가 폐지된 회원(목 프로필)은 동네 다시 고르기로 보낸다', async () => {
-    await loginWithEmail('reselect@example.com', 'dongne2026')
+    await loginWithEmail('reselect@example.com', 'dongne2026', 'mock')
     render(<HomeScreen week={HOME_MOCKS.normal} />)
     expect(router.replace).toHaveBeenCalledWith('/setup/region?reselect=1')
   })
@@ -685,7 +685,7 @@ describe('HomeScreen 둘러보기 동네 · 내 동네 (#141)', () => {
 
   /** 내 동네가 역삼1동이고 건강정보 동의를 한 목 회원 */
   async function signInWithRegion() {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     await saveRegion(YEOKSAM1)
     await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
   }

@@ -16,13 +16,14 @@ import {
   SIGNUP_EMAIL_PATH,
 } from '@/features/onboarding/paths'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useDataSource } from '@/lib/use-data-source'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
 import { loginWithEmail } from './auth-client'
 import { afterLoginHref, loginHref, type LoginReturn, NO_LOGIN_RETURN } from './login-return'
 
 /** 보낸 뒤 결과. `failed` 는 응답을 받지 못한 경우다(네트워크 · 서버 오류) */
-type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'failed'
+type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'limited' | 'suspended' | 'failed'
 
 /**
  * S13-5 이메일 로그인. 단계 표시는 없다.
@@ -32,6 +33,8 @@ type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'failed'
  * | 기본 | 이메일 · 비밀번호(보기) · 로그인. 빈 칸이 있으면 로그인이 꺼진다 |
  * | wrong | "이메일 또는 비밀번호가 맞지 않아요." 빨강 상자 |
  * | locked | 회색 상자(`role="alert"`) · 로그인 꺼짐. 이메일을 바꿔야 다시 켜진다 — 비밀번호만 고쳐서는 풀리지 않는다 |
+ * | limited | 회색 상자(`role="alert"`) "잠시 뒤 다시". 이 기기(IP)에 걸린 제한이라 로그인을 끄지 않는다 (시안 없음, `AUTH_013`) |
+ * | suspended | "이용이 정지된 계정이에요." 빨강 상자 (시안 없음, `MEMBER_003`) |
  * | reset-done | `?reason=reset-done` 이면 "비밀번호를 바꿨어요" 토스트 · 재설정에 쓴 이메일로 칸을 채운다(S13-6) |
  *
  * 로그인 버튼은 `disabled` 대신 `aria-disabled` 로 끈다. 보내는 중 · 잠김으로 바뀌어도 포커스가 버튼에 남고
@@ -57,6 +60,7 @@ export function LoginEmailScreen({
   loginReturn?: LoginReturn
 }) {
   const navTrail = useNavTrail()
+  const source = useDataSource()
   const { replace, passwordReset, clearPasswordReset } = useOnboarding()
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
@@ -88,7 +92,7 @@ export function LoginEmailScreen({
   }
   function changePassword(value: string) {
     setPassword(value)
-    if (status === 'wrong' || status === 'failed') setStatus('idle')
+    if (status !== 'idle' && status !== 'submitting' && status !== 'locked') setStatus('idle')
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -96,7 +100,7 @@ export function LoginEmailScreen({
     if (blocked) return
     setStatus('submitting')
     try {
-      const result = await loginWithEmail(email.trim(), password)
+      const result = await loginWithEmail(email.trim(), password, source)
       // 기다리는 동안 화면을 떠났으면 늦은 응답으로 이동하지 않는다
       if (!active.current) return
       if (result.status === 'ok') {
@@ -164,6 +168,13 @@ export function LoginEmailScreen({
             로그인 시도가 많아 잠시 막혔어요. 10분 뒤 다시 시도해 주세요.
           </AlertBox>
         )}
+        {status === 'limited' && (
+          // 잠김과 같은 모양이다. 남은 시간을 서버가 주지 않아 시간을 못 박지 않는다
+          <AlertBox tone="neutral" role="alert">
+            로그인 시도가 많아 잠시 막혔어요. 잠시 뒤 다시 시도해 주세요.
+          </AlertBox>
+        )}
+        {status === 'suspended' && <AlertBox tone="danger">이용이 정지된 계정이에요.</AlertBox>}
 
         <div className="flex justify-between">
           <Link

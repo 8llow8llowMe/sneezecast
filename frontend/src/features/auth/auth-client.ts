@@ -1,8 +1,50 @@
 import { SETUP_REGION_FROM_KAKAO_PATH } from '@/features/onboarding/paths'
 import { ABOLISHED_DISTRICT_EXAMPLE } from '@/features/region/mock'
 import type { District } from '@/features/region/types'
+import { ApiError } from '@/lib/api/api-error'
+import { apiRequest } from '@/lib/api/client'
+import { type ApiErrorKind, classifyApiError } from '@/lib/api/error-kind'
+import type { DataSource } from '@/lib/data-source'
+import {
+  type AuthToken,
+  clearSession,
+  getSessionSnapshot,
+  setSession,
+} from '@/lib/session/session-store'
+import { clearSessionExpiring } from '@/lib/session-expiry'
 
-import type { Consent } from './legal'
+import type { Consent, ConsentType } from './legal'
+
+/* ── 실데이터 연동 (#163) ──────────────────────────────────────────────────────────────
+ *
+ * 이메일 인증 · 가입 · 이메일 로그인 · 로그아웃(`sendEmailCode` · `verifyEmailCode` · `signup` 이메일 갈래 · `loginWithEmail` ·
+ * `logout`)은 마지막 인자로 데이터 출처(`DataSource`)를 받는다. `api` 면 auth API(docs/api-contract-draft.md "인증")를 부르고,
+ * `mock` 이면 아래 목 동작 그대로다. 출처는 부르는 화면이 `useDataSource()` 로 읽어 넘긴다 — 이 모듈은 쿠키를 읽지 않는다
+ * (docs/conventions.md "데이터 출처", `features/region/region-client.ts` 와 같다). 그 밖의 함수는 아직 출처와 무관하게 목이다.
+ *
+ * - 인증이 필요 없는 요청(코드 받기 · 코드 확인 · 가입 · 로그인)은 `auth: false` 로 부른다 — 만료된 access 를 실어
+ *   게이트웨이가 `SECURITY_002` 로 거절하는 일이 없게 한다. 로그아웃만 access 를 싣는다(API 계층이 만료 전 재발급을 맡는다)
+ * - 서버 오류 코드 중 화면 상태가 있는 것만 결과로 옮긴다. 일시 장애(`UNAVAILABLE` · 503) · 분류 밖 오류는 그대로 거부한다 —
+ *   화면은 거부를 "잠시 뒤 다시 시도" 안내로 받는다(목의 응답 없음 재현과 같은 길)
+ * - 비밀번호 · 인증 코드는 요청 본문으로만 보내고 로그 · 저장소 · 주소에 남기지 않는다. 토큰은 세션 저장소에만 넘긴다
+ */
+
+/** 서버 오류 코드. `ApiError` 가 아니면(호출한 쪽의 취소 · 프로그램 오류) null */
+function errorCodeOf(error: unknown): string | null {
+  return error instanceof ApiError ? error.code : null
+}
+
+/** 오류 코드 → 결과. 표에 없으면 null(거부할 오류다) */
+function mapError<T>(error: unknown, table: Readonly<Record<string, T>>): T | null {
+  const code = errorCodeOf(error)
+  return code !== null && Object.hasOwn(table, code) ? (table[code] ?? null) : null
+}
+
+const SEND_CODE_PATH = '/api/v1/auth/email/send-code'
+const VERIFY_CODE_PATH = '/api/v1/auth/email/verify-code'
+const SIGNUP_PATH = '/api/v1/auth/signup'
+const LOGIN_PATH = '/api/v1/auth/login'
+const LOGOUT_PATH = '/api/v1/auth/logout'
 
 /* ── 목 회원 상태 ──────────────────────────────────────────────────────────────────
  *
@@ -142,15 +184,24 @@ export function resetMockSession() {
 }
 
 /**
- * 로그인. **API 연동 전 목 구현이다.** 세션 · 토큰 저장은 연동 이슈 범위라 여기서 하지 않는다 — 성공하면 이동만 한다.
+ * 이메일 로그인. 실데이터는 `POST /api/v1/auth/login {email, password}`(`auth: false`)이고, 성공하면 응답(`AuthToken`)을
+ * 그대로 세션 저장소에 넣는다(`setSession` — 이 탭이 회원이 되고 다른 탭에도 알린다). 목 세션은 건드리지 않는다.
+ * 응답 전에 화면을 떠나도 세션은 넣는다(서버에는 이미 로그인 세션이 생겼다). 늦은 응답으로 이동하지 않는 것은 화면 몫이다
+ * (`src/lib/use-active-ref.ts`).
  *
- * 연동 이슈에서 함수 안만 `src/lib/api/` 를 거친 백엔드 호출(백엔드 #56~#61)로 바꾸고 화면 코드는 그대로 둔다.
- * 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다 — 화면은 다시 시도하라고 알린다.
- * 비밀번호는 어디에도 남기지 않는다(로그 · 저장소 · 주소 금지).
- * 화면을 떠난 뒤 늦게 온 응답은 화면이 버린다(`src/lib/use-active-ref.ts`). 요청 자체 취소(AbortController)는 연동 이슈에서 붙인다.
+ * 오류 코드 → 결과 (backend/docs/modules.md "화면 계약"):
+ * - `AUTH_011`(이메일 · 비밀번호 불일치 · 미가입) · `MEMBER_002`(탈퇴 — 미가입과 같게 보인다) → `wrong`.
+ *   검증 오류 `AUTH_102` · `103`(이메일 길이 · 형식) · `113`(비밀번호 100자 초과)도 맞을 수 없는 입력이라 `wrong` 이다
+ * - `AUTH_012`(이메일 잠금, 10분 고정) → `locked`, `AUTH_013`(IP 상한, 남은 시간 모름) → `limited`
+ * - `MEMBER_003`(정지 — 비밀번호가 맞을 때만 온다) → `suspended`
+ * - 그 밖(`AUTH_017` · 일시 장애 등)은 거부한다 — 화면은 "로그인하지 못했어요" 로 알린다
+ *
+ * 비밀번호는 어디에도 남기지 않는다(로그 · 저장소 · 주소 금지). 요청 자체 취소(AbortController)는 아직 붙이지 않았다.
  *
  * 목에서 오류 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
  * - 이메일 `locked@example.com` → `locked` (로그인 시도가 많아 잠시 막힘)
+ * - 이메일 `limit@example.com` → `limited` (이 기기에서 요청이 많아 잠시 막힘 — 코드 받기 제한과 같은 입력)
+ * - 이메일 `suspended@example.com` → `suspended` (이용 정지)
  * - 비밀번호 `wrong` → `wrong` (이메일 또는 비밀번호가 맞지 않음)
  * - 그 밖 → 성공. 다시 들어올 때 거칠 화면의 조건을 서버가 알려 주는 흉내로, 다음 이메일은 프로필에 조건을 켠다:
  *   `reconsent@example.com` · `reconsent-fail@example.com` → 약관 재동의, `reselect@example.com` · `reselect-fail@example.com`
@@ -158,15 +209,59 @@ export function resetMockSession() {
  */
 
 export const MOCK_LOCKED_EMAIL = 'locked@example.com'
+export const MOCK_SUSPENDED_EMAIL = 'suspended@example.com'
 export const MOCK_WRONG_PASSWORD = 'wrong'
 
-export type EmailLoginResult = { status: 'ok' } | { status: 'wrong' } | { status: 'locked' }
+export type EmailLoginResult =
+  | { status: 'ok' }
+  | { status: 'wrong' }
+  /** 이 이메일의 로그인 시도가 많아 잠금(10분) */
+  | { status: 'locked' }
+  /** 이 기기(IP)의 로그인 시도가 많아 잠시 막힘. 남은 시간은 모른다 */
+  | { status: 'limited' }
+  /** 이용이 정지된 계정 */
+  | { status: 'suspended' }
 
-export function loginWithEmail(email: string, password: string): Promise<EmailLoginResult> {
-  if (email.trim().toLowerCase() === MOCK_LOCKED_EMAIL) return Promise.resolve({ status: 'locked' })
-  if (password === MOCK_WRONG_PASSWORD) return Promise.resolve({ status: 'wrong' })
-  // 목은 동의 여부를 모른다. 연동 때는 서버 세션이 동의 상태를 알려 준다
+type LoginFailure = Exclude<EmailLoginResult, { status: 'ok' }>['status']
+
+const LOGIN_FAILURES: Readonly<Record<string, LoginFailure>> = {
+  AUTH_011: 'wrong',
+  MEMBER_002: 'wrong',
+  AUTH_102: 'wrong',
+  AUTH_103: 'wrong',
+  AUTH_113: 'wrong',
+  AUTH_012: 'locked',
+  AUTH_013: 'limited',
+  MEMBER_003: 'suspended',
+}
+
+export async function loginWithEmail(
+  email: string,
+  password: string,
+  source: DataSource,
+): Promise<EmailLoginResult> {
+  if (source === 'api') {
+    let token: AuthToken
+    try {
+      token = await apiRequest<AuthToken>(LOGIN_PATH, {
+        method: 'POST',
+        body: { email, password },
+        auth: false,
+      })
+    } catch (error) {
+      const failure = mapError(error, LOGIN_FAILURES)
+      if (failure) return { status: failure }
+      throw error
+    }
+    setSession(token)
+    return { status: 'ok' }
+  }
   const key = normalizeEmail(email)
+  if (key === MOCK_LOCKED_EMAIL) return { status: 'locked' }
+  if (key === MOCK_LIMIT_EMAIL) return { status: 'limited' }
+  if (key === MOCK_SUSPENDED_EMAIL) return { status: 'suspended' }
+  if (password === MOCK_WRONG_PASSWORD) return { status: 'wrong' }
+  // 목은 동의 여부를 모른다. 실데이터는 로그인 응답(`reportWritable`)이 동의 상태를 알려 준다
   setMockSession('member-no-consent', {
     provider: 'email',
     email: key,
@@ -174,7 +269,7 @@ export function loginWithEmail(email: string, password: string): Promise<EmailLo
     hasPassword: true,
     ...conditionsFor(key),
   })
-  return Promise.resolve({ status: 'ok' })
+  return { status: 'ok' }
 }
 
 function conditionsFor(
@@ -211,16 +306,20 @@ export function startKakaoLogin(
 
 /* ── 이메일 가입 인증 (S13-2 · S13-3) ───────────────────────────────────────────────
  *
- * 연동 때 `POST /api/v1/auth/email/send-code` · `POST /api/v1/auth/email/verify-code`(백엔드 #56)로 바꾼다.
- * 화면 계약(backend/docs/modules.md "화면 계약"):
+ * 실데이터: `POST /api/v1/auth/email/send-code {email}` · `POST /api/v1/auth/email/verify-code {email, code}`(백엔드 #56,
+ * 둘 다 `auth: false`, 응답 본문 없음). 화면 계약(backend/docs/modules.md "화면 계약"):
  * - 코드 받기는 **가입 여부와 무관하게 같은 응답**이다(계정 열거 방지). 이미 가입된 이메일이면 서버가 코드 대신
  *   안내 메일을 보낸다 — 화면은 늘 코드 단계로 가고 중립 문구로 알린다
  * - 코드 확인은 **토큰을 주지 않는다.** 인증 완료 표시는 서버가 이메일별로 30분 들고 있다가 가입 요청 때 확인한다
- * - 발송 제한(`AUTH_001` 쿨다운 · `AUTH_002` IP 상한)은 남은 시간을 주지 않는다 — 화면은 시간을 못 박지 않는다
+ * - 발송 제한(`AUTH_001` 쿨다운 · `AUTH_002` IP 상한)은 남은 시간을 주지 않는다 — 둘 다 `limit` 이고 화면은 시간을 못 박지 않는다
  * - 남은 시도 횟수도 주지 않는다. 틀리면 `AUTH_003`, 5번째로 틀리면 `AUTH_005`(잠김)이고 서버가 코드를 지워
  *   그다음 확인은 `AUTH_004`(만료)다. 코드를 다시 받으면 서버의 실패 수가 0 이 된다.
- *   그래서 연동 때 이 모듈이 이메일별 실패 수를 세어 `remainingAttempts`(= `CODE_MAX_ATTEMPTS` - 실패 수)를 채우고,
- *   `sendEmailCode` 가 `sent` 이면 그 이메일의 실패 수를 0 으로 되돌린다. 화면 쪽 타입(`VerifyCodeResult`)은 그대로다
+ *   그래서 이 모듈이 이메일별 실패 수를 세어(`signupCodeFailures`) `remainingAttempts`(= `CODE_MAX_ATTEMPTS` - 실패 수, 1 이상)를
+ *   채우고, 코드를 받으면(`sent`) · 인증을 마치면 · 잠기거나 만료되면 그 이메일의 실패 수를 0 으로 되돌린다.
+ *   새로고침하면 세던 수가 사라져 남은 시도가 실제보다 많게 보일 수 있다 — 잠금은 서버가 정하므로 문구만 어긋난다
+ * - 코드 확인 결과: `AUTH_003` → `wrong`, `AUTH_004` → `expired`, `AUTH_005`(시도 초과) · `AUTH_010`(IP 상한) → `locked`.
+ *   IP 상한은 코드 단계에 따로 상태가 없어 "시도 횟수를 넘겼어요 · 이메일부터 다시" 로 보인다
+ * - 그 밖(`AUTH_006` 저장소 장애 · 일시 장애 · 검증 오류)은 거부한다 — 화면은 "보내지 못했어요 / 확인하지 못했어요" 로 알린다
  *
  * 목에서 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
  * - 코드 받기: 이메일 `limit@example.com` → `limit`, 그 밖 → 보냄
@@ -307,48 +406,118 @@ const signupCodes = createMockCodeStore()
 /** 이메일별 가입 인증을 마친 시각(ms). 서버의 인증 완료 표시를 흉내 낸다 */
 const signupVerifiedAt = new Map<string, number>()
 
-export function sendEmailCode(email: string): Promise<SendCodeResult> {
-  return Promise.resolve(signupCodes.send(email))
+/** 실데이터의 이메일별 코드 확인 실패 수(서버가 남은 시도를 주지 않아 화면이 센다). 메모리에만 둔다 */
+const signupCodeFailures = new Map<string, number>()
+
+const SEND_CODE_FAILURES: Readonly<Record<string, 'limit'>> = {
+  AUTH_001: 'limit',
+  AUTH_002: 'limit',
 }
 
-export function verifyEmailCode(email: string, code: string): Promise<VerifyCodeResult> {
-  const result = signupCodes.verify(email, code)
-  if (result.status === 'ok') signupVerifiedAt.set(normalizeEmail(email), Date.now())
-  return Promise.resolve(result)
+export async function sendEmailCode(email: string, source: DataSource): Promise<SendCodeResult> {
+  if (source === 'mock') return signupCodes.send(email)
+  try {
+    await apiRequest<null>(SEND_CODE_PATH, { method: 'POST', body: { email }, auth: false })
+  } catch (error) {
+    const failure = mapError(error, SEND_CODE_FAILURES)
+    if (failure) return { status: failure }
+    throw error
+  }
+  // 새 코드를 받으면 서버의 실패 수도 0 이다
+  signupCodeFailures.delete(normalizeEmail(email))
+  return { status: 'sent' }
 }
 
-/**
- * 가입 인증 표시를 쓴다. 재현용 만료 이메일 · 인증하지 않음 · 마친 지 30분이 지남이면 false 다.
- * 서버처럼 쓴 인증 표시는 지운다
- */
+export async function verifyEmailCode(
+  email: string,
+  code: string,
+  source: DataSource,
+): Promise<VerifyCodeResult> {
+  if (source === 'mock') {
+    const result = signupCodes.verify(email, code)
+    if (result.status === 'ok') signupVerifiedAt.set(normalizeEmail(email), Date.now())
+    return result
+  }
+  const key = normalizeEmail(email)
+  try {
+    await apiRequest<null>(VERIFY_CODE_PATH, {
+      method: 'POST',
+      body: { email, code },
+      auth: false,
+    })
+  } catch (error) {
+    const failure = verifyFailureOf(error, key)
+    if (failure) return failure
+    throw error
+  }
+  signupCodeFailures.delete(key)
+  return { status: 'ok' }
+}
+
+/** 코드 확인 오류 → 결과. 표에 없으면 null(거부할 오류). 틀림이면 실패 수를 하나 올려 남은 시도를 채운다 */
+function verifyFailureOf(error: unknown, key: string): VerifyCodeFailure | null {
+  switch (errorCodeOf(error)) {
+    case 'AUTH_003': {
+      const failures = (signupCodeFailures.get(key) ?? 0) + 1
+      signupCodeFailures.set(key, failures)
+      // 서버는 5번째 실패를 AUTH_005 로 준다. 세던 수가 어긋나도(새로고침 · 다른 탭) 0번으로 보이지 않게 1 이상으로 둔다
+      return { status: 'wrong', remainingAttempts: Math.max(1, CODE_MAX_ATTEMPTS - failures) }
+    }
+    case 'AUTH_004':
+      // 코드가 만료됐거나 없다. 다시 받으면 서버의 실패 수도 0 이다
+      signupCodeFailures.delete(key)
+      return { status: 'expired' }
+    case 'AUTH_005':
+      // 서버가 잠그면서 코드를 지웠다
+      signupCodeFailures.delete(key)
+      return { status: 'locked' }
+    case 'AUTH_010':
+      // IP 상한이다. 이 이메일의 코드 · 실패 수는 서버에 그대로라 세던 수도 둔다
+      return { status: 'locked' }
+    default:
+      return null
+  }
+}
+
+/** 가입 인증 표시가 살아 있는지. 재현용 만료 이메일 · 인증하지 않음 · 마친 지 30분이 지남이면 false 다 */
+function hasSignupVerification(key: string): boolean {
+  const at = signupVerifiedAt.get(key)
+  return (
+    key !== MOCK_VERIFY_EXPIRED_EMAIL &&
+    at !== undefined &&
+    Date.now() - at <= EMAIL_VERIFICATION_TTL_SECONDS * 1000
+  )
+}
+
+/** 가입 인증 표시를 쓴다. 살아 있지 않으면 false 다. 서버처럼 쓴 인증 표시는 지운다 */
 function consumeSignupVerification(email: string): boolean {
   const key = normalizeEmail(email)
-  const at = signupVerifiedAt.get(key)
-  if (
-    key === MOCK_VERIFY_EXPIRED_EMAIL ||
-    at === undefined ||
-    Date.now() - at > EMAIL_VERIFICATION_TTL_SECONDS * 1000
-  ) {
-    return false
-  }
+  if (!hasSignupVerification(key)) return false
   signupVerifiedAt.delete(key)
   return true
 }
 
 /* ── 가입 · 내 동네 · 건강정보 동의 (S02-3 · S02-4) ─────────────────────────────────
  *
- * 연동 때 바꾼다: 가입 `POST /api/v1/auth/signup`(백엔드 #56), 내 동네 저장(#60), 건강정보 동의(#59).
+ * 이메일 가입은 실데이터에서 `POST /api/v1/auth/signup`(백엔드 #56, `auth: false`)이다. 카카오 가입(#167) · 내 동네 저장(#60) ·
+ * 건강정보 동의(#59)는 아직 출처와 무관하게 목이다.
  * 가입 응답에는 토큰이 없다 — 이메일 가입은 이어서 `loginWithEmail`(#57)로 로그인한 뒤 동네를 저장한다.
  * 카카오 가입은 카카오 로그인으로 이미 로그인한 상태라 바로 동네를 저장한다.
+ *
+ * 가입 오류 코드 → 결과: `AUTH_007`(인증 표시 없음 · 30분 지남) → `verification-expired`, `MEMBER_001`(가입된 이메일, 409) →
+ * `email-taken`. 그 밖(검증 오류 · 일시 장애)은 거부한다 — 화면은 "가입하지 못했어요" 로 알린다.
+ * `email-taken` 은 메일함 주인임을 인증한 뒤에만 오므로 가입 여부를 알려도 계정 열거가 되지 않는다(미끼 코드를 맞혀도 막힌다).
  *
  * 목에서 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
  * - 가입: 이메일 `signup-fail@example.com` 이면 응답을 받지 못한다(거부)
  * - 가입: 이메일 `verify-expired@example.com` 이면 늘 `verification-expired`(인증 30분이 지남, `AUTH_007`).
  *   그 밖의 이메일도 인증을 마치지 않았거나 마친 지 30분이 지났으면 `verification-expired` 다
+ * - 가입: 이메일 `taken@example.com` 이면 인증을 마쳤어도 `email-taken`(서버처럼 인증 표시는 남는다)
  */
 
 export const MOCK_SIGNUP_FAIL_EMAIL = 'signup-fail@example.com'
 export const MOCK_VERIFY_EXPIRED_EMAIL = 'verify-expired@example.com'
+export const MOCK_EMAIL_TAKEN_EMAIL = 'taken@example.com'
 
 /**
  * 가입 요청. 가입 종류(`kind`)는 화면이 가입 초안의 `method` 로 정한다.
@@ -366,23 +535,69 @@ export type SignupRequest =
     }
   | { kind: 'kakao'; consents: Consent[] }
 
-/** `verification-expired` 는 이메일 인증 표시가 없거나 30분이 지났다는 뜻이다(`AUTH_007`). 이메일 단계부터 다시 한다 */
-export type SignupResult = { status: 'ok' } | { status: 'verification-expired' }
+/**
+ * - `verification-expired`: 이메일 인증 표시가 없거나 30분이 지났다(`AUTH_007`). 이메일 단계부터 다시 한다
+ * - `email-taken`: 이미 가입된 이메일이다(`MEMBER_001` — 탈퇴 회원도 행이 파기될 때까지 이메일을 점유한다). 로그인으로 안내한다
+ */
+export type SignupResult =
+  { status: 'ok' } | { status: 'verification-expired' } | { status: 'email-taken' }
 
-export function signup(request: SignupRequest): Promise<SignupResult> {
+const SIGNUP_FAILURES: Readonly<Record<string, Exclude<SignupResult['status'], 'ok'>>> = {
+  AUTH_007: 'verification-expired',
+  MEMBER_001: 'email-taken',
+}
+
+/** 동의 목록에 그 항목이 있는지. 가입 API 는 항목별 boolean 으로 받는다(문서 버전은 서버의 `legal.*-version` 을 쓴다) */
+function agreed(consents: readonly Consent[], type: ConsentType): boolean {
+  return consents.some((consent) => consent.type === type)
+}
+
+/**
+ * 가입. 카카오 가입(`kind: 'kakao'`)은 출처와 무관하게 아직 목이다(#167).
+ * 이메일 가입의 실데이터 본문은 `{ email, password, nickname, termsAgreed, privacyAgreed, ageOver19Confirmed,
+ * sensitiveHealthInfoAgreed }` 이고 동의 값은 `consents` 에서 만든다. 건강정보 동의는 S02-4 에서 따로 보내므로 가입 화면은
+ * 넣지 않는다(false). 비밀번호는 본문으로만 보낸다.
+ */
+export async function signup(request: SignupRequest, source: DataSource): Promise<SignupResult> {
   if (request.kind === 'kakao') {
     // 카카오 가입은 카카오 로그인으로 이미 로그인한 상태다. 이메일 가입은 이어지는 loginWithEmail 이 회원으로 만든다.
     // 카카오가 주는 이메일 · 닉네임은 목이 몰라 예시 값을 쓴다
     setMockSession('member-no-consent', EXAMPLE_PROFILES.kakao)
     return Promise.resolve({ status: 'ok' })
   }
-  if (normalizeEmail(request.email) === MOCK_SIGNUP_FAIL_EMAIL) {
-    return Promise.reject(new Error('mock signup failure'))
+  if (source === 'api') {
+    const { email, password, nickname, consents } = request
+    try {
+      await apiRequest<null>(SIGNUP_PATH, {
+        method: 'POST',
+        body: {
+          email,
+          password,
+          nickname,
+          termsAgreed: agreed(consents, 'TERMS_OF_SERVICE'),
+          privacyAgreed: agreed(consents, 'PRIVACY_POLICY'),
+          ageOver19Confirmed: agreed(consents, 'AGE_OVER_19'),
+          sensitiveHealthInfoAgreed: agreed(consents, 'SENSITIVE_HEALTH_INFO'),
+        },
+        auth: false,
+      })
+    } catch (error) {
+      const failure = mapError(error, SIGNUP_FAILURES)
+      if (failure) return { status: failure }
+      throw error
+    }
+    return { status: 'ok' }
+  }
+  const key = normalizeEmail(request.email)
+  if (key === MOCK_SIGNUP_FAIL_EMAIL) throw new Error('mock signup failure')
+  // 서버처럼 인증을 먼저 보고, 가입된 이메일이면 인증 표시를 쓰지 않는다(커밋 뒤에 쓴다)
+  if (key === MOCK_EMAIL_TAKEN_EMAIL && hasSignupVerification(key)) {
+    return { status: 'email-taken' }
   }
   // 서버처럼 가입에 쓴 인증 표시는 지운다
   const ok = consumeSignupVerification(request.email)
-  if (ok) mockNicknames.set(normalizeEmail(request.email), request.nickname)
-  return Promise.resolve({ status: ok ? 'ok' : 'verification-expired' })
+  if (ok) mockNicknames.set(key, request.nickname)
+  return { status: ok ? 'ok' : 'verification-expired' }
 }
 
 /**
@@ -445,8 +660,8 @@ export function agreeTermsReconsent(consent: Consent): Promise<void> {
 
 /* ── 로그아웃 · 건강정보 동의 철회 · 탈퇴 (S10 확인 대화상자) ───────────────────────────────
  *
- * 연동 때 바꾼다: 로그아웃 `POST /api/v1/auth/logout`(백엔드 #57 — refresh 세션 폐기 + access token 블랙리스트),
- * 건강정보 동의 철회(#59 — 원시 보고 파기 요청 + refresh 세션 전부 폐기), 탈퇴 `POST /api/v1/members/me/withdraw`(#59).
+ * 로그아웃은 실데이터에서 `POST /api/v1/auth/logout`(백엔드 #57 — refresh 세션 폐기 + access token 블랙리스트)이다(아래 `logout`).
+ * 연동 때 바꾼다: 건강정보 동의 철회(#59 — 원시 보고 파기 요청 + refresh 세션 전부 폐기), 탈퇴 `POST /api/v1/members/me/withdraw`(#59).
  * 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다 — 화면은 대화상자 안에서 다시 시도하라고 알린다.
  *
  * 성공하면 화면과 무관하게 여기서 목 세션을 바꾼다(응답 전에 화면이 닫혀도 서버에는 결과가 남는다):
@@ -466,12 +681,47 @@ function rejectIfProfileEmail(email: string, what: string): Promise<never> | nul
   return mockProfile?.email === email ? Promise.reject(new Error(`mock ${what} failure`)) : null
 }
 
-/** 이 기기에서 로그아웃한다 */
-export function logout(): Promise<void> {
+/**
+ * 토큰이 이미 무효라 서버 세션이 남아 있지 않은 갈래. 로그아웃은 끝난 것으로 본다:
+ * 토큰 없이 보냄(`login-required` — 세션이 없거나 API 계층의 재발급이 재로그인으로 끝나 이미 세션을 비웠다) ·
+ * access 거절(`reissue` — 재발급해도 거절됐다) · refresh 무효(`relogin`)
+ */
+const LOGOUT_SESSION_GONE: ReadonlySet<ApiErrorKind> = new Set([
+  'login-required',
+  'reissue',
+  'relogin',
+])
+
+/**
+ * 이 기기에서 로그아웃한다. 실데이터는 `POST /api/v1/auth/logout`(access 필요 — 만료가 가까우면 API 계층이 먼저 재발급한다).
+ * 서버가 이 기기의 refresh 세션을 지우고 access 를 막으며 refresh 쿠키를 지운다.
+ *
+ * - 성공 → 세션 저장소를 비운다(`clearSession('logout')` — 힌트 쿠키를 지우고 다른 탭에도 알린다)
+ * - 토큰이 이미 무효(`LOGOUT_SESSION_GONE`) → 성공과 같다. 서버에 지울 세션이 없고, 남은 쿠키는 쓸모가 없어 다음 로그인 때 덮인다
+ *   (backend/docs/modules.md "화면 계약"). 세션 저장소가 아직 회원일 때만 비운다 — API 계층의 재발급이 재로그인으로 끝나 이미
+ *   비웠으면(`clearSession('expired')`) 다시 비우지 않는다(로그아웃 알림을 한 번 더 방송하지 않는다)
+ * - 성공 · 세션 사라짐 모두 만료 진행 표시를 끈다(`clearSessionExpiring`). 사용자가 고른 것은 로그아웃이라 화면의 홈 이동이 이기고,
+ *   재발급이 켠 표시가 남아 나중에 엉뚱한 만료 토스트 · 가드 멈춤을 부르지 않게 한다
+ * - **일시 장애 · 분류 밖 오류 → 거부하고 세션을 그대로 둔다.** 서버의 refresh 세션이 살아 있을 수 있는데 화면만 로그아웃된 것처럼
+ *   보이면, 공용 기기에서 다음 사람이 새로고침으로 그 세션을 되살린다. 화면(내 정보 · 재동의)은 로그아웃 실패 안내를 띄우고 다시
+ *   누르게 한다
+ */
+export async function logout(source: DataSource): Promise<void> {
+  if (source === 'api') {
+    let gone = false
+    try {
+      await apiRequest<null>(LOGOUT_PATH, { method: 'POST' })
+    } catch (error) {
+      if (!LOGOUT_SESSION_GONE.has(classifyApiError(error))) throw error
+      gone = true
+    }
+    if (!gone || getSessionSnapshot().status === 'member') clearSession('logout')
+    clearSessionExpiring()
+    return
+  }
   const failure = rejectIfProfileEmail(MOCK_LOGOUT_FAIL_EMAIL, 'logout')
   if (failure) return failure
   setMockSession('guest')
-  return Promise.resolve()
 }
 
 /**

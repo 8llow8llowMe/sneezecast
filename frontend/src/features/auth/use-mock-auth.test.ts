@@ -46,7 +46,7 @@ describe('useMockAuth', () => {
   it('목 세션이 바뀌면 다시 그린다 (로그인 → 동의)', async () => {
     const { result } = renderHook(() => useMockAuth())
 
-    await act(() => loginWithEmail('dong@example.com', 'dongne2026'))
+    await act(() => loginWithEmail('dong@example.com', 'dongne2026', 'mock'))
     expect(result.current).toBe('member-no-consent')
 
     await act(() => agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO')))
@@ -54,14 +54,14 @@ describe('useMockAuth', () => {
   })
 
   it('?mock-auth= 덮어쓰기가 목 세션보다 먼저다', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     search = 'mock-auth=guest'
     const { result } = renderHook(() => useMockAuth())
     expect(result.current).toBe('guest')
   })
 
   it('모르는 덮어쓰기 값은 무시하고 목 세션을 쓴다', async () => {
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     search = 'mock-auth=admin'
     const { result } = renderHook(() => useMockAuth())
     expect(result.current).toBe('member-no-consent')
@@ -93,10 +93,10 @@ describe('useMockProfile', () => {
 
   it('목 세션 프로필을 따르고, 로그아웃처럼 세션이 바뀌면 다시 그린다', async () => {
     const { result } = renderHook(() => useMockProfile())
-    await act(() => loginWithEmail('me@example.com', 'dongne2026'))
+    await act(() => loginWithEmail('me@example.com', 'dongne2026', 'mock'))
     expect(result.current?.email).toBe('me@example.com')
 
-    await act(() => logout())
+    await act(() => logout('mock'))
     expect(result.current).toBeNull()
   })
 
@@ -107,7 +107,7 @@ describe('useMockProfile', () => {
   })
 
   it('?mock-provider= 가 세션과 다르면 그 방법의 예시 프로필, 같으면 세션 프로필이다', async () => {
-    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] })
+    await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] }, 'mock')
     search = 'mock-provider=email'
     const { result, rerender } = renderHook(() => useMockProfile())
     expect(result.current).toEqual(EXAMPLE_PROFILES.email)

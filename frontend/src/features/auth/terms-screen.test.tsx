@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   EMPTY_SIGNUP,
@@ -14,6 +14,8 @@ import {
   useOnboarding,
 } from '@/features/onboarding/onboarding-context'
 import type { District } from '@/features/region/types'
+import { getSessionSnapshot } from '@/lib/session/session-store'
+import { memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
 
 import type * as authClient from './auth-client'
 import {
@@ -128,9 +130,11 @@ describe('TermsScreen', () => {
     vi.mocked(loginWithEmail).mockReset()
     vi.mocked(saveRegion).mockReset()
     // 목 서버에 이 이메일의 인증 완료 표시를 만든다 (가입이 확인하고 지운다)
-    await sendEmailCode(EMAIL_DRAFT.email)
-    await verifyEmailCode(EMAIL_DRAFT.email, '482915')
+    await sendEmailCode(EMAIL_DRAFT.email, 'mock')
+    await verifyEmailCode(EMAIL_DRAFT.email, '482915', 'mock')
   })
+
+  afterEach(() => resetApiSession())
 
   async function agreeAndSubmit(user: ReturnType<typeof userEvent.setup>) {
     await user.click(box('전체 동의'))
@@ -181,18 +185,21 @@ describe('TermsScreen', () => {
     await user.click(submit())
 
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
-    expect(signup).toHaveBeenCalledWith({
-      kind: 'email',
-      email: 'dong@example.com',
-      password: 'dongne2026',
-      nickname: '동네지기',
-      consents: [
-        { type: 'TERMS_OF_SERVICE', documentVersion: '2026-10-01' },
-        { type: 'PRIVACY_POLICY', documentVersion: '2026-10-01' },
-        { type: 'AGE_OVER_19', documentVersion: '2026-10-01' },
-      ],
-    })
-    expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026')
+    expect(signup).toHaveBeenCalledWith(
+      {
+        kind: 'email',
+        email: 'dong@example.com',
+        password: 'dongne2026',
+        nickname: '동네지기',
+        consents: [
+          { type: 'TERMS_OF_SERVICE', documentVersion: '2026-10-01' },
+          { type: 'PRIVACY_POLICY', documentVersion: '2026-10-01' },
+          { type: 'AGE_OVER_19', documentVersion: '2026-10-01' },
+        ],
+      },
+      'mock',
+    )
+    expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026', 'mock')
     expect(saveRegion).toHaveBeenCalledWith(DISTRICT)
     // 로그인한 뒤 저장하므로 목 프로필이 내 동네를 들고 있다(재선택 판단 · 내 정보가 쓴다)
     expect(getMockProfile()?.region).toEqual({ code: '11680640', name: '역삼1동' })
@@ -276,6 +283,56 @@ describe('TermsScreen', () => {
     expect(saveRegion).not.toHaveBeenCalled()
   })
 
+  it('가입된 이메일(MEMBER_001)이면 alert 로 알리고, 이메일로 로그인을 누르면 비밀번호를 지우고 이메일 로그인으로 바꿔 간다', async () => {
+    vi.mocked(signup).mockResolvedValueOnce({ status: 'email-taken' })
+    const { user } = setup({ draft: EMAIL_DRAFT })
+    await agreeAndSubmit(user)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('이미 가입된 이메일이에요.')
+    expect(loginWithEmail).not.toHaveBeenCalled()
+    expect(saveRegion).not.toHaveBeenCalled()
+    expect(state().membership).toEqual(NO_MEMBERSHIP)
+
+    await user.click(screen.getByRole('button', { name: '이메일로 로그인' }))
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/login/email'))
+    // 비밀번호를 지워도 이메일 단계로 한 번 더 보내지 않는다
+    expect(router.replace).toHaveBeenCalledTimes(1)
+    expect(state().draft.password).toBe('')
+  })
+
+  it('실데이터 모드면 가입 → 로그인을 auth API 로 보내고 로그인 응답으로 회원이 된다', async () => {
+    selectApiSource()
+    const fetchMock = vi.fn((url: string) => {
+      const body = url.endsWith('/api/v1/auth/login')
+        ? memberToken({ reportWritable: false })
+        : null
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            dataHeader: { success: true, resultCode: null, resultMessage: null, fieldErrors: null },
+            dataBody: body,
+          }),
+          { status: 200 },
+        ),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { user } = setup({ draft: EMAIL_DRAFT })
+    await agreeAndSubmit(user)
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
+    const calls = fetchMock.mock.calls.map(([url]) => new URL(url).pathname)
+    expect(calls).toEqual(['/api/v1/auth/signup', '/api/v1/auth/login'])
+    expect(signup).toHaveBeenCalledWith(expect.objectContaining({ kind: 'email' }), 'api')
+    expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026', 'api')
+    expect(getSessionSnapshot()).toMatchObject({
+      status: 'member',
+      summary: { reportWritable: false },
+    })
+    expect(state().draft.password).toBe('')
+  })
+
   it.each([
     ['맞지 않음', () => vi.mocked(loginWithEmail).mockResolvedValueOnce({ status: 'wrong' })],
     ['잠김', () => vi.mocked(loginWithEmail).mockResolvedValueOnce({ status: 'locked' })],
@@ -348,7 +405,7 @@ describe('TermsScreen', () => {
       expect(state().membership).toEqual(NO_MEMBERSHIP)
 
       // 코드 확인 · 비밀번호 화면을 거친 셈으로 목 서버에 인증 표시를 만들고 초안을 채운다
-      await verifyEmailCode('new@example.com', '482915')
+      await verifyEmailCode('new@example.com', '482915', 'mock')
       show(<FillAccount />)
       await user.click(screen.getByRole('button', { name: '계정 채우기' }))
 
@@ -360,7 +417,7 @@ describe('TermsScreen', () => {
         kind: 'email',
         email: 'new@example.com',
       })
-      expect(loginWithEmail).toHaveBeenCalledWith('new@example.com', 'dongne2026')
+      expect(loginWithEmail).toHaveBeenCalledWith('new@example.com', 'dongne2026', 'mock')
     })
   })
 

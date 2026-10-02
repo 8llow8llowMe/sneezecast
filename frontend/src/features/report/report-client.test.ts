@@ -21,7 +21,7 @@ const HEALTH_CONSENT = consentFor('SENSITIVE_HEALTH_INFO')
 
 /** 동의한 회원 목 세션을 만든다 (이메일 로그인 → 건강정보 동의) */
 async function signInWithConsent() {
-  await loginWithEmail('reporter@example.com', 'password1!')
+  await loginWithEmail('reporter@example.com', 'password1!', 'mock')
   await agreeHealthConsent(HEALTH_CONSENT)
 }
 
@@ -85,7 +85,7 @@ describe('report-client (목) — 이번 주에 보낸 보고', () => {
     const listener = vi.fn()
     const unsubscribe = subscribeSubmittedReport(listener)
 
-    await logout()
+    await logout('mock')
 
     expect(getSubmittedReport()).toBeNull()
     expect(listener).toHaveBeenCalled()

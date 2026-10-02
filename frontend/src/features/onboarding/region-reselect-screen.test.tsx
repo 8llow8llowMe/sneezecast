@@ -64,7 +64,7 @@ beforeEach(async () => {
   vi.mocked(saveRegion).mockReset()
   vi.mocked(searchDistricts).mockReset()
   vi.mocked(listSuccessorDistricts).mockReset()
-  await loginWithEmail('reselect@example.com', 'dongne2026')
+  await loginWithEmail('reselect@example.com', 'dongne2026', 'mock')
 })
 
 describe('RegionReselectScreen 그림', () => {
@@ -218,7 +218,7 @@ describe('RegionReselectScreen 저장', () => {
 
   it('저장하지 못하면 빨강 상자로 알리고 다시 누를 수 있다 (재현 이메일)', async () => {
     resetMockSession()
-    await loginWithEmail('reselect-fail@example.com', 'dongne2026')
+    await loginWithEmail('reselect-fail@example.com', 'dongne2026', 'mock')
     const user = userEvent.setup()
     render(ui)
     await user.click(await screen.findByRole('radio', { name: /○○새1동/ }))
@@ -263,7 +263,7 @@ describe('RegionReselectScreen 들어올 수 없을 때', () => {
 
   it('동네 조건이 없는 회원은 next 로, 목록 밖 next 는 홈으로 보낸다', async () => {
     resetMockSession()
-    await loginWithEmail('dong@example.com', 'dongne2026')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     search = 'reselect=1&next=//evil.example'
     render(ui)
     expect(router.replace).toHaveBeenCalledWith('/')

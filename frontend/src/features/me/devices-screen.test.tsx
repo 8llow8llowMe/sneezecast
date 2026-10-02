@@ -75,7 +75,7 @@ beforeEach(async () => {
   pathname = '/me/devices'
   resetMockSession()
   vi.clearAllMocks()
-  await loginWithEmail('dong@example.com', 'dongne2026')
+  await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
 })
 
 afterEach(() => {
@@ -140,7 +140,7 @@ describe('DevicesScreen 목록', () => {
   })
 
   it('목 재현 이메일(sessions-fail@example.com)이면 불러오지 못한다', async () => {
-    await loginWithEmail('sessions-fail@example.com', 'dongne2026')
+    await loginWithEmail('sessions-fail@example.com', 'dongne2026', 'mock')
     renderDevices()
     expect((await screen.findByRole('alert')).textContent).toContain('불러오지 못했어요')
   })
@@ -209,7 +209,7 @@ describe('DevicesScreen 다른 기기 로그아웃', () => {
   })
 
   it('로그아웃하지 못하면 목록을 그대로 두고 빨강 상자로 알린다 — 다시 누를 수 있다', async () => {
-    await loginWithEmail('session-revoke-fail@example.com', 'dongne2026')
+    await loginWithEmail('session-revoke-fail@example.com', 'dongne2026', 'mock')
     renderDevices()
     await screen.findByRole('list', { name: '로그인한 기기 목록' })
     const user = userEvent.setup()

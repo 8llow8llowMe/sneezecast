@@ -2,6 +2,7 @@
 
 import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { SIGNUP_ACCOUNT_PATH, SIGNUP_EMAIL_PATH } from '@/features/onboarding/paths'
+import { useDataSource } from '@/lib/use-data-source'
 
 import { sendEmailCode, verifyEmailCode } from './auth-client'
 import { CodeStep } from './code-step'
@@ -16,6 +17,7 @@ import { CodeStep } from './code-step'
  */
 export function SignupCodeScreen() {
   const { signup, updateSignup } = useOnboarding()
+  const source = useDataSource()
 
   return (
     <CodeStep
@@ -23,8 +25,8 @@ export function SignupCodeScreen() {
       email={signup.email}
       codeSentAt={signup.codeSentAt}
       verified={signup.verifiedAt !== null}
-      sendCode={sendEmailCode}
-      verifyCode={verifyEmailCode}
+      sendCode={(email) => sendEmailCode(email, source)}
+      verifyCode={(email, code) => verifyEmailCode(email, code, source)}
       // 서버가 인증 표시를 이메일별로 30분 든다. 화면은 마친 시각만 남긴다
       onVerified={(_, verifiedAt) => updateSignup({ verifiedAt })}
       onResent={(codeSentAt) => updateSignup({ codeSentAt, verifiedAt: null })}

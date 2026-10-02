@@ -81,7 +81,7 @@ describe('SignupCodeScreen', () => {
     vi.mocked(verifyEmailCode).mockReset()
     vi.mocked(sendEmailCode).mockReset()
     // 목 서버에 이 이메일로 보낸 코드를 만든다
-    await sendEmailCode(EMAIL)
+    await sendEmailCode(EMAIL, 'mock')
     vi.mocked(sendEmailCode).mockClear()
   })
 
@@ -258,7 +258,7 @@ describe('SignupCodeScreen', () => {
     await user.click(resendButton())
     await waitFor(() => expect(timer().textContent).toBe('5:00'))
     expect((codeInput() as HTMLInputElement).value).toBe('')
-    expect(sendEmailCode).toHaveBeenCalledWith(EMAIL)
+    expect(sendEmailCode).toHaveBeenCalledWith(EMAIL, 'mock')
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
