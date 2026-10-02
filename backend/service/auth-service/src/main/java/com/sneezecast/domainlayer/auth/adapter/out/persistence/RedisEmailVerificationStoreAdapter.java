@@ -2,6 +2,7 @@ package com.sneezecast.domainlayer.auth.adapter.out.persistence;
 
 import com.sneezecast.domainlayer.auth.application.exception.AuthErrorCode;
 import com.sneezecast.domainlayer.auth.application.exception.AuthException;
+import com.sneezecast.domainlayer.auth.application.model.EmailCodePurpose;
 import com.sneezecast.domainlayer.auth.application.port.out.EmailVerificationStorePort;
 import com.sneezecast.redis.properties.RedisProperties;
 import java.time.Duration;
@@ -15,7 +16,14 @@ import org.springframework.stereotype.Component;
 
 /**
  * 이메일 인증 상태를 Redis(TTL)에 둔다. 키는 {@code {prefix}:auth:{종류}:{정규화된 이메일 또는 IP}} — prefix 는 redis-core
- * {@link RedisProperties#normalizedKeyPrefix()} 로 읽어 블랙리스트 키와 같은 규칙을 쓴다.
+ * {@link RedisProperties#normalizedKeyPrefix()} 로 읽어 블랙리스트 키와 같은 규칙을 쓴다. 종류 이름은 목적({@link EmailCodePurpose})별로 다르다.
+ *
+ * <ul>
+ *   <li>가입: {@code emailVerificationCode} · {@code emailVerificationFail} · {@code emailVerificationCooldown} · {@code emailSendIp} ·
+ *       {@code emailVerifyIp} (+ 인증 완료 {@code emailVerified})</li>
+ *   <li>비밀번호 재설정: {@code passwordResetCode} · {@code passwordResetFail} · {@code passwordResetCooldown} · {@code passwordResetSendIp} ·
+ *       {@code passwordResetVerifyIp}</li>
+ * </ul>
  *
  * <p>장애를 삼키지 않는다 — 코드 저장이 실패했는데 발송이 성공한 것처럼 보이면 사용자가 원인을 알 수 없다. 대신 봉투 없는 500 으로 새지
  * 않게 {@link AuthErrorCode#EMAIL_VERIFICATION_UNAVAILABLE}(503)로 바꾼다. IP 발송 · 검증 카운터만 fail-open 이다.
@@ -28,25 +36,30 @@ public class RedisEmailVerificationStoreAdapter implements EmailVerificationStor
     private static final String VERIFIED_VALUE = "verified";
     private static final String COOLDOWN_VALUE = "cooldown";
 
+    private static final KeyTypes SIGNUP_KEYS = new KeyTypes("emailVerificationCode", "emailVerificationFail", "emailVerificationCooldown",
+        "emailSendIp", "emailVerifyIp");
+    private static final KeyTypes PASSWORD_RESET_KEYS = new KeyTypes("passwordResetCode", "passwordResetFail", "passwordResetCooldown",
+        "passwordResetSendIp", "passwordResetVerifyIp");
+
     private final StringRedisTemplate stringRedisTemplate;
     private final RedisProperties redisProperties;
 
     @Override
-    public void saveCode(String email, String code, Duration ttl) {
+    public void saveCode(EmailCodePurpose purpose, String email, String code, Duration ttl) {
         execute(() -> {
-            stringRedisTemplate.opsForValue().set(buildKey("emailVerificationCode", email), code, ttl);
+            stringRedisTemplate.opsForValue().set(buildKey(keys(purpose).code(), email), code, ttl);
             return null;
         });
     }
 
     @Override
-    public Optional<String> findCode(String email) {
-        return execute(() -> Optional.ofNullable(stringRedisTemplate.opsForValue().get(buildKey("emailVerificationCode", email))));
+    public Optional<String> findCode(EmailCodePurpose purpose, String email) {
+        return execute(() -> Optional.ofNullable(stringRedisTemplate.opsForValue().get(buildKey(keys(purpose).code(), email))));
     }
 
     @Override
-    public void deleteCode(String email) {
-        execute(() -> stringRedisTemplate.delete(buildKey("emailVerificationCode", email)));
+    public void deleteCode(EmailCodePurpose purpose, String email) {
+        execute(() -> stringRedisTemplate.delete(buildKey(keys(purpose).code(), email)));
     }
 
     @Override
@@ -68,37 +81,47 @@ public class RedisEmailVerificationStoreAdapter implements EmailVerificationStor
     }
 
     @Override
-    public boolean tryAcquireCooldown(String email, Duration ttl) {
+    public boolean tryAcquireCooldown(EmailCodePurpose purpose, String email, Duration ttl) {
         return execute(() -> Boolean.TRUE.equals(
-            stringRedisTemplate.opsForValue().setIfAbsent(buildKey("emailVerificationCooldown", email), COOLDOWN_VALUE, ttl)));
+            stringRedisTemplate.opsForValue().setIfAbsent(buildKey(keys(purpose).cooldown(), email), COOLDOWN_VALUE, ttl)));
     }
 
     @Override
-    public long increaseVerifyFailureCount(String email, Duration ttl) {
-        return execute(() -> increaseWithTtl(buildKey("emailVerificationFail", email), ttl));
+    public long increaseVerifyFailureCount(EmailCodePurpose purpose, String email, Duration ttl) {
+        return execute(() -> increaseWithTtl(buildKey(keys(purpose).fail(), email), ttl));
     }
 
     @Override
-    public void clearVerifyFailures(String email) {
-        execute(() -> stringRedisTemplate.delete(buildKey("emailVerificationFail", email)));
+    public void clearVerifyFailures(EmailCodePurpose purpose, String email) {
+        execute(() -> stringRedisTemplate.delete(buildKey(keys(purpose).fail(), email)));
     }
 
     @Override
-    public long findIpSendCount(String clientIp) {
-        return failOpen("emailSendIp", () -> {
-            String count = stringRedisTemplate.opsForValue().get(buildKey("emailSendIp", clientIp));
+    public long findIpSendCount(EmailCodePurpose purpose, String clientIp) {
+        String type = keys(purpose).sendIp();
+        return failOpen(type, () -> {
+            String count = stringRedisTemplate.opsForValue().get(buildKey(type, clientIp));
             return count == null ? 0L : Long.parseLong(count);
         });
     }
 
     @Override
-    public long increaseIpSendCount(String clientIp, Duration window) {
-        return failOpen("emailSendIp", () -> increaseWithTtl(buildKey("emailSendIp", clientIp), window));
+    public long increaseIpSendCount(EmailCodePurpose purpose, String clientIp, Duration window) {
+        String type = keys(purpose).sendIp();
+        return failOpen(type, () -> increaseWithTtl(buildKey(type, clientIp), window));
     }
 
     @Override
-    public long increaseIpVerifyCount(String clientIp, Duration window) {
-        return failOpen("emailVerifyIp", () -> increaseWithTtl(buildKey("emailVerifyIp", clientIp), window));
+    public long increaseIpVerifyCount(EmailCodePurpose purpose, String clientIp, Duration window) {
+        String type = keys(purpose).verifyIp();
+        return failOpen(type, () -> increaseWithTtl(buildKey(type, clientIp), window));
+    }
+
+    private static KeyTypes keys(EmailCodePurpose purpose) {
+        return switch (purpose) {
+            case SIGNUP -> SIGNUP_KEYS;
+            case PASSWORD_RESET -> PASSWORD_RESET_KEYS;
+        };
     }
 
     /** IP 상한은 보조 방어라 저장소 장애로 요청 자체를 막지 않는다 (fail-open). IP 는 로그에 남기지 않는다. */
@@ -140,5 +163,9 @@ public class RedisEmailVerificationStoreAdapter implements EmailVerificationStor
 
     private String buildKey(String type, String value) {
         return redisProperties.normalizedKeyPrefix() + ":auth:" + type + ":" + value;
+    }
+
+    /** 목적별 키 종류 이름. */
+    private record KeyTypes(String code, String fail, String cooldown, String sendIp, String verifyIp) {
     }
 }
