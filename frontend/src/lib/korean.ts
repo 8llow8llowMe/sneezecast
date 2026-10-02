@@ -23,3 +23,8 @@ export function withGwaWa(word: string): '과' | '와' {
 export function withIGa(word: string): '이' | '가' {
   return hasFinalConsonant(word) ? '이' : '가'
 }
+
+/** "을/를" 을 받침에 맞춰 고른다. 예: 서교동 → 을, 역삼2 → 를 */
+export function withEulReul(word: string): '을' | '를' {
+  return hasFinalConsonant(word) ? '을' : '를'
+}

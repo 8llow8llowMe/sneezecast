@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as authClient from '@/features/auth/auth-client'
+import {
+  getMockProfile,
+  loginWithEmail,
+  MOCK_RESELECT_FAIL_EMAIL,
+  resetMockSession,
+  saveRegion,
+} from '@/features/auth/auth-client'
+import { NOTICE_EXAMPLE_DISTRICT } from '@/features/notice/mock'
 import { DISTRICT_MOCKS } from '@/features/region/mock'
 
 import { MapScreen } from './map-screen'
@@ -16,6 +25,11 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/map',
   useRouter: () => router,
 }))
+
+vi.mock('@/features/auth/auth-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof authClient>()
+  return { ...actual, saveRegion: vi.fn(actual.saveRegion) }
+})
 
 const SEOGYO = '11440660'
 const MANGWON1 = '11440690'
@@ -31,6 +45,7 @@ function handle() {
 describe('MapScreen', () => {
   beforeEach(() => {
     search = ''
+    resetMockSession()
     vi.clearAllMocks()
     window.history.replaceState(null, '', '/map')
   })
@@ -223,5 +238,244 @@ describe('MapScreen', () => {
     expect(router.push).toHaveBeenCalledWith(
       `/browse/region?next=%2Fmap&region=${SEOGYO}&mock-auth=member`,
     )
+  })
+})
+
+const YEOKSAM1 = { code: '11680640', name: '역삼1동' }
+const EXAMPLE = NOTICE_EXAMPLE_DISTRICT
+
+function deferred() {
+  let resolve: () => void = () => {}
+  let reject: () => void = () => {}
+  const promise = new Promise<void>((done, fail) => {
+    resolve = done
+    reject = () => fail(new Error('mock failure'))
+  })
+  return { promise, resolve, reject }
+}
+
+/** 이메일로 로그인한 목 회원. 내 동네를 주면 저장해 둔다 */
+async function loginAsMember(
+  region: { code: string; name: string } | null = YEOKSAM1,
+  email = 'dong@example.com',
+) {
+  await loginWithEmail(email, 'dongne2026')
+  if (region) await saveRegion(region)
+  vi.mocked(saveRegion).mockClear()
+}
+
+const setMineButton = () => screen.queryByRole('button', { name: '내 동네로 설정' })
+
+describe('MapScreen 내 동네로 설정', () => {
+  beforeEach(() => {
+    search = ''
+    resetMockSession()
+    vi.clearAllMocks()
+    window.history.replaceState(null, '', '/map')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('비회원은 둘러보기 동네 대신 고른 동네를 실어 로그인으로 간다 (돌아올 곳은 홈, 보고 의도 없음)', async () => {
+    const user = userEvent.setup()
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const browse = DISTRICT_MOCKS.find((district) => district.code === MANGWON1) ?? null
+    render(<MapScreen map={pickMapMock('example', browse)} regionCode={MANGWON1} />)
+
+    await user.click(districtButton(/서교동/))
+    await user.click(setMineButton() as HTMLElement)
+    expect(router.push).toHaveBeenCalledWith(`/login?region=${SEOGYO}`)
+    expect(pushState).not.toHaveBeenCalled()
+    expect(saveRegion).not.toHaveBeenCalled()
+  })
+
+  it('둘러보기 동네가 없는 비회원도 고른 동네를 실어 로그인으로 간다', async () => {
+    const user = userEvent.setup()
+    render(<MapScreen map={pickMapMock('example', null)} />)
+
+    await user.click(districtButton(/서교동/))
+    await user.click(setMineButton() as HTMLElement)
+    expect(router.push).toHaveBeenCalledWith(`/login?region=${SEOGYO}`)
+  })
+
+  it('회원이 누르면 다른 쿼리를 남긴 채 ?confirm=set-mine 을 기록에 쌓는다', async () => {
+    await loginAsMember()
+    search = 'mock=example'
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const user = userEvent.setup()
+    render(<MapScreen map={pickMapMock('example', null)} />)
+
+    await user.click(districtButton(/서교동/))
+    await user.click(setMineButton() as HTMLElement)
+    expect(pushState.mock.calls.map((call) => call[2])).toEqual(['?mock=example&confirm=set-mine'])
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('확인하면 고른 동네를 내 동네로 저장하고 대화상자를 닫은 뒤 알리고, 그 동네는 버튼 대신 (내 동네) 로 보인다', async () => {
+    await loginAsMember()
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    const user = userEvent.setup()
+    const { rerender } = render(<MapScreen map={pickMapMock('example', null)} />)
+
+    await user.click(districtButton(/서교동/))
+    search = 'confirm=set-mine'
+    rerender(<MapScreen map={pickMapMock('example', null)} />)
+
+    const dialog = screen.getByRole('dialog', { name: '서교동을 내 동네로 설정할까요?' })
+    expect([...dialog.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      '보고와 알림은 내 동네를 기준으로 해요.',
+      '내 정보의 보고 동네에서 다시 바꿀 수 있어요.',
+    ])
+    await user.click(within(dialog).getByRole('button', { name: '설정하기' }))
+
+    expect(saveRegion).toHaveBeenCalledTimes(1)
+    expect(saveRegion).toHaveBeenCalledWith({ code: SEOGYO, name: '서교동' })
+    expect(getMockProfile()?.region).toEqual({ code: SEOGYO, name: '서교동' })
+    expect(replaceState).toHaveBeenCalledWith({ sneezecastModalDepth: 0 }, '', '/map')
+    expect(screen.getByRole('status').textContent).toContain('서교동을 내 동네로 설정했어요')
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('서교동 (내 동네)')
+    expect(setMineButton()).toBeNull()
+    expect(
+      within(screen.getByRole('list', { name: '동네 목록' })).getByText('(내 동네)'),
+    ).toBeTruthy()
+  })
+
+  it('저장에 성공하면 사라진 버튼 대신 동네 이름 제목으로 포커스를 옮긴다', async () => {
+    await loginAsMember()
+    const user = userEvent.setup()
+    const { rerender } = render(<MapScreen map={pickMapMock('example', null)} />)
+
+    await user.click(districtButton(/서교동/))
+    search = 'confirm=set-mine'
+    rerender(<MapScreen map={pickMapMock('example', null)} />)
+    const dialog = screen.getByRole('dialog', { name: '서교동을 내 동네로 설정할까요?' })
+    await user.click(within(dialog).getByRole('button', { name: '설정하기' }))
+
+    const heading = screen.getByRole('heading', { level: 2, name: '서교동 (내 동네)' })
+    expect(document.activeElement).toBe(heading)
+    // 탭 순서에는 들지 않는다
+    expect(heading.getAttribute('tabindex')).toBe('-1')
+  })
+
+  it('취소하면 저장하지 않고 주소에서 confirm 만 지운다', async () => {
+    await loginAsMember()
+    search = 'mock=example&confirm=set-mine'
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    render(<MapScreen map={pickMapMock('example', null)} />)
+
+    const dialog = screen.getByRole('dialog', { name: `${EXAMPLE.name}을 내 동네로 설정할까요?` })
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: '취소' }))
+    expect(replaceState).toHaveBeenCalledWith({ sneezecastModalDepth: 0 }, '', '?mock=example')
+    expect(saveRegion).not.toHaveBeenCalled()
+    expect(getMockProfile()?.region).toEqual(YEOKSAM1)
+  })
+
+  it('저장하지 못하면 대화상자 안에 알리고 다시 누를 수 있다. 내 동네는 그대로다', async () => {
+    await loginAsMember(null, MOCK_RESELECT_FAIL_EMAIL)
+    const before = getMockProfile()?.region
+    search = 'confirm=set-mine'
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    render(<MapScreen map={pickMapMock('example', null)} />)
+
+    const dialog = screen.getByRole('dialog', { name: `${EXAMPLE.name}을 내 동네로 설정할까요?` })
+    const action = within(dialog).getByRole('button', { name: '설정하기' })
+    await userEvent.setup().click(action)
+
+    expect(within(dialog).getByRole('alert').textContent).toBe(
+      '내 동네를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    )
+    expect(action.getAttribute('aria-disabled')).toBeNull()
+    expect(getMockProfile()?.region).toEqual(before)
+    expect(replaceState).not.toHaveBeenCalled()
+    expect(screen.queryByRole('status')?.textContent ?? '').not.toContain('설정했어요')
+  })
+
+  it('저장하는 중에는 두 번 보내지 않고 취소 · 닫기를 막는다', async () => {
+    await loginAsMember()
+    const pending = deferred()
+    vi.mocked(saveRegion).mockImplementationOnce(() => pending.promise)
+    search = 'confirm=set-mine'
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    const user = userEvent.setup()
+    render(<MapScreen map={pickMapMock('example', null)} />)
+
+    const dialog = screen.getByRole('dialog', { name: `${EXAMPLE.name}을 내 동네로 설정할까요?` })
+    const action = within(dialog).getByRole('button', { name: '설정하기' })
+    await user.click(action)
+    await user.click(action)
+    expect(saveRegion).toHaveBeenCalledTimes(1)
+    expect(action.getAttribute('aria-disabled')).toBe('true')
+    const cancel = within(dialog).getByRole('button', { name: '취소' })
+    expect(cancel.getAttribute('aria-disabled')).toBe('true')
+    await user.click(cancel)
+    await user.click(within(dialog).getByRole('button', { name: '닫기' }))
+    expect(replaceState).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    expect(replaceState).toHaveBeenCalledWith({ sneezecastModalDepth: 0 }, '', '/map')
+    expect(screen.getByRole('status').textContent).toContain(
+      `${EXAMPLE.name}을 내 동네로 설정했어요`,
+    )
+  })
+
+  it('저장하는 중에 뒤로 가기로 대화상자를 닫은 뒤 실패하면 알림으로 알린다', async () => {
+    await loginAsMember()
+    const pending = deferred()
+    vi.mocked(saveRegion).mockImplementationOnce(() => pending.promise)
+    search = 'confirm=set-mine'
+    const { rerender } = render(<MapScreen map={pickMapMock('example', null)} />)
+
+    const dialog = screen.getByRole('dialog', { name: `${EXAMPLE.name}을 내 동네로 설정할까요?` })
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: '설정하기' }))
+    // 휴대폰 뒤로 가기: 주소에서 confirm 이 빠진다
+    search = ''
+    rerender(<MapScreen map={pickMapMock('example', null)} />)
+
+    await act(async () => {
+      pending.reject()
+      await pending.promise.catch(() => {})
+    })
+    expect(screen.queryByRole('dialog', { name: /내 동네로 설정할까요/ })).toBeNull()
+    expect(screen.getByRole('status').textContent).toContain(
+      '내 동네를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    )
+  })
+
+  it('회원의 내 동네는 프로필의 동네다 — 처음 고른 동네라도 내 동네가 아니면 버튼이 있다', async () => {
+    const seogyo = DISTRICT_MOCKS.find((district) => district.code === SEOGYO)
+    await loginAsMember(seogyo ?? null)
+    const user = userEvent.setup()
+    render(<MapScreen map={pickMapMock('example', null)} />)
+
+    // 처음 고른 동네(목 예시)는 회원의 내 동네가 아니다
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe(EXAMPLE.name)
+    await user.click(handle())
+    expect(setMineButton()).toBeTruthy()
+
+    await user.click(districtButton(/서교동/))
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('서교동 (내 동네)')
+    expect(setMineButton()).toBeNull()
+  })
+
+  it('?confirm=set-mine 은 비회원이거나 고른 동네가 이미 내 동네면 열지 않는다', async () => {
+    search = 'confirm=set-mine'
+    const { unmount } = render(<MapScreen map={pickMapMock('example', null)} />)
+    expect(screen.queryByRole('dialog', { name: /내 동네로 설정할까요/ })).toBeNull()
+    unmount()
+
+    await loginAsMember(EXAMPLE)
+    render(<MapScreen map={pickMapMock('example', null)} />)
+    expect(screen.queryByRole('dialog', { name: /내 동네로 설정할까요/ })).toBeNull()
+  })
+
+  it('둘러보기 동네가 없으면 회원의 머리줄은 내 동네 이름이다', async () => {
+    await loginAsMember()
+    render(<MapScreen map={pickMapMock('example', null)} />)
+    expect(screen.getByRole('button', { name: '동네 바꾸기, 현재 역삼1동' })).toBeTruthy()
   })
 })

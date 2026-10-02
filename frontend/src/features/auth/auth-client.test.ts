@@ -583,7 +583,7 @@ describe('약관 재동의 · 동네 다시 저장 (목)', () => {
 
   it('동네를 저장하면 프로필의 동네를 바꾸고 폐지 표시를 끈다', async () => {
     await loginWithEmail('reselect@example.com', 'dongne2026')
-    await saveRegion({ code: '99990111', name: '○○새1동', sigungu: '○○시 ○○구' })
+    await saveRegion({ code: '99990111', name: '○○새1동' })
     expect(getMockProfile()).toMatchObject({
       region: { code: '99990111', name: '○○새1동' },
       regionAbolished: false,

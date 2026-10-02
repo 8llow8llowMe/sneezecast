@@ -387,13 +387,14 @@ export function signup(request: SignupRequest): Promise<SignupResult> {
 
 /**
  * 내 동네 저장. 가입 마무리(S02-3)와 폐지된 동네 다시 고르기(Setup-1-reselect)가 같이 쓴다 — 둘 다 백엔드 #60 의 설정 API 다.
- * 연동 때 서버에는 코드만 보낸다. 이름은 목 프로필이 내 동네를 들고 있게 받는다.
+ * 지도의 `내 동네로 설정`(#145)도 같은 API 다. 연동 때 서버에는 코드만 보낸다. 이름은 목 프로필이 내 동네를 들고 있게 받는다
+ * — 그래서 시군구 없이 코드 · 이름만 받는다(지도 동네에는 시군구가 없다).
  *
  * 성공하면 화면과 무관하게 목 프로필의 동네를 바꾸고 폐지 표시를 끈다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다).
  * 프로필이 없으면(`?mock-auth=` 덮어쓰기만 있음) 세션은 그대로다.
  * 목 재현: 프로필 이메일 `reselect-fail@example.com` 이면 거부한다(그 이메일로 가입해도 S02-3 의 동네 저장이 실패한다).
  */
-export function saveRegion(district: District): Promise<void> {
+export function saveRegion(district: MemberRegion): Promise<void> {
   const failure = rejectIfProfileEmail(MOCK_RESELECT_FAIL_EMAIL, 'save region')
   if (failure) return failure
   if (mockProfile) {
