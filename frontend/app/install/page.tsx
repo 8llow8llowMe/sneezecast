@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 
 import { InstallScreen } from '@/features/install/install-screen'
 import { districtFromParam } from '@/features/region/region-param'
+import { readServerDataSource } from '@/lib/data-source.server'
 
 export const metadata: Metadata = { title: '홈 화면에 추가' }
 
@@ -17,6 +18,7 @@ export default async function InstallPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { region } = await searchParams
-  const district = await districtFromParam(region)
+  const source = await readServerDataSource()
+  const district = await districtFromParam(region, source)
   return <InstallScreen regionCode={district?.code ?? null} />
 }

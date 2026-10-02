@@ -4,6 +4,7 @@ import { pickHomeMock } from '@/features/home/mock'
 import { pickOfficialMock } from '@/features/official/mock'
 import { OfficialScreen } from '@/features/official/official-screen'
 import { districtFromParam } from '@/features/region/region-param'
+import { readServerDataSource } from '@/lib/data-source.server'
 
 export const metadata: Metadata = { title: '질병관리청 발표' }
 
@@ -20,7 +21,8 @@ export default async function OfficialPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { mock, region } = await searchParams
-  const district = await districtFromParam(region)
+  const source = await readServerDataSource()
+  const district = await districtFromParam(region, source)
   return (
     <OfficialScreen
       official={pickOfficialMock(mock)}

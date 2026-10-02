@@ -5,6 +5,7 @@ import { type ReactNode, useId } from 'react'
 import clsx from 'clsx'
 
 import { CheckIcon, SearchIcon } from '@/components/icons'
+import { SEARCH_QUERY_MAX_LENGTH } from '@/features/region/region-client'
 import type { District } from '@/features/region/types'
 import type { DistrictSearch } from '@/features/region/use-district-search'
 import { withGwaWa } from '@/lib/korean'
@@ -17,7 +18,8 @@ import { withGwaWa } from '@/lib/korean'
 /**
  * 행정동 검색 칸. 이름은 "행정동 이름" 이다(라벨은 화면에서 숨긴다).
  * 입력칸 규칙 (docs/design/auth/README.md): 높이 52 · 모서리 12 · 기본 1px 회색 · 포커스 2px 네이비.
- * 테두리가 굵어져도 글자가 밀리지 않게 안쪽 여백을 1px 씩 줄여 맞춘다
+ * 테두리가 굵어져도 글자가 밀리지 않게 안쪽 여백을 1px 씩 줄여 맞춘다.
+ * 검색어는 서버 상한(`SEARCH_QUERY_MAX_LENGTH` 20자)까지만 받는다 — 넘는 값(붙여넣기 등)은 검색 함수가 요청 없이 빈 목록으로 둔다
  */
 export function DistrictSearchInput({
   value,
@@ -42,6 +44,7 @@ export function DistrictSearchInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         readOnly={readOnly}
+        maxLength={SEARCH_QUERY_MAX_LENGTH}
         placeholder="행정동 이름"
         autoComplete="off"
         enterKeyHint="search"

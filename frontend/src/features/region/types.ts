@@ -13,6 +13,12 @@ export type District = {
 }
 
 /**
+ * 코드로 찾은 행정동(`findDistrict`). `active` 가 false 면 행정구역 개편으로 폐지된 코드다 — 서버는 폐지 코드도 찾아 준다.
+ * 둘러보기 동네 · 동네 안내처럼 지금 있는 동네만 받는 곳은 폐지 코드를 모르는 동네로 다룬다.
+ */
+export type DistrictDetail = District & { active: boolean }
+
+/**
  * 폐지된 동네를 다시 고를 때의 후보 (Setup-1-reselect). 서버가 옛 동네 코드로 알려 준다(백엔드 #60 재선택 유도 응답).
  * `partOfAbolished` 는 옛 동네의 일부를 이어 받은 동인지다 — 화면이 `옛 ○○1동 일부` 로 적는다.
  * 이어 받지 않은 후보(시안의 `○○2동`)를 서버가 어떤 기준으로 줄지는 #60 과 정한다.

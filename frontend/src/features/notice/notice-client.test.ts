@@ -1,10 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HOME_MOCKS } from '@/features/home/mock'
+import type * as regionClient from '@/features/region/region-client'
+import { findDistrict } from '@/features/region/region-client'
+import { unavailableError } from '@/lib/api/api-error'
 
 import { NOTICE_EXAMPLE_DISTRICT, NOTICE_EXAMPLE_WEEK, NOTICE_MOCKS, pickNoticeMock } from './mock'
 import { getRegionNotice } from './notice-client'
 import { noticePath } from './paths'
+
+vi.mock('@/features/region/region-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof regionClient>()
+  return { ...actual, findDistrict: vi.fn(actual.findDistrict) }
+})
+
+beforeEach(() => {
+  vi.mocked(findDistrict).mockClear()
+})
 
 describe('pickNoticeMock', () => {
   it('?mock= 값으로 상태를 고른다', () => {
@@ -27,7 +39,7 @@ describe('pickNoticeMock', () => {
 
 describe('getRegionNotice', () => {
   it('아는 동네면 주소의 동네 · 주에 목 상태를 붙인다', async () => {
-    await expect(getRegionNotice('11680640', '2025-W47', 'published')).resolves.toEqual({
+    await expect(getRegionNotice('11680640', '2025-W47', 'mock', 'published')).resolves.toEqual({
       regionCode: '11680640',
       regionName: '역삼1동',
       isoWeek: '2025-W47',
@@ -37,14 +49,50 @@ describe('getRegionNotice', () => {
   })
 
   it('안내 예시 동네를 안다', async () => {
-    const notice = await getRegionNotice(NOTICE_EXAMPLE_DISTRICT.code, '2025-W47')
+    const notice = await getRegionNotice(NOTICE_EXAMPLE_DISTRICT.code, '2025-W47', 'mock')
     expect(notice?.regionName).toBe('○○동')
     expect(notice?.notice).toBeNull()
     expect(notice?.stats.status).toBe('insufficient')
   })
 
   it('모르는 동네면 null 이다', async () => {
-    await expect(getRegionNotice('00000000', '2025-W47', 'published')).resolves.toBeNull()
+    await expect(getRegionNotice('00000000', '2025-W47', 'mock', 'published')).resolves.toBeNull()
+  })
+
+  it('API 출처면 동네를 행정동 API 로 확인한다', async () => {
+    vi.mocked(findDistrict).mockResolvedValueOnce({
+      code: '11440660',
+      name: '서교동',
+      sigungu: '서울특별시 마포구',
+      active: true,
+    })
+    const notice = await getRegionNotice('11440660', '2025-W47', 'api')
+    expect(findDistrict).toHaveBeenCalledWith('11440660', 'api')
+    expect(notice?.regionName).toBe('서교동')
+  })
+
+  it('API 출처에서 폐지된 동네면 null 이다', async () => {
+    vi.mocked(findDistrict).mockResolvedValueOnce({
+      code: '11680999',
+      name: '옛동',
+      sigungu: '서울특별시 강남구',
+      active: false,
+    })
+    await expect(getRegionNotice('11680999', '2025-W47', 'api')).resolves.toBeNull()
+  })
+
+  it('API 출처에서는 안내 예시 동네(지어낸 코드)도 행정동 API 로 확인한다', async () => {
+    vi.mocked(findDistrict).mockResolvedValueOnce(null)
+    await expect(
+      getRegionNotice(NOTICE_EXAMPLE_DISTRICT.code, '2025-W47', 'api'),
+    ).resolves.toBeNull()
+    expect(findDistrict).toHaveBeenCalledWith(NOTICE_EXAMPLE_DISTRICT.code, 'api')
+  })
+
+  it('동네 확인이 실패하면 거부한다 — 페이지 오류 경계가 받는다', async () => {
+    const error = unavailableError('network', 0)
+    vi.mocked(findDistrict).mockRejectedValueOnce(error)
+    await expect(getRegionNotice('11440660', '2025-W47', 'api')).rejects.toBe(error)
   })
 })
 

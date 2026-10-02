@@ -2,6 +2,8 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { DATA_SOURCE_COOKIE, writeBrowserDataSource } from '@/lib/data-source'
+
 import type * as regionClient from './region-client'
 import { searchDistricts } from './region-client'
 import { SEARCH_DEBOUNCE_MS, useDistrictSearch } from './use-district-search'
@@ -11,6 +13,13 @@ vi.mock('./region-client', async (importOriginal) => {
   return { ...actual, searchDistricts: vi.fn(actual.searchDistricts) }
 })
 
+/** 취소되면 그 사유로 거부하는 검색 (apiRequest 와 같게) */
+function pendingUntilAborted(_query: string, _source: unknown, signal?: AbortSignal) {
+  return new Promise<never>((_, reject) => {
+    signal?.addEventListener('abort', () => reject(signal.reason as Error), { once: true })
+  })
+}
+
 describe('useDistrictSearch', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -19,6 +28,7 @@ describe('useDistrictSearch', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    document.cookie = `${DATA_SOURCE_COOKIE}=; Path=/; Max-Age=0`
   })
 
   it('빠르게 이어 친 검색어는 입력이 멈춘 뒤 마지막 것으로 한 번만 찾는다', async () => {
@@ -38,7 +48,7 @@ describe('useDistrictSearch', () => {
       await vi.advanceTimersByTimeAsync(1)
     })
     expect(searchDistricts).toHaveBeenCalledTimes(1)
-    expect(searchDistricts).toHaveBeenCalledWith('역삼1')
+    expect(searchDistricts).toHaveBeenCalledWith('역삼1', 'mock', expect.any(AbortSignal))
     expect(result.current).toMatchObject({
       status: 'done',
       results: [{ code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구' }],
@@ -52,5 +62,47 @@ describe('useDistrictSearch', () => {
     })
     expect(searchDistricts).not.toHaveBeenCalled()
     expect(result.current).toEqual({ status: 'idle' })
+  })
+
+  it('고른 출처(쿠키)로 찾는다', async () => {
+    writeBrowserDataSource('api')
+    vi.mocked(searchDistricts).mockResolvedValueOnce([])
+    renderHook(() => useDistrictSearch('역삼'))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    })
+    expect(searchDistricts).toHaveBeenCalledWith('역삼', 'api', expect.any(AbortSignal))
+  })
+
+  it('검색어가 바뀌면 앞 요청을 취소하고, 취소는 오류로 보이지 않는다', async () => {
+    vi.mocked(searchDistricts).mockImplementationOnce(pendingUntilAborted)
+    const { result, rerender } = renderHook(({ query }) => useDistrictSearch(query), {
+      initialProps: { query: '역삼' },
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    })
+    const firstSignal = vi.mocked(searchDistricts).mock.calls[0]?.[2]
+
+    rerender({ query: '서교' })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(firstSignal?.aborted).toBe(true)
+    expect(result.current.status).toBe('loading')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    })
+    expect(result.current).toMatchObject({ status: 'done', results: [{ name: '서교동' }] })
+  })
+
+  it('실패하면 오류다', async () => {
+    vi.mocked(searchDistricts).mockRejectedValueOnce(new Error('network'))
+    const { result } = renderHook(() => useDistrictSearch('역삼'))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    })
+    expect(result.current).toEqual({ status: 'error' })
   })
 })

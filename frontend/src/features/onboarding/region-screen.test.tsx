@@ -61,6 +61,12 @@ describe('RegionScreen', () => {
     vi.mocked(searchDistricts).mockReset()
   })
 
+  it('검색어는 서버 상한(20자)까지만 받는다', async () => {
+    const { user, input } = setup()
+    await user.type(input, '가'.repeat(25))
+    expect((input as HTMLInputElement).value).toBe('가'.repeat(20))
+  })
+
   it('검색어에 맞는 행정동을 시군구와 함께 라디오로 보인다', async () => {
     const { user, input } = setup()
     await user.type(input, '신사')
@@ -109,7 +115,9 @@ describe('RegionScreen', () => {
     const { user, input } = setup()
 
     await user.type(input, '신사')
-    await waitFor(() => expect(searchDistricts).toHaveBeenCalledWith('신사'))
+    await waitFor(() =>
+      expect(searchDistricts).toHaveBeenCalledWith('신사', 'mock', expect.any(AbortSignal)),
+    )
 
     await user.clear(input)
     await user.type(input, '역삼')

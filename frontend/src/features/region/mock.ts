@@ -3,7 +3,7 @@ import type { District, ReselectCandidate } from './types'
 /**
  * 행정동 목 데이터. **예시 값이다.** 코드는 SGIS 형식(8자리)만 맞춘 것이라 실제 경계와 대조하지 않았다.
  *
- * 행정동 연동 이슈(백엔드 `GET /api/v1/districts`, #60)에서 이 파일을 지운다.
+ * 데이터 출처가 목(`mock`)일 때 `region-client.ts` 가 쓴다(실데이터는 백엔드 `GET /api/v1/districts`, docs/conventions.md "데이터 출처").
  * 이름이 같은 동(신사동)과 번호가 붙은 동(역삼1동 · 역삼2동)을 넣어 시군구로 가려 보이는지 확인한다.
  */
 export const DISTRICT_MOCKS: readonly District[] = [
