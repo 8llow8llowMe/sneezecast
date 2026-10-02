@@ -11,6 +11,7 @@ import type * as authClient from './auth-client'
 import { loginWithEmail } from './auth-client'
 import { LoginEmailScreen } from './login-email-screen'
 import type { LoginReturn } from './login-return'
+import { clearLoginReturn, peekLoginReturn, saveLoginReturn } from './login-return-store'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
 const pathname = vi.hoisted(() => ({ value: '/login/email' }))
@@ -59,6 +60,7 @@ describe('LoginEmailScreen', () => {
     router.push.mockClear()
     router.replace.mockClear()
     vi.mocked(loginWithEmail).mockReset()
+    clearLoginReturn()
   })
 
   afterEach(() => resetApiSession())
@@ -321,6 +323,44 @@ describe('LoginEmailScreen', () => {
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: '이메일' }).value).toBe(
       'dong@example.com',
     )
+  })
+
+  describe('가입 · 비밀번호 재설정으로 떠날 때 돌아갈 곳을 둔다 (#140)', () => {
+    const REPORT = { next: '/', region: '11680640', intent: 'report' as const }
+
+    it.each(['비밀번호를 잊었어요', '이메일로 가입하기'])('%s 를 누르면 둔다', async (name) => {
+      const { user } = setup(false, REPORT)
+      await user.click(screen.getByRole('link', { name }))
+      expect(peekLoginReturn()).toEqual(REPORT)
+    })
+
+    it('돌아갈 곳이 없으면 앞서 둔 값을 지운다', async () => {
+      saveLoginReturn(REPORT)
+      const { user } = setup()
+      await user.click(screen.getByRole('link', { name: '비밀번호를 잊었어요' }))
+      expect(peekLoginReturn()).toEqual({ next: '/', region: null, intent: null })
+    })
+
+    it('로그인에 성공하면 둔 값을 지운다 (이 화면은 주소로 받았다)', async () => {
+      saveLoginReturn({ next: '/me', region: null, intent: null })
+      const { user, email, password, submit } = setup(true, REPORT)
+      await fill(user, email, password, 'dong@example.com', 'dongne2026')
+      await user.click(submit)
+      await waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith('/?region=11680640&report=start'),
+      )
+      expect(peekLoginReturn()).toEqual({ next: '/', region: null, intent: null })
+    })
+
+    it('로그인하지 못하면 둔 값을 남긴다', async () => {
+      saveLoginReturn(REPORT)
+      vi.mocked(loginWithEmail).mockResolvedValueOnce({ status: 'wrong' })
+      const { user, email, password, submit } = setup(false, REPORT)
+      await fill(user, email, password, 'dong@example.com', 'wrong2026')
+      await user.click(submit)
+      await screen.findByText('이메일 또는 비밀번호가 맞지 않아요.')
+      expect(peekLoginReturn()).toEqual(REPORT)
+    })
   })
 
   it('비밀번호 찾기 · 가입 링크가 있다', () => {

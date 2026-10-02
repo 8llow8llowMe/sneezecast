@@ -26,6 +26,7 @@ import {
   signup,
   verifyEmailCode,
 } from './auth-client'
+import { clearLoginReturn, peekLoginReturn, saveLoginReturn } from './login-return-store'
 import { LoginScreen } from './login-screen'
 import { SignupEmailScreen } from './signup-email-screen'
 import { TermsScreen } from './terms-screen'
@@ -129,6 +130,7 @@ describe('TermsScreen', () => {
     vi.mocked(signup).mockReset()
     vi.mocked(loginWithEmail).mockReset()
     vi.mocked(saveRegion).mockReset()
+    clearLoginReturn()
     // 목 서버에 이 이메일의 인증 완료 표시를 만든다 (가입이 확인하고 지운다)
     await sendEmailCode(EMAIL_DRAFT.email, 'mock')
     await verifyEmailCode(EMAIL_DRAFT.email, '482915', 'mock')
@@ -380,6 +382,40 @@ describe('TermsScreen', () => {
     expect(state().membership).toEqual(NO_MEMBERSHIP)
     expect(loginWithEmail).not.toHaveBeenCalled()
     expect(saveRegion).not.toHaveBeenCalled()
+  })
+
+  describe('가입에 들고 온 돌아갈 곳 (#140)', () => {
+    const REPORT = { next: '/', region: '11680640', intent: 'report' as const }
+
+    it('카카오 가입표가 없어 로그인 화면으로 갈 때 돌아갈 곳을 쿼리로 싣고 값은 남긴다', async () => {
+      saveLoginReturn(REPORT)
+      vi.mocked(signup).mockResolvedValueOnce({ status: 'kakao-restart', reason: 'expired' })
+      const { user } = setup({ draft: KAKAO_DRAFT })
+      await agreeAndSubmit(user)
+      await waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith(
+          '/login?error=kakao-fail&kakao=expired&region=11680640&intent=report',
+        ),
+      )
+      expect(peekLoginReturn()).toEqual(REPORT)
+    })
+
+    it('가입된 이메일로 로그인할 때도 이메일 로그인 주소에 싣는다 — 로그인 뒤 그곳으로 간다', async () => {
+      saveLoginReturn({ next: '/me', region: null, intent: null })
+      vi.mocked(signup).mockResolvedValueOnce({ status: 'email-taken' })
+      const { user } = setup({ draft: EMAIL_DRAFT })
+      await agreeAndSubmit(user)
+      await user.click(await screen.findByRole('button', { name: '이메일로 로그인' }))
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/login/email?next=%2Fme'))
+    })
+
+    it('가입을 마쳐도 S02-4 가 읽도록 값을 남긴다', async () => {
+      saveLoginReturn(REPORT)
+      const { user } = setup({ draft: KAKAO_DRAFT })
+      await agreeAndSubmit(user)
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
+      expect(peekLoginReturn()).toEqual(REPORT)
+    })
   })
 
   it('가입된 이메일(MEMBER_001)이면 alert 로 알리고, 이메일로 로그인을 누르면 비밀번호를 지우고 이메일 로그인으로 바꿔 간다', async () => {

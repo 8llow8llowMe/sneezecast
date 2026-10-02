@@ -201,6 +201,15 @@ describe('RegionReselectScreen 저장', () => {
     expect(router.push).not.toHaveBeenCalled()
   })
 
+  it('보고하려던 로그인(intent=report)이면 저장 뒤 같은 동네 홈의 보고 진입으로 간다 (#140)', async () => {
+    search = 'reselect=1&region=11440660&intent=report'
+    const user = userEvent.setup()
+    render(ui)
+    await user.click(await screen.findByRole('radio', { name: /○○새2동/ }))
+    await user.click(saveButton())
+    expect(router.replace.mock.calls).toEqual([['/?region=11440660&report=start']])
+  })
+
   it('검색으로 고른 동네도 저장한다 (덮어쓰기에서 마친 조건을 빼고 홈으로)', async () => {
     resetMockSession()
     search = 'mock-auth=member&mock-required=region'
@@ -289,6 +298,15 @@ describe('RegionReselectScreen 들어올 수 없을 때', () => {
     search = 'reselect=1&next=//evil.example'
     render(ui)
     expect(router.replace).toHaveBeenCalledWith('/')
+  })
+
+  it('약관 재동의가 남았으면 재동의로 보내며 보고하려던 표시를 잇는다 (#140)', () => {
+    resetMockSession()
+    search = 'reselect=1&mock-auth=member&mock-required=terms,region&intent=report'
+    render(ui)
+    expect(router.replace).toHaveBeenCalledWith(
+      '/terms/reconsent?mock-auth=member&mock-required=terms%2Cregion&intent=report',
+    )
   })
 
   it('약관 재동의가 남았으면 재동의로 먼저 보낸다', () => {
@@ -392,6 +410,43 @@ describe('RegionReselectScreen 실데이터 모드 (새로고침 뒤 세션 복�
       '고르셨던 동네가 행정구역 개편으로 바뀌었어요. 지금 사는 행정동을 다시 골라 주세요.',
     )
     expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('보고하려던 로그인이면 PUT 응답 뒤 같은 동네 홈의 보고 진입으로 간다 (#140)', async () => {
+    selectApiSource()
+    search = 'reselect=1&region=11680640&intent=report'
+    vi.mocked(searchDistricts).mockResolvedValue([
+      { code: '11440660', name: '서교동', sigungu: '서울특별시 마포구' },
+    ])
+    const requests = holdRequests()
+    act(() => setSession(memberToken()))
+    const user = userEvent.setup()
+    render(ui)
+    await flush()
+    act(() =>
+      requests.reply(
+        'GET /api/v1/members/me/region',
+        okResponse({ code: '99990110', name: '○○1동', sigungu: null, abolished: true }),
+      ),
+    )
+    await flush()
+    await user.type(screen.getByRole('searchbox', { name: '행정동 이름' }), '서교')
+    await user.click(await screen.findByRole('radio', { name: /서교동/ }))
+    await user.click(saveButton())
+    await flush()
+    act(() =>
+      requests.reply(
+        'PUT /api/v1/members/me/region',
+        okResponse({
+          code: '11440660',
+          name: '서교동',
+          sigungu: '서울특별시 마포구',
+          abolished: false,
+        }),
+      ),
+    )
+    await flush()
+    expect(router.replace.mock.calls).toEqual([['/?region=11680640&report=start']])
   })
 
   it('저장하면 PUT 응답으로 내 동네가 바뀌고 next 로 간다 — 서버가 받지 않으면 다른 동네를 고르게 한다', async () => {

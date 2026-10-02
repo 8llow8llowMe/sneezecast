@@ -6,6 +6,7 @@ import {
   TERMS_RECONSENT_PATH,
 } from '@/features/onboarding/paths'
 import { ABOLISHED_DISTRICT_EXAMPLE } from '@/features/region/mock'
+import type { ReportStep } from '@/features/report/types'
 import type { DataSource } from '@/lib/data-source'
 import { navHref } from '@/lib/nav'
 import { getSessionSnapshot, type SessionSnapshot } from '@/lib/session/session-store'
@@ -138,6 +139,29 @@ export function safeNextPath(value: string | null | undefined): string {
   return value != null && NEXT_PATHS.includes(value) ? value : HOME_PATH
 }
 
+/* ── 보고하려던 로그인 (`?intent=report`, #136 · #140) ─────────────────────────────────────────── */
+
+/** 로그인하려던 까닭 쿼리. 로그인 화면(`login-return.ts`)과 조건 화면이 같은 이름으로 받는다 */
+export const INTENT_PARAM = 'intent'
+/** 로그인하려던 까닭. 지금은 보고뿐이다 */
+export type LoginIntent = 'report'
+
+/** 홈의 보고 진입 쿼리(`features/report/report-flow.tsx` 의 `REPORT_PARAM` 과 같다 — 테스트가 맞춰 본다). 첫 진입 화면이 보고 흐름을 끌어오지 않게 다시 적는다 */
+export const REPORT_ENTRY_PARAM = 'report'
+/** 로그인 · 조건 화면을 마친 뒤 열 보고 진입 값. 미동의 회원이면 홈이 동의 시트로 고친다(`guardReportEntry`) */
+export const REPORT_ENTRY_VALUE: ReportStep = 'start'
+
+/**
+ * 조건 화면 주소의 보고하려던 표시(`?intent=report`). 돌아갈 곳이 홈일 때만 받는다 — 보고 진입은 홈 위 시트라
+ * 다른 화면으로 돌아가며 들고 갈 곳이 없다(로그인 화면의 규칙과 같다).
+ */
+export function reportIntentFrom(
+  searchParams: Pick<URLSearchParams, 'get'>,
+  next: string,
+): boolean {
+  return next === HOME_PATH && searchParams.get(INTENT_PARAM) === 'report'
+}
+
 /** 이 화면들 사이를 오갈 때 남기는 쿼리. 둘러보기 동네와 QA 용 목 덮어쓰기만 남긴다 — 열린 시트(`report` 등)는 버린다 */
 const CARRIED_PARAMS = ['region', MOCK_AUTH_PARAM, MOCK_PROVIDER_PARAM, MOCK_REQUIRED_PARAM]
 
@@ -163,34 +187,49 @@ export function carriedParams(
   return params
 }
 
-/** 조건 화면 주소. `next` 가 홈이면 붙이지 않는다(기본값) */
+/**
+ * 조건 화면 주소. `next` 가 홈이면 붙이지 않는다(기본값).
+ * 보고하려던 로그인(`reportIntent`)이면 `?intent=report` 를 붙여 조건 화면을 거치는 동안 들고 간다(#140). 돌아갈 곳이 홈일 때만이다
+ */
 export function requiredStepHref(
   step: RequiredStep,
   next: string,
   params: URLSearchParams,
+  reportIntent = false,
 ): string {
   const query = new URLSearchParams()
   if (step === 'region') query.set(RESELECT_PARAM, RESELECT_VALUE)
   if (next !== HOME_PATH) query.set(NEXT_PARAM, next)
   params.forEach((value, key) => query.set(key, value))
+  if (reportIntent && next === HOME_PATH) query.set(INTENT_PARAM, 'report')
   const path = step === 'terms' ? TERMS_RECONSENT_PATH : SETUP_REGION_PATH
   return navHref(path, query.toString())
 }
 
-/** 거칠 화면이 남았으면 첫 화면, 없으면 돌아갈 곳(남길 쿼리를 붙인다) */
+/**
+ * 거칠 화면이 남았으면 첫 화면(보고하려던 표시를 이어 붙인다), 없으면 돌아갈 곳(남길 쿼리를 붙인다).
+ * 돌아갈 곳에 보고 진입(`report=start`)은 붙이지 않는다 — 조건을 **마친** 뒤에만 붙인다(`targetAfter`). 조건 화면에 회원이 아니거나
+ * 조건 없이 닿은 것(브라우저 뒤로 · 다른 탭에서 마침)은 마친 것이 아니라, 보고 시트를 열면 뒤로 가려는 사람을 붙잡는다(첫 진입 가드와 같은 이유)
+ */
 export function stepTarget(
   steps: readonly RequiredStep[],
   next: string,
   params: URLSearchParams,
+  reportIntent = false,
 ): string {
   const [first] = steps
-  return first ? requiredStepHref(first, next, params) : navHref(next, params.toString())
+  return first
+    ? requiredStepHref(first, next, params, reportIntent)
+    : navHref(next, params.toString())
 }
 
 /**
  * `completed` 를 마친 뒤 갈 곳. 마친 결과를 바로 읽어 남은 조건이 있으면 그 화면으로, 없으면 `?next=` 로 간다.
  * 화면 상태(hook)는 응답을 기다리는 동안 낡을 수 있어 저장소를 직접 읽는다 — 목데이터는 목 세션 프로필, 실데이터는 세션 ·
  * 회원 정보 저장소(`sessionRequirements`)다. 마친 조건은 다시 넣지 않는다.
+ *
+ * 보고하려던 로그인(`?intent=report`, 돌아갈 곳이 홈)이면 남은 조건 화면에 그 표시를 이어 붙이고, 남은 조건이 없으면 같은 동네 홈의
+ * 보고 진입(`/?region=…&report=start`)으로 간다(#140). 회원 상태에 맞는 시트는 홈이 고친다(`guardReportEntry`).
  */
 export function targetAfter(
   completed: RequiredStep,
@@ -207,9 +246,9 @@ export function targetAfter(
           getMockProfile(),
           parseMockRequired(params.get(MOCK_REQUIRED_PARAM)),
         )
-  return stepTarget(
-    steps.filter((step) => step !== completed),
-    safeNextPath(searchParams.get(NEXT_PARAM)),
-    params,
-  )
+  const next = safeNextPath(searchParams.get(NEXT_PARAM))
+  const reportIntent = reportIntentFrom(searchParams, next)
+  const left = steps.filter((step) => step !== completed)
+  if (left.length === 0 && reportIntent) params.set(REPORT_ENTRY_PARAM, REPORT_ENTRY_VALUE)
+  return stepTarget(left, next, params, reportIntent)
 }

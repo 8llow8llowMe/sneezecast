@@ -18,6 +18,12 @@ import { getMockProfile, resetMockSession } from './auth-client'
 import type * as kakaoClient from './kakao-client'
 import { type KakaoLinkResult, linkKakaoAccount, startKakaoLogin } from './kakao-client'
 import { KakaoLinkScreen } from './kakao-link-screen'
+import {
+  clearLoginReturn,
+  LOGIN_RETURN_STORAGE_KEY,
+  peekLoginReturn,
+  saveLoginReturn,
+} from './login-return-store'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
 vi.mock('next/navigation', () => ({
@@ -57,6 +63,7 @@ describe('KakaoLinkScreen', () => {
     vi.mocked(startKakaoLogin).mockReset()
     vi.mocked(assignLocation).mockReset()
     resetMockSession()
+    clearLoginReturn()
   })
 
   afterEach(() => resetApiSession())
@@ -172,6 +179,67 @@ describe('KakaoLinkScreen', () => {
     renderLink()
     await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
     expect(router.replace).toHaveBeenCalledWith('/login')
+  })
+
+  describe('카카오로 떠나기 전에 둔 돌아갈 곳 (#140)', () => {
+    const ME = { next: '/me', region: '11440660', intent: null }
+
+    it('연결에 성공하면 그곳으로 가고 둔 값을 지운다 (목)', async () => {
+      saveLoginReturn(ME)
+      renderLink()
+      await userEvent.setup().click(linkButton())
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/me?region=11440660'))
+      expect(peekLoginReturn()).toEqual({ next: '/', region: null, intent: null })
+    })
+
+    it('실데이터 연결 성공도 보고하려던 로그인이면 같은 동네 홈의 보고 진입으로 간다', async () => {
+      selectApiSource()
+      window.sessionStorage.setItem(
+        LOGIN_RETURN_STORAGE_KEY,
+        JSON.stringify({
+          v: 1,
+          next: '/',
+          region: '11680640',
+          intent: 'report',
+          savedAt: Date.now(),
+        }),
+      )
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(okResponse(memberToken()))),
+      )
+      renderLink()
+      await userEvent.setup().click(linkButton())
+      await waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith('/?region=11680640&report=start'),
+      )
+    })
+
+    it('확인표가 지나 로그인 화면으로 가면 둔 값을 쿼리로 싣는다', async () => {
+      saveLoginReturn(ME)
+      vi.mocked(linkKakaoAccount).mockResolvedValueOnce({ status: 'restart', reason: 'expired' })
+      renderLink()
+      await userEvent.setup().click(linkButton())
+      await waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith(
+          '/login?error=kakao-fail&kakao=expired&next=%2Fme&region=11440660',
+        ),
+      )
+    })
+
+    it('가린 이메일이 없어 로그인 화면으로 돌려보낼 때도 둔 값을 싣는다', () => {
+      saveLoginReturn(ME)
+      renderLink(null)
+      expect(router.replace).toHaveBeenCalledWith('/login?next=%2Fme&region=11440660')
+    })
+
+    it('다른 카카오 계정으로 계속하기는 둔 값을 그대로 다시 들고 간다', async () => {
+      saveLoginReturn(ME)
+      renderLink()
+      await userEvent.setup().click(switchButton())
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith('/setup/region?from=kakao'))
+      expect(peekLoginReturn()).toEqual(ME)
+    })
   })
 
   it('실데이터면 POST /kakao/link 를 인증 없이 보내고 응답으로 회원이 된다', async () => {

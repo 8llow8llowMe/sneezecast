@@ -75,3 +75,13 @@ export const SETUP_HEALTH_CONSENT_PATH = '/setup/health-consent'
 export function browseHomePath(code: string): string {
   return `/?region=${encodeURIComponent(code)}`
 }
+
+/**
+ * 가입 · 재설정 · 카카오 · 조건 화면 흐름 안의 단계인지(`/setup/*` · `/signup/*` · `/password/*` · `/login/*` · `/terms/*`).
+ * 로그인 방법 고르기(S13-1)의 뒤로가 그만둔 흐름 단계로 되돌아가지 않게 가린다(#140). 시작(S01) · 둘러보기 동네 고르기는 흐름 단계가 아니다
+ */
+const FLOW_STEP_PREFIXES = ['/setup/', '/signup/', '/password/', '/login/', '/terms/'] as const
+
+export function isFlowStepPath(path: string): boolean {
+  return FLOW_STEP_PREFIXES.some((prefix) => path.startsWith(prefix))
+}

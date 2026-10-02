@@ -223,7 +223,7 @@ describe('MeScreen 회원 상태별 화면', () => {
         notifySessionExpired()
         resetMockSession()
       })
-      expect(router.replace.mock.calls).toEqual([['/login?reason=expired']])
+      expect(router.replace.mock.calls).toEqual([['/login?reason=expired&next=%2Fme']])
     } finally {
       clearSessionExpiring()
     }

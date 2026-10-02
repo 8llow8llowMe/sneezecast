@@ -21,6 +21,7 @@ import { useNavTrail } from '@/lib/use-nav-trail'
 
 import { loginWithEmail } from './auth-client'
 import { afterLoginHref, loginHref, type LoginReturn, NO_LOGIN_RETURN } from './login-return'
+import { clearLoginReturn, saveLoginReturn } from './login-return-store'
 
 /** 보낸 뒤 결과. `failed` 는 응답을 받지 못한 경우다(네트워크 · 서버 오류) */
 type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'limited' | 'suspended' | 'failed'
@@ -45,8 +46,9 @@ type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'limited' | 'suspende
  * 있으면 그곳(예: `/me?region=…`)으로 간다. 보고하려던 로그인(`?intent=report`, #136)이면 같은 동네 홈의 보고 진입
  * (`/?region=…&report=start`)이다. 뒤로는 로그인 방법 고르기(S13-1)에서 왔을 때만 되돌리고, 아니면 돌아갈 곳을 붙인
  * 로그인 방법 고르기로 기록을 바꿔 간다. 보고하려던 로그인은 홈(로그인 안내 시트)에서 바로 오므로 홈에서 왔을 때도 되돌린다 — 시트로 돌아간다.
- * 가입 · 비밀번호 재설정 링크는 돌아갈 곳을 넘기지 않는다. 그 화면들의 뒤로가 기록을 되돌려 이 주소(쿼리 포함)로 돌아오고,
- * 마친 뒤 돌아갈 곳으로 가는 것은 아직이다(가입을 마치면 홈, 재설정을 마치면 `?reason=reset-done`).
+ * 가입 · 비밀번호 재설정 링크는 주소에 돌아갈 곳을 넘기지 않고, 누를 때 둔다(`login-return-store.ts`, #140). 그 화면들의 뒤로는 기록을
+ * 되돌려 이 주소(쿼리 포함)로 돌아온다. 가입을 마치면(S02-4) 돌아갈 곳으로 가고, 재설정을 마치면 `?reason=reset-done` 에 돌아갈 곳을
+ * 붙여 이 화면으로 와 로그인 뒤 그곳으로 간다. 로그인에 성공하면 둔 값을 지운다(이 화면은 주소로 받았다).
  * 비밀번호는 이 화면 상태에만 두고 어디에도 남기지 않는다.
  *
  * 시안: docs/design/auth/screens/ 의 Login-email (+ -T · -D)
@@ -101,6 +103,8 @@ export function LoginEmailScreen({
     setStatus('submitting')
     try {
       const result = await loginWithEmail(email.trim(), password, source)
+      // 로그인했으면 가입 · 재설정에 들고 가던 돌아갈 곳은 끝났다(화면을 떠났어도 지운다)
+      if (result.status === 'ok') clearLoginReturn()
       // 기다리는 동안 화면을 떠났으면 늦은 응답으로 이동하지 않는다
       if (!active.current) return
       if (result.status === 'ok') {
@@ -179,12 +183,14 @@ export function LoginEmailScreen({
         <div className="flex justify-between">
           <Link
             href={PASSWORD_RESET_PATH}
+            onClick={() => saveLoginReturn(loginReturn)}
             className="flex min-h-touch items-center px-1 text-body font-semibold text-fg-sub"
           >
             비밀번호를 잊었어요
           </Link>
           <Link
             href={SIGNUP_EMAIL_PATH}
+            onClick={() => saveLoginReturn(loginReturn)}
             className="flex min-h-touch items-center px-1 text-body font-semibold text-brand"
           >
             이메일로 가입하기

@@ -4,11 +4,16 @@ import { useEffect } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 
 import type { MockAuthState } from '@/features/auth/auth-client'
-import { loginHref } from '@/features/auth/login-return'
-import { carriedParams, safeNextPath, stepTarget } from '@/features/auth/required-steps'
+import { expiredLoginHref, loginHref, loginReturnTo } from '@/features/auth/login-return'
+import {
+  carriedParams,
+  REPORT_ENTRY_PARAM,
+  safeNextPath,
+  stepTarget,
+} from '@/features/auth/required-steps'
 import { useAuth, useAuthSettled } from '@/features/auth/use-auth'
 import { useMemberRequirements } from '@/features/auth/use-member-requirements'
-import { LOGIN_EXPIRED_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
+import { HOME_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { isSessionExpiring } from '@/lib/session-expiry'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
@@ -23,34 +28,34 @@ import { useNavTrail } from '@/lib/use-nav-trail'
  * 원시 history 를 바꾸지 않으므로 `useSearchParams` 와 어긋나지 않고, 하이드레이션 첫 커밋 뒤라 Next 가 history 를 감싼 뒤다.
  * 앱 안 이동으로 처음 그리는 화면은 하이드레이션이 아니라 처음부터 목 세션으로 판단한다.
  *
- * - `next`: 로그인 뒤 돌아올 경로(허용 목록 `NEXT_PATHS`). 주면 `/login?next=<경로>` 로 보내고 둘러보기 동네(`?region=`)도 붙인다
- *   (`features/auth/login-return.ts`). QA 덮어쓰기(`?mock-auth=` 등)는 붙이지 않는다 — `?mock-auth=guest` 를 넘기면 돌아와 다시 튕긴다.
- *   생략하면 지금처럼 `/login` 이다(계정 화면, 후속 후보)
+ * - `next`: 로그인 뒤 돌아올 경로(그 화면의 경로, 허용 목록 `NEXT_PATHS`). `/login?next=<경로>` 로 보내고 둘러보기 동네(`?region=`)도 붙인다
+ *   (`features/auth/login-return.ts`). 목록 밖이면 `next` 를 싣지 않는다(홈). QA 덮어쓰기(`?mock-auth=` 등)는 붙이지 않는다 —
+ *   `?mock-auth=guest` 를 넘기면 돌아와 다시 튕긴다. 로그인 만료면 만료 주소(`/login?reason=expired`)에 같은 돌아갈 곳을 붙인다 —
+ *   만료 감시(`session-expiry-watcher.tsx`)가 지금 경로로 만드는 주소와 같아 어느 쪽이 나중에 불려도 같은 곳에 닿는다.
+ *   그래서 생략할 수 없다(내 정보 · 로그인한 기기 · 비밀번호 · 내 동네 모두 넘긴다, #140)
  * - `paused`: 이 화면이 스스로 비회원으로 바꾸는 중(로그아웃 · 탈퇴 성공 뒤 홈으로 가는 중)이면 true 로 둔다. 세션이 먼저 비회원이
  *   되어도 로그인으로 보내지 않는다 — 보내면 화면의 홈 이동과 겹쳐 로그인에 닿는다
  */
 export function useMemberGate({
   next,
   paused = false,
-}: { next?: string; paused?: boolean } = {}): Exclude<MockAuthState, 'guest'> | null {
+}: {
+  next: string
+  paused?: boolean
+}): Exclude<MockAuthState, 'guest'> | null {
   const { replace } = useNavTrail()
   const searchParams = useSearchParams()
   const settled = useAuthSettled()
   const auth = useAuth()
   const guest = settled && auth === 'guest' && !paused
-  const loginTarget =
-    next === undefined
-      ? LOGIN_PATH
-      : loginHref(LOGIN_PATH, {
-          next: safeNextPath(next),
-          region: searchParams.get('region'),
-          intent: null,
-        })
+  const loginReturn = loginReturnTo(next, searchParams)
+  const loginTarget = loginHref(LOGIN_PATH, loginReturn)
+  const expiredTarget = expiredLoginHref(loginReturn)
 
   useEffect(() => {
     // 로그인 만료로 비회원이 됐으면 만료 주소(토스트)로 보낸다. 만료 이동보다 나중에 불려도 같은 곳에 닿는다
-    if (guest) replace(isSessionExpiring() ? LOGIN_EXPIRED_PATH : loginTarget)
-  }, [guest, replace, loginTarget])
+    if (guest) replace(isSessionExpiring() ? expiredTarget : loginTarget)
+  }, [guest, replace, loginTarget, expiredTarget])
 
   return settled && auth !== 'guest' ? auth : null
 }
@@ -61,6 +66,8 @@ export function useMemberGate({
  * - 비회원은 null 이다. 조건은 `useMemberRequirements`(목 프로필 · `?mock-required=` 덮어쓰기)가 정한다
  * - `useMemberGate` 처럼 **회원 상태가 정해진 뒤에만**(`useAuthSettled`) 정한다(첫 그림 · 복원 중은 늘 비회원이다)
  * - 돌아올 곳은 `?next=<nextPath>`(허용 목록 밖이면 홈), 둘러보기 동네 · 목 덮어쓰기 쿼리는 남긴다(`carriedParams`)
+ * - 홈에 보고 진입(`?report=` — 보고하려던 로그인 뒤 `report=start` 로 옴)이 있으면 조건 화면에 보고하려던 표시(`?intent=report`)를 붙인다.
+ *   조건을 마치면 같은 동네 홈의 보고 진입으로 이어진다(#140, `targetAfter`). 내 정보로 돌아가면 붙이지 않는다
  *
  * 이동은 하지 않는다. 가드(`useRequiredStepsGate`)와 같은 그림에서 주소 쿼리를 정리하는 화면이 이 값으로 정리를 건너뛴다 —
  * Next 는 router 내비게이션이 대기 중일 때 `history.replaceState` · `pushState` 가 불리면 그 내비게이션을 버린다(docs/conventions.md).
@@ -69,9 +76,10 @@ export function useRequiredStepsTarget(nextPath: string): string | null {
   const searchParams = useSearchParams()
   const settled = useAuthSettled()
   const { steps } = useMemberRequirements()
-  return settled && steps.length > 0
-    ? stepTarget(steps, safeNextPath(nextPath), carriedParams(searchParams))
-    : null
+  if (!settled || steps.length === 0) return null
+  const next = safeNextPath(nextPath)
+  const reportIntent = next === HOME_PATH && Boolean(searchParams.get(REPORT_ENTRY_PARAM))
+  return stepTarget(steps, next, carriedParams(searchParams), reportIntent)
 }
 
 /**

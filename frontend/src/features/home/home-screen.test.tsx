@@ -542,11 +542,19 @@ describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 
     expect(router.replace).not.toHaveBeenCalled()
   })
 
-  it('조건이 있는 회원은 재동의부터 보낸다 (동네 · 덮어쓰기만 남긴다)', () => {
+  it('조건이 있는 회원은 재동의부터 보낸다 (동네 · 덮어쓰기를 남기고, 보고 진입은 보고하려던 표시로 잇는다)', () => {
     search = 'region=11440660&mock-auth=member&mock-required=terms,region&report=start'
     render(<HomeScreen week={HOME_MOCKS.normal} regionCode="11440660" />)
     expect(router.replace).toHaveBeenCalledWith(
-      '/terms/reconsent?region=11440660&mock-auth=member&mock-required=terms%2Cregion',
+      '/terms/reconsent?region=11440660&mock-auth=member&mock-required=terms%2Cregion&intent=report',
+    )
+  })
+
+  it('보고 진입 없이 들어온 회원은 보고하려던 표시를 붙이지 않는다', () => {
+    search = 'region=11440660&mock-auth=member&mock-required=terms'
+    render(<HomeScreen week={HOME_MOCKS.normal} regionCode="11440660" />)
+    expect(router.replace).toHaveBeenCalledWith(
+      '/terms/reconsent?region=11440660&mock-auth=member&mock-required=terms',
     )
   })
 
@@ -562,7 +570,7 @@ describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 
     expect(replaceState).not.toHaveBeenCalled()
     expect(router.replace).toHaveBeenCalledTimes(1)
     expect(router.replace).toHaveBeenCalledWith(
-      '/terms/reconsent?mock-auth=member-no-consent&mock-required=terms',
+      '/terms/reconsent?mock-auth=member-no-consent&mock-required=terms&intent=report',
     )
   })
 
@@ -573,7 +581,8 @@ describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 
     render(<HomeScreen week={HOME_MOCKS.normal} regionCode="11680640" />)
 
     expect(dialogTitled('증상 보고에 동의해 주세요')?.open ?? false).toBe(false)
-    expect(router.replace).toHaveBeenCalledWith('/terms/reconsent?region=11680640')
+    // 조건 화면을 마친 뒤 같은 동네 홈의 보고 진입으로 이어지게 보고하려던 표시를 싣는다(#140)
+    expect(router.replace).toHaveBeenCalledWith('/terms/reconsent?region=11680640&intent=report')
   })
 
   it('하이드레이션으로 열어도 첫 그림(비회원)의 보고 진입 정리가 남지 않는다', async () => {
@@ -591,7 +600,7 @@ describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 
     })
     expect(replaceState).not.toHaveBeenCalled()
     expect(router.replace).toHaveBeenCalledTimes(1)
-    expect(router.replace).toHaveBeenCalledWith('/terms/reconsent')
+    expect(router.replace).toHaveBeenCalledWith('/terms/reconsent?intent=report')
   })
 
   it('동네가 폐지된 회원(목 프로필)은 동네 다시 고르기로 보낸다', async () => {

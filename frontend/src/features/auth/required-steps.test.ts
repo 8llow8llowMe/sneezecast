@@ -18,6 +18,7 @@ import {
   memberRequirements,
   NEXT_PATHS,
   parseMockRequired,
+  reportIntentFrom,
   requiredStepHref,
   safeNextPath,
   sessionRequirements,
@@ -246,6 +247,71 @@ describe('requiredStepHref · stepTarget', () => {
     expect(stepTarget([], '/me', params)).toBe('/me?region=11440660&mock-auth=member')
     expect(stepTarget([], '/', new URLSearchParams())).toBe('/')
     expect(stepTarget(['terms', 'region'], '/', new URLSearchParams())).toBe('/terms/reconsent')
+  })
+})
+
+describe('보고하려던 로그인을 조건 화면 내내 잇는다 (#140)', () => {
+  beforeEach(() => resetMockSession())
+
+  it('reportIntentFrom: intent=report 이고 돌아갈 곳이 홈일 때만이다', () => {
+    expect(reportIntentFrom(new URLSearchParams('intent=report'), '/')).toBe(true)
+    expect(reportIntentFrom(new URLSearchParams('intent=report'), '/me')).toBe(false)
+    expect(reportIntentFrom(new URLSearchParams('intent=share'), '/')).toBe(false)
+    expect(reportIntentFrom(new URLSearchParams(), '/')).toBe(false)
+  })
+
+  it('조건 화면 주소에 intent=report 를 붙인다 — 홈으로 돌아갈 때만', () => {
+    const params = new URLSearchParams('region=11680640')
+    expect(requiredStepHref('terms', '/', params, true)).toBe(
+      '/terms/reconsent?region=11680640&intent=report',
+    )
+    expect(requiredStepHref('region', '/me', params, true)).toBe(
+      '/setup/region?reselect=1&next=%2Fme&region=11680640',
+    )
+  })
+
+  it('남은 조건이 없는 stepTarget 은 보고 진입을 붙이지 않는다 (마친 것이 아니라 닿은 것이라)', () => {
+    expect(stepTarget([], '/', new URLSearchParams('region=11680640'), true)).toBe(
+      '/?region=11680640',
+    )
+    expect(stepTarget(['region'], '/', new URLSearchParams(), true)).toBe(
+      '/setup/region?reselect=1&intent=report',
+    )
+  })
+
+  it('재동의를 마쳤는데 동네가 남았으면 동네 다시 고르기에 intent 를 잇는다', () => {
+    const search = new URLSearchParams(
+      'region=11680640&mock-auth=member&mock-required=terms,region&intent=report',
+    )
+    expect(targetAfter('terms', 'member', search, 'mock')).toBe(
+      '/setup/region?reselect=1&region=11680640&mock-auth=member&mock-required=region&intent=report',
+    )
+  })
+
+  it('남은 조건이 없으면 같은 동네 홈의 보고 진입(report=start)으로 간다', () => {
+    const search = new URLSearchParams('region=11680640&mock-required=region&intent=report')
+    expect(targetAfter('region', 'member', search, 'mock')).toBe('/?region=11680640&report=start')
+    expect(targetAfter('terms', 'member', new URLSearchParams('intent=report'), 'mock')).toBe(
+      '/?report=start',
+    )
+  })
+
+  it('돌아갈 곳이 홈이 아니거나 intent 를 모르면 보고 진입을 붙이지 않는다', () => {
+    expect(
+      targetAfter('terms', 'member', new URLSearchParams('next=/me&intent=report'), 'mock'),
+    ).toBe('/me')
+    expect(targetAfter('terms', 'member', new URLSearchParams('intent=REPORT'), 'mock')).toBe('/')
+  })
+
+  it('목록 밖 next 는 홈이 되어 보고 진입으로 간다 (next 규칙은 바꾸지 않는다)', () => {
+    expect(
+      targetAfter(
+        'terms',
+        'member',
+        new URLSearchParams('next=//evil.example&intent=report'),
+        'mock',
+      ),
+    ).toBe('/?report=start')
   })
 })
 

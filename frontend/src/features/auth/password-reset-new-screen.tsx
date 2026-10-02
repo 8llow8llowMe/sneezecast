@@ -17,6 +17,8 @@ import { useActiveRef } from '@/lib/use-active-ref'
 import { useDataSource } from '@/lib/use-data-source'
 
 import { type PasswordResetResult, resetPassword } from './auth-client'
+import { loginHref } from './login-return'
+import { takeLoginReturn } from './login-return-store'
 import { confirmProblem, passwordProblem } from './signup-rules'
 
 /**
@@ -44,7 +46,8 @@ type Status = 'idle' | 'submitting' | 'failed' | 'limited' | 'rule'
  * 새 비밀번호는 이 화면 상태에만 두고 Provider · 로그 · 저장소 · 주소에 남기지 않는다.
  * 보내는 중에는 칸을 읽기 전용으로 두고 버튼을 `aria-disabled` 로 꺼 두 번 보내지 않는다.
  *
- * - 바꾸면 재설정 초안을 비우고(이메일만 남긴다) 이메일 로그인(`?reason=reset-done`)으로 기록을 바꿔 간다.
+ * - 바꾸면 재설정 초안을 비우고(이메일만 남긴다) 이메일 로그인(`?reason=reset-done`)으로 기록을 바꿔 간다. 이메일 로그인에서 떠날 때 둔
+ *   돌아갈 곳(`login-return-store.ts`, #140)이 있으면 읽고 지워 그 주소에 붙인다(`&next=` · `&region=` · `&intent=`).
  *   그 화면이 토스트를 띄우고 남긴 이메일로 칸을 채운다. 서버가 그 계정의 모든 기기를 로그아웃하므로, 이 탭이 그 계정의 회원이면
  *   (`/me/password` 의 "비밀번호를 잊었어요" 로 왔을 때) `resetPassword` 가 먼저 세션을 비운다. 다른 계정의 회원이면 회원인 채
  *   이메일 로그인(재설정 완료 안내)에 닿는다 — 첫 진입 가드가 그 화면을 보내지 않으므로 그대로 보이고, 거기서 로그인하면 그 계정으로 바뀐다
@@ -109,7 +112,8 @@ export function PasswordResetNewScreen() {
     if (result.status === 'ok') {
       // 서버는 이미 바꾸고 토큰을 썼다. 화면을 떠났어도 초안을 비워 이 토큰으로 다시 오지 않게 한다
       clearPasswordReset({ keepEmail: true })
-      if (active.current) replace(LOGIN_EMAIL_RESET_DONE_PATH)
+      // 이메일 로그인에서 "비밀번호를 잊었어요" 로 떠날 때 둔 돌아갈 곳을 붙인다 — 그 화면의 로그인 뒤 그곳으로 간다(#140)
+      if (active.current) replace(loginHref(LOGIN_EMAIL_RESET_DONE_PATH, takeLoginReturn()))
       return
     }
     // 잠시 막혔거나 서버가 규칙 위반으로 거절했다. 토큰은 그대로라 이 화면에서 다시 누를 수 있다

@@ -7,7 +7,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { OnboardingProvider } from '@/features/onboarding/onboarding-context'
 
+import { resetMockSession } from './auth-client'
 import { LoginEmailScreen } from './login-email-screen'
+import { loginReturnFromSearch } from './login-return'
+import { clearLoginReturn, peekLoginReturn } from './login-return-store'
 import { PasswordResetCodeScreen } from './password-reset-code-screen'
 import { PasswordResetEmailScreen } from './password-reset-email-screen'
 import { PasswordResetNewScreen } from './password-reset-new-screen'
@@ -58,7 +61,12 @@ function Routes() {
     case '/password/reset/new':
       return <PasswordResetNewScreen />
     case '/login/email':
-      return <LoginEmailScreen resetDone={reason === 'reset-done'} />
+      return (
+        <LoginEmailScreen
+          resetDone={reason === 'reset-done'}
+          loginReturn={loginReturnFromSearch(new URLSearchParams(query))}
+        />
+      )
     default:
       return null
   }
@@ -93,6 +101,40 @@ describe('비밀번호 재설정 흐름', () => {
     nav.reset('/password/reset')
     nav.router.push.mockClear()
     nav.router.replace.mockClear()
+    clearLoginReturn()
+    resetMockSession()
+  })
+
+  it('이메일 로그인의 돌아갈 곳을 재설정 내내 들고 가서 reset-done 에 붙이고, 로그인 뒤 그곳으로 간다 (#140)', async () => {
+    nav.reset('/login/email?next=%2Fme&region=11440660')
+    const user = renderFlow()
+    // 링크 이동은 Next 가 하므로 누름(돌아갈 곳을 둠)만 보고 주소는 직접 옮긴다
+    await user.click(screen.getByRole('link', { name: '비밀번호를 잊었어요' }))
+    expect(peekLoginReturn()).toEqual({ next: '/me', region: '11440660', intent: null })
+    nav.router.push('/password/reset')
+    await screen.findByRole('heading', { name: '가입한 이메일을 알려 주세요' })
+
+    await throughCode(user, 'flow@example.com')
+    await changePassword(user)
+    await screen.findByRole('heading', { name: '이메일로 로그인해 주세요' })
+    expect(nav.get()).toBe('/login/email?reason=reset-done&next=%2Fme&region=11440660')
+    // 주소로 옮겼으니 둔 값은 지웠다
+    expect(peekLoginReturn()).toEqual({ next: '/', region: null, intent: null })
+
+    await user.type(screen.getByLabelText('비밀번호', { selector: 'input' }), 'newpass2026')
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+    await waitFor(() => expect(nav.get()).toBe('/me?region=11440660'))
+  })
+
+  it('돌아갈 곳 없이 들어온 재설정은 reset-done 만 붙인다', async () => {
+    nav.reset('/login/email')
+    const user = renderFlow()
+    await user.click(screen.getByRole('link', { name: '비밀번호를 잊었어요' }))
+    nav.router.push('/password/reset')
+    await screen.findByRole('heading', { name: '가입한 이메일을 알려 주세요' })
+    await throughCode(user, 'plain@example.com')
+    await changePassword(user)
+    await waitFor(() => expect(nav.get()).toBe('/login/email?reason=reset-done'))
   })
 
   it('이메일 → 코드 → 새 비밀번호 → 이메일 로그인(토스트 · 이메일 채움)', async () => {

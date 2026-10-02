@@ -19,7 +19,14 @@ import { useDataSource } from '@/lib/use-data-source'
 import { agreeTermsReconsent, logout } from './auth-client'
 import { LEGAL_TEXT_NOT_READY } from './consent-row'
 import { consentFor, TERMS_REVISION } from './legal'
-import { carriedParams, NEXT_PARAM, safeNextPath, stepTarget, targetAfter } from './required-steps'
+import {
+  carriedParams,
+  NEXT_PARAM,
+  reportIntentFrom,
+  safeNextPath,
+  stepTarget,
+  targetAfter,
+} from './required-steps'
 import { useAuthSettled } from './use-auth'
 import { useMemberRequirements } from './use-member-requirements'
 import { useMockAuth } from './use-mock-auth'
@@ -32,6 +39,7 @@ import { useMockAuth } from './use-mock-auth'
  * - `전문 보기` 는 약관 본문이 아직 없어 "약관 본문을 준비하고 있어요" 알림을 띄운다(가입 동의와 같다)
  * - 체크해야 `동의하고 계속하기` 가 켜진다(`aria-disabled`, 포커스는 남는다). 지금 이용약관 버전으로 동의를 보낸다
  * - 성공하면 목 프로필이 먼저 바뀌고(화면과 무관), 화면이 떠 있으면 남은 조건(동네 다시 고르기)이나 `?next=` 로 기록을 바꿔 간다.
+ *   보고하려던 로그인(`?intent=report`)이면 남은 조건 화면에 그 표시를 잇고, 남은 조건이 없으면 같은 동네 홈의 보고 진입으로 간다(#140, `targetAfter`).
  *   실패하면 빨강 상자로 알리고 다시 누를 수 있다
  * - 뒤로 버튼은 없다(시안에도 없음). 나가는 길은 아래 보조 버튼 `동의하지 않고 로그아웃` 하나다 — **시안에 없는 기본안이고 기획 확인이
  *   필요하다**(docs/design/SCREENS.md). 로그아웃(`logout`)에 성공하면 목 세션이 먼저 비회원이 되고(화면과 무관), 화면이 떠 있으면
@@ -57,9 +65,10 @@ export function TermsReconsentScreen() {
   const [failed, setFailed] = useState<'agree' | 'logout' | null>(null)
 
   const showing = settled && steps[0] === 'terms'
+  const next = safeNextPath(searchParams.get(NEXT_PARAM))
   const redirect =
     settled && !showing
-      ? stepTarget(steps, safeNextPath(searchParams.get(NEXT_PARAM)), carriedParams(searchParams))
+      ? stepTarget(steps, next, carriedParams(searchParams), reportIntentFrom(searchParams, next))
       : null
   useEffect(() => {
     // 동의 · 로그아웃을 마친 뒤의 이동은 그 함수가 한다(조건이 먼저 사라져도 여기서 한 번 더 보내지 않는다)
