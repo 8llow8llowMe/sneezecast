@@ -152,8 +152,10 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
   - 연도는 `IsoFields.WEEK_BASED_YEAR`, 주는 `IsoFields.WEEK_OF_WEEK_BASED_YEAR` 로 구한다. `DateTimeFormatter` 의 `YYYY` · `ww` 패턴은 로캘에 따라 주 정의가 바뀌므로 쓰지 않는다 (12월 29일 ~ 1월 3일에 연도가 어긋난다).
   - **현재 주만 쓸 수 있다.** 지난 주 보고 · 수정은 거절한다 — 마감된 집계와 원시 보고가 어긋나지 않게.
 - **행정동**: 요청의 `districtCode` 를 `district` 에서 현행 코드(`valid_to_year is null`)인지 확인한다. 폐지 · 없는 코드는 400.
-- **동시 요청**: 같은 사람의 동시 제출은 UK 위반으로 한쪽이 실패한다. 실패한 트랜잭션은 rollback-only 라 그 안에서 다시 시도할 수 없다 — **WebFacade(트랜잭션 밖)가 `DataIntegrityViolationException` 을 잡아 새 트랜잭션으로 한 번 다시** 부르고, 이번에는 update 경로를 탄다 (네이티브 upsert 는 컨벤션상 쓰지 않는다).
-- 수정 시 `revision_count` 는 읽어서 더하지 않고 `revision_count = revision_count + 1` JPQL update 로 올린다 (동시 수정에서 증가분이 사라지지 않게).
+- **동시 요청**: 같은 사람의 동시 제출은 UK 위반으로 한쪽이 실패한다. 저장 어댑터가 `saveAndFlush` 로 그 자리에서 드러내고 **`uk_weekly_report_reporter_key_iso_week` 위반만 `REPORT_001`(409) 로 바꾼다** (다른 무결성 위반은 그대로). 실패한 트랜잭션은 rollback-only 라 그 안에서 다시 시도할 수 없다 — **WebFacade(트랜잭션 밖)가 `REPORT_001` 을 잡아 새 트랜잭션으로 한 번 다시** 부르고, 이번에는 update 경로를 탄다 (네이티브 upsert 는 컨벤션상 쓰지 않는다).
+- 수정 시 `revision_count` 는 읽어서 더하지 않고 `revision_count = revision_count + 1` JPQL update 로 올린다 (동시 수정에서 증가분이 사라지지 않게). 벌크 갱신은 Auditing 을 타지 않으므로 같은 쿼리에서 `updated_at` 을 `Clock` 빈 시각으로 쓰고, 호출자 트랜잭션을 필수로 한다.
+- 주 계산 · 수정 시각은 `Clock` 빈(KST)에서 받는다 (`ReportWeekCalculator`). 생성 시각(`created_at`)은 Auditing(JVM 기본 시간대 시스템 시각)이라, 고정 Clock 을 쓰는 테스트에서는 두 시각의 선후를 비교하지 않는다. **보고 취소는 행 삭제다** — 취소 표시 컬럼을 두지 않고, 지울 행이 없어도 실패하지 않는다(멱등).
+- 알려진 한계: 취소 뒤 같은 주에 다시 제출하면 새 행이라 `revision_count` 가 0 부터 다시 센다. 반복 보고 검토 후보가 "취소 → 재제출" 반복을 놓칠 수 있다. 운영자 검토 설계(집계 이슈)에서 신호가 더 필요하면 취소 횟수를 따로 세는 안을 검토한다.
 - 이 테이블 밖으로 행을 내보내는 API 는 없다. 조회는 본인 이번 주 보고(`reporter_key` 일치)와 집계 스케줄러뿐이다.
 - 보관: 52주 지나면 삭제 스케줄러가 지운다. 탈퇴 · 건강정보 동의 철회 시 해당 `reporter_key` 행을 삭제한다 (§1-5).
 

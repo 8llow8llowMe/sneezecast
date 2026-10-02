@@ -236,7 +236,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 컨텍스트 | 책임 |
 |----------|------|
 | `district` | 행정동 마스터 조회 (읽기 전용, 쓰기는 batch 적재뿐). 공개 `GET /api/v1/districts?query=` — 현행만, 동 이름 · `시도 시군구` 포함 검색, FE 계약상 `dataBody` 는 페이지 없는 배열 최대 20건 · `GET /api/v1/districts/{code}` — 폐지 코드도 `active=false` 로 200. 내부 `GET /internal/v1/districts/{code}` — auth 의 내 동네 코드 검증 |
-| `report` | 주간 건강 보고 upsert |
+| `report` | 주간 건강 보고 upsert. 저장 계층: `weekly_report`(Snowflake PK, `(reporter_key, iso_week)` unique) · `WeeklyReportRepositoryPort`(조회 · insert — UK 위반만 `REPORT_001` · `updateCurrent` — JPQL `revision_count + 1` · 삭제 건수), `SymptomGroup` 비트 마스크, KST ISO 주 `ReportWeek` · `ReportWeekCalculator`(`Clock` 빈). 제출 · 조회 · 취소 API 는 #143 |
 | `aggregate` | 행정동 × 주 집계, 자료 부족 판정, 검토 후보 신호 |
 | `advisory` | 운영자 검토, AI 초안, 승인·수정·발행 이력, 공개 안내 |
 | `official` | 질병관리청 감시 자료 조회 (자가보고와 분리) |
@@ -251,6 +251,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - Redis · MinIO 를 쓰지 않는다. 폐기 토큰 차단은 게이트웨이 블랙리스트에 맡기므로 **서비스 포트를 외부에 노출하지 않는다.**
 - `JWT_ACCESS_KEY` 는 auth · 게이트웨이와 같은 값 (UTF-8 64바이트 미만 · 공백이면 security-core `JwtResourceServerProperties` 가 기동을 막는다), `SPRING_APPLICATION_NAME` 은 게이트웨이 `SURVEILLANCE_SERVICE_APP_NAME` 과 같은 값.
 - `REPORTER_KEY_PEPPER`(`surveillance.reporter-key.pepper`) — 32자 미만이면 기동 실패. 기동 로그에는 SHA-256 앞 8자 지문만 남긴다. Vault 의 surveillance 경로에만 두고 auth 에는 주지 않는다.
+- persistence-core 의 Snowflake · QueryDSL · JPA Auditing 을 `SurveillanceServiceBeansConfig` 에서 켜고, 같은 곳에 KST `Clock` 빈을 둔다. Snowflake 는 기본 datacenter 0 / worker 0 — auth 와 같아도 된다(DB 가 다르다). batch 와는 같은 스키마지만 쓰는 테이블이 달라 겹쳐도 된다. 인스턴스를 늘리면 `SNOWFLAKE_WORKER_ID` 를 인스턴스마다 다르게 준다.
 
 ## service/batch-service
 
