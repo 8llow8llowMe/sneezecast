@@ -52,7 +52,7 @@ public class MemberEntity extends BaseEntity implements Persistable<Long> {
     @Column(length = 100, nullable = false)
     private String email;
 
-    @Comment("비밀번호 해시 (BCrypt). 소셜 가입자는 최초 설정 전까지 null")
+    @Comment("비밀번호 해시 (BCrypt). 카카오로만 로그인하는 회원은 null")
     @Column(length = 80)
     private String password;
 
@@ -74,7 +74,7 @@ public class MemberEntity extends BaseEntity implements Persistable<Long> {
     @JdbcTypeCode(SqlTypes.VARCHAR)
     private SecurityRole role;
 
-    @Comment("소셜 로그인 제공자 (KAKAO). null 이면 이메일 계정")
+    @Comment("소셜 로그인 제공자 (KAKAO) - 그 제공자로 로그인할 수 있다. null 이면 이메일 계정만. 비밀번호가 있으면 이메일 로그인도 된다")
     @Column(length = 20)
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
@@ -108,6 +108,11 @@ public class MemberEntity extends BaseEntity implements Persistable<Long> {
     /** 조회한 엔티티의 닉네임을 바꾼다 — 트랜잭션 안에서 변경 감지로 UPDATE 된다 ({@link #isNew()} 주의 참고). */
     public void changeNickname(String nickname) {
         this.nickname = nickname;
+    }
+
+    /** 조회한 엔티티에 소셜 로그인 제공자를 연결한다 — 트랜잭션 안에서 변경 감지로 UPDATE 된다. 비밀번호는 그대로 둔다. */
+    public void changeProvider(OAuthProvider provider) {
+        this.provider = provider;
     }
 
     /** 조회한 엔티티의 비밀번호 해시를 바꾼다 — 트랜잭션 안에서 변경 감지로 UPDATE 된다. 해시만 받는다(원문 금지). */

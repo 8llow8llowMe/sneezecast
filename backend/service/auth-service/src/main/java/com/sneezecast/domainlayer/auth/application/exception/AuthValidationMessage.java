@@ -31,10 +31,16 @@ public final class AuthValidationMessage {
     public static final String RESET_TOKEN_REQUIRED = "AUTH_115:재설정 토큰은 필수입니다.";
     // 발급 토큰은 43자(32바이트 base64url)다. 상한은 무의미하게 큰 값을 해시 · 저장소 조회에 쓰지 않으려는 것이다.
     public static final String RESET_TOKEN_LENGTH_INVALID = "AUTH_116:재설정 토큰은 100자 이하여야 합니다.";
+    public static final String OAUTH_CODE_REQUIRED = "AUTH_117:인가 코드는 필수입니다.";
+    // 카카오 인가 코드는 수십~백여 자다. 상한은 무의미하게 큰 값을 카카오로 보내지 않으려는 것이다.
+    public static final String OAUTH_CODE_LENGTH_INVALID = "AUTH_118:인가 코드는 512자 이하여야 합니다.";
+    public static final String OAUTH_STATE_REQUIRED = "AUTH_119:state 는 필수입니다.";
+    // 발급 state 는 43자(32바이트 base64url)다. 상한은 무의미하게 큰 값을 저장소 조회에 쓰지 않으려는 것이다.
+    public static final String OAUTH_STATE_LENGTH_INVALID = "AUTH_120:state 는 100자 이하여야 합니다.";
 
     /**
      * 비밀번호 문자 구성 규칙 — 시안(Signup-account "8자 이상 · 영문과 숫자 포함")대로 영문자 · 숫자 필수, 특수문자는 써도 되지만 요구하지 않는다.
-     * 규칙의 정본은 회원 입력 정책({@link MemberInputPolicy})이다 — 가입 · 재설정(auth)과 비밀번호 변경 · 설정(member)이 같은 규칙을 쓴다.
+     * 규칙의 정본은 회원 입력 정책({@link MemberInputPolicy})이다 — 가입 · 재설정(auth)과 비밀번호 변경(member)이 같은 규칙을 쓴다.
      */
     public static final String PASSWORD_REGEXP = MemberInputPolicy.PASSWORD_REGEXP;
 

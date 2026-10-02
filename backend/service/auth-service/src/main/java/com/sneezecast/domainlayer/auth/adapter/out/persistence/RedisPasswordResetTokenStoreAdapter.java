@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
@@ -34,15 +33,9 @@ public class RedisPasswordResetTokenStoreAdapter implements PasswordResetTokenSt
 
     /**
      * GET 과 DEL 을 한 스크립트로 묶는다. 나눠 보내면 같은 토큰으로 동시에 들어온 두 요청이 모두 GET 에 성공해 비밀번호를 두 번 바꿀 수 있다.
-     * 키가 없으면 nil(→ null)이다.
+     * 키가 없으면 nil(→ null)이다. 스크립트는 카카오 로그인의 일회용 값과 함께 쓴다({@link RedisScripts#GET_AND_DELETE}).
      */
-    static final RedisScript<String> CONSUME_SCRIPT = new DefaultRedisScript<>("""
-        local value = redis.call('GET', KEYS[1])
-        if value then
-          redis.call('DEL', KEYS[1])
-        end
-        return value
-        """, String.class);
+    static final RedisScript<String> CONSUME_SCRIPT = RedisScripts.GET_AND_DELETE;
 
     private final StringRedisTemplate stringRedisTemplate;
     private final RedisProperties redisProperties;

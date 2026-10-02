@@ -1,5 +1,6 @@
 package com.sneezecast.domainlayer.member.application.port.out;
 
+import com.sneezecast.domainlayer.member.domain.enums.OAuthProvider;
 import com.sneezecast.domainlayer.member.domain.model.Member;
 import java.util.Optional;
 
@@ -35,4 +36,11 @@ public interface MemberRepositoryPort {
      * @return 바꾼 회원. 행이 없으면 empty
      */
     Optional<Member> updatePassword(long memberId, String encodedPassword);
+
+    /**
+     * 기존 회원 행에 소셜 로그인 제공자를 연결한다(비밀번호는 그대로). 엔티티를 조회해 변경 감지로 고친다 — <b>호출자 트랜잭션이 있어야 한다.</b>
+     *
+     * @return 바꾼 회원. 행이 없으면 empty
+     */
+    Optional<Member> updateProvider(long memberId, OAuthProvider provider);
 }

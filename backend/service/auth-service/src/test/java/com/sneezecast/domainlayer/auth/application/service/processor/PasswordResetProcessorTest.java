@@ -40,6 +40,7 @@ class PasswordResetProcessorTest {
 
     private static final String EMAIL = "user@example.com";
     private static final String SOCIAL_EMAIL = "kakao@example.com";
+    private static final String LINKED_EMAIL = "linked@example.com";
     private static final String UNKNOWN_EMAIL = "nobody@example.com";
     private static final String WITHDRAWN_EMAIL = "withdrawn@example.com";
     private static final String SUSPENDED_EMAIL = "suspended@example.com";
@@ -64,6 +65,8 @@ class PasswordResetProcessorTest {
         loginAttemptStorePort = mock(LoginAttemptStorePort.class);
         when(memberRepositoryPort.findByEmail(EMAIL)).thenReturn(Optional.of(member(1L, EMAIL, MemberStatus.ACTIVE, null)));
         when(memberRepositoryPort.findByEmail(SOCIAL_EMAIL)).thenReturn(Optional.of(member(2L, SOCIAL_EMAIL, MemberStatus.ACTIVE, OAuthProvider.KAKAO)));
+        when(memberRepositoryPort.findByEmail(LINKED_EMAIL)).thenReturn(Optional.of(Member.builder().id(5L).email(LINKED_EMAIL).password("$2a$10$hash")
+            .nickname("닉네임").role(SecurityRole.USER).provider(OAuthProvider.KAKAO).status(MemberStatus.ACTIVE).build()));
         when(memberRepositoryPort.findByEmail(UNKNOWN_EMAIL)).thenReturn(Optional.empty());
         when(memberRepositoryPort.findByEmail(WITHDRAWN_EMAIL)).thenReturn(Optional.of(member(3L, WITHDRAWN_EMAIL, MemberStatus.WITHDRAWN, null)));
         when(memberRepositoryPort.findByEmail(SUSPENDED_EMAIL)).thenReturn(Optional.of(member(4L, SUSPENDED_EMAIL, MemberStatus.SUSPENDED, null)));
@@ -72,18 +75,35 @@ class PasswordResetProcessorTest {
     }
 
     @Test
-    @DisplayName("정상 회원이면 6자리 코드를 저장하고 같은 코드를 재설정 메일로 보낸다 — 소셜 가입 회원도 받는다. 키는 재설정 목적만 쓴다")
+    @DisplayName("비밀번호가 있는 정상 회원이면 6자리 코드를 저장하고 같은 코드를 재설정 메일로 보낸다 — 카카오가 연결된 이메일 계정도 받는다. 키는 재설정 목적만 쓴다")
     void activeMemberGetsResetCode() {
         processor.sendCode(EMAIL, CLIENT_IP);
-        processor.sendCode(SOCIAL_EMAIL, CLIENT_IP);
+        processor.sendCode(LINKED_EMAIL, CLIENT_IP);
 
         ArgumentCaptor<String> mailed = ArgumentCaptor.forClass(String.class);
         verify(mailSendPort).sendPasswordResetCode(eq(EMAIL), mailed.capture());
-        verify(mailSendPort).sendPasswordResetCode(eq(SOCIAL_EMAIL), anyString());
+        verify(mailSendPort).sendPasswordResetCode(eq(LINKED_EMAIL), anyString());
         assertThat(mailed.getValue()).matches("[0-9]{6}");
         assertThat(codeStore.codes).containsEntry(EMAIL, mailed.getValue());
         assertThat(codeStore.codeTtls).containsEntry(EMAIL, LIMITS.codeTtl());
         assertThat(codeStore.purposes).containsExactly(EmailCodePurpose.PASSWORD_RESET);
+    }
+
+    @Test
+    @DisplayName("카카오로만 로그인하는(비밀번호 없는) 회원에게는 코드를 보내지 않는다 — 미끼 코드만 저장하고 '카카오로 로그인해 주세요' 안내만 보낸다")
+    void kakaoOnlyMemberGetsDecoyAndKakaoNotice() {
+        processor.sendCode(SOCIAL_EMAIL, CLIENT_IP);
+
+        verify(mailSendPort).sendPasswordResetOAuthOnlyNotice(SOCIAL_EMAIL);
+        verify(mailSendPort, never()).sendPasswordResetCode(anyString(), anyString());
+        assertThat(codeStore.codes.get(SOCIAL_EMAIL)).matches("[0-9]{6}");
+        assertThat(codeStore.codeTtls).containsEntry(SOCIAL_EMAIL, LIMITS.codeTtl());
+    }
+
+    @Test
+    @DisplayName("카카오로만 로그인하는 회원도 발송 → 오답 검증 응답이 정상 회원과 같다 — 계정 종류가 응답으로 새지 않는다")
+    void kakaoOnlyMemberResponsesAreUniform() {
+        assertThat(sendThenWrongVerifications(SOCIAL_EMAIL)).isEqualTo(sendThenWrongVerifications(EMAIL));
     }
 
     @Test
@@ -167,10 +187,11 @@ class PasswordResetProcessorTest {
     }
 
     @Test
-    @DisplayName("없는 토큰 · 미가입 · 탈퇴 · 정지 회원의 토큰은 모두 같은 AUTH_018 이다 — 계정 상태가 새지 않는다")
+    @DisplayName("없는 토큰 · 미가입 · 탈퇴 · 정지 · 비밀번호 없는(카카오만) 회원의 토큰은 모두 같은 AUTH_018 이다 — 계정 상태가 새지 않는다")
     void invalidAndInactiveTokensFailAlike() {
         assertThat(resetFailure("never-issued-token")).isEqualTo(AuthErrorCode.PASSWORD_RESET_EXPIRED);
-        for (String email : List.of(UNKNOWN_EMAIL, WITHDRAWN_EMAIL, SUSPENDED_EMAIL)) {
+        // 카카오로만 로그인하는 회원은 비밀번호가 없어 재설정할 수 없다 — 코드를 보내지 않으니 미끼 코드를 맞힌 경우다.
+        for (String email : List.of(UNKNOWN_EMAIL, WITHDRAWN_EMAIL, SUSPENDED_EMAIL, SOCIAL_EMAIL)) {
             codeStore.codes.put(email, "482913");
             String token = processor.verifyCode(email, "482913", CLIENT_IP);
             assertThat(resetFailure(token)).as(email).isEqualTo(AuthErrorCode.PASSWORD_RESET_EXPIRED);

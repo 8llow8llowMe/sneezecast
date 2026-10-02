@@ -21,8 +21,8 @@ import org.springframework.stereotype.Service;
  * 코드 발급 · 확인 규칙과 한도는 가입과 같다({@link EmailCodeProcessor}, {@code auth.email-send.*}). 저장 키만 가입과 따로다.
  *
  * <p><b>가입 여부 · 계정 상태가 응답으로 새지 않게 한다 (계정 열거 방지).</b> 발송은 회원이 없든 · 탈퇴 · 정지든 정상 회원과 똑같이 코드를 저장하고
- * 같은 응답을 낸다. 코드는 정상 회원에게만 메일로 가고, 회원이 없으면 "가입된 계정이 없다" 는 안내만, 탈퇴 · 정지면 아무 메일도 가지 않는다(미끼
- * 코드). 미끼 코드를 맞혀도 같은 모양의 토큰을 주고, 그 토큰의 재설정은 만료와 같은 {@code PASSWORD_RESET_EXPIRED} 로 끝난다.
+ * 같은 응답을 낸다. 코드는 비밀번호가 있는 정상 회원에게만 메일로 가고, 회원이 없으면 "가입된 계정이 없다" 는 안내만, 비밀번호가 없는(카카오로만
+ * 로그인하는) 회원에게는 "카카오로 로그인해 주세요" 안내만, 탈퇴 · 정지면 아무 메일도 가지 않는다(미끼 코드). 미끼 코드를 맞혀도 같은 모양의 토큰을 주고, 그 토큰의 재설정은 만료와 같은 {@code PASSWORD_RESET_EXPIRED} 로 끝난다.
  */
 @Service
 @RequiredArgsConstructor
@@ -48,9 +48,16 @@ public class PasswordResetProcessor {
             return;
         }
         // 탈퇴 · 정지 회원에게는 코드도 안내도 보내지 않는다 — 재설정해도 로그인할 수 없고, 상태를 메일로도 드러내지 않는다.
-        if (member.get().status() == MemberStatus.ACTIVE) {
-            mailSendPort.sendPasswordResetCode(email, code);
+        if (member.get().status() != MemberStatus.ACTIVE) {
+            return;
         }
+        // 비밀번호가 없는(카카오로만 로그인하는) 회원은 재설정할 비밀번호가 없다 — 코드는 미끼로만 두고 "카카오로 로그인해 주세요" 안내를 보낸다.
+        // 재설정으로 비밀번호를 새로 만들게 하지 않는다(카카오 회원은 비밀번호가 필요 없다). 카카오가 연결된 이메일 계정(비밀번호 있음)은 코드를 받는다.
+        if (member.get().password() == null) {
+            mailSendPort.sendPasswordResetOAuthOnlyNotice(email);
+            return;
+        }
+        mailSendPort.sendPasswordResetCode(email, code);
     }
 
     /**
@@ -73,7 +80,8 @@ public class PasswordResetProcessor {
      * <ol>
      *   <li>IP 시도 횟수를 <b>먼저</b> 올리고 상한을 넘으면 막는다 — 이 뒤의 저장소 조회 · BCrypt 비용을 주지 않는다. 저장소 장애에는 fail-open.</li>
      *   <li>토큰은 원자적으로 꺼내 지운다(1회성). 없음 · 만료 · 이미 씀이면 {@code PASSWORD_RESET_EXPIRED}.</li>
-     *   <li>토큰의 이메일에 정상 회원이 없어도(미끼 코드 · 그사이 탈퇴 · 정지) 같은 코드다.</li>
+     *   <li>토큰의 이메일에 정상 회원이 없어도(미끼 코드 · 그사이 탈퇴 · 정지) 같은 코드다. 비밀번호가 없는(카카오로만 로그인하는) 회원도 같다 — 그
+     *       회원에게는 코드를 보내지 않으므로 미끼 코드를 맞힌 경우다.</li>
      * </ol>
      */
     public Member consumeToken(String resetToken, String clientIp) {
@@ -84,7 +92,7 @@ public class PasswordResetProcessor {
         String email = passwordResetTokenStorePort.consumeToken(PasswordResetTokenGenerator.hash(resetToken))
             .orElseThrow(() -> new AuthException(AuthErrorCode.PASSWORD_RESET_EXPIRED));
         return memberRepositoryPort.findByEmail(email)
-            .filter(member -> member.status() == MemberStatus.ACTIVE)
+            .filter(member -> member.status() == MemberStatus.ACTIVE && member.password() != null)
             .orElseThrow(() -> new AuthException(AuthErrorCode.PASSWORD_RESET_EXPIRED));
     }
 

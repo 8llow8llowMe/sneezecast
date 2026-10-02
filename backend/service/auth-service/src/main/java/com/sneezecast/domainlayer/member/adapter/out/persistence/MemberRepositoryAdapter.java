@@ -6,6 +6,7 @@ import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.mapper.MemberMapper;
 import com.sneezecast.domainlayer.member.application.port.out.MemberRepositoryPort;
+import com.sneezecast.domainlayer.member.domain.enums.OAuthProvider;
 import com.sneezecast.domainlayer.member.domain.model.Member;
 import java.util.Locale;
 import java.util.Optional;
@@ -74,6 +75,15 @@ public class MemberRepositoryAdapter implements MemberRepositoryPort {
     public Optional<Member> updatePassword(long memberId, String encodedPassword) {
         return memberRepository.findById(memberId).map(entity -> {
             entity.changePassword(encodedPassword);
+            return memberMapper.toDomainFromEntity(entity);
+        });
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<Member> updateProvider(long memberId, OAuthProvider provider) {
+        return memberRepository.findById(memberId).map(entity -> {
+            entity.changeProvider(provider);
             return memberMapper.toDomainFromEntity(entity);
         });
     }

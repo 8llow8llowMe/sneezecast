@@ -54,6 +54,26 @@ public enum AuthErrorCode {
     // 재설정 요청의 IP 기준 시도 상한 — 토큰 대입 · 대량 재설정을 늦춘다.
     PASSWORD_RESET_IP_LIMITED("AUTH_019", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
 
+    // 카카오 로그인 — 화면은 모두 /login?error=kakao-fail 로 보낸다. 사유를 나누는 것은 로그 · 문의 대응용이다.
+    // state 쿠키 없음 · 쿠키와 불일치 · 저장소에 없음(만료 · 이미 씀)을 가르지 않는다 — 어느 쪽이 틀렸는지 알려 줄 이유가 없다.
+    OAUTH_STATE_INVALID("AUTH_020", "카카오 로그인 요청이 만료되었거나 올바르지 않습니다. 처음부터 다시 시도해주세요.", HttpStatus.BAD_REQUEST),
+    // 카카오가 인가 코드를 거부했다(4xx — invalid_grant: 만료 · 이미 씀 · 다른 redirect_uri 등). 같은 코드로는 다시 시도할 수 없다.
+    OAUTH_LOGIN_FAILED("AUTH_021", "카카오 로그인에 실패했습니다. 처음부터 다시 시도해주세요.", HttpStatus.BAD_REQUEST),
+    // 카카오 5xx · 연결 실패 · timeout · 해석할 수 없는 응답. 봉투 없는 500 대신 재시도 가능한 503 으로 알린다.
+    OAUTH_PROVIDER_UNAVAILABLE("AUTH_022", "일시적으로 카카오 로그인을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE),
+    // 카카오 계정에 이메일이 없거나 이메일 제공에 동의하지 않았다. 회원은 이메일로 식별하므로 가입하지 않는다.
+    OAUTH_EMAIL_REQUIRED("AUTH_023", "카카오 계정의 이메일 제공에 동의해야 로그인할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    // 카카오가 이메일을 인증되지 않았거나(is_email_verified) 유효하지 않다고(is_email_valid) 알렸다. 남의 이메일로 가입 · 연결되는 길을 막는다.
+    OAUTH_EMAIL_UNVERIFIED("AUTH_024", "카카오 계정의 이메일이 인증되지 않았습니다. 카카오에서 이메일을 인증한 뒤 다시 시도해주세요.", HttpStatus.BAD_REQUEST),
+    // 가입표가 없거나 만료 · 이미 썼다. 화면은 카카오 로그인부터 다시 한다.
+    OAUTH_SIGNUP_TICKET_EXPIRED("AUTH_025", "카카오 가입 시간이 지났습니다. 카카오 로그인부터 다시 시도해주세요.", HttpStatus.BAD_REQUEST),
+    // 연결 확인표가 없거나 만료 · 이미 썼다. 화면은 카카오 로그인부터 다시 한다.
+    OAUTH_LINK_TICKET_EXPIRED("AUTH_026", "카카오 로그인 연결 시간이 지났습니다. 카카오 로그인부터 다시 시도해주세요.", HttpStatus.BAD_REQUEST),
+    // 확인표를 받은 뒤 계정 상태가 바뀌었다(탈퇴 · 정지 · 이미 연결됨). 상태를 자세히 드러내지 않는다.
+    OAUTH_LINK_NOT_ALLOWED("AUTH_027", "카카오 로그인을 연결할 수 없는 계정입니다.", HttpStatus.CONFLICT),
+    // 인가 주소(state) 발급의 IP 기준 상한 — 인증 없이 부르는 API 라 state 키로 Redis 를 채우지 못하게 한다. 창 길이는 설정값이라 메시지에 못 박지 않는다.
+    OAUTH_AUTHORIZE_IP_LIMITED("AUTH_028", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
+
     // 요청 검증 대역 — 필드별 코드(AUTH_101~)는 AuthValidationMessage 가 단일 기준점이며 여기서 중복 정의하지 않는다.
     INVALID_REQUEST("AUTH_100", "요청 값이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
     // 프레임워크 2종은 대역 끝에 둔다 — 필드별 코드가 늘어도 번호가 끼어들지 않는다.
