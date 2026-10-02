@@ -2,16 +2,24 @@ package com.sneezecast.domainlayer.schedule.adapter.in.scheduler;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sneezecast.domainlayer.notifiableimport.adapter.in.batch.job.NotifiableImportJobConfig;
+import com.sneezecast.global.properties.BatchScheduleProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.quartz.JobDetail;
+import org.quartz.JobKey;
 import org.quartz.Scheduler;
+import org.quartz.Trigger;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration;
 import org.springframework.boot.autoconfigure.quartz.SchedulerFactoryBeanCustomizer;
 import org.springframework.boot.test.context.assertj.AssertableApplicationContext;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Configuration;
 
 /**
  * 스케줄 조건은 두 가지 사고를 막는다 — 테스트 컨텍스트 · 개발자 PC 가 실제 적재를 시작하는 것과, 잡 하나만 돌리려 띄운 두 번째 JVM 이
@@ -19,15 +27,18 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
  * 배포에서 실제로 들어올 수 있고, 그때 기동이 죽으면 안 된다.
  *
  * <p>{@code QuartzAutoConfiguration} 을 함께 올려 실제 스케줄러의 시작 여부까지 본다. yml 처럼 {@code auto-startup=false} 를 주고,
- * 조건이 참일 때만 커스터마이저가 그것을 이기는지가 이 구성의 핵심이다. 등록된 트리거가 없어 스케줄러가 시작돼도 아무것도 발화하지 않는다.
+ * 조건이 참일 때만 커스터마이저가 그것을 이기는지가 이 구성의 핵심이다. 트리거(전수신고)도 조건을 따라 붙거나 빠진다. 스케줄러가 시작돼도
+ * 발화하지 않게 cron 을 먼 미래(2099년)로 준다 — 이 컨텍스트에는 잡을 띄울 유스케이스가 없다.
  * application.yml 을 읽지 않으므로 스케줄러 이름이 달라 {@code BatchServiceApplicationTests} 의 스케줄러와 겹치지 않는다.
  */
 class QuartzScheduleConfigConditionTest {
 
+    private static final String NEVER_CRON = "0 0 0 1 1 ? 2099";
+
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-        .withConfiguration(AutoConfigurations.of(QuartzAutoConfiguration.class))
-        .withUserConfiguration(QuartzScheduleConfig.class)
-        .withPropertyValues("spring.quartz.auto-startup=false");
+        .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class, QuartzAutoConfiguration.class))
+        .withUserConfiguration(BatchSchedulePropertiesTestConfig.class, QuartzScheduleConfig.class)
+        .withPropertyValues("spring.quartz.auto-startup=false", "batch.schedule.notifiable-cron=" + NEVER_CRON);
 
     @Test
     @DisplayName("스케줄이 켜져 있고 수동 실행 JVM 이 아니면 커스터마이저가 auto-startup=false 를 이겨 스케줄러가 시작된다")
@@ -36,6 +47,7 @@ class QuartzScheduleConfigConditionTest {
             .run(context -> {
                 assertThat(context).hasSingleBean(SchedulerFactoryBeanCustomizer.class);
                 assertThat(context.getBean(Scheduler.class).isStarted()).isTrue();
+                assertThat(context.getBean(Scheduler.class).checkExists(JobKey.jobKey(NotifiableImportJobConfig.JOB_NAME))).isTrue();
             });
     }
 
@@ -70,6 +82,12 @@ class QuartzScheduleConfigConditionTest {
     private static void assertScheduleOff(AssertableApplicationContext context) throws Exception {
         assertThat(context).hasNotFailed();
         assertThat(context).doesNotHaveBean(SchedulerFactoryBeanCustomizer.class);
+        assertThat(context).doesNotHaveBean(JobDetail.class).doesNotHaveBean(Trigger.class);
         assertThat(context.getBean(Scheduler.class).isStarted()).isFalse();
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(BatchScheduleProperties.class)
+    static class BatchSchedulePropertiesTestConfig {
     }
 }
