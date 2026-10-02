@@ -19,6 +19,7 @@ import {
   withdrawMembership,
 } from '@/features/auth/auth-client'
 import { consentFor } from '@/features/auth/legal'
+import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import { MeScreen } from './me-screen'
@@ -171,35 +172,55 @@ describe('MeScreen 회원 상태별 화면', () => {
     expect(menu.textContent).not.toContain('내 보고')
   })
 
-  it('비로그인(Settings-guest): 둘러보는 동네 · 로그인 안내 · 개인정보 안내 · 서비스 정보만', async () => {
+  it.each([
+    ['', '/login?next=%2Fme'],
+    ['region=11440660', '/login?next=%2Fme&region=11440660'],
+    // QA 덮어쓰기는 로그인에 넘기지 않는다 — ?mock-auth=guest 를 넘기면 로그인 뒤 돌아와 다시 튕긴다
+    ['region=11440660&mock-auth=guest&mock-provider=email', '/login?next=%2Fme&region=11440660'],
+  ])(
+    '비회원(?%s)은 본문 없이 로그인으로 기록을 바꿔 가고, 로그인 뒤 /me 로 돌아온다',
+    (base, expected) => {
+      search = base
+      renderMe()
+
+      expect(router.replace.mock.calls).toEqual([[expected]])
+      expect(router.push).not.toHaveBeenCalled()
+      // Settings-guest 는 그리지 않는다. 머리줄 · 탭바(셸)만 남는다
+      expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+      expect(screen.queryByRole('navigation', { name: '설정 메뉴', hidden: true })).toBeNull()
+      expect(screen.queryByText('로그인하면 보고할 수 있어요')).toBeNull()
+      // 비회원 머리줄에는 알림(종)이 없다
+      expect(screen.queryByRole('button', { name: '알림 설정', hidden: true })).toBeNull()
+    },
+  )
+
+  it.each([
+    ['동의 전 회원', 'mock-auth=member-no-consent'],
+    ['동의한 회원', 'mock-auth=member'],
+  ])('%s은 로그인으로 보내지 않고 머리줄 알림(종)이 있다', (_, base) => {
+    search = base
     renderMe()
 
-    expect(screen.getByRole('link', { name: /^둘러보는 동네/ }).getAttribute('href')).toBe(
-      '/browse/region',
-    )
-    expect(screen.getByRole('heading', { name: '로그인하면 보고할 수 있어요' })).toBeDefined()
-    expect(
-      screen.getByText('한 주에 한 번 10초면 돼요. 이름·연락처·주소는 받지 않아요.'),
-    ).toBeDefined()
-    expect(screen.getByRole('heading', { level: 2, name: '개인정보 안내' })).toBeDefined()
-    expect(screen.queryByRole('heading', { level: 2, name: '계정' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '로그아웃' })).toBeNull()
-    expect(screen.queryByRole('switch')).toBeNull()
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '알림 설정' })).toBeDefined()
+    expect(screen.getByRole('heading', { level: 2, name: '계정' })).toBeDefined()
+  })
 
-    const menu = screen.getByRole('navigation', { name: '설정 메뉴', hidden: true })
-    expect([...menu.querySelectorAll('button')].map((item) => item.textContent)).toEqual([
-      '내 동네',
-      '로그인',
-      '개인정보 안내',
-      '서비스 정보',
-    ])
+  it('로그인 만료로 비회원이 되면 만료 안내 로그인으로 보낸다', async () => {
+    await loginAsMember()
+    renderMe()
+    expect(router.replace).not.toHaveBeenCalled()
 
-    // 안내 상자 버튼과 머리줄(태블릿 · 데스크톱) 버튼이 같은 글자다 — 둘 다 로그인으로 간다
-    const user = userEvent.setup()
-    for (const button of screen.getAllByRole('button', { name: '로그인하고 보고하기' })) {
-      await user.click(button)
+    try {
+      // 받는 쪽(루트의 만료 감시)이 세션을 비우는 것을 흉내 낸다
+      act(() => {
+        notifySessionExpired()
+        resetMockSession()
+      })
+      expect(router.replace.mock.calls).toEqual([['/login?reason=expired']])
+    } finally {
+      clearSessionExpiring()
     }
-    expect(router.push.mock.calls).toEqual([['/login'], ['/login']])
   })
 
   it('데스크톱 설정 메뉴는 기록을 쌓지 않는 바로가기 버튼이다 — 섹션으로 옮기고 제목에 포커스를 준다', async () => {
@@ -444,7 +465,8 @@ describe('MeScreen 확인 대화상자', () => {
 
     expect(getMockSession()).toBe('guest')
     expect(getMockProfile()).toBeNull()
-    expect(router.replace).toHaveBeenCalledWith('/?region=11440660')
+    // 세션이 먼저 비회원이 되어도 보내는 중에는 가드가 멈춰 로그인이 아니라 홈으로만 간다
+    expect(router.replace.mock.calls).toEqual([['/?region=11440660']])
     expect(router.push).not.toHaveBeenCalled()
   })
 
@@ -580,18 +602,9 @@ describe('MeScreen 확인 대화상자', () => {
     expect(router.replace).not.toHaveBeenCalled()
   })
 
-  it.each([
-    ['비회원의 logout', '', 'logout', ''],
-    ['비회원의 withdraw', 'region=11440660', 'withdraw', '?region=11440660'],
-    [
-      '미동의 회원의 consent-withdraw',
-      'mock-auth=member-no-consent',
-      'consent-withdraw',
-      '?mock-auth=member-no-consent',
-    ],
-  ])('주소로 바로 들어온 %s 는 열지 않고 주소에서 지운다', async (_, base, kind, expected) => {
+  it('주소로 바로 들어온 미동의 회원의 consent-withdraw 는 열지 않고 주소에서 지운다', async () => {
     vi.useFakeTimers()
-    search = [base, `confirm=${kind}`].filter(Boolean).join('&')
+    search = 'mock-auth=member-no-consent&confirm=consent-withdraw'
     const replaceState = vi.spyOn(window.history, 'replaceState')
     renderMe()
 
@@ -602,9 +615,28 @@ describe('MeScreen 확인 대화상자', () => {
     expect(replaceState).toHaveBeenCalledWith(
       { sneezecastModalDepth: 0 },
       '',
-      expected || window.location.pathname,
+      '?mock-auth=member-no-consent',
     )
   })
+
+  it.each([
+    ['logout', '', '/login?next=%2Fme'],
+    ['withdraw', 'region=11440660', '/login?next=%2Fme&region=11440660'],
+  ])(
+    '주소로 바로 들어온 비회원의 %s 는 열지 않고, 주소 정리 없이 로그인으로만 보낸다',
+    async (kind, base, expected) => {
+      vi.useFakeTimers()
+      search = [base, `confirm=${kind}`].filter(Boolean).join('&')
+      const replaceState = vi.spyOn(window.history, 'replaceState')
+      renderMe()
+
+      expect(screen.queryByRole('dialog')).toBeNull()
+      await act(() => vi.runAllTimersAsync())
+      // 원시 history 를 바꾸면 Next 가 대기 중인 로그인 이동을 버린다 (docs/conventions.md)
+      expect(replaceState).not.toHaveBeenCalled()
+      expect(router.replace.mock.calls).toEqual([[expected]])
+    },
+  )
 
   it('모르는 confirm 값은 아무 것도 열지 않고 그대로 둔다', async () => {
     vi.useFakeTimers()

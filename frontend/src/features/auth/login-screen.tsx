@@ -12,9 +12,11 @@ import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
 import { LOGIN_EMAIL_PATH, SIGNUP_EMAIL_PATH, START_PATH } from '@/features/onboarding/paths'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useNavTrail } from '@/lib/use-nav-trail'
 
 import { startKakaoLogin } from './auth-client'
 import type { LoginNotice } from './login-notice'
+import { isReturning, loginHref, type LoginReturn, NO_LOGIN_RETURN } from './login-return'
 
 /**
  * S13-1 로그인 방법 고르기. 단계 표시는 없다.
@@ -26,15 +28,29 @@ import type { LoginNotice } from './login-notice'
  * | 이메일 회원과 겹침 | `?error=kakao-exists` | 파랑 상자 안 이메일로 로그인 + 다른 카카오 계정으로 계속하기 |
  * | 로그인 만료 | `?reason=expired` | 기본 + "다시 로그인해 주세요" 토스트 |
  *
+ * **돌아갈 곳**(`?next=` · `?region=`, #123): 회원만 쓰는 화면(내 정보)의 가드가 붙여 보낸다. 이메일 로그인 링크에 그대로 넘겨
+ * 로그인에 성공하면 그곳으로 간다(`login-return.ts`). 이때 뒤로는 앞 화면을 따지지 않고 되돌린다 — 가드가 기록을 바꿔 보내
+ * 바로 앞이 내 정보 링크를 누른 화면이다. 돌아갈 곳이 없으면 지금처럼 시작 화면(S01)에서 왔을 때만 되돌린다.
+ * 카카오 · 이메일 가입은 아직 돌아갈 곳을 이어 받지 않는다(가입을 마치면 홈).
+ *
  * 시안: docs/design/auth/screens/ 의 Login · Login-kakao-fail · Login-kakao-exists (+ -T · -D)
  */
-export function LoginScreen({ notice }: { notice: LoginNotice | null }) {
+export function LoginScreen({
+  notice,
+  loginReturn = NO_LOGIN_RETURN,
+}: {
+  notice: LoginNotice | null
+  /** 로그인 뒤 돌아갈 곳. 라우트가 `?next=` · `?region=` 에서 읽어 넘긴다 */
+  loginReturn?: LoginReturn
+}) {
   const router = useRouter()
+  const navTrail = useNavTrail()
   const { goBack, resetSignup, updateSignup, clearPasswordReset } = useOnboarding()
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const [pending, setPending] = useState(false)
   const exists = notice === 'kakao-exists'
+  const emailLoginHref = loginHref(LOGIN_EMAIL_PATH, loginReturn)
 
   useEffect(() => {
     if (notice === 'expired') show({ message: '다시 로그인해 주세요' })
@@ -67,7 +83,7 @@ export function LoginScreen({ notice }: { notice: LoginNotice | null }) {
 
   return (
     <OnboardingLayout
-      onBack={() => goBack(START_PATH)}
+      onBack={() => (isReturning(loginReturn) ? navTrail.goBack(START_PATH) : goBack(START_PATH))}
       panelTitle={
         <>
           보고는 회원만
@@ -87,7 +103,7 @@ export function LoginScreen({ notice }: { notice: LoginNotice | null }) {
               <p className="flex items-center justify-center gap-1">
                 <span className="text-body-strong text-fg-sub">이메일 계정이 있어요</span>
                 <Link
-                  href={LOGIN_EMAIL_PATH}
+                  href={emailLoginHref}
                   className="flex min-h-touch items-center px-1 text-body font-semibold text-brand"
                 >
                   이메일로 로그인
@@ -118,7 +134,7 @@ export function LoginScreen({ notice }: { notice: LoginNotice | null }) {
           <AlertBox
             tone="info"
             action={
-              <Button fullWidth onClick={() => router.push(LOGIN_EMAIL_PATH)}>
+              <Button fullWidth onClick={() => router.push(emailLoginHref)}>
                 이메일로 로그인
               </Button>
             }

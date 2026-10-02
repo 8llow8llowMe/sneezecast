@@ -144,7 +144,44 @@ describe('useMemberGate', () => {
     expect(router.replace).toHaveBeenLastCalledWith('/login?reason=expired')
     expect(router.replace).not.toHaveBeenCalledWith('/login')
   })
+
+  it('돌아올 곳(next)을 주면 로그인 주소에 next 와 둘러보기 동네만 붙인다 (QA 덮어쓰기는 뺀다)', () => {
+    pathname = '/me'
+    search = 'region=11440660&mock-auth=guest&mock-required=terms&confirm=logout'
+    render(<MeGate />)
+    expect(router.replace.mock.calls).toEqual([['/login?next=%2Fme&region=11440660']])
+  })
+
+  it('허용 목록 밖의 next 는 홈으로 본다 (next 를 붙이지 않는다)', () => {
+    function OddGate() {
+      return <p>{useMemberGate({ next: '//evil.example' }) ?? '가드 대기'}</p>
+    }
+    render(<OddGate />)
+    expect(router.replace.mock.calls).toEqual([['/login']])
+  })
+
+  it('멈춰 두면(paused) 세션이 비회원이 되어도 로그인으로 보내지 않는다 — 로그아웃 뒤 홈으로 가는 중', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026')
+    const { rerender } = render(<MeGate paused />)
+    act(() => resetMockSession())
+    expect(router.replace).not.toHaveBeenCalled()
+
+    // 멈춤을 풀면(보내기 실패 등) 다시 판단한다
+    rerender(<MeGate paused={false} />)
+    expect(router.replace.mock.calls).toEqual([['/login?next=%2Fme']])
+  })
+
+  it('하이드레이션 첫 그림(서버 그림)에서는 판단하지 않는다', () => {
+    const html = renderToString(<MeGate />)
+    expect(html).toContain('가드 대기')
+    expect(router.replace).not.toHaveBeenCalled()
+  })
 })
+
+/** 내 정보처럼 로그인 뒤 돌아올 곳을 주는 가드 */
+function MeGate({ paused = false }: { paused?: boolean }) {
+  return <p>{useMemberGate({ next: '/me', paused }) ?? '가드 대기'}</p>
+}
 
 describe('가드의 replace 와 앱 안 이동 기록', () => {
   let navTrail: ReturnType<typeof useNavTrail> | null = null

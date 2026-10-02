@@ -9,15 +9,12 @@ import { TextField } from '@/components/text-field'
 import { ToastRegion, useToast } from '@/components/toast'
 import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
-import {
-  HOME_PATH,
-  LOGIN_PATH,
-  PASSWORD_RESET_PATH,
-  SIGNUP_EMAIL_PATH,
-} from '@/features/onboarding/paths'
+import { LOGIN_PATH, PASSWORD_RESET_PATH, SIGNUP_EMAIL_PATH } from '@/features/onboarding/paths'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useNavTrail } from '@/lib/use-nav-trail'
 
 import { loginWithEmail } from './auth-client'
+import { afterLoginHref, loginHref, type LoginReturn, NO_LOGIN_RETURN } from './login-return'
 
 /** 보낸 뒤 결과. `failed` 는 응답을 받지 못한 경우다(네트워크 · 서버 오류) */
 type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'failed'
@@ -36,13 +33,23 @@ type Status = 'idle' | 'submitting' | 'wrong' | 'locked' | 'failed'
  * (disabled 가 되면 포커스가 사라진다) 스크린리더는 "흐리게 표시됨" 으로 읽는다. 누름은 `submit` 이 막는다.
  * 보내는 중에는 칸을 읽기 전용으로 두어, 고치기 전 값의 결과가 고친 값 옆에 뜨지 않게 한다.
  *
- * 성공하면 홈으로 기록을 바꿔 간다 — 뒤로 가기로 로그인 화면에 돌아오지 않게 한다.
+ * 성공하면 홈으로 기록을 바꿔 간다 — 뒤로 가기로 로그인 화면에 돌아오지 않게 한다. 돌아갈 곳(`?next=` · `?region=`, #123)이
+ * 있으면 그곳(예: `/me?region=…`)으로 간다. 뒤로는 로그인 방법 고르기(S13-1)에서 왔을 때만 되돌리고, 아니면 돌아갈 곳을 붙인
+ * 로그인 방법 고르기로 기록을 바꿔 간다.
  * 비밀번호는 이 화면 상태에만 두고 어디에도 남기지 않는다.
  *
  * 시안: docs/design/auth/screens/ 의 Login-email (+ -T · -D)
  */
-export function LoginEmailScreen({ resetDone = false }: { resetDone?: boolean }) {
-  const { goBack, replace, passwordReset, clearPasswordReset } = useOnboarding()
+export function LoginEmailScreen({
+  resetDone = false,
+  loginReturn = NO_LOGIN_RETURN,
+}: {
+  resetDone?: boolean
+  /** 로그인 뒤 돌아갈 곳. 라우트가 `?next=` · `?region=` 에서 읽어 넘긴다 */
+  loginReturn?: LoginReturn
+}) {
+  const navTrail = useNavTrail()
+  const { replace, passwordReset, clearPasswordReset } = useOnboarding()
   const active = useActiveRef()
   const { toast, show, dismiss } = useToast()
   const formId = useId()
@@ -85,7 +92,7 @@ export function LoginEmailScreen({ resetDone = false }: { resetDone?: boolean })
       // 기다리는 동안 화면을 떠났으면 늦은 응답으로 이동하지 않는다
       if (!active.current) return
       if (result.status === 'ok') {
-        replace(HOME_PATH)
+        replace(afterLoginHref(loginReturn))
         return
       }
       setStatus(result.status)
@@ -96,7 +103,7 @@ export function LoginEmailScreen({ resetDone = false }: { resetDone?: boolean })
 
   return (
     <OnboardingLayout
-      onBack={() => goBack(LOGIN_PATH)}
+      onBack={() => navTrail.goBack(loginHref(LOGIN_PATH, loginReturn), [LOGIN_PATH])}
       panelTitle="다시 오셨네요"
       footer={
         <Button type="submit" form={formId} fullWidth aria-disabled={blocked || undefined}>

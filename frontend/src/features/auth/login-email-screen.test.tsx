@@ -8,6 +8,7 @@ import { OnboardingProvider, useOnboarding } from '@/features/onboarding/onboard
 import type * as authClient from './auth-client'
 import { loginWithEmail } from './auth-client'
 import { LoginEmailScreen } from './login-email-screen'
+import type { LoginReturn } from './login-return'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
 vi.mock('next/navigation', () => ({
@@ -21,11 +22,11 @@ vi.mock('./auth-client', async (importOriginal) => {
   return { ...actual, loginWithEmail: vi.fn(actual.loginWithEmail) }
 })
 
-function setup(resetDone = false) {
+function setup(resetDone = false, loginReturn?: LoginReturn) {
   const user = userEvent.setup()
   const utils = render(
     <OnboardingProvider>
-      <LoginEmailScreen resetDone={resetDone} />
+      <LoginEmailScreen resetDone={resetDone} {...(loginReturn ? { loginReturn } : {})} />
     </OnboardingProvider>,
   )
   const email = screen.getByRole('textbox', { name: '이메일' })
@@ -84,6 +85,22 @@ describe('LoginEmailScreen', () => {
 
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'))
     expect(loginWithEmail).toHaveBeenCalledWith('dong@example.com', 'dongne2026')
+  })
+
+  it('돌아갈 곳(?next=/me)이 있으면 성공한 뒤 동네를 남긴 내 정보로 기록을 바꿔 간다', async () => {
+    vi.mocked(loginWithEmail).mockResolvedValueOnce({ status: 'ok' })
+    const { user, email, password, submit } = setup(false, { next: '/me', region: '11440660' })
+    await fill(user, email, password, 'dong@example.com', 'dongne2026')
+    await user.click(submit)
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/me?region=11440660'))
+    expect(router.replace).toHaveBeenCalledTimes(1)
+  })
+
+  it('주소로 바로 들어왔으면 뒤로는 돌아갈 곳을 붙인 로그인 방법 고르기로 바꿔 간다', async () => {
+    const { user } = setup(false, { next: '/me', region: '11440660' })
+    await user.click(screen.getByRole('button', { name: '뒤로' }))
+    expect(router.replace).toHaveBeenCalledWith('/login?next=%2Fme&region=11440660')
   })
 
   it('wrong 이면 맞지 않다고 alert 로 알리고 칸을 고치면 지운다', async () => {

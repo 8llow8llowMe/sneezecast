@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AppHeader } from '@/components/app-header'
-import { Button } from '@/components/button'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
 import {
@@ -42,7 +41,7 @@ import {
   reportHrefFor,
 } from './me-paths'
 import { useMeTrail } from './me-trail'
-import { useRequiredStepsTarget } from './member-gate'
+import { useMemberGate, useRequiredStepsTarget } from './member-gate'
 import { PushUnavailable } from './push-unavailable'
 import { MenuRow, sectionTitleId, SettingsSection, SwitchRow } from './settings-row'
 
@@ -53,16 +52,8 @@ const CONFIRM_ACTIONS: Record<ConfirmKind, () => Promise<void>> = {
   withdraw: withdrawMembership,
 }
 
-/** 데스크톱 왼쪽 설정 메뉴 (Settings-D · Settings-guest-D). 회원 상태마다 섹션이 다르다 */
-function sectionsFor(auth: MockAuthState): { id: string; label: string }[] {
-  if (auth === 'guest') {
-    return [
-      { id: 'me-region', label: '내 동네' },
-      { id: 'me-login', label: '로그인' },
-      { id: 'me-privacy', label: '개인정보 안내' },
-      { id: 'me-service', label: '서비스 정보' },
-    ]
-  }
+/** 데스크톱 왼쪽 설정 메뉴 (Settings-D). 동의 여부마다 섹션이 다르다 */
+function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label: string }[] {
   return [
     { id: 'me-account', label: '계정' },
     { id: 'me-region', label: '내 동네' },
@@ -75,9 +66,14 @@ function sectionsFor(auth: MockAuthState): { id: string; label: string }[] {
 }
 
 /**
- * S10 내 정보 (`/me`). 회원 상태(목, `useMockAuth`)와 로그인 방법(`useMockProfile`)으로 화면이 셋이다:
- * 이메일 회원(Settings) · 카카오 회원(Settings-kakao, 비밀번호 "설정") · 비로그인(Settings-guest).
+ * S10 내 정보 (`/me`). **회원만 본다** — 비회원이면 본문을 그리지 않고 로그인(`/login?next=/me`, 둘러보기 동네 유지)으로 기록을 바꿔
+ * 간다(`useMemberGate`, #123). 탭바 · 머리줄의 `내 정보` 링크는 회원 상태와 무관하게 `/me` 이고 이 가드가 비회원을 보낸다.
+ * 로그인 방법(`useMockProfile`)으로 화면이 둘이다: 이메일 회원(Settings) · 카카오 회원(Settings-kakao, 비밀번호 "설정").
+ * 비로그인 화면(Settings-guest)은 #123 에서 그리지 않게 됐다.
  * 동의하지 않은 회원은 시안이 없어 회원 화면에서 `내 보고` 섹션을 빼고, `건강정보 동의 철회` 자리에 `건강정보 동의하기` 를 둔다.
+ *
+ * 머리줄 · 탭바(셸)는 판단 전(서버 · 하이드레이션 첫 그림)에도 그린다. 본문 · 설정 메뉴만 회원으로 판단된 뒤 그린다.
+ * 로그아웃 · 탈퇴에 성공하면 세션이 먼저 비회원이 되지만, 보내는 중(`pending`)에는 가드를 멈춰 로그인이 아니라 홈으로 간다.
  *
  * | 폭 | 구성 |
  * | --- | --- |
@@ -122,6 +118,8 @@ export function MeScreen({
   // 보내는 중인 대화상자. 성공한 뒤 이동할 때까지 그대로 둔다 — 세션이 먼저 바뀌어도 대화상자가 닫히지 않게 한다
   const [pending, setPending] = useState<ConfirmKind | null>(null)
   const [failed, setFailed] = useState<ConfirmKind | null>(null)
+  // 비회원이면 로그인으로 보낸다(돌아올 곳 /me). 보내는 중(로그아웃 · 탈퇴 성공 뒤 홈으로 가는 중)에는 멈춘다
+  const member = useMemberGate({ next: ME_PATH, paused: pending !== null })
 
   const navSearch = regionSearch(regionCode)
   const accountSearch = meSearch(regionCode, searchParams)
@@ -144,7 +142,9 @@ export function MeScreen({
   // 레이아웃의 가드(`MeRequiredStepsGate`)가 재동의 · 동네 다시 고르기로 보낼 곳이 있으면 정리하지 않는다 — 원시 history 를 바꾸면
   // 대기 중인 그 이동을 Next 가 버린다(docs/conventions.md). 가드와 같은 판단을 읽는다
   const requiredTarget = useRequiredStepsTarget(ME_PATH)
-  const mismatched = requested !== null && openKind === null && requiredTarget === null
+  // 비회원은 가드가 로그인으로 보내므로 정리하지 않는다(정리가 그 이동을 버리게 한다)
+  const mismatched =
+    requested !== null && openKind === null && requiredTarget === null && member !== null
   const { close: closeConfirmParam } = confirm
   useEffect(() => {
     if (!mismatched) return
@@ -199,7 +199,7 @@ export function MeScreen({
   // 머리줄 보고 버튼: 비회원은 로그인, 회원은 홈의 보고 진입(미동의면 동의 시트, 동의했으면 보고 흐름)
   const reportHref = reportHrefFor(auth, regionCode)
 
-  const sections = sectionsFor(auth)
+  const sections = member ? sectionsFor(member) : []
 
   // 설정 메뉴 바로가기. 기록을 쌓지 않고 섹션으로 옮긴 뒤 그 제목에 포커스를 준다(키보드 · 스크린리더가 같은 자리에서 이어 읽는다)
   function jumpTo(sectionId: string) {
@@ -209,12 +209,13 @@ export function MeScreen({
 
   return (
     <div className="flex min-h-dvh flex-col">
+      {/* 비회원(판단 전 · 로그인으로 가는 중)에게는 알림(종)을 그리지 않는다 (#123) */}
       <AppHeader
         title="내 정보"
         regionName={regionName}
         current="me"
         onRegionClick={() => notReady('동네 바꾸기')}
-        onNotificationClick={() => notReady('알림 설정')}
+        onNotificationClick={auth === 'guest' ? undefined : () => notReady('알림 설정')}
         onReportClick={() => router.push(reportHref)}
         reportLabel={auth === 'guest' ? '로그인하고 보고하기' : undefined}
         navSearch={navSearch}
@@ -224,28 +225,25 @@ export function MeScreen({
         <div className="flex w-full max-w-160 desktop:max-w-250 desktop:gap-12">
           <div className="hidden w-55 shrink-0 flex-col desktop:flex">
             <h1 className="mb-3 ml-3 text-sheet-title font-bold text-fg">내 정보</h1>
-            <nav aria-label="설정 메뉴" className="flex flex-col gap-1">
-              {sections.map((section) => (
-                <button
-                  key={section.id}
-                  type="button"
-                  onClick={() => jumpTo(section.id)}
-                  className="flex h-11 cursor-pointer items-center rounded-small px-3 text-left text-body font-medium text-fg-sub"
-                >
-                  {section.label}
-                </button>
-              ))}
-            </nav>
+            {member && (
+              <nav aria-label="설정 메뉴" className="flex flex-col gap-1">
+                {sections.map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => jumpTo(section.id)}
+                    className="flex h-11 cursor-pointer items-center rounded-small px-3 text-left text-body font-medium text-fg-sub"
+                  >
+                    {section.label}
+                  </button>
+                ))}
+              </nav>
+            )}
           </div>
 
           <main className="flex min-w-0 grow flex-col gap-7">
-            {auth === 'guest' ? (
-              <GuestSections
-                regionName={regionName}
-                onLogin={() => router.push('/login')}
-                notReady={notReady}
-              />
-            ) : (
+            {/* 비회원 · 판단 전이면 본문이 없다. 로그아웃 · 탈퇴 뒤 홈으로 가는 동안도 비어 있고 대화상자만 열린 채 꺼져 있다 */}
+            {member && (
               <>
                 <SettingsSection id="me-account" title="계정">
                   <MenuRow
@@ -300,7 +298,7 @@ export function MeScreen({
                   />
                 </SettingsSection>
 
-                {auth === 'member' && (
+                {member === 'member' && (
                   <SettingsSection id="me-report" title="내 보고">
                     <MenuRow title="이번 주 보고 수정" onClick={() => notReady('보고 수정')} />
                     <MenuRow
@@ -317,7 +315,7 @@ export function MeScreen({
                     value="52주"
                     onClick={() => notReady('모으는 정보와 보관 기간')}
                   />
-                  {auth === 'member' ? (
+                  {member === 'member' ? (
                     <MenuRow
                       title={<span className="text-danger">건강정보 동의 철회</span>}
                       description="보낸 보고를 모두 지워요"
@@ -378,57 +376,6 @@ export function MeScreen({
         className="fixed inset-x-0 bottom-20 px-page-mobile tablet:mx-auto tablet:w-dialog-tablet tablet:px-0 desktop:bottom-8"
       />
     </div>
-  )
-}
-
-/** 비로그인 (Settings-guest). 둘러보는 동네 · 로그인 안내 · 개인정보 안내 · 서비스 정보 */
-function GuestSections({
-  regionName,
-  onLogin,
-  notReady,
-}: {
-  regionName: string
-  onLogin: () => void
-  notReady: (screen: string) => void
-}) {
-  return (
-    <>
-      <SettingsSection id="me-region" title="내 동네">
-        {/* 둘러보기 동네 고르기(S02-1 Setup-1-browse)는 이미 있다 */}
-        <MenuRow title="둘러보는 동네" value={regionName} href="/browse/region" />
-      </SettingsSection>
-
-      <section
-        id="me-login"
-        aria-labelledby="me-login-title"
-        className="flex scroll-mt-8 flex-col gap-3 rounded-card bg-section p-5"
-      >
-        <h2
-          id="me-login-title"
-          tabIndex={-1}
-          className="text-section-title font-bold text-fg focus:outline-none"
-        >
-          로그인하면 보고할 수 있어요
-        </h2>
-        <p className="text-body-strong leading-[1.55] text-fg-sub">
-          한 주에 한 번 10초면 돼요. 이름·연락처·주소는 받지 않아요.
-        </p>
-        <Button fullWidth onClick={onLogin}>
-          로그인하고 보고하기
-        </Button>
-      </section>
-
-      <SettingsSection id="me-privacy" title="개인정보 안내">
-        <MenuRow
-          title="모으는 정보와 보관 기간"
-          value="52주"
-          onClick={() => notReady('모으는 정보와 보관 기간')}
-        />
-        <MenuRow title="개인정보 처리방침" onClick={() => notReady('개인정보 처리방침')} />
-      </SettingsSection>
-
-      <ServiceSection notReady={notReady} />
-    </>
   )
 }
 
