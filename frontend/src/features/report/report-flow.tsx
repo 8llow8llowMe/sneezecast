@@ -1,6 +1,8 @@
 'use client'
 
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useState, useSyncExternalStore } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 
 import { Button } from '@/components/button'
 import { Callout } from '@/components/callout'
@@ -8,9 +10,18 @@ import { ChoiceButton } from '@/components/choice-button'
 import { ChevronRightIcon, SuccessIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
 import { ToastRegion, useToast } from '@/components/toast'
+import { INSTALL_PATH, installSearch, markInstallEntry } from '@/features/install/install-entry'
+import { navHref } from '@/lib/nav'
 import { useModalParam } from '@/lib/use-modal-param'
+import { usePushSupport } from '@/lib/use-push-support'
 
-import { cancelReport, submitReport, updateReport } from './report-client'
+import {
+  cancelReport,
+  getSubmittedReport,
+  submitReport,
+  subscribeSubmittedReport,
+  updateReport,
+} from './report-client'
 import { summarizeAnswer, SYMPTOM_OPTIONS, toggleSymptom } from './symptoms'
 import {
   REPORT_STEPS,
@@ -26,12 +37,21 @@ export const REPORT_PARAM = 'report'
 
 export type ReportFlowProps = {
   week: ReportWeek
-  /** 이번 주에 이미 보낸 보고. 있으면 시작 단계가 "수정" 안내를 보인다 */
-  submitted: SubmittedReport | null
-  /** 보내기 · 고치기 · 되돌리기가 끝난 뒤 부른다. 홈이 보고 상태를 갖는다 */
-  onSubmittedChange: (next: SubmittedReport | null) => void
-  /** 아직 없는 화면(홈 화면 추가 안내 · 함께 채우기)으로 가는 동작 */
+  /** 둘러보기 동네(화면이 확인한 코드). 홈 화면 추가 안내에서 주소로 바로 닫을 때 홈 주소에 남긴다 */
+  regionCode: string | null
+  /** 아직 없는 화면(함께 채우기)으로 가는 동작 */
   onNotReady: (screen: string) => void
+}
+
+// 서버는 보낸 보고를 모른다(목 모듈 메모리). 서버와 첫 그림(하이드레이션)은 보낸 보고 없이 그린다
+const serverReportSnapshot = (): SubmittedReport | null => null
+
+/**
+ * 이번 주에 보낸 보고 (`report-client` 목). 홈 밖에 두어 홈을 떠났다 돌아와도(설치 안내 → 닫기) 완료 단계가 이어진다.
+ * 새로고침하면 비고, 하이드레이션 첫 그림도 비어 있다 — 그때 `?report=done` 은 시작 단계로 보인다(`resolveStep`).
+ */
+function useSubmittedReport(): SubmittedReport | null {
+  return useSyncExternalStore(subscribeSubmittedReport, getSubmittedReport, serverReportSnapshot)
 }
 
 /**
@@ -42,15 +62,21 @@ export type ReportFlowProps = {
  * | 시작 | `?report=start` | 증상 없었어요(바로 보내고 되돌리기 알림) · 증상이 있었어요 |
  * | 증상 고르기 1/2 | `?report=symptom` | 여러 개 고르기, "그 외 증상만" 은 단독 |
  * | 확인 2/2 | `?report=confirm` | 보낼 내용 · 개인정보 안내 · 보내기 |
- * | 완료 | `?report=done` | 모바일 전체 화면 · 대화상자. 변화 보기 · 수정하기 · 함께 채우기 |
+ * | 완료 | `?report=done` | 모바일 전체 화면 · 대화상자. 홈 화면 추가 안내(홈 화면 앱이어야 알림을 받는 기기만) · 변화 보기 · 수정하기 · 함께 채우기 |
  *
  * 단계로 나아갈 때는 기록을 쌓아 뒤로 가기가 이전 단계로 이어지고, 보낸 뒤 완료는 기록 없이 바꾼다.
  * 대화상자 하나를 열어 둔 채 단계에 따라 내용만 바꾼다 — 단계마다 닫고 열면 화면이 깜빡인다.
  *
+ * 보낸 보고는 이 화면 · 홈의 상태가 아니라 `report-client` 가 갖는다. 완료에서 홈 화면 추가 안내(`/install`)로 갔다가
+ * 닫으면(`router.back()`) 홈이 새로 그려져도 `?report=done` 이 완료로 남는다.
+ *
  * 시안: Report-start · Report-symptom · Report-confirm · Report-edit · Report-done · Report-done-ok (+ -T · -D), Flow
  */
-export function ReportFlow({ week, submitted, onSubmittedChange, onNotReady }: ReportFlowProps) {
+export function ReportFlow({ week, regionCode, onNotReady }: ReportFlowProps) {
   const param = useModalParam(REPORT_PARAM)
+  const searchParams = useSearchParams()
+  const submitted = useSubmittedReport()
+  const pushSupport = usePushSupport()
   const { toast, show, dismiss } = useToast()
   const [selected, setSelected] = useState<ReportSymptom[]>([])
   const [pending, setPending] = useState(false)
@@ -62,8 +88,8 @@ export function ReportFlow({ week, submitted, onSubmittedChange, onNotReady }: R
     const undoable = answer.kind === 'none' && submitted === null
     setPending(true)
     try {
-      const result = submitted ? await updateReport(answer) : await submitReport(answer)
-      onSubmittedChange(result)
+      // 보낸 보고는 report-client 가 갖고 알린다(useSubmittedReport)
+      await (submitted ? updateReport(answer) : submitReport(answer))
       // 고른 증상은 보낸 보고에 담겼다. 다시 고칠 때는 보낸 보고에서 채운다 (startSymptoms)
       setSelected([])
       param.replace('done')
@@ -79,7 +105,6 @@ export function ReportFlow({ week, submitted, onSubmittedChange, onNotReady }: R
 
   function undo() {
     void cancelReport().then(() => {
-      onSubmittedChange(null)
       setSelected([])
       param.replace('start')
     })
@@ -229,19 +254,29 @@ export function ReportFlow({ week, submitted, onSubmittedChange, onNotReady }: R
             이번 주 안에는 언제든 고칠 수 있어요.
             <br className="tablet:hidden" /> 집계에는 한 번만 들어가요.
           </p>
-          <button
-            type="button"
-            onClick={() => onNotReady('홈 화면 추가 안내')}
-            className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded-button bg-section p-4 text-left tablet:mt-0"
-          >
-            <span className="flex flex-col gap-0.5">
-              <span className="text-body font-semibold text-fg">
-                다음 주 월요일에 알려드릴까요?
+          {/*
+            홈 화면 앱이어야 알림을 받는 기기(needs-install)에만 설치 안내로 잇는다. 이미 받을 수 있는 기기(supported)는
+            설치가 필요 없고 알림 켜기(푸시 구독)는 2단계라, 받을 수 없는 브라우저(unsupported)는 설치해도 받지 못해,
+            판단 전(null)은 기기를 몰라 그리지 않는다 (docs/design/SCREENS.md "보고 완료").
+            앱 안 링크라 markInstallEntry 로 표시를 남겨 설치 안내의 닫기가 router.back() 으로 이 완료 화면에 돌아온다
+          */}
+          {pushSupport === 'needs-install' && (
+            <Link
+              href={navHref(INSTALL_PATH, installSearch(regionCode, searchParams))}
+              onClick={markInstallEntry}
+              className="mt-3 flex items-center justify-between gap-3 rounded-button bg-section p-4 text-left tablet:mt-0"
+            >
+              <span className="flex flex-col gap-0.5">
+                <span className="text-body font-semibold text-fg">
+                  다음 주 월요일에 알려드릴까요?
+                </span>
+                <span className="text-sub text-fg-sub">
+                  홈 화면에 추가하면 알림을 받을 수 있어요
+                </span>
               </span>
-              <span className="text-sub text-fg-sub">홈 화면에 추가하면 알림을 받을 수 있어요</span>
-            </span>
-            <ChevronRightIcon className="shrink-0 text-fg-muted" />
-          </button>
+              <ChevronRightIcon className="shrink-0 text-fg-muted" />
+            </Link>
+          )}
         </>
       )}
 
