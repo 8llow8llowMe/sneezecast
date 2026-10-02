@@ -32,4 +32,10 @@ describe('navHref', () => {
     expect(navHref('/me', 'region=1111051500')).toBe('/me?region=1111051500')
     expect(navHref('/me')).toBe('/me')
   })
+
+  it('주소에 이미 쿼리가 있으면 & 로 잇는다', () => {
+    expect(navHref('/official?mock=published', 'region=1111051500')).toBe(
+      '/official?mock=published&region=1111051500',
+    )
+  })
 })
