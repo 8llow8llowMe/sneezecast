@@ -12,6 +12,7 @@ import {
   loginWithEmail,
   resetMockSession,
 } from '@/features/auth/auth-client'
+import { leaveHomeNotice, takeHomeNotice } from '@/features/me/leave-notice'
 
 import { HomeScreen } from './home-screen'
 import { HOME_MOCKS } from './mock'
@@ -46,6 +47,17 @@ describe('HomeScreen', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('내 정보가 남긴 알림(동의 철회 뒤 로그아웃)을 한 번 띄우고 비운다', () => {
+    takeHomeNotice()
+    leaveHomeNotice('건강정보 동의를 철회하고 로그아웃했어요')
+    render(<HomeScreen week={HOME_MOCKS.normal} />)
+
+    expect(
+      screen.getByText('건강정보 동의를 철회하고 로그아웃했어요').closest('[role="status"]'),
+    ).not.toBeNull()
+    expect(takeHomeNotice()).toBeNull()
   })
 
   it('화면 제목(h1)에 동네 이름을 담는다', () => {

@@ -393,21 +393,17 @@ describe('목 프로필 · 로그아웃 · 동의 철회 · 탈퇴', () => {
     expect(getMockProfile()).toBeNull()
   })
 
-  it('동의 철회하면 미동의 회원이 되고 프로필은 남는다', async () => {
+  it('동의 철회하면 로그아웃과 같이 비회원이 되고 프로필도 지운다', async () => {
     await loginWithEmail('dong@example.com', 'dongne2026')
     await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
     await withdrawHealthConsent()
-    expect(getMockSession()).toBe('member-no-consent')
-    expect(getMockProfile()?.email).toBe('dong@example.com')
+    expect(getMockSession()).toBe('guest')
+    expect(getMockProfile()).toBeNull()
   })
 
-  it('비회원 · 미동의 회원 세션에서 동의 철회해도 세션을 바꾸지 않는다 (덮어쓰기로 연 경우)', async () => {
+  it('비회원 세션에서 동의 철회해도 비회원 그대로다 (덮어쓰기로 연 경우)', async () => {
     await withdrawHealthConsent()
     expect(getMockSession()).toBe('guest')
-
-    await loginWithEmail('dong@example.com', 'dongne2026')
-    await withdrawHealthConsent()
-    expect(getMockSession()).toBe('member-no-consent')
   })
 
   it.each([

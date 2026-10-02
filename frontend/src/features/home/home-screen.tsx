@@ -12,6 +12,7 @@ import { ToastRegion, useToast } from '@/components/toast'
 import { HealthConsentSheet } from '@/features/auth/health-consent-sheet'
 import { LoginSheet } from '@/features/auth/login-sheet'
 import { MOCK_AUTH_PARAM, useMockAuth } from '@/features/auth/use-mock-auth'
+import { takeHomeNotice } from '@/features/me/leave-notice'
 import { useRequiredStepsGate } from '@/features/me/member-gate'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { REPORT_PARAM, ReportFlow } from '@/features/report/report-flow'
@@ -91,6 +92,12 @@ export function HomeScreen({
     const timer = setTimeout(() => replaceReport(fixed), 0)
     return () => clearTimeout(timer)
   }, [reportValue, auth, replaceReport, requiredTarget])
+
+  // 내 정보에서 건강정보 동의를 철회하고 왔으면 알림을 한 번 띄운다(`features/me/leave-notice.ts`)
+  useEffect(() => {
+    const notice = takeHomeNotice()
+    if (notice) show({ message: notice })
+  }, [show])
 
   // 동네 바꾸기(S02) · 알림 설정(S10) 화면이 생기면 각각 연결한다
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })

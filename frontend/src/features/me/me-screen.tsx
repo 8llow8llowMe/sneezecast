@@ -31,6 +31,7 @@ import {
   parseConfirm,
 } from './confirm'
 import { ConfirmDialog } from './confirm-dialog'
+import { CONSENT_WITHDRAWN_NOTICE, leaveHomeNotice } from './leave-notice'
 import {
   ME_DEVICES_PATH,
   ME_NOTICES,
@@ -45,7 +46,7 @@ import { useMemberGate, useRequiredStepsTarget } from './member-gate'
 import { PushUnavailable } from './push-unavailable'
 import { MenuRow, sectionTitleId, SettingsSection, SwitchRow } from './settings-row'
 
-/** 대화상자별 목 API. 성공하면 `auth-client` 가 목 세션을 바꾼다(로그아웃 · 탈퇴 → guest, 동의 철회 → member-no-consent) */
+/** 대화상자별 목 API. 성공하면 `auth-client` 가 목 세션을 바꾼다(로그아웃 · 탈퇴 · 동의 철회 → guest) */
 const CONFIRM_ACTIONS: Record<ConfirmKind, () => Promise<void>> = {
   logout,
   'consent-withdraw': withdrawHealthConsent,
@@ -73,7 +74,7 @@ function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label
  * 동의하지 않은 회원은 시안이 없어 회원 화면에서 `내 보고` 섹션을 빼고, `건강정보 동의 철회` 자리에 `건강정보 동의하기` 를 둔다.
  *
  * 머리줄 · 탭바(셸)는 판단 전(서버 · 하이드레이션 첫 그림)에도 그린다. 본문 · 설정 메뉴만 회원으로 판단된 뒤 그린다.
- * 로그아웃 · 탈퇴에 성공하면 세션이 먼저 비회원이 되지만, 보내는 중(`pending`)에는 가드를 멈춰 로그인이 아니라 홈으로 간다.
+ * 로그아웃 · 탈퇴 · 동의 철회에 성공하면 세션이 먼저 비회원이 되지만, 보내는 중(`pending`)에는 가드를 멈춰 로그인이 아니라 홈으로 간다.
  *
  * | 폭 | 구성 |
  * | --- | --- |
@@ -118,7 +119,7 @@ export function MeScreen({
   // 보내는 중인 대화상자. 성공한 뒤 이동할 때까지 그대로 둔다 — 세션이 먼저 바뀌어도 대화상자가 닫히지 않게 한다
   const [pending, setPending] = useState<ConfirmKind | null>(null)
   const [failed, setFailed] = useState<ConfirmKind | null>(null)
-  // 비회원이면 로그인으로 보낸다(돌아올 곳 /me). 보내는 중(로그아웃 · 탈퇴 성공 뒤 홈으로 가는 중)에는 멈춘다
+  // 비회원이면 로그인으로 보낸다(돌아올 곳 /me). 보내는 중(로그아웃 · 탈퇴 · 동의 철회 성공 뒤 홈으로 가는 중)에는 멈춘다
   const member = useMemberGate({ next: ME_PATH, paused: pending !== null })
 
   const navSearch = regionSearch(regionCode)
@@ -191,8 +192,9 @@ export function MeScreen({
       return
     }
     if (!active.current) return
-    // 로그아웃 · 탈퇴는 비회원 홈, 동의 철회는 홈으로 간다.
-    // 동의 철회는 원래 "동의 철회 직후 홈"(Home-purging, 다음 이슈)이다 — 그 화면이 생기면 이동할 곳을 바꾼다
+    // 셋 모두 비회원 홈으로 간다. 동의 철회는 로그아웃이 따라오므로 홈이 알림으로 알린다.
+    // 원래 시안은 "동의 철회 직후 홈"(Home-purging, 다음 이슈)이다 — 그 화면이 생기면 이동할 곳을 바꾼다
+    if (kind === 'consent-withdraw') leaveHomeNotice(CONSENT_WITHDRAWN_NOTICE)
     navTrail.replace(navHref('/', navSearch))
   }
 
