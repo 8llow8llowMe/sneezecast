@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 
 import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
 import { clientEnv } from '@/lib/env.client'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
 import { THEME_COLOR } from '@/styles/theme-color'
 
 // Pretendard Variable — unicode-range 로 분할된 dynamic subset.
@@ -33,11 +34,15 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
   return (
     <html lang="ko">
       <body className="min-h-dvh antialiased">
-        {children}
-        {/* 로그인 만료를 받아 로그인 화면으로 보낸다. 주소 쿼리(목 재현 입력)를 읽어 Suspense 로 감싼다 */}
-        <Suspense fallback={null}>
-          <SessionExpiryWatcher />
-        </Suspense>
+        {/* 앱 안 이동 경로 기록. 모든 화면의 "뒤로" 가 이 기록으로 판단한다(docs/conventions.md "화면의 뒤로").
+            앱 안 replace 는 모두 이 기록을 거쳐야 해 로그인 만료 감시도 안에 둔다 */}
+        <NavTrailProvider>
+          {children}
+          {/* 로그인 만료를 받아 로그인 화면으로 보낸다. 주소 쿼리(목 재현 입력)를 읽어 Suspense 로 감싼다 */}
+          <Suspense fallback={null}>
+            <SessionExpiryWatcher />
+          </Suspense>
+        </NavTrailProvider>
       </body>
     </html>
   )

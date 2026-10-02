@@ -1,20 +1,9 @@
 'use client'
 
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react'
 
 import type { District } from '@/features/region/types'
-
-import { canGoBackTo, nextTrail } from './onboarding-trail'
+import { useNavTrail } from '@/lib/use-nav-trail'
 
 /**
  * 첫 진입(S01 · S02 · S13) 화면이 같이 쓰는 값과 이동. `app/(onboarding)/layout.tsx` 가
@@ -136,6 +125,7 @@ type OnboardingState = {
    * 앞 단계로. 앱 안에서 앞 단계 후보 중 하나를 거쳐 왔으면 기록을 되돌리고(휴대폰 뒤로 가기와 같다),
    * 주소로 바로 들어와 앞 단계 기록이 없으면 첫 후보로 기록을 쌓지 않고 바꿔 간다.
    * 후보가 여럿인 것은 같은 화면에 여러 길로 오기 때문이다 (동네 선택 ← 로그인 · 이메일 가입).
+   * 판단은 루트의 앱 안 이동 기록이 한다(`useNavTrail`, docs/conventions.md "화면의 뒤로").
    */
   goBack: (previousPaths: string | readonly [string, ...string[]]) => void
   /** 기록을 쌓지 않고 간다 (값이 없어 앞 단계로 돌려보낼 때) */
@@ -163,8 +153,7 @@ export function OnboardingProvider({
   /** 테스트에서 다음 단계부터 그릴 때 쓴다 */
   initialPasswordReset?: PasswordResetDraft
 }) {
-  const router = useRouter()
-  const pathname = usePathname()
+  const { replace, goBack: goBackInTrail } = useNavTrail()
   const [district, setDistrict] = useState<District | null>(initialDistrict)
   const [adultConfirmed, setAdultConfirmed] = useState(initialAdultConfirmed)
   const [notificationOptIn, setNotificationOptIn] = useState(false)
@@ -199,30 +188,12 @@ export function OnboardingProvider({
     [],
   )
 
-  // 렌더에 쓰지 않는 이동 기록이라 ref 에 둔다. 주소가 바뀐 뒤(effect)에 갱신한다
-  const trail = useRef<string[]>([])
-  const replacing = useRef(false)
-
-  useEffect(() => {
-    trail.current = nextTrail(trail.current, pathname, replacing.current)
-    replacing.current = false
-  }, [pathname])
-
-  const replace = useCallback(
-    (path: string) => {
-      replacing.current = true
-      router.replace(path)
-    },
-    [router],
-  )
-
   const goBack = useCallback(
     (previousPaths: string | readonly [string, ...string[]]) => {
       const candidates = typeof previousPaths === 'string' ? [previousPaths] : previousPaths
-      if (canGoBackTo(trail.current, candidates)) router.back()
-      else replace(candidates[0])
+      goBackInTrail(candidates[0], candidates)
     },
-    [router, replace],
+    [goBackInTrail],
   )
 
   const value = useMemo(

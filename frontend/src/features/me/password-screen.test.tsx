@@ -15,6 +15,7 @@ import {
   signup,
 } from '@/features/auth/auth-client'
 import { consentFor } from '@/features/auth/legal'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import { MeScreen } from './me-screen'
 import { MeTrailProvider } from './me-trail'
@@ -39,8 +40,13 @@ vi.mock('@/features/auth/auth-client', async (importOriginal) => {
   }
 })
 
+// 앱에서는 루트 레이아웃의 NavTrailProvider(앱 안 이동 기록)가 내 정보 레이아웃을 감싼다
 function withTrail(children: ReactNode) {
-  return <MeTrailProvider>{children}</MeTrailProvider>
+  return (
+    <NavTrailProvider>
+      <MeTrailProvider>{children}</MeTrailProvider>
+    </NavTrailProvider>
+  )
 }
 
 function renderPassword(props: { regionCode?: string } = {}) {

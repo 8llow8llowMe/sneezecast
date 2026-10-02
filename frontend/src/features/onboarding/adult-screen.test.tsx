@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { District } from '@/features/region/types'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import { AdultScreen } from './adult-screen'
 import { OnboardingProvider } from './onboarding-context'
@@ -19,9 +20,11 @@ const DISTRICT: District = { code: '11680640', name: '역삼1동', sigungu: '서
 
 function renderAdult(initial: District | null = DISTRICT) {
   return render(
-    <OnboardingProvider initialDistrict={initial}>
-      <AdultScreen />
-    </OnboardingProvider>,
+    <NavTrailProvider>
+      <OnboardingProvider initialDistrict={initial}>
+        <AdultScreen />
+      </OnboardingProvider>
+    </NavTrailProvider>,
   )
 }
 
@@ -67,9 +70,11 @@ describe('AdultScreen', () => {
     location.pathname = '/setup/region'
     // 같은 요소 객체를 다시 넘기면 React 가 다시 그리지 않아 매번 새로 만든다
     const tree = () => (
-      <OnboardingProvider initialDistrict={DISTRICT}>
-        <AdultScreen />
-      </OnboardingProvider>
+      <NavTrailProvider>
+        <OnboardingProvider initialDistrict={DISTRICT}>
+          <AdultScreen />
+        </OnboardingProvider>
+      </NavTrailProvider>
     )
     const { rerender } = render(tree())
     location.pathname = '/setup/adult'
