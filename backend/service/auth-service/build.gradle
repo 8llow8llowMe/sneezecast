@@ -17,6 +17,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    // 서비스 간 호출(내 동네 저장 · 조회 때 surveillance 행정동 확인). 버전은 Spring Cloud BOM. 서킷은 OpenFeign 자동 래핑을 쓰지 않고
+    // 공통 헬퍼 InternalClientSupport 가 CircuitBreakerRegistry 로 직접 감싼다 (coding-conventions §9).
+    implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
+    implementation 'org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j'
     // 이메일 인증코드 발송
     implementation 'org.springframework.boot:spring-boot-starter-mail'
     // 인증 메일 HTML 템플릿 렌더링. REST 서비스라 MVC 뷰 리졸버를 끌어오는 starter 대신 엔진만 쓴다.
