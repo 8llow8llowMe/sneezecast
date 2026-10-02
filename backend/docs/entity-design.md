@@ -103,6 +103,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 - `member` 컬럼이 아니라 테이블로 둔 이유: `region` 컨텍스트가 소유하고, 관심 지역을 여럿 두게 되면 unique 만 풀어 1:N 으로 넘어간다.
 - 행정동이 개편돼도 이 행은 자동으로 바꾸지 않는다. 폐지된 코드면 화면에서 다시 선택하게 한다 (§3-1).
+- 저장은 `PUT /api/v1/members/me/region` 의 회원당 1행 upsert 이고 **현재 값만** 둔다(변경 이력 없음). 현행 코드만 저장할 수 있다. 이름 · 폐지 여부는 저장하지 않고 조회할 때마다 surveillance 내부 API 로 읽어 `abolished` 로 내린다.
 - FE 는 주간 보고 요청에 이 코드를 실어 보낸다. surveillance 는 요청 코드를 `district` 로 다시 검증하고 보고 행에 **복사**한다 (§2-1) — 회원이 동네를 바꿔도 지난 보고의 지역은 바뀌지 않는다.
 
 ### 1-5. report_purge_request — 원시 보고 파기 요청

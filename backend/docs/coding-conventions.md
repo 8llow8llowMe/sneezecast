@@ -173,6 +173,7 @@ public record WeeklyReportRequest(
 - `url` 과 per-client `configuration` 은 기본으로 붙이지 않는다. timeout 은 `spring.cloud.openfeign.client.config` 공통 설정으로 관리한다.
 - Resilience4j 설정은 `application.yml` 의 `configs.default` / `instances.<논리명>`. 서킷 인스턴스명은 대상 논리명.
 - 서킷 · 예외 변환은 공통 헬퍼 `requestAndUnwrap(대상, Supplier)` 에서. 5xx · 타임아웃만 집계하고 4xx 는 `ignore-exceptions` 로 뺀다. `FeignException` · `CallNotPermittedException` 은 상위로 흘리지 않고 `INTERNAL_SERVICE_UNAVAILABLE`(503) 도메인 예외로 바꾼다.
+  - 구현은 auth `global/client/InternalClientSupport` 다. 4xx 는 상태와 봉투 `resultCode` 를 담은 `InternalClientRejectedException`, 그 밖(5xx · 타임아웃 · 서킷 오픈 · 응답 해석 실패)은 `InternalServiceUnavailableException` 으로 올리고, 호출 어댑터(`*ClientAdapter`)가 뜻을 정해(예: 404 + 리소스 없음 코드 → empty) 도메인 예외로 바꾼다 — 두 예외는 어댑터 밖으로 새지 않는다. 두 번째로 Feign 을 쓰는 서비스가 생기면 core 로 올린다.
 - **모든 외부 호출(다른 서비스 · 외부 API)에 connect / read timeout 을 명시한다.**
 - 한 서비스에 같은 단순 이름의 `@Component` 가 두 패키지에 있으면 기동이 실패한다. 컨텍스트가 여럿이면 클래스명에 접두사를 붙이고, `*ApplicationTests`(컨텍스트 로딩)로 확인한다.
 
