@@ -7,6 +7,9 @@
 server:
   port: ${API_GATEWAY_PORT}
   shutdown: graceful
+  # 접속 주소를 X-Forwarded-For 로 바꾸지 않는다. 신뢰 프록시 판정(TrustedProxyHeaderWebFilter)이 실제 접속 주소를 봐야 한다.
+  # 비워 두면 Boot 가 클라우드 플랫폼을 감지했을 때 NATIVE 를 켜서, 위조 XFF 하나로 신뢰 프록시 행세를 할 수 있다.
+  forward-headers-strategy: none
 
 spring:
   cloud:
@@ -55,6 +58,10 @@ eureka:
   client:
     serviceUrl:
       defaultZone: http://${SERVICE_DISCOVERY_HOSTNAME}:${SERVICE_DISCOVERY_PORT}/eureka/
+
+gateway:
+  # X-Real-IP · X-Forwarded-* 를 믿을 앞단 프록시(nginx). 콤마 구분 IP 또는 CIDR. 비거나 형식이 틀리면 기동 실패.
+  trusted-proxies: ${GATEWAY_TRUSTED_PROXIES}
 
 jwt:
   # auth-service · 각 서비스와 같은 JWT_ACCESS_KEY 다. HS512 라 UTF-8 64바이트 이상이어야 한다 (짧으면 기동 실패).

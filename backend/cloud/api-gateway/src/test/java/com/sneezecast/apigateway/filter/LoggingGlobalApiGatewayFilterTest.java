@@ -6,6 +6,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import java.net.InetSocketAddress;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -73,6 +74,27 @@ class LoggingGlobalApiGatewayFilterTest {
 
         assertThat(rendered).contains("/api/v1/districts/1111051500");
         assertThat(rendered).doesNotContain("***");
+    }
+
+    @Test
+    @DisplayName("clientIp 는 X-Real-IP 다 — X-Forwarded-For 첫 값은 클라이언트가 정하므로 믿지 않는다")
+    void clientIpComesFromRealIpNotForwardedFor() {
+        String rendered = runFilterAndRenderLogs(MockServerHttpRequest.get("/api/v1/auth/email-verifications")
+            .header("X-Forwarded-For", "6.6.6.6, 192.168.0.12")
+            .header("X-Real-IP", "203.0.113.7")
+            .remoteAddress(new InetSocketAddress("192.168.0.12", 50000)));
+
+        assertThat(rendered).contains("clientIp=203.0.113.7").doesNotContain("6.6.6.6");
+    }
+
+    @Test
+    @DisplayName("X-Real-IP 가 없으면 접속 주소를 쓴다 — X-Forwarded-For 만 있어도 마찬가지")
+    void clientIpFallsBackToRemoteAddress() {
+        String rendered = runFilterAndRenderLogs(MockServerHttpRequest.get("/api/v1/auth/email-verifications")
+            .header("X-Forwarded-For", "6.6.6.6")
+            .remoteAddress(new InetSocketAddress("192.168.0.50", 50000)));
+
+        assertThat(rendered).contains("clientIp=192.168.0.50").doesNotContain("6.6.6.6");
     }
 
     private String runFilterAndRenderLogs(MockServerHttpRequest.BaseBuilder<?> request) {
