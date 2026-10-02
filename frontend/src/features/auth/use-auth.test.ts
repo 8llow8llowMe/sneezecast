@@ -3,12 +3,22 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resetSessionForTests, restoreSession, setSession } from '@/lib/session/session-store'
-import { holdReissue, memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
+import {
+  errorResponse,
+  holdReissue,
+  holdRequests,
+  memberToken,
+  myInfoBody,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
-import { loginWithEmail, resetMockSession } from './auth-client'
+import { EXAMPLE_PROFILES, loginWithEmail, resetMockSession } from './auth-client'
+import { resetMemberInfoForTests, retryMemberInfo, startMemberInfo } from './member-info'
 import { authStateOf, useAuth, useAuthSettled } from './use-auth'
 import { useMemberRequirements } from './use-member-requirements'
-import { useMockProfile } from './use-mock-auth'
+import { useMockProfile, useMockProfileStatus } from './use-mock-auth'
 
 // 테스트에는 Next 라우터가 없다. 주소 쿼리는 이 값으로 흉내 낸다
 let search = ''
@@ -16,15 +26,27 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(search),
 }))
 
+let stopMemberInfo: () => void = () => {}
+
 beforeEach(() => {
   search = ''
   resetMockSession()
   resetSessionForTests()
+  resetMemberInfoForTests()
+  stopMemberInfo = startMemberInfo()
 })
 
 afterEach(() => {
+  stopMemberInfo()
+  resetMemberInfoForTests()
   resetApiSession()
 })
+
+const INFO = 'GET /api/v1/members/me'
+const REGION = 'GET /api/v1/members/me/region'
+
+/** 요청이 나가고 응답의 then 이 돌 때까지 */
+const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)))
 
 describe('authStateOf', () => {
   it('회원이 아니면(복원 전 · 복원 중 포함) 비회원이다', () => {
@@ -95,24 +117,115 @@ describe('useAuthSettled', () => {
   })
 })
 
-describe('실데이터 모드의 QA 덮어쓰기', () => {
-  it('?mock-provider= 를 듣지 않는다', () => {
+describe('useMockProfile (실데이터)', () => {
+  const profileHook = () =>
+    renderHook(() => ({ profile: useMockProfile(), status: useMockProfileStatus() }))
+
+  it('읽는 동안은 예시 프로필 없이 null · loading 이고, 받으면 내 정보를 옮긴다 (?mock-provider= 는 듣지 않는다)', async () => {
     selectApiSource()
-    search = 'mock-provider=kakao'
-    setSession(memberToken())
-    const { result } = renderHook(() => useMockProfile())
-    expect(result.current?.provider).toBe('email')
+    search = 'mock-provider=email'
+    const server = holdRequests()
+    const { result } = profileHook()
+    expect(result.current).toEqual({ profile: null, status: 'ready' })
+
+    act(() => setSession(memberToken({ pendingConsents: ['TERMS_OF_SERVICE'] })))
+    expect(result.current).toEqual({ profile: null, status: 'loading' })
+
+    await flush()
+    act(() => {
+      server.reply(
+        INFO,
+        okResponse(
+          myInfoBody({
+            email: 'kakao@example.com',
+            nickname: '재채기탐정',
+            provider: 'KAKAO',
+            hasPassword: false,
+            pendingConsents: ['TERMS_OF_SERVICE'],
+          }),
+        ),
+      )
+      server.reply(
+        REGION,
+        okResponse({
+          code: '11680640',
+          name: '역삼1동',
+          sigungu: '서울특별시 강남구',
+          abolished: true,
+        }),
+      )
+    })
+    await flush()
+    expect(result.current).toEqual({
+      profile: {
+        provider: 'kakao',
+        email: 'kakao@example.com',
+        nickname: '재채기탐정',
+        hasPassword: false,
+        region: { code: '11680640', name: '역삼1동' },
+        regionAbolished: true,
+        termsReconsentRequired: true,
+      },
+      status: 'ready',
+    })
+    expect(result.current.profile).not.toEqual(EXAMPLE_PROFILES.email)
   })
 
-  it('?mock-required= 를 듣지 않고 재동의할 항목(pendingConsents)으로 거칠 화면을 정한다', () => {
+  it('읽지 못하면 null · failed 이고, 다시 시도해 받으면 프로필이다', async () => {
+    selectApiSource()
+    const server = holdRequests()
+    const { result } = profileHook()
+    act(() => setSession(memberToken()))
+    await flush()
+    act(() => server.reply(INFO, errorResponse('GATEWAY_003', 503)))
+    await flush()
+    expect(result.current).toEqual({ profile: null, status: 'failed' })
+
+    act(() => retryMemberInfo())
+    expect(result.current.status).toBe('loading')
+    await flush()
+    act(() => server.reply(INFO, okResponse(myInfoBody())))
+    await flush()
+    expect(result.current.status).toBe('ready')
+    expect(result.current.profile?.email).toBe('me@example.com')
+  })
+
+  it('목 세션 프로필이 있어도 실데이터에서는 쓰지 않는다', async () => {
+    await loginWithEmail('mock@example.com', 'dongne2026', 'mock')
+    selectApiSource()
+    holdRequests()
+    const { result } = profileHook()
+    act(() => setSession(memberToken()))
+    expect(result.current).toEqual({ profile: null, status: 'loading' })
+  })
+})
+
+describe('실데이터 모드의 QA 덮어쓰기', () => {
+  it('?mock-required= 를 듣지 않고 재동의할 항목(pendingConsents)으로 거칠 화면을 정한다', async () => {
     selectApiSource()
     search = 'mock-required=region'
-    setSession(memberToken())
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
     const { result } = renderHook(() => useMemberRequirements())
     expect(result.current.steps).toEqual([])
 
     act(() => setSession(memberToken({ pendingConsents: ['TERMS_OF_SERVICE'] })))
-    expect(result.current).toEqual({ steps: ['terms'], abolishedRegion: null })
+    // 내 동네를 읽기 전에는 동네 조건을 판단하지 않는다
+    expect(result.current).toEqual({ steps: ['terms'], abolishedRegion: null, settled: false })
+
+    await flush()
+    act(() =>
+      server.reply(
+        REGION,
+        okResponse({ code: '11680640', name: null, sigungu: null, abolished: true }),
+      ),
+    )
+    await flush()
+    expect(result.current).toEqual({
+      steps: ['terms', 'region'],
+      abolishedRegion: { code: '11680640', name: null },
+      settled: true,
+    })
   })
 
   it('목데이터 모드는 ?mock-required= 를 그대로 듣는다', () => {

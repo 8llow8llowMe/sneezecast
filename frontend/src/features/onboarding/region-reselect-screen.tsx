@@ -5,8 +5,9 @@ import { useSearchParams } from 'next/navigation'
 
 import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
-import { type MemberRegion, saveRegion } from '@/features/auth/auth-client'
+import { saveRegion, type SaveRegionResult } from '@/features/auth/auth-client'
 import {
+  type AbolishedRegion,
   carriedParams,
   NEXT_PARAM,
   safeNextPath,
@@ -22,6 +23,7 @@ import { useDistrictSearch } from '@/features/region/use-district-search'
 import { withIGa } from '@/lib/korean'
 import { isSessionExpiring } from '@/lib/session-expiry'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useDataSource } from '@/lib/use-data-source'
 
 import {
   type DistrictOption,
@@ -70,11 +72,15 @@ function useCandidates(code: string | null): CandidateLoad {
  * - 옛 동네 이름을 넣은 안내 → 검색 칸 → 목록 → `이 동네로 바꾸기`. 단계 표시는 없다
  * - 검색어가 비었으면 이어 받은 동네 후보(`listSuccessorDistricts`, 옛 동네 일부면 `옛 ○○1동 일부`)를, 검색어가 있으면 검색 결과를
  *   보인다. 검색어를 고치면 선택을 지운다(동네 선택과 같다)
- * - **첫 진입 Provider 의 가입 초안 · 고른 동네를 쓰지 않는다.** 회원의 동네를 바로 저장한다(`saveRegion`). 성공하면 목 프로필이
- *   먼저 바뀌고(화면과 무관), 화면이 떠 있으면 남은 조건 화면이나 `?next=`(허용 목록 밖이면 홈)로 기록을 바꿔 간다
- * - 보내는 중에는 버튼이 꺼지고(`aria-disabled`) 검색 칸은 읽기 전용이다. 실패하면 빨강 상자로 알리고 다시 누를 수 있다
+ * - **첫 진입 Provider 의 가입 초안 · 고른 동네를 쓰지 않는다.** 회원의 동네를 바로 저장한다(`saveRegion`, 실데이터는
+ *   `PUT /api/v1/members/me/region`). 성공하면 내 동네(목 프로필 · 실데이터 저장소)가 먼저 바뀌고(화면과 무관), 화면이 떠 있으면
+ *   남은 조건 화면이나 `?next=`(허용 목록 밖이면 홈)로 기록을 바꿔 간다
+ * - 보내는 중에는 버튼이 꺼지고(`aria-disabled`) 검색 칸은 읽기 전용이다. 실패하면 빨강 상자로 알리고 다시 누를 수 있다.
+ *   서버가 그 동네를 받지 않으면(`invalid` — 없는 코드 · 또 폐지된 코드) 선택을 지우고 다른 동네를 고르라고 알린다
+ * - 옛 동네 이름을 모르면(실데이터 — 행정동 서비스에 코드가 없음) 안내를 "고르셨던 동네가 …" 로 쓴다
  * - **뒤로 버튼이 없다**(시안에도 없음). 동네가 없으면 보고를 셀 수 없어 고르기 전에는 나가지 않는다
- * - 회원 상태가 정해진 뒤(`useAuthSettled`) 판단한다: 비회원이거나 동네 조건이 없으면 남은 조건 화면(약관 재동의가 먼저)이나 `?next=` 로 보낸다
+ * - 회원 상태가 정해진 뒤(`useAuthSettled`) 판단한다: 비회원이거나 동네 조건이 없으면 남은 조건 화면(약관 재동의가 먼저)이나 `?next=` 로 보낸다.
+ *   실데이터는 내 동네를 읽을 때까지(`requirements.settled`) 내보내지 않는다 — 읽기 전에는 동네 조건이 없어 보여서다
  *
  * 시안(정본): docs/design/auth/screens/ 의 Setup-1-reselect (+ -T · -D)
  */
@@ -86,20 +92,21 @@ export function RegionReselectScreen() {
   const requirements = useMemberRequirements()
   const { replace } = useOnboarding()
   const active = useActiveRef()
+  const source = useDataSource()
 
   const [query, setQuery] = useState('')
   const search = useDistrictSearch(query)
   const [selected, setSelected] = useState<District | null>(null)
   const [pending, setPending] = useState(false)
-  const [failed, setFailed] = useState(false)
-  // 보내는 동안의 옛 동네. 저장에 성공하면 목 프로필의 폐지 표시가 먼저 꺼져 조건에서 빠진다 — 이동할 때까지 같은 화면을 그린다
-  const [submittingFrom, setSubmittingFrom] = useState<MemberRegion | null>(null)
+  const [failed, setFailed] = useState<'failed' | 'invalid' | null>(null)
+  // 보내는 동안의 옛 동네. 저장에 성공하면 내 동네의 폐지 표시가 먼저 꺼져 조건에서 빠진다 — 이동할 때까지 같은 화면을 그린다
+  const [submittingFrom, setSubmittingFrom] = useState<AbolishedRegion | null>(null)
 
   // 약관 재동의가 남았으면 그쪽이 먼저다. 이 화면은 첫 조건이 동네일 때만 그린다
   const showing = authSettled && requirements.steps[0] === 'region'
   const oldRegion = showing ? requirements.abolishedRegion : pending ? submittingFrom : null
   const redirect =
-    authSettled && !showing
+    authSettled && requirements.settled && !showing
       ? stepTarget(
           requirements.steps,
           safeNextPath(searchParams.get(NEXT_PARAM)),
@@ -123,7 +130,7 @@ export function RegionReselectScreen() {
       ? candidates.candidates.map((candidate) => ({
           district: candidate,
           detail: candidate.partOfAbolished
-            ? `${candidate.sigungu} · 옛 ${oldRegion.name} 일부`
+            ? `${candidate.sigungu} · 옛 ${oldRegion.name ?? '동네'} 일부`
             : candidate.sigungu,
         }))
       : []
@@ -132,20 +139,29 @@ export function RegionReselectScreen() {
   async function save() {
     if (!selected || pending || !oldRegion) return
     setPending(true)
-    setFailed(false)
+    setFailed(null)
     setSubmittingFrom(oldRegion)
+    let result: SaveRegionResult
     try {
-      await saveRegion(selected)
+      result = await saveRegion(selected, source)
     } catch {
       if (active.current) {
-        setFailed(true)
+        setFailed('failed')
         setPending(false)
       }
       return
     }
-    // 목 프로필(연동 때는 서버)에는 이미 바뀐 동네가 남았다. 이동만 화면이 떠 있을 때 한다
+    if (result.status === 'invalid') {
+      if (active.current) {
+        setFailed('invalid')
+        setSelected(null)
+        setPending(false)
+      }
+      return
+    }
+    // 목 프로필 · 실데이터 저장소에는 이미 바뀐 동네가 남았다. 이동만 화면이 떠 있을 때 한다
     if (!active.current) return
-    replace(targetAfter('region', auth, searchParams))
+    replace(targetAfter('region', auth, searchParams, source))
   }
 
   return (
@@ -169,9 +185,8 @@ export function RegionReselectScreen() {
         </h1>
 
         <AlertBox tone="info">
-          고르셨던 {oldRegion.name}
-          {withIGa(oldRegion.name)} 행정구역 개편으로 바뀌었어요. 지금 사는 행정동을 다시 골라
-          주세요.
+          고르셨던 {oldRegion.name ? `${oldRegion.name}${withIGa(oldRegion.name)}` : '동네가'}{' '}
+          행정구역 개편으로 바뀌었어요. 지금 사는 행정동을 다시 골라 주세요.
         </AlertBox>
 
         <DistrictSearchInput
@@ -199,8 +214,11 @@ export function RegionReselectScreen() {
           )}
         </div>
 
-        {failed && (
+        {failed === 'failed' && (
           <AlertBox tone="danger">동네를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.</AlertBox>
+        )}
+        {failed === 'invalid' && (
+          <AlertBox tone="danger">이 동네는 고를 수 없어요. 다른 동네를 골라 주세요.</AlertBox>
         )}
       </div>
     </OnboardingLayout>

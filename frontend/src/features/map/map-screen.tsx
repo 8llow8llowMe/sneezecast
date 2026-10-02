@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { AppHeader } from '@/components/app-header'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
-import { type MemberRegion, saveRegion } from '@/features/auth/auth-client'
+import { type MemberRegion, saveRegion, type SaveRegionResult } from '@/features/auth/auth-client'
 import { loginHref } from '@/features/auth/login-return'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { ExplainSheet } from '@/features/home/explain-sheet'
@@ -21,6 +21,7 @@ import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { withEulReul } from '@/lib/korean'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useDataSource } from '@/lib/use-data-source'
 import { useModalParam } from '@/lib/use-modal-param'
 
 import { DistrictPanel } from './district-panel'
@@ -32,6 +33,9 @@ export const SET_MINE_CONFIRM = 'set-mine'
 
 /** 내 동네를 저장하지 못했을 때 문구. 내 동네 바꾸기(`/me/region`)와 같다 */
 const SET_MINE_FAILURE = '내 동네를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.'
+
+/** 서버가 그 동네를 받지 않을 때(없는 코드 · 폐지 — `saveRegion` 의 `invalid`) 문구 */
+const SET_MINE_INVALID = '이 동네는 내 동네로 설정할 수 없어요. 다른 동네를 골라 주세요.'
 
 /**
  * S04 지도. 동네별 이번 주 상태를 지도에서 고르고 고른 동네 정보를 본다 (시안 Map-collapsed · Map-expanded · Map-nodata, -T · -D).
@@ -54,6 +58,7 @@ const SET_MINE_FAILURE = '내 동네를 바꾸지 못했어요. 잠시 뒤 다�
  *   기록을 쌓음)를 열고, 확인하면 고른 동네를 내 동네로 저장(`saveRegion`)한 뒤 대화상자를 닫고 알림으로 알린다. 버튼이 사라지므로
  *   포커스는 동네 이름 제목으로 옮긴다. 저장하는 중에는
  *   두 버튼 · 닫기를 막고, 실패하면 대화상자 안 빨강 상자로 알린다(뒤로 가기로 이미 닫았으면 알림) — 내 정보의 확인 대화상자와 같다.
+ *   서버가 그 동네를 받지 않으면(`invalid` — 없는 코드 · 폐지) 같은 자리에 "설정할 수 없어요" 로 알린다.
  *   주소로 바로 들어온 값은 회원이 내 동네가 아닌 동네를 골랐을 때만 연다(아니면 열지 않고 두기만 한다 — 판단 기준 `?explain=` 과 같다).
  * - 알림 설정 · 행정동 찾기는 아직 "준비하고 있어요" 알림이다.
  */
@@ -77,12 +82,14 @@ export function MapScreen({
   const memberRegion = useMemberRegion()
   const confirm = useModalParam(CONFIRM_PARAM)
   const active = useActiveRef()
+  const source = useDataSource()
 
   const [selectedCode, setSelectedCode] = useState(map.mineCode)
   const [expanded, setExpanded] = useState(false)
   // 저장하는 중인 동네. 응답이 올 때까지 대화상자의 동네로 남긴다
   const [saving, setSaving] = useState<MemberRegion | null>(null)
-  const [failed, setFailed] = useState(false)
+  // 대화상자 안 빨강 상자 문구. 없으면 null
+  const [failure, setFailure] = useState<string | null>(null)
   const selected =
     map.districts.find((district) => district.code === selectedCode) ?? map.districts[0] ?? null
 
@@ -124,13 +131,13 @@ export function MapScreen({
       router.push(loginHref(LOGIN_PATH, { next: HOME_PATH, region, intent: null }))
       return
     }
-    setFailed(false)
+    setFailure(null)
     confirm.open(SET_MINE_CONFIRM)
   }
 
   function closeConfirm() {
     if (saving) return
-    setFailed(false)
+    setFailure(null)
     confirm.close()
   }
 
@@ -138,17 +145,22 @@ export function MapScreen({
     if (saving || !confirmTarget) return
     const region = confirmTarget
     setSaving(region)
-    setFailed(false)
+    setFailure(null)
+    let result: SaveRegionResult | null
     try {
-      await saveRegion(region)
+      result = await saveRegion(region, source)
     } catch {
+      result = null
+    }
+    if (result?.status !== 'ok') {
       if (!active.current) return
       setSaving(null)
-      if (confirmOpenRef.current) setFailed(true)
-      else show({ message: SET_MINE_FAILURE })
+      const message = result === null ? SET_MINE_FAILURE : SET_MINE_INVALID
+      if (confirmOpenRef.current) setFailure(message)
+      else show({ message })
       return
     }
-    // 목 프로필(연동 때는 서버)에는 이미 바뀐 동네가 남았다. 대화상자 닫기 · 알림만 화면이 떠 있을 때 한다
+    // 목 프로필 · 실데이터 저장소에는 이미 바뀐 동네가 남았다. 대화상자 닫기 · 알림만 화면이 떠 있을 때 한다
     if (!active.current) return
     setSaving(null)
     focusNameRef.current = true
@@ -220,7 +232,7 @@ export function MapScreen({
         ]}
         action="설정하기"
         pending={saving !== null}
-        failure={failed ? SET_MINE_FAILURE : null}
+        failure={failure}
         onConfirm={() => void saveMine()}
         onClose={closeConfirm}
       />

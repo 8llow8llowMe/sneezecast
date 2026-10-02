@@ -20,9 +20,20 @@ import {
   withdrawMembership,
 } from '@/features/auth/auth-client'
 import { consentFor } from '@/features/auth/legal'
+import { resetMemberInfoForTests, startMemberInfo } from '@/features/auth/member-info'
 import { cancelReport, getSubmittedReport, submitReport } from '@/features/report/report-client'
+import { resetSessionForTests, setSession } from '@/lib/session/session-store'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
+import {
+  errorResponse,
+  holdRequests,
+  memberToken,
+  myInfoBody,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
 import { takeHomeNotice } from './leave-notice'
 import { MeScreen } from './me-screen'
@@ -357,7 +368,7 @@ describe('MeScreen 메뉴', () => {
 
   it('보고 동네 행은 둘러보는 동네가 아니라 내 동네를 보이고 내 동네 바꾸기로 간다', async () => {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
-    await saveRegion({ code: '11680640', name: '역삼1동' })
+    await saveRegion({ code: '11680640', name: '역삼1동' }, 'mock')
     search = 'region=11440660&mock-provider=email'
     renderMe({ regionCode: '11440660' })
 
@@ -374,7 +385,7 @@ describe('MeScreen 메뉴', () => {
 
   it('머리줄 동네 이름은 둘러보기 동네가 없으면 내 동네이고, 내 정보로 돌아올 둘러볼 동네 고르기를 연다', async () => {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
-    await saveRegion({ code: '11680640', name: '역삼1동' })
+    await saveRegion({ code: '11680640', name: '역삼1동' }, 'mock')
     renderMe()
 
     await userEvent.setup().click(screen.getByRole('button', { name: '동네 바꾸기, 현재 역삼1동' }))
@@ -761,5 +772,85 @@ describe('MeScreen 다시 들어온 회원', () => {
       await new Promise((resolve) => setTimeout(resolve, 50))
     })
     expect(replaceState).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('MeScreen 실데이터 (회원 API, #164)', () => {
+  let stopMemberInfo: () => void = () => {}
+  beforeEach(() => {
+    resetSessionForTests()
+    resetMemberInfoForTests()
+    stopMemberInfo = startMemberInfo()
+    selectApiSource()
+  })
+  afterEach(() => {
+    stopMemberInfo()
+    resetMemberInfoForTests()
+    resetApiSession()
+  })
+
+  /** 요청이 나가고 응답의 then 이 돌 때까지 */
+  const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+  const section = (id: string) => document.getElementById(id)?.textContent ?? ''
+
+  it('읽는 동안은 "불러오고 있어요" 이고 예시 프로필을 보이지 않는다 — 받으면 내 정보 · 내 동네를 보인다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    renderMe()
+    await flush()
+
+    expect(screen.getByText('내 정보를 불러오고 있어요').closest('[role="status"]')).not.toBeNull()
+    expect(section('me-account')).not.toContain('dong@example.com')
+    expect(section('me-account')).not.toContain('동네지기')
+
+    act(() => {
+      server.reply(
+        'GET /api/v1/members/me',
+        okResponse(myInfoBody({ email: 'kakao@example.com', provider: 'KAKAO' })),
+      )
+      server.reply(
+        'GET /api/v1/members/me/region',
+        okResponse({
+          code: '11680640',
+          name: '역삼1동',
+          sigungu: '서울특별시 강남구',
+          abolished: false,
+        }),
+      )
+    })
+    await flush()
+    expect(screen.queryByText('내 정보를 불러오고 있어요')).toBeNull()
+    expect(section('me-account')).toContain('재채기탐정')
+    expect(section('me-account')).toContain('카카오 · kakao@example.com')
+    expect(section('me-region')).toContain('역삼1동')
+  })
+
+  it('내 동네만 읽지 못해도 빨강 상자로 알리고, 다시 시도하면 내 동네만 다시 읽는다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    renderMe()
+    await flush()
+    act(() => {
+      server.reply('GET /api/v1/members/me', okResponse(myInfoBody()))
+      server.reply('GET /api/v1/members/me/region', errorResponse('REGION_004', 503))
+    })
+    await flush()
+
+    expect(screen.getByRole('alert').textContent).toContain(
+      '내 정보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    )
+    // 받은 내 정보는 그대로 보인다
+    expect(section('me-account')).toContain('이메일 · me@example.com')
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '다시 시도' }))
+    await flush()
+    expect(server.requests()).toEqual([
+      'GET /api/v1/members/me',
+      'GET /api/v1/members/me/region',
+      'GET /api/v1/members/me/region',
+    ])
+    act(() => server.reply('GET /api/v1/members/me/region', okResponse(null)))
+    await flush()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

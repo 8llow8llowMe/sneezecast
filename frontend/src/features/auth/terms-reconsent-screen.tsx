@@ -88,7 +88,7 @@ export function TermsReconsentScreen() {
     }
     // 목 프로필(연동 때는 서버)에는 이미 동의가 남았다. 이동만 화면이 떠 있을 때 한다
     if (!active.current) return
-    replace(targetAfter('terms', auth, searchParams))
+    replace(targetAfter('terms', auth, searchParams, source))
   }
 
   async function leave() {

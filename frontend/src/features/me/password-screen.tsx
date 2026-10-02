@@ -5,11 +5,13 @@ import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
+import { ErrorState } from '@/components/error-state'
 import { TextField } from '@/components/text-field'
 import { ToastRegion, useToast } from '@/components/toast'
 import { changePassword, type MockAuthState, setupPassword } from '@/features/auth/auth-client'
+import { retryMemberInfo } from '@/features/auth/member-info'
 import { confirmProblem, passwordProblem } from '@/features/auth/signup-rules'
-import { useMockProfile } from '@/features/auth/use-mock-auth'
+import { useMockProfile, useMockProfileStatus } from '@/features/auth/use-mock-auth'
 import { reportButtonLabel } from '@/features/home/report-gate'
 import { PASSWORD_RESET_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
@@ -94,6 +96,9 @@ export function PasswordScreen({
 }) {
   const auth = useMemberGate()
   const profile = useMockProfile()
+  const profileStatus = useMockProfileStatus()
+  // 실데이터 프로필(`GET /me`)을 읽지 못하면 공통 오류 화면이다. 읽는 동안은 그리지 않는다(어느 모드인지 모른다)
+  if (auth && profileStatus === 'failed') return <ErrorState onRetry={retryMemberInfo} nav="me" />
   if (!auth || !profile) return null
   return (
     <PasswordForm

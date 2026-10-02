@@ -11,13 +11,27 @@ import {
   loginWithEmail,
   resetMockSession,
   saveRegion,
+  type SaveRegionResult,
 } from '@/features/auth/auth-client'
+import {
+  getMemberInfoSnapshot,
+  resetMemberInfoForTests,
+  startMemberInfo,
+} from '@/features/auth/member-info'
 import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
 import type * as regionClient from '@/features/region/region-client'
 import { listSuccessorDistricts, searchDistricts } from '@/features/region/region-client'
-import { restoreSession } from '@/lib/session/session-store'
+import { restoreSession, setSession } from '@/lib/session/session-store'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
-import { holdReissue, resetApiSession, selectApiSource } from '@/test/api-session'
+import {
+  errorResponse,
+  holdReissue,
+  holdRequests,
+  memberToken,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
 import { OnboardingProvider } from './onboarding-context'
 import { RegionReselectScreen } from './region-reselect-screen'
@@ -50,6 +64,13 @@ const ui = (
     <RegionReselectScreen />
   </OnboardingProvider>
 )
+
+const YEOKSAM1_REGION = {
+  code: '11680640',
+  name: '역삼1동',
+  sigungu: '서울특별시 강남구',
+  abolished: false,
+}
 
 const saveButton = () => screen.getByRole('button', { name: '이 동네로 바꾸기' })
 const isOff = (button: HTMLElement) => button.getAttribute('aria-disabled') === 'true'
@@ -168,6 +189,7 @@ describe('RegionReselectScreen 저장', () => {
 
     expect(saveRegion).toHaveBeenCalledWith(
       expect.objectContaining({ code: '99990112', name: '○○새2동' }),
+      'mock',
     )
     expect(getMockProfile()).toMatchObject({
       region: { code: '99990112', name: '○○새2동' },
@@ -188,14 +210,14 @@ describe('RegionReselectScreen 저장', () => {
     await user.click(await screen.findByRole('radio', { name: /서교동/ }))
     await user.click(saveButton())
 
-    expect(saveRegion).toHaveBeenCalledWith(expect.objectContaining({ code: '11440660' }))
+    expect(saveRegion).toHaveBeenCalledWith(expect.objectContaining({ code: '11440660' }), 'mock')
     expect(router.replace).toHaveBeenCalledWith('/?mock-auth=member')
   })
 
   it('보내는 동안 버튼이 꺼지고 다시 눌러도 한 번만 보낸다', async () => {
     let finish: () => void = () => {}
     vi.mocked(saveRegion).mockImplementationOnce(
-      () => new Promise<void>((resolve) => (finish = resolve)),
+      () => new Promise<SaveRegionResult>((resolve) => (finish = () => resolve({ status: 'ok' }))),
     )
     const user = userEvent.setup()
     render(ui)
@@ -237,7 +259,7 @@ describe('RegionReselectScreen 저장', () => {
   it('응답 전에 화면을 떠나면 늦은 응답으로 이동하지 않는다', async () => {
     let finish: () => void = () => {}
     vi.mocked(saveRegion).mockImplementationOnce(
-      () => new Promise<void>((resolve) => (finish = resolve)),
+      () => new Promise<SaveRegionResult>((resolve) => (finish = () => resolve({ status: 'ok' }))),
     )
     const user = userEvent.setup()
     const { unmount } = render(ui)
@@ -313,11 +335,21 @@ describe('RegionReselectScreen 로그인 만료', () => {
 })
 
 describe('RegionReselectScreen 실데이터 모드 (새로고침 뒤 세션 복원)', () => {
+  let stopMemberInfo: () => void = () => {}
+  beforeEach(() => {
+    resetMemberInfoForTests()
+    stopMemberInfo = startMemberInfo()
+  })
   afterEach(() => {
+    stopMemberInfo()
+    resetMemberInfoForTests()
     resetApiSession()
   })
 
-  it('복원 중에는 다른 곳으로 보내지 않고, 정해진 뒤에 판단한다', async () => {
+  /** 요청이 나가고 응답의 then 이 돌 때까지 */
+  const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
+  it('복원 중 · 내 동네를 읽는 중에는 다른 곳으로 보내지 않고, 정해진 뒤에 판단한다', async () => {
     selectApiSource()
     const server = holdReissue()
     render(ui)
@@ -327,11 +359,95 @@ describe('RegionReselectScreen 실데이터 모드 (새로고침 뒤 세션 복�
     })
     expect(router.replace).not.toHaveBeenCalled()
 
-    // 실데이터 세션에는 아직 동네 조건이 없다(내 동네 연동 전) — 회원으로 정해지면 홈으로 간다
+    const requests = holdRequests()
     await act(async () => {
       server.succeed()
       await restoring
     })
+    // 회원으로 정해졌지만 내 동네를 아직 모른다 — 동네 조건이 없어 보여도 내보내지 않는다
+    await flush()
+    expect(router.replace).not.toHaveBeenCalled()
+
+    act(() => requests.reply('GET /api/v1/members/me/region', okResponse(YEOKSAM1_REGION)))
+    await flush()
     expect(router.replace.mock.calls).toEqual([['/']])
+  })
+
+  it('내 동네가 폐지됐으면 다시 고르게 하고, 이름을 모르면 "고르셨던 동네가" 로 알린다', async () => {
+    selectApiSource()
+    const requests = holdRequests()
+    act(() => setSession(memberToken()))
+    render(ui)
+    await flush()
+    act(() =>
+      requests.reply(
+        'GET /api/v1/members/me/region',
+        okResponse({ code: '11680640', name: null, sigungu: null, abolished: true }),
+      ),
+    )
+    await flush()
+
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('동네를 다시 골라 주세요')
+    expect(screen.getByText(/행정구역 개편으로 바뀌었어요/).textContent).toBe(
+      '고르셨던 동네가 행정구역 개편으로 바뀌었어요. 지금 사는 행정동을 다시 골라 주세요.',
+    )
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('저장하면 PUT 응답으로 내 동네가 바뀌고 next 로 간다 — 서버가 받지 않으면 다른 동네를 고르게 한다', async () => {
+    selectApiSource()
+    search = 'next=/me'
+    vi.mocked(searchDistricts).mockResolvedValue([
+      { code: '11440660', name: '서교동', sigungu: '서울특별시 마포구' },
+    ])
+    const requests = holdRequests()
+    act(() => setSession(memberToken()))
+    const user = userEvent.setup()
+    render(ui)
+    await flush()
+    act(() =>
+      requests.reply(
+        'GET /api/v1/members/me/region',
+        okResponse({ code: '99990110', name: '○○1동', sigungu: null, abolished: true }),
+      ),
+    )
+    await flush()
+
+    await user.type(screen.getByRole('searchbox', { name: '행정동 이름' }), '서교')
+    await user.click(await screen.findByRole('radio', { name: /서교동/ }))
+    await user.click(saveButton())
+    await flush()
+    expect(saveRegion).toHaveBeenLastCalledWith(
+      expect.objectContaining({ code: '11440660' }),
+      'api',
+    )
+    act(() => requests.reply('PUT /api/v1/members/me/region', errorResponse('REGION_002', 400)))
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '이 동네는 고를 수 없어요. 다른 동네를 골라 주세요.',
+    )
+    // 선택을 지워 다시 고르기 전에는 누를 수 없다
+    expect(isOff(saveButton())).toBe(true)
+    expect(router.replace).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('radio', { name: /서교동/ }))
+    await user.click(saveButton())
+    await flush()
+    act(() =>
+      requests.reply(
+        'PUT /api/v1/members/me/region',
+        okResponse({
+          code: '11440660',
+          name: '서교동',
+          sigungu: '서울특별시 마포구',
+          abolished: false,
+        }),
+      ),
+    )
+    await flush()
+    expect(router.replace.mock.calls).toEqual([['/me']])
+    expect(getMemberInfoSnapshot()?.region).toEqual({
+      status: 'ready',
+      value: { code: '11440660', name: '서교동', sigungu: '서울특별시 마포구', abolished: false },
+    })
   })
 })

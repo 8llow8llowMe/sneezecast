@@ -14,11 +14,13 @@ import {
 import { clearSessionExpiring } from '@/lib/session-expiry'
 
 import type { Consent, ConsentType } from './legal'
+import { type MyRegion, putMyRegion } from './member-client'
+import { setMemberRegion } from './member-info'
 
 /* ── 실데이터 연동 (#163) ──────────────────────────────────────────────────────────────
  *
  * 이메일 인증 · 가입 · 이메일 로그인 · 로그아웃(`sendEmailCode` · `verifyEmailCode` · `signup` 이메일 갈래 · `loginWithEmail` ·
- * `logout`)은 마지막 인자로 데이터 출처(`DataSource`)를 받는다. `api` 면 auth API(docs/api-contract-draft.md "인증")를 부르고,
+ * `logout`)과 내 동네 저장(`saveRegion`, #164)은 마지막 인자로 데이터 출처(`DataSource`)를 받는다. `api` 면 auth API(docs/api-contract-draft.md "인증")를 부르고,
  * `mock` 이면 아래 목 동작 그대로다. 출처는 부르는 화면이 `useDataSource()` 로 읽어 넘긴다 — 이 모듈은 쿠키를 읽지 않는다
  * (docs/conventions.md "데이터 출처", `features/region/region-client.ts` 와 같다). 그 밖의 함수는 아직 출처와 무관하게 목이다.
  *
@@ -499,8 +501,8 @@ function consumeSignupVerification(email: string): boolean {
 
 /* ── 가입 · 내 동네 · 건강정보 동의 (S02-3 · S02-4) ─────────────────────────────────
  *
- * 이메일 가입은 실데이터에서 `POST /api/v1/auth/signup`(백엔드 #56, `auth: false`)이다. 카카오 가입(#167) · 내 동네 저장(#60) ·
- * 건강정보 동의(#59)는 아직 출처와 무관하게 목이다.
+ * 이메일 가입은 실데이터에서 `POST /api/v1/auth/signup`(백엔드 #56, `auth: false`)이다. 내 동네 저장은 `PUT /api/v1/members/me/region`
+ * (#60, 아래 `saveRegion`)이다. 카카오 가입(#167) · 건강정보 동의(#59)는 아직 출처와 무관하게 목이다.
  * 가입 응답에는 토큰이 없다 — 이메일 가입은 이어서 `loginWithEmail`(#57)로 로그인한 뒤 동네를 저장한다.
  * 카카오 가입은 카카오 로그인으로 이미 로그인한 상태라 바로 동네를 저장한다.
  *
@@ -601,15 +603,70 @@ export async function signup(request: SignupRequest, source: DataSource): Promis
 }
 
 /**
- * 내 동네 저장. 가입 마무리(S02-3)와 폐지된 동네 다시 고르기(Setup-1-reselect)가 같이 쓴다 — 둘 다 백엔드 #60 의 설정 API 다.
- * 지도의 `내 동네로 설정`(#145)도 같은 API 다. 연동 때 서버에는 코드만 보낸다. 이름은 목 프로필이 내 동네를 들고 있게 받는다
- * — 그래서 시군구 없이 코드 · 이름만 받는다(지도 동네에는 시군구가 없다).
+ * - `ok`: 저장했다
+ * - `invalid`: 고를 수 없는 동네다 — 없는 코드(`REGION_001`) · 폐지된 코드(`REGION_002`) · 형식이 틀린 코드(`REGION_101` · `102`).
+ *   서버는 저장하지 않았고, 화면은 다른 동네를 고르게 한다
+ */
+export type SaveRegionResult = { status: 'ok' } | { status: 'invalid' }
+
+const SAVE_REGION_FAILURES: Readonly<Record<string, 'invalid'>> = {
+  REGION_001: 'invalid',
+  REGION_002: 'invalid',
+  REGION_101: 'invalid',
+  REGION_102: 'invalid',
+}
+
+/** 같은 회원의 첫 저장이 동시에 겹쳐 회원당 1행 제약에 막혔다(409). 다시 보내면 갱신으로 풀린다 */
+const REGION_SAVE_CONFLICT = 'REGION_003'
+
+/** 경합(`REGION_003`)이면 한 번만 다시 보낸다. 두 번째 결과는 그대로다 */
+async function putRegionWithRetry(code: string): Promise<MyRegion> {
+  try {
+    return await putMyRegion(code)
+  } catch (error) {
+    if (errorCodeOf(error) !== REGION_SAVE_CONFLICT) throw error
+    return putMyRegion(code)
+  }
+}
+
+/**
+ * 내 동네 저장. 가입 마무리(S02-3) · 내 동네 바꾸기(`/me/region`) · 폐지된 동네 다시 고르기(Setup-1-reselect) · 지도의
+ * `내 동네로 설정`(#145)이 같이 쓴다 — 모두 백엔드 #60 의 `PUT /api/v1/members/me/region` 이다. 서버에는 **코드만** 보낸다.
+ * 이름은 목 프로필이 내 동네를 들고 있게 받는다 — 그래서 시군구 없이 코드 · 이름만 받는다(지도 동네에는 시군구가 없다).
  *
- * 성공하면 화면과 무관하게 목 프로필의 동네를 바꾸고 폐지 표시를 끈다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다).
- * 프로필이 없으면(`?mock-auth=` 덮어쓰기만 있음) 세션은 그대로다.
+ * 실데이터 (access 필요):
+ * - 세션 저장소가 회원이 아니면 요청 없이 거부한다(401 을 받으러 보내지 않는다). 카카오 가입은 #167 전까지 목 세션만 세워 여기서 막힌다
+ * - 성공하면 응답(서버가 방금 확인한 동네)을 회원 정보 저장소의 내 동네로 넣는다(`setMemberRegion`) — 다시 읽지 않는다.
+ *   보낼 때의 회원과 저장소의 회원이 다르면(그사이 로그아웃 · 다른 회원) 넣지 않는다
+ * - `REGION_001` · `002` · `101` · `102` → `invalid`. `REGION_003`(동시 첫 저장 경합, 409)은 한 번 다시 보낸다
+ * - 그 밖(`REGION_004` 행정동 확인 장애 503 · 일시 장애 · 두 번째 경합)은 거부한다 — 서버는 저장하지 않았고, 화면은
+ *   "바꾸지 못했어요 · 잠시 뒤 다시" 로 알린다
+ *
+ * 목: 성공하면 화면과 무관하게 목 프로필의 동네를 바꾸고 폐지 표시를 끈다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다).
+ * 프로필이 없으면(`?mock-auth=` 덮어쓰기만 있음) 세션은 그대로다. 목은 `invalid` 를 돌려주지 않는다.
  * 목 재현: 프로필 이메일 `reselect-fail@example.com` 이면 거부한다(그 이메일로 가입해도 S02-3 의 동네 저장이 실패한다).
  */
-export function saveRegion(district: MemberRegion): Promise<void> {
+export async function saveRegion(
+  district: MemberRegion,
+  source: DataSource,
+): Promise<SaveRegionResult> {
+  if (source === 'api') {
+    const session = getSessionSnapshot()
+    // 실데이터 세션이 없으면 보내지 않고 거부한다 — 토큰 없이 보내 401(SECURITY_001)을 받으러 가지 않는다.
+    // 카카오 가입은 #167 전까지 목 세션만 세우므로 실데이터에서는 여기서 막힌다(화면은 "저장하지 못했어요")
+    if (session.status !== 'member') throw new Error('saveRegion: no member session')
+    const { memberId } = session.summary
+    let saved: MyRegion
+    try {
+      saved = await putRegionWithRetry(district.code)
+    } catch (error) {
+      const failure = mapError(error, SAVE_REGION_FAILURES)
+      if (failure) return { status: failure }
+      throw error
+    }
+    setMemberRegion(memberId, saved)
+    return { status: 'ok' }
+  }
   const failure = rejectIfProfileEmail(MOCK_RESELECT_FAIL_EMAIL, 'save region')
   if (failure) return failure
   if (mockProfile) {
@@ -619,7 +676,7 @@ export function saveRegion(district: MemberRegion): Promise<void> {
       regionAbolished: false,
     })
   }
-  return Promise.resolve()
+  return { status: 'ok' }
 }
 
 /** 건강 · 증상 정보(민감정보) 처리 동의. 근거 문서 버전을 함께 보낸다 */
@@ -632,7 +689,7 @@ export function agreeHealthConsent(consent: Consent): Promise<void> {
 
 /* ── 약관 재동의 · 동네 다시 고르기 (Setup-3-reconsent · Setup-1-reselect) ───────────────────────────
  *
- * 연동 때 바꾼다: 재동의 — 백엔드 #59 의 재동의 API(요청 · 응답 모양은 아직 없다), 동네 다시 저장 — 위 `saveRegion`(#60 설정 API).
+ * 연동 때 바꾼다: 재동의 — 백엔드 #59 의 재동의 API(요청 · 응답 모양은 아직 없다). 동네 다시 저장은 위 `saveRegion`(#60, 연동됨)이다.
  * 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다 — 화면은 다시 시도하라고 알린다.
  * 성공하면 화면과 무관하게 목 프로필의 조건을 먼저 끈다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다).
  *

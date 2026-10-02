@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react'
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,8 +11,19 @@ import {
   loginWithEmail,
   resetMockSession,
   saveRegion,
+  type SaveRegionResult,
 } from '@/features/auth/auth-client'
+import { resetMemberInfoForTests, startMemberInfo } from '@/features/auth/member-info'
+import { resetSessionForTests, setSession } from '@/lib/session/session-store'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
+import {
+  errorResponse,
+  holdRequests,
+  memberToken,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
 import { MeScreen } from './me-screen'
 import { MeTrailProvider } from './me-trail'
@@ -60,7 +71,7 @@ beforeEach(async () => {
   resetMockSession()
   vi.clearAllMocks()
   await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
-  await saveRegion(YEOKSAM1)
+  await saveRegion(YEOKSAM1, 'mock')
   vi.mocked(saveRegion).mockClear()
 })
 
@@ -102,7 +113,7 @@ describe('MyRegionScreen 내 동네 바꾸기', () => {
     expect(saveButton().getAttribute('aria-disabled')).toBeNull()
 
     await user.click(saveButton())
-    expect(saveRegion).toHaveBeenCalledWith(expect.objectContaining({ code: '11440660' }))
+    expect(saveRegion).toHaveBeenCalledWith(expect.objectContaining({ code: '11440660' }), 'mock')
     expect(getMockProfile()?.region).toEqual({ code: '11440660', name: '서교동' })
     expect(router.replace).toHaveBeenCalledWith('/me?region=11440660&mock-provider=email')
     // 이동할 때까지 지금 내 동네는 처음 그린 값이다
@@ -130,7 +141,7 @@ describe('MyRegionScreen 내 동네 바꾸기', () => {
   it('저장하는 동안에는 검색 칸이 읽기 전용이고 버튼 · 뒤로가 꺼진다', async () => {
     let finish: () => void = () => {}
     vi.mocked(saveRegion).mockImplementationOnce(
-      () => new Promise<void>((resolve) => (finish = resolve)),
+      () => new Promise<SaveRegionResult>((resolve) => (finish = () => resolve({ status: 'ok' }))),
     )
     render(regionScreen())
     const user = userEvent.setup()
@@ -182,5 +193,115 @@ describe('MyRegionScreen 가드 · 내 정보로 돌아가기', () => {
     rerender(meScreen())
     expect(screen.getByText('내 동네를 바꿨어요').closest('[role="status"]')).not.toBeNull()
     expect(screen.getByRole('link', { name: /^보고 동네/ }).textContent).toBe('보고 동네서교동')
+  })
+})
+
+describe('MyRegionScreen 실데이터 (#164)', () => {
+  let stopMemberInfo: () => void = () => {}
+  beforeEach(() => {
+    resetSessionForTests()
+    resetMemberInfoForTests()
+    stopMemberInfo = startMemberInfo()
+    selectApiSource()
+  })
+  afterEach(() => {
+    stopMemberInfo()
+    resetMemberInfoForTests()
+    resetApiSession()
+  })
+
+  /** 요청이 나가고 응답의 then 이 돌 때까지 */
+  const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+  const currentText = () => screen.getByText('지금 내 동네').nextElementSibling?.textContent
+
+  it('내 동네를 읽는 중 · 읽지 못함을 "지금 내 동네" 에 보이고, 다시 시도해 받으면 그 동네다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    render(regionScreen())
+    await flush()
+    // 목 프로필(역삼1동)을 쓰지 않는다
+    expect(currentText()).toBe('불러오고 있어요')
+
+    act(() => server.reply('GET /api/v1/members/me/region', errorResponse('REGION_004', 503)))
+    await flush()
+    expect(currentText()).toBe('불러오지 못했어요')
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '다시 시도' }))
+    await flush()
+    act(() =>
+      server.reply(
+        'GET /api/v1/members/me/region',
+        okResponse({
+          code: '11440660',
+          name: '서교동',
+          sigungu: '서울특별시 마포구',
+          abolished: false,
+        }),
+      ),
+    )
+    await flush()
+    expect(currentText()).toBe('서교동')
+    expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull()
+  })
+
+  it('내 동네를 읽기 전에 저장해 성공해도 이동할 때까지 "불러오고 있어요" 를 그대로 보인다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    render(regionScreen())
+    const user = userEvent.setup()
+    await user.type(screen.getByRole('searchbox', { name: '행정동 이름' }), '서교')
+    await waitFor(() => expect(server.requests()).toContain('GET /api/v1/districts'))
+    act(() =>
+      server.reply(
+        'GET /api/v1/districts',
+        okResponse([{ code: '11440660', name: '서교동', sigungu: '서울특별시 마포구' }]),
+      ),
+    )
+    await user.click(await screen.findByRole('radio', { name: /서교동/ }))
+    expect(currentText()).toBe('불러오고 있어요')
+
+    await user.click(saveButton())
+    await flush()
+    act(() =>
+      server.reply(
+        'PUT /api/v1/members/me/region',
+        okResponse({
+          code: '11440660',
+          name: '서교동',
+          sigungu: '서울특별시 마포구',
+          abolished: false,
+        }),
+      ),
+    )
+    await flush()
+    expect(router.replace).toHaveBeenCalledWith('/me')
+    // 저장 응답으로 내 동네가 먼저 바뀌어도 "아직 정하지 않았어요" · 새 동네로 뒤집히지 않는다
+    expect(currentText()).toBe('불러오고 있어요')
+  })
+
+  it('서버가 그 동네를 받지 않으면(invalid) 선택을 지우고 다른 동네를 고르라고 알린다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    vi.mocked(saveRegion).mockResolvedValueOnce({ status: 'invalid' })
+    render(regionScreen())
+    const user = userEvent.setup()
+    // 실데이터는 행정동 검색도 API 다
+    await user.type(screen.getByRole('searchbox', { name: '행정동 이름' }), '서교')
+    await waitFor(() => expect(server.requests()).toContain('GET /api/v1/districts'))
+    act(() =>
+      server.reply(
+        'GET /api/v1/districts',
+        okResponse([{ code: '11440660', name: '서교동', sigungu: '서울특별시 마포구' }]),
+      ),
+    )
+    await user.click(await screen.findByRole('radio', { name: /서교동/ }))
+    await user.click(saveButton())
+
+    expect(saveRegion).toHaveBeenCalledWith(expect.objectContaining({ code: '11440660' }), 'api')
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '이 동네는 고를 수 없어요. 다른 동네를 골라 주세요.',
+    )
+    expect(saveButton().getAttribute('aria-disabled')).toBe('true')
+    expect(router.replace).not.toHaveBeenCalled()
   })
 })
