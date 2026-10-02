@@ -72,23 +72,34 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
   - 로그인 성공 → 응답(`AuthToken`)을 그대로 `setSession`. 가입 응답에는 토큰이 없어 S02-3 이 가입 → 로그인 → 동네 저장 순서로 잇고 비밀번호는 로그인 뒤 지운다. 가입 본문의 동의 값은 화면의 동의 목록(`legal.ts` `Consent`)에서 만들고 문서 버전은 보내지 않는다(서버의 `legal.*-version`). `sensitiveHealthInfoAgreed` 는 S02-4 에서 따로 받으므로 false 다.
   - **로그아웃 실패 정책**: 성공 · 토큰이 이미 무효(`login-required` · `reissue` · `relogin` — API 계층의 재발급이 재로그인으로 끝나 세션을 이미 비운 경우 포함)면 `clearSession('logout')`. 일시 장애 · 분류 밖 오류면 거부하고 세션을 그대로 둔다 — 서버의 refresh 세션이 살아 있는데 화면만 로그아웃된 것처럼 보이지 않게 한다. 화면(내 정보 · 재동의)은 로그아웃 실패 안내를 띄운다.
   - 세션이 사라진 갈래는 세션 저장소가 아직 회원일 때만 비운다(재발급이 재로그인으로 끝나 `clearSession('expired')` 로 이미 비웠으면 로그아웃을 다시 방송하지 않는다). 성공 · 세션 사라짐 모두 만료 진행 표시(`clearSessionExpiring`)를 꺼 화면의 홈 이동이 이기고 만료 토스트가 남지 않게 한다.
-  - 카카오 가입(`signup({ kind: 'kakao' })`) · 비밀번호 재설정 · 기기 · 동의(건강정보 · 재동의) · 탈퇴 함수는 아직 출처와 무관하게 목이다. 내 정보 · 내 동네는 아래 "회원" 의 "프론트 연동 (#164)" 이다.
+  - 카카오 가입(`signup({ kind: 'kakao' })`) · 동의(건강정보 · 재동의) · 탈퇴 함수는 아직 출처와 무관하게 목이다. 내 정보 · 내 동네는 아래 "회원" 의 "프론트 연동 (#164)", 비밀번호 재설정 · 로그인한 기기는 바로 아래 "프론트 연동 (#166)" 이다.
+- **프론트 연동 (#166)**: `sendPasswordResetCode` · `verifyPasswordResetCode` · `resetPassword` · `listSessions` · `revokeSession` · `revokeOtherSessions` 도 출처를 마지막 인자로 받는다. 부르는 화면(재설정 세 단계 · 로그인한 기기)이 `useDataSource()` 로 넘긴다.
+  - 재설정 세 요청은 `auth: false`, 기기 세 요청은 access 를 싣는다.
+  - 재설정 코드 받기 · 확인은 가입 인증과 같은 갈래다: send-code `AUTH_001` · `002` → `limit`, verify-code `AUTH_003` → `wrong`(남은 시도는 이메일별 실패 수로 채움) · `004` → `expired` · `005` · `010` → `locked`. **실패 수는 가입과 따로 센다**(서버 Redis 키도 따로). 성공 응답의 `resetToken` 은 화면 Provider 메모리에만 두고, 토큰이 없는 성공 응답은 거부한다.
+  - 재설정 `AUTH_018` · 검증 `AUTH_115` · `116`(토큰) → `verification-expired`(`/password/reset?reason=verification-expired`), `AUTH_019` → `limited`(토큰은 그대로라 잠시 뒤 다시 누름 — "요청이 많아 잠시 막혔어요"), 검증 `AUTH_105~107` → `invalid-password`(새 비밀번호 칸 아래 규칙 문구). `AUTH_017` · 일시 장애는 거부("바꾸지 못했어요") — `AUTH_017` 은 토큰이 이미 소비돼 다시 누르면 `AUTH_018` 로 이메일 단계부터 다시 한다.
+  - **재설정 성공 → 서버가 그 계정의 모든 기기를 로그아웃한다.** 화면이 재설정한 이메일을 `resetPassword(token, newPassword, email, source)` 에 넘기고(메모리에서만 — 서버에는 보내지 않고 주소 · 로그에 남기지 않는다), 이 탭이 회원이면 회원 정보 저장소의 `MyInfo.email` 과 서버와 같은 정규화(앞뒤 공백 제거 · 소문자)로 비교한다.
+    - 같으면 `clearSession('logout')`(사용자가 고른 결과라 만료 안내 없이 화면이 이메일 로그인으로 가고, 다른 탭에도 알린다).
+    - 다르면 이 탭 세션을 건드리지 않는다 — 서버는 다른 계정의 세션만 끊었다. 회원인 채 `/login/email?reason=reset-done` 에 닿고, 첫 진입 가드는 이 화면을 보내지 않아 재설정 완료 안내가 그대로 보인다(거기서 로그인하면 그 계정으로 바뀐다).
+    - 이메일을 모르면(내 정보를 읽는 중 · 실패) `logout('api')` 로 서버 세션까지 끊는다. 로그인한 회원이 오는 길은 내 정보의 "비밀번호를 잊었어요" 라 같은 계정일 가능성이 높고, 그러면 서버 세션은 이미 끊겼다. 로그아웃이 거부돼도(일시 장애) 이 탭은 비운다.
+    - 목 재설정은 목 프로필 이메일이 토큰을 받은 이메일과 같을 때만 목 세션을 비운다.
+  - 기기 목록은 `{ sessionId, deviceLabel, lastUsedAt, current }` 만 화면 모델(`DeviceSession { id, deviceName, lastActiveAt, current }`)로 옮긴다(`createdAt` · `totalCount` · 계약 밖 값은 버린다). 시각은 UTC 그대로 두고 화면이 한국 시각 라벨로 쓴다(`formatMonthDayTime`, `Intl` `Asia/Seoul`). **IP · 지역 · 위치는 받지도 그리지도 않는다.** 예시 기기 목록(`EXAMPLE_DEVICE_SESSIONS`)은 목데이터에서만 보인다.
+  - `revokeSession({ id, current }, source)`: `DELETE /sessions/{id}`(id 는 `encodeURIComponent`). `current` 면 서버가 이 기기 쿠키까지 지우므로 `clearSession('logout')`(화면은 이 기기에 버튼을 두지 않는다). `AUTH_114` · 일시 장애는 거부("로그아웃하지 못했어요").
+  - `revokeOtherSessions`: `AUTH_014`(서버가 이 토큰의 세션을 모름 — 이 기기가 이미 로그아웃됨)면 `clearSession('expired')`(로그인 만료 안내) 뒤 거부, 그 밖의 실패는 거부.
 - **BE 미정**: 카카오 로그인(`/kakao/*`, 백엔드 #61), 건강정보 동의 · 철회 · 약관 재동의 · 탈퇴(#59). 프론트 `startKakaoLogin` · `agreeHealthConsent` · `withdrawHealthConsent` · `agreeTermsReconsent` · `withdrawMembership` 은 목이다.
 
 ## 회원 `/api/v1/members` (확정)
 
 모두 인증 필요(`Authorization: Bearer`).
 
-| 요청                                                           | 바디 → `dataBody`                                                 | 주요 오류                                                                                                                     | 프론트 함수                       |
-| -------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `GET /me`                                                      | → `MyInfo`                                                        | `MEMBER_004` 회원 없음(404, 로그아웃 상태로), `002` · `003`(403)                                                              | `fetchMyInfo`(회원 정보 저장소)   |
-| `PATCH /me`                                                    | `{ nickname }` → `MyInfo`                                         | 검증 `MEMBER_101` · `102`                                                                                                     | (연동 이슈)                       |
-| `POST /me/password`                                            | `{ currentPassword, newPassword }` → null (다른 기기 로그아웃)    | `MEMBER_005` 불일치(400) · `006` 잠금(429) · `007` 비밀번호 없음(409) · `009`(503), 검증 `103~107`                            | `changePassword`                  |
-| `POST /me/password/setup` (#61 에서 제거 — 프론트 정리는 #166) | `{ newPassword }` → null (다른 기기 로그아웃)                     | `MEMBER_008` 이미 있음(409) · `009`(503), 검증 `105~107`                                                                      | `setupPassword`                   |
-| `GET /me/region`                                               | → `MemberRegion` \| null (아직 고르지 않음)                       | `REGION_004` 행정동 확인 장애(503)                                                                                            | `fetchMyRegion`(회원 정보 저장소) |
-| `PUT /me/region`                                               | `{ code }`(숫자 8자리) → `MemberRegion` (`abolished` 는 늘 false) | `REGION_001` 없는 코드 · `002` 폐지(400), `003` 동시 첫 저장 경합(409, 다시 보내면 갱신), `004`(503), 검증 `101` · `102`(400) | `saveRegion`                      |
+| 요청                | 바디 → `dataBody`                                                 | 주요 오류                                                                                                                     | 프론트 함수                       |
+| ------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `GET /me`           | → `MyInfo`                                                        | `MEMBER_004` 회원 없음(404, 로그아웃 상태로), `002` · `003`(403)                                                              | `fetchMyInfo`(회원 정보 저장소)   |
+| `PATCH /me`         | `{ nickname }` → `MyInfo`                                         | 검증 `MEMBER_101` · `102`                                                                                                     | (연동 이슈)                       |
+| `POST /me/password` | `{ currentPassword, newPassword }` → null (다른 기기 로그아웃)    | `MEMBER_005` 불일치(400) · `006` 잠금(429) · `007` 비밀번호 없음(409) · `009`(503), 검증 `103~107`                            | `changePassword`                  |
+| `GET /me/region`    | → `MemberRegion` \| null (아직 고르지 않음)                       | `REGION_004` 행정동 확인 장애(503)                                                                                            | `fetchMyRegion`(회원 정보 저장소) |
+| `PUT /me/region`    | `{ code }`(숫자 8자리) → `MemberRegion` (`abolished` 는 늘 false) | `REGION_001` 없는 코드 · `002` 폐지(400), `003` 동시 첫 저장 경합(409, 다시 보내면 갱신), `004`(503), 검증 `101` · `102`(400) | `saveRegion`                      |
 
-- `MyInfo` = `{ memberId, email, nickname, provider(EMAIL | KAKAO), hasPassword, role, pendingConsents, reportWritable }`. `provider` 는 카카오를 연결한 이메일 계정도 `KAKAO` 다(DB 값이 없으면 `EMAIL`). `hasPassword` 가 true 면 비밀번호 변경을 보이고, false 면(카카오로만 로그인) **비밀번호 메뉴를 숨긴다** — 비밀번호 최초 설정 API · 화면은 백엔드 #61 에서 없앴다(backend/docs/modules.md, 프론트 정리는 #166). 재동의 조건 `pendingConsents` 는 로그인 응답과 같은 계산이다.
+- `MyInfo` = `{ memberId, email, nickname, provider(EMAIL | KAKAO), hasPassword, role, pendingConsents, reportWritable }`. `provider` 는 카카오를 연결한 이메일 계정도 `KAKAO` 다(DB 값이 없으면 `EMAIL`). `hasPassword` 가 true 면 비밀번호 변경을 보이고, false 면(카카오로만 로그인) **비밀번호 메뉴를 숨긴다** — 비밀번호 최초 설정 API(`POST /me/password/setup`)는 백엔드 #61 에서 없앴고(`MEMBER_008` 은 비운 번호), 프론트도 #166 에서 `setupPassword` 와 설정 화면을 지웠다(목도 같은 동작). 재동의 조건 `pendingConsents` 는 로그인 응답과 같은 계산이다.
 - `MemberRegion` = `{ code, name, sigungu, abolished }`. 이름 · 폐지 여부는 조회할 때마다 행정동 서비스(surveillance)에서 다시 읽는다 — 코드가 없으면 `name` · `sigungu` 가 null 이고 `abolished: true` 다. 폐지돼도 서버는 저장 값을 바꾸지 않는다(다시 고르게 한다). 내 동네는 `/me` 에 싣지 않는다 — `/me` 가 행정동 서비스 장애에 묶이지 않게 따로 읽는다.
 - **프론트 연동 (#164)**:
   - **회원 정보 저장소**(`features/auth/member-info.ts`, 요청은 `member-client.ts`): 세션 저장소가 회원이 되면(로그인 · 새로고침 복원 · 다른 탭 로그인 — `memberId` 가 바뀔 때만) `GET /me` 와 `GET /me/region` 을 한 번씩 읽어 메모리에 두고, 비회원이 되면 바로 지운다(늦은 응답은 버린다). 같은 회원의 재발급에는 다시 읽지 않는다. 두 요청은 따로 `loading` · `ready` · `failed` 이고 다시 시도(`retryMemberInfo`)는 실패한 쪽만 다시 읽는다. 루트 레이아웃의 `SessionBootstrap` 이 켠다.
@@ -96,6 +107,9 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
   - 프로필 훅(`useMockProfile`, 이름 정리는 후속)은 실데이터면 이 저장소의 `MyInfo`(provider `EMAIL`/`KAKAO` → `email`/`kakao`)를 옮긴다. 읽기 전 · 실패면 null 이고 상태는 `useMockProfileStatus()` 다 — **예시 프로필로 채우지 않는다.** 내 동네 훅(`useMemberRegion`)은 반환 모양(`{ code, name } | null`)을 그대로 두고 저장소의 내 동네를 준다(미설정 · 읽기 전 · 실패 · 이름 모름이면 null, 상태는 `useMemberRegionStatus()`).
   - `saveRegion(district, source)`: 실데이터는 코드만 `PUT` 한다. `REGION_001` · `002` · `101` · `102` → `{ status: 'invalid' }`(다른 동네를 고르게 함), `REGION_003` → 한 번 다시 보냄, `REGION_004` · 일시 장애 · 두 번째 경합 → 거부("바꾸지 못했어요 · 잠시 뒤 다시"). 성공하면 응답을 저장소의 내 동네로 넣는다(다시 읽지 않음 — 먼저 나간 조회의 늦은 응답은 버림). 부르는 화면(가입 마무리 · 내 동네 바꾸기 · 다시 고르기 · 지도 `내 동네로 설정`)이 `useDataSource()` 로 출처를 넘긴다.
   - 회원 조건(`useMemberRequirements`): 실데이터는 세션의 `pendingConsents` → 약관 재동의, 내 동네 `abolished` → 동네 다시 고르기(재동의 다음). 내 동네가 미설정(null)이면 다시 고르게 하지 않는다. 내 동네를 읽는 중이면 동네 조건을 판단하지 않고(`settled: false` — 다시 고르기 화면은 이때 내보내지 않음), 읽지 못했으면 조건 없이 정해진 것으로 본다.
+- **프론트 연동 (#166)** — `changePassword(current, next, source)`: `POST /me/password` 를 access 를 실어 보낸다. 성공하면 **이 기기는 그대로**(세션 저장소를 건드리지 않음)이고 다른 기기는 서버가 로그아웃한다 — 내 정보 알림 "비밀번호를 바꿨어요. 다른 기기에서는 로그아웃됐어요".
+  - 오류 매핑: `MEMBER_005` · 검증 `103` · `104`(현재 비밀번호 없음 · 100자 초과 — 맞을 수 없음) → `wrong-current`, `006` → `locked`(회색 상자, 잠금 시간은 서버 설정이라 못 박지 않음), 검증 `105~107` → `invalid-password`(새 비밀번호 칸 아래 규칙 문구), `007` → `no-password`(내 정보와 어긋남 — `reloadMemberInfo()` 로 내 정보를 다시 읽고, `hasPassword` 가 false 면 비밀번호 화면이 내 정보로 돌아간다). `009` · 일시 장애 · 분류 밖 오류는 거부("바꾸지 못했어요").
+  - 비밀번호 행 · 화면: 실데이터는 내 정보를 읽어 `hasPassword` 가 true 일 때만 행을 보인다(읽는 동안 · 실패 · false 면 없음). `/me/password` 는 `hasPassword` false 면 그리지 않고 내 정보로 돌려보낸다.
 - **BE 미정**: 프로필 이미지(#112).
 
 ## 행정동 `/api/v1/districts` (확정)
