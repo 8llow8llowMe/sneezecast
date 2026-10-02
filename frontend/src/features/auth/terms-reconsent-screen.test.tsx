@@ -3,10 +3,12 @@ import { renderToString } from 'react-dom/server'
 
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { OnboardingProvider } from '@/features/onboarding/onboarding-context'
+import { restoreSession } from '@/lib/session/session-store'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
+import { holdReissue, memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
 
 import type * as authClient from './auth-client'
 import {
@@ -308,5 +310,49 @@ describe('TermsReconsentScreen 로그인 만료', () => {
 
     expect(router.replace.mock.calls).toEqual([['/login?reason=expired']])
     clearSessionExpiring()
+  })
+})
+
+describe('TermsReconsentScreen 실데이터 모드 (새로고침 뒤 세션 복원)', () => {
+  beforeEach(() => {
+    selectApiSource()
+  })
+
+  afterEach(() => {
+    resetApiSession()
+  })
+
+  it('복원 중에는 다른 곳으로 보내지 않고, 재동의할 항목이 있는 회원으로 정해지면 화면을 보인다', async () => {
+    const server = holdReissue()
+    render(ui)
+    let restoring: Promise<void> = Promise.resolve()
+    act(() => {
+      restoring = restoreSession()
+    })
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+
+    await act(async () => {
+      server.succeed(memberToken({ pendingConsents: ['TERMS_OF_SERVICE'] }))
+      await restoring
+    })
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('바뀐 약관을 확인해 주세요')
+  })
+
+  it('복원이 비회원으로 끝난 뒤에만 홈으로 보낸다', async () => {
+    const server = holdReissue()
+    render(ui)
+    let restoring: Promise<void> = Promise.resolve()
+    act(() => {
+      restoring = restoreSession()
+    })
+    expect(router.replace).not.toHaveBeenCalled()
+
+    await act(async () => {
+      server.fail('AUTH_014', 401)
+      await restoring
+    })
+    expect(router.replace.mock.calls).toEqual([['/']])
   })
 })

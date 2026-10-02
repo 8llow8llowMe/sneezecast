@@ -7,6 +7,7 @@ import {
 } from '@/features/onboarding/paths'
 import { ABOLISHED_DISTRICT_EXAMPLE } from '@/features/region/mock'
 import { navHref } from '@/lib/nav'
+import type { SessionSnapshot } from '@/lib/session/session-store'
 
 import {
   getMockProfile,
@@ -31,7 +32,7 @@ export const REQUIRED_STEP_ORDER: readonly RequiredStep[] = ['terms', 'region']
 /**
  * QA 용 조건 덮어쓰기 쿼리 (`?mock-required=terms|region|terms,region`). 있으면 목 프로필의 조건 대신 이 값을 쓴다.
  * 동네 조건의 옛 동네는 프로필에 폐지된 동네가 없으면 시안 예시(`○○1동`)다.
- * **연동 때 지운다** — `?mock-auth=` 와 같은 QA 덮어쓰기다(docs/design/SCREENS.md 연동 요구사항).
+ * `?mock-auth=` 와 같은 QA 덮어쓰기라 **목데이터 모드에서만 듣는다**(`useMemberRequirements`).
  */
 export const MOCK_REQUIRED_PARAM = 'mock-required'
 
@@ -74,6 +75,18 @@ export function memberRequirements(
       ? profile.region
       : EXAMPLE_ABOLISHED_REGION
   return { steps, abolishedRegion }
+}
+
+/**
+ * 실데이터 세션으로 거칠 화면을 정한다. 회원이 아니면(복원 중 포함) 없다. 다시 동의할 항목(`pendingConsents`)이 있으면 약관 재동의다.
+ * 동네 조건(폐지된 동네)은 내 동네 API 를 연동할 때 더한다 — 지금은 없다.
+ */
+export function sessionRequirements(session: SessionSnapshot): MemberRequirements {
+  if (session.status !== 'member') return { steps: [], abolishedRegion: null }
+  return {
+    steps: session.summary.pendingConsents.length > 0 ? ['terms'] : [],
+    abolishedRegion: null,
+  }
 }
 
 /* ── 돌아갈 곳 (`?next=`) ─────────────────────────────────────────────────────────────────── */

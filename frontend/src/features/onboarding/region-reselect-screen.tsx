@@ -13,6 +13,7 @@ import {
   stepTarget,
   targetAfter,
 } from '@/features/auth/required-steps'
+import { useAuthSettled } from '@/features/auth/use-auth'
 import { useMemberRequirements } from '@/features/auth/use-member-requirements'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { listSuccessorDistricts } from '@/features/region/region-client'
@@ -21,7 +22,6 @@ import { useDistrictSearch } from '@/features/region/use-district-search'
 import { withIGa } from '@/lib/korean'
 import { isSessionExpiring } from '@/lib/session-expiry'
 import { useActiveRef } from '@/lib/use-active-ref'
-import { useHydrated } from '@/lib/use-hydrated'
 
 import {
   type DistrictOption,
@@ -74,13 +74,14 @@ function useCandidates(code: string | null): CandidateLoad {
  *   먼저 바뀌고(화면과 무관), 화면이 떠 있으면 남은 조건 화면이나 `?next=`(허용 목록 밖이면 홈)로 기록을 바꿔 간다
  * - 보내는 중에는 버튼이 꺼지고(`aria-disabled`) 검색 칸은 읽기 전용이다. 실패하면 빨강 상자로 알리고 다시 누를 수 있다
  * - **뒤로 버튼이 없다**(시안에도 없음). 동네가 없으면 보고를 셀 수 없어 고르기 전에는 나가지 않는다
- * - 하이드레이션을 마친 뒤 판단한다: 비회원이거나 동네 조건이 없으면 남은 조건 화면(약관 재동의가 먼저)이나 `?next=` 로 보낸다
+ * - 회원 상태가 정해진 뒤(`useAuthSettled`) 판단한다: 비회원이거나 동네 조건이 없으면 남은 조건 화면(약관 재동의가 먼저)이나 `?next=` 로 보낸다
  *
  * 시안(정본): docs/design/auth/screens/ 의 Setup-1-reselect (+ -T · -D)
  */
 export function RegionReselectScreen() {
   const searchParams = useSearchParams()
-  const hydrated = useHydrated()
+  // 회원 상태가 정해진 뒤(하이드레이션 · 실데이터 복원을 마침)에만 판단한다 — 복원 중의 비회원으로 내보내지 않는다
+  const authSettled = useAuthSettled()
   const auth = useMockAuth()
   const requirements = useMemberRequirements()
   const { replace } = useOnboarding()
@@ -95,10 +96,10 @@ export function RegionReselectScreen() {
   const [submittingFrom, setSubmittingFrom] = useState<MemberRegion | null>(null)
 
   // 약관 재동의가 남았으면 그쪽이 먼저다. 이 화면은 첫 조건이 동네일 때만 그린다
-  const showing = hydrated && requirements.steps[0] === 'region'
+  const showing = authSettled && requirements.steps[0] === 'region'
   const oldRegion = showing ? requirements.abolishedRegion : pending ? submittingFrom : null
   const redirect =
-    hydrated && !showing
+    authSettled && !showing
       ? stepTarget(
           requirements.steps,
           safeNextPath(searchParams.get(NEXT_PARAM)),

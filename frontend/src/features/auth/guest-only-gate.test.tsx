@@ -2,10 +2,12 @@
 import { renderToString } from 'react-dom/server'
 
 import { act, render } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { restoreSession } from '@/lib/session/session-store'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
+import { holdReissue, resetApiSession, selectApiSource } from '@/test/api-session'
 
 import { loginWithEmail, resetMockSession, signup } from './auth-client'
 import { GuestOnlyGate, isGuestOnly, memberTarget } from './guest-only-gate'
@@ -235,5 +237,36 @@ describe('GuestOnlyGate', () => {
     )
     expect(router.replace).toHaveBeenCalledTimes(1)
     expect(router.replace).toHaveBeenCalledWith('/')
+  })
+})
+
+describe('GuestOnlyGate 실데이터 모드', () => {
+  afterEach(() => {
+    resetApiSession()
+  })
+
+  it('회원이 로그인 화면을 새로고침하면 복원이 끝난 뒤 홈으로 보낸다 — 복원 중의 비회원으로 닿음을 정하지 않는다', async () => {
+    selectApiSource()
+    const server = holdReissue()
+    render(<GuestOnlyGate />)
+    let restoring: Promise<void> = Promise.resolve()
+    act(() => {
+      restoring = restoreSession()
+    })
+    expect(router.replace).not.toHaveBeenCalled()
+
+    await act(async () => {
+      server.succeed()
+      await restoring
+    })
+    expect(router.replace.mock.calls).toEqual([['/']])
+  })
+
+  it('?mock-auth=member 덮어쓰기는 듣지 않는다 (비회원은 그대로 로그인 화면)', async () => {
+    selectApiSource()
+    search = 'mock-auth=member'
+    render(<GuestOnlyGate />)
+    await act(() => restoreSession())
+    expect(router.replace).not.toHaveBeenCalled()
   })
 })

@@ -6,19 +6,19 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import type { MockAuthState } from '@/features/auth/auth-client'
 import { loginHref } from '@/features/auth/login-return'
 import { carriedParams, safeNextPath, stepTarget } from '@/features/auth/required-steps'
+import { useAuth, useAuthSettled } from '@/features/auth/use-auth'
 import { useMemberRequirements } from '@/features/auth/use-member-requirements'
-import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { LOGIN_EXPIRED_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { isSessionExpiring } from '@/lib/session-expiry'
-import { useHydrated } from '@/lib/use-hydrated'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
 /**
  * 회원만 쓰는 화면(내 정보 · 로그인한 기기 · 비밀번호)의 가드. 회원이면 회원 상태를, 아니면(또는 아직 모르면) null 을 돌려준다.
  * null 이면 화면은 본문을 그리지 않는다.
  *
- * **하이드레이션을 마친 뒤에만 판단한다.** 서버와 하이드레이션 첫 그림의 회원 상태는 늘 `guest` 다(서버는 목 세션을 모른다 —
- * `useMockAuth`). 그 값으로 바로 보내면 회원도 로그인으로 튕긴다. 하이드레이션 뒤 다시 그린 그림의 상태가 비회원일 때만
+ * **회원 상태가 정해진 뒤에만 판단한다**(`useAuthSettled` — 하이드레이션을 마쳤고, 실데이터면 세션 복원도 마침). 서버와 하이드레이션
+ * 첫 그림의 회원 상태는 늘 `guest` 이고(서버는 세션을 모른다 — `useAuth`), 실데이터는 새로고침 뒤 재발급을 기다리는 동안에도 `guest` 다.
+ * 그 값으로 바로 보내면 회원도 로그인으로 튕긴다. 정해진 그림의 상태가 비회원일 때만
  * 로그인(`/login`)으로 기록을 바꿔 간다(뒤로 가기로 이 화면에 돌아와 다시 튕기지 않게). 이동은 Next 라우터로 한다 —
  * 원시 history 를 바꾸지 않으므로 `useSearchParams` 와 어긋나지 않고, 하이드레이션 첫 커밋 뒤라 Next 가 history 를 감싼 뒤다.
  * 앱 안 이동으로 처음 그리는 화면은 하이드레이션이 아니라 처음부터 목 세션으로 판단한다.
@@ -35,9 +35,9 @@ export function useMemberGate({
 }: { next?: string; paused?: boolean } = {}): Exclude<MockAuthState, 'guest'> | null {
   const { replace } = useNavTrail()
   const searchParams = useSearchParams()
-  const hydrated = useHydrated()
-  const auth = useMockAuth()
-  const guest = hydrated && auth === 'guest' && !paused
+  const settled = useAuthSettled()
+  const auth = useAuth()
+  const guest = settled && auth === 'guest' && !paused
   const loginTarget =
     next === undefined
       ? LOGIN_PATH
@@ -52,14 +52,14 @@ export function useMemberGate({
     if (guest) replace(isSessionExpiring() ? LOGIN_EXPIRED_PATH : loginTarget)
   }, [guest, replace, loginTarget])
 
-  return hydrated && auth !== 'guest' ? auth : null
+  return settled && auth !== 'guest' ? auth : null
 }
 
 /**
  * 다시 들어온 회원이 먼저 거칠 화면(약관 재동의 → 동네 다시 고르기)의 주소. 보낼 곳이 없거나 아직 모르면 null 이다.
  *
  * - 비회원은 null 이다. 조건은 `useMemberRequirements`(목 프로필 · `?mock-required=` 덮어쓰기)가 정한다
- * - `useMemberGate` 처럼 **하이드레이션을 마친 뒤에만** 정한다(첫 그림은 늘 비회원이다)
+ * - `useMemberGate` 처럼 **회원 상태가 정해진 뒤에만**(`useAuthSettled`) 정한다(첫 그림 · 복원 중은 늘 비회원이다)
  * - 돌아올 곳은 `?next=<nextPath>`(허용 목록 밖이면 홈), 둘러보기 동네 · 목 덮어쓰기 쿼리는 남긴다(`carriedParams`)
  *
  * 이동은 하지 않는다. 가드(`useRequiredStepsGate`)와 같은 그림에서 주소 쿼리를 정리하는 화면이 이 값으로 정리를 건너뛴다 —
@@ -67,9 +67,9 @@ export function useMemberGate({
  */
 export function useRequiredStepsTarget(nextPath: string): string | null {
   const searchParams = useSearchParams()
-  const hydrated = useHydrated()
+  const settled = useAuthSettled()
   const { steps } = useMemberRequirements()
-  return hydrated && steps.length > 0
+  return settled && steps.length > 0
     ? stepTarget(steps, safeNextPath(nextPath), carriedParams(searchParams))
     : null
 }

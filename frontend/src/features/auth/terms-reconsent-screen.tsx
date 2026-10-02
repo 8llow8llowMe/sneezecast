@@ -14,12 +14,12 @@ import { formatMonthDay } from '@/lib/format'
 import { navHref } from '@/lib/nav'
 import { isSessionExpiring } from '@/lib/session-expiry'
 import { useActiveRef } from '@/lib/use-active-ref'
-import { useHydrated } from '@/lib/use-hydrated'
 
 import { agreeTermsReconsent, logout } from './auth-client'
 import { LEGAL_TEXT_NOT_READY } from './consent-row'
 import { consentFor, TERMS_REVISION } from './legal'
 import { carriedParams, NEXT_PARAM, safeNextPath, stepTarget, targetAfter } from './required-steps'
+import { useAuthSettled } from './use-auth'
 import { useMemberRequirements } from './use-member-requirements'
 import { useMockAuth } from './use-mock-auth'
 
@@ -36,13 +36,14 @@ import { useMockAuth } from './use-mock-auth'
  *   필요하다**(docs/design/SCREENS.md). 로그아웃(`logout`)에 성공하면 목 세션이 먼저 비회원이 되고(화면과 무관), 화면이 떠 있으면
  *   동네(`region`)만 남긴 홈으로 기록을 바꿔 간다. 목 덮어쓰기는 버린다 — 남기면 비회원 홈이 다시 회원으로 보인다
  * - 두 동작은 한 번에 하나만 보낸다(보내는 중이면 두 버튼 모두 `aria-disabled`). 실패는 각자의 빨강 상자로 알린다
- * - 하이드레이션을 마친 뒤 판단한다: 비회원이거나 재동의 조건이 없으면 남은 조건 화면이나 `?next=` 로 보낸다
+ * - 회원 상태가 정해진 뒤(`useAuthSettled`) 판단한다: 비회원이거나 재동의 조건이 없으면 남은 조건 화면이나 `?next=` 로 보낸다
  *
  * 시안(정본): docs/design/auth/screens/ 의 Setup-3-reconsent (+ -T · -D)
  */
 export function TermsReconsentScreen() {
   const searchParams = useSearchParams()
-  const hydrated = useHydrated()
+  // 회원 상태가 정해진 뒤(하이드레이션 · 실데이터 복원을 마침)에만 판단한다 — 복원 중의 비회원으로 내보내지 않는다
+  const settled = useAuthSettled()
   const auth = useMockAuth()
   const { steps } = useMemberRequirements()
   const { replace } = useOnboarding()
@@ -53,9 +54,9 @@ export function TermsReconsentScreen() {
   const [pending, setPending] = useState<'agree' | 'logout' | null>(null)
   const [failed, setFailed] = useState<'agree' | 'logout' | null>(null)
 
-  const showing = hydrated && steps[0] === 'terms'
+  const showing = settled && steps[0] === 'terms'
   const redirect =
-    hydrated && !showing
+    settled && !showing
       ? stepTarget(steps, safeNextPath(searchParams.get(NEXT_PARAM)), carriedParams(searchParams))
       : null
   useEffect(() => {
