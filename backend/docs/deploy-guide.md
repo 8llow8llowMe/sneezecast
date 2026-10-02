@@ -179,7 +179,7 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
 | 서비스 | 공통 경로에서 | 서비스 경로에서 |
 |--------|---------------|-----------------|
 | service-discovery | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_PORT` | (경로 없음) |
-| api-gateway | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD`, `AUTH_SERVICE_APP_NAME`, `SURVEILLANCE_SERVICE_APP_NAME` | `API_GATEWAY_PORT` |
+| api-gateway | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD`, `AUTH_SERVICE_APP_NAME`, `SURVEILLANCE_SERVICE_APP_NAME` | `API_GATEWAY_PORT`, `GATEWAY_TRUSTED_PROXIES` |
 | auth-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `AUTH_SERVICE_APP_NAME`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD` | `AUTH_SERVICE_PORT`, `AUTH_DB_URL`, `AUTH_DB_USERNAME`, `AUTH_DB_PASSWORD`, `JWT_REFRESH_KEY`, `MINIO_ENDPOINT`, `MINIO_PUBLIC_URL`, `MINIO_BUCKET`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MAIL_USERNAME`, `MAIL_PASSWORD` |
 | surveillance-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `SURVEILLANCE_SERVICE_APP_NAME`, `JWT_ACCESS_KEY` | `SURVEILLANCE_SERVICE_PORT`, `SURVEILLANCE_DB_URL`, `SURVEILLANCE_DB_USERNAME`, `SURVEILLANCE_DB_PASSWORD`, `REPORTER_KEY_PEPPER` |
 | batch-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT` | `BATCH_SERVICE_PORT`, `BATCH_DB_URL`, `BATCH_DB_USERNAME`, `BATCH_DB_PASSWORD` |
@@ -212,6 +212,7 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
 | `AUTH_SERVICE_APP_NAME` / `SURVEILLANCE_SERVICE_APP_NAME` | `auth-service` / `surveillance-service` | 같음 | compose 가 각 서비스의 `SPRING_APPLICATION_NAME` 으로 넘긴다 |
 | `AUTH_DB_URL` | `jdbc:mysql://192.168.0.11:3306/sneezecast_auth?...` | 미정 | DB 이름은 §8 SQL 과 같아야 한다 |
 | `SURVEILLANCE_DB_URL` · `BATCH_DB_URL` | `jdbc:mysql://192.168.0.11:3306/sneezecast_surveillance?...` | 미정 | batch 도 같은 DB 다 |
+| `GATEWAY_TRUSTED_PROXIES` | `192.168.0.12` (nginx) | prod nginx 사설 IP (미정) | 앱이 기동 때 형식(IP · CIDR, 호스트명 거부)만 본다. 값이 틀려도 뜨지만 nginx 경유 요청이 모두 nginx IP 한 키를 나눠 써 auth IP 발송 상한이 전체에 걸린다 — §9 7번으로 확인 |
 
 URL 옵션(`?` 뒤)은 Infra 키 표의 혼디가개 secret 과 같게 둔다.
 
@@ -344,6 +345,12 @@ curl -s -o /dev/null -w '%{http_code}\n' https://api-dev.sneezecast.com/actuator
 
 # 6. 루프백 publish 확인 — 사설망의 다른 호스트에서 서비스 포트가 닫혀 있어야 한다
 curl -s -m 3 http://192.168.0.13:3081/actuator/health || echo "닫힘 (정상)"
+
+# 7. 신뢰 프록시 — 공개 도메인으로 한 번 요청한 뒤 게이트웨이 접근 로그의 clientIp 가 실제 공인 IP 여야 한다.
+#    192.168.0.12 · 172.x 가 찍히면 GATEWAY_TRUSTED_PROXIES 가 실제 접속 주소와 다르다(Docker NAT · userland-proxy 등)
+docker logs --since 2m sneezecast-api-gateway-dev 2>&1 | grep -o 'clientIp=[^ ]*' | sort | uniq -c
+#    사설망의 다른 호스트에서 위조 헤더를 보내면 clientIp 는 위조값이 아니라 그 호스트 IP 여야 한다
+curl -s -o /dev/null -H 'X-Real-IP: 1.2.3.4' http://192.168.0.13:3000/api/v1/districts
 ```
 
 4번은 업스트림이 내는 401 · 404(아직 컨트롤러가 없는 경로)면 라우팅은 된 것이다. 게이트웨이 자체의 503 · 504 와 구분한다.

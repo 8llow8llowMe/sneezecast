@@ -91,8 +91,10 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 라우팅, CORS, JWT 1차 검증. 토큰이 없는 요청은 통과시키고 권한 판단은 각 서비스가 한다.
 - JWT 는 **서명 · 만료 · 폐기(블랙리스트)만** 본다. `role` · `scope` 는 해석하지 않는다 — 역할 목록을 게이트웨이에 복사하면 역할이 늘 때 게이트웨이만 뒤처진다. claim 규약 위반 거부는 서비스 Resource Server(`JwtToMemberConverter`)가 한다.
 - **`/internal/**` 은 라우팅하지 않는다.** 라우트 커버리지 테스트(`GatewayRouteCoverageTest`)로 막는다. 모든 공개 경로는 `/api/v1/` 로 시작한다.
-- **JWT 거부 응답**은 `Response` 봉투를 쓴다 (그 밖의 게이트웨이 오류는 아직 Spring 기본 형식). 에러 코드는 security-core `SecurityErrorCode` 와 같은 문자열이다 (계약 테스트로 고정).
-- CORS 허용 오리진은 security-core `AuthSecurityConfigurer` 와 같은 목록이다.
+- **JWT 거부**(`SECURITY_00x`)와 **게이트웨이 자체 오류**(`GATEWAY_00x` — 경로 거부 400 · 라우트 없음 404 · 인스턴스 없음 · 업스트림 연결 실패 503 · 업스트림 응답 타임아웃 504)는 `Response` 봉투를 쓴다. 그 밖의 오류는 Spring 기본 형식이다. `SECURITY_00x` 는 security-core `SecurityErrorCode` 와 같은 문자열이다 (계약 테스트로 고정).
+- **경로 우회 거부**: 원문 경로에 `..` · `;` · `\` · `%2e` · `%2f` · `%5c` · `%25` · `%3b` · `%00` 이 있으면 라우트 매칭 전에 400 `GATEWAY_001` 로 막는다 (`PathTraversalRejectWebFilter`) — 업스트림 정규화로 `/internal/**` 에 닿는 우회를 막는다. 리터럴 `\` 는 그보다 앞의 URI 해석 단계에서 봉투 없는 400 이 된다.
+- **신뢰 프록시 헤더 규칙**: 접속 주소가 `GATEWAY_TRUSTED_PROXIES`(nginx IP · CIDR, 비거나 호스트명이면 기동 실패)가 아니면 `X-Forwarded-*` · `Forwarded` · `X-Real-IP` 를 지우고 `X-Real-IP` 를 접속 주소로 덮어쓴다 (`TrustedProxyHeaderWebFilter`). 접근 로그 `clientIp` 도 `X-Real-IP` → 접속 주소 순이고 `X-Forwarded-For` 는 쓰지 않는다.
+- CORS 허용 오리진은 security-core `AuthSecurityConfigurer` 와 같은 목록이다 (`CorsOriginContractTest` 가 소스를 대조한다).
 - `JWT_ACCESS_KEY` 가 UTF-8 64바이트 미만 · 공백이면 기동 실패 (`JwtVerificationProperties`). 게이트웨이는 security-core 에 의존하지 않아 같은 규칙을 이 record 에 따로 둔다 — 규칙을 바꾸면 security-core `JwtSigningKeys` 와 함께 고친다.
 
 | 경로 | 서비스 |
@@ -111,7 +113,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 필터 순서는 `HIGHEST_PRECEDENCE + 1` 로 고정한다 (로드밸런서 · 라우팅 필터보다 앞). WebSocket 라우팅은 쓰지 않으므로 끈다.
 - 클라이언트가 보낸 회원 헤더(`X-Authenticated-Member-Id`, `X-Member-Id`)는 지우고 `sub` 로 다시 붙인다.
 
-**그 밖의 설정**: 응답 CORS 헤더 중복 제거(`DedupeResponseHeader`, auth-service 도 CORS 를 붙이므로), 업스트림 connect 2초 · response 10초 (초과 시 504, 봉투 아님).
+**그 밖의 설정**: 응답 CORS 헤더 중복 제거(`DedupeResponseHeader`, auth-service 도 CORS 를 붙이므로), 업스트림 connect 2초 · response 10초 (연결 실패 503 · 응답 초과 504, 둘 다 `GATEWAY_00x` 봉투).
 
 ---
 
@@ -160,7 +162,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 인증 코드: 숫자 6자리(시안 Signup-code). 한도 · 수명은 `auth.email-send.*`(env `AUTH_EMAIL_SEND_*`, 기본 코드 5분 · 재발송 쿨다운 60초 · IP당 발송 10회/1시간 · 오입력 5회 · 인증 완료 30분 · IP당 검증 30회/1시간). IP 발송 상한은 쿨다운을 통과해 **실제로 발송한 요청만** 센다. IP 상한 둘은 저장소 장애에 fail-open. 검증은 앞뒤 공백을 무시한다.
 - **가입 여부가 응답으로 새지 않는다**(계정 열거 방지). 이미 가입된 이메일에도 메일로 보내지 않는 무작위 미끼 코드를 같은 수명으로 저장하고 실패 횟수를 초기화한다 — 발송 · 검증의 모든 응답(AUTH_003 · 004 · 005 포함)이 미가입과 같다. 가입된 이메일에는 코드 대신 "이미 가입된 계정" 안내 메일만 간다. 미끼를 맞혀 인증 표시가 생겨도 가입은 `MEMBER_001` 로 막힌다. 탈퇴 회원도 행이 파기될 때까지 이메일을 점유한다.
 - Redis 키는 `{prefix}:auth:{emailVerificationCode|emailVerificationFail|emailVerificationCooldown|emailVerified|emailSendIp|emailVerifyIp}:{정규화한 이메일 또는 IP}`. 이메일은 trim + 소문자(`EmailNormalizer`)로 키와 저장값을 맞춘다. Redis 장애는 503 `AUTH_006` 이다.
-- IP 상한의 키는 `X-Real-IP` 다 (nginx 가 덮어쓰고 게이트웨이가 그대로 넘긴다). `X-Forwarded-For` 는 앞쪽 값을 클라이언트가 바꿀 수 있고 마지막 값은 게이트웨이가 덧붙인 nginx 주소라 쓰지 않는다.
+- IP 상한의 키는 `X-Real-IP` 다 (nginx 가 덮어쓰고, nginx 가 아닌 출발지면 게이트웨이가 접속 주소로 덮어쓴다). `X-Forwarded-For` 는 앞쪽 값을 클라이언트가 바꿀 수 있고 마지막 값은 게이트웨이가 덧붙인 nginx 주소라 쓰지 않는다.
 - 메일은 `authMailTaskExecutor` 에서 비동기로 보내고(SMTP 접속 · 응답 · 쓰기 timeout 5초), 실패는 로그만 남긴다. 큐가 차면 그 메일을 로그만 남기고 버린다(요청은 성공). Boot 기본 `applicationTaskExecutor` 는 `AuthServiceAsyncConfig` 가 같은 이름으로 따로 두고 한정자 없는 `@Async` 기본값에 연결한다. health 는 SMTP 를 보지 않는다(`management.health.mail.enabled: false`).
 - 가입: 인증 완료 확인(Redis) → 비밀번호 BCrypt 해시(트랜잭션 밖) → 회원 · 동의 저장(`GeneralSignupProcessor` 트랜잭션) → 커밋 뒤 인증 표시 소비. 필수 동의는 이용약관 · 개인정보 · 만 19세 이상, **건강정보 동의는 별도 필드의 선택 항목**이고 동의했을 때만 행을 남긴다. 문서 버전은 `legal.*-version` 설정값. 동시 가입 중복은 `uk_member_email` 이 막고 `MEMBER_001`(409)로 바뀐다. **가입 응답에는 토큰이 없다** — 이어서 로그인한다.
 - 입력 규칙은 시안 Signup-account 와 같다 — 비밀번호 8~20자 · 영문자와 숫자 필수 · 공백 금지 · 특수문자는 선택(상한 20자는 BCrypt 72바이트 한도 안에 두려는 값), 닉네임 2~10자(앞뒤 공백을 지우고 저장).
