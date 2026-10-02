@@ -14,6 +14,10 @@ import { districtFromParam } from '@/features/region/region-param'
  *
  * 회원 · 동의 상태(목)는 홈이 `useMockAuth` 로 읽는다. QA 용 `?mock-auth=guest|member|member-no-consent` 덮어쓰기도
  * 그 훅이 주소에서 읽는다 — 동의한 뒤 홈이 주소에서 지우면 바로 따라가야 해서 서버 props 로 넘기지 않는다.
+ *
+ * 받은 시각(`receivedAt`)은 이 요청에서 홈 자료를 다 구한 시각이다. 오프라인 띠(State-offline)가 "○월 ○일 00:00에 받은 정보예요" 로
+ * 보인다. 화면 자료(RSC 결과)와 함께 실려 가므로 라우터가 그 결과를 다시 쓸 때도 시각이 자료와 어긋나지 않는다.
+ * API 연동 때는 응답을 받은 시각으로 바꾼다.
  */
 export default async function HomePage({
   searchParams,
@@ -23,10 +27,12 @@ export default async function HomePage({
   const { mock, region } = await searchParams
   const week = pickHomeMock(mock)
   const district = await districtFromParam(region)
+  const receivedAt = new Date().toISOString()
   return (
     <HomeScreen
       week={district ? { ...week, regionName: district.name } : week}
       regionCode={district?.code ?? null}
+      receivedAt={receivedAt}
     />
   )
 }

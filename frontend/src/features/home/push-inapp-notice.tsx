@@ -7,6 +7,12 @@ import { usePushSupport } from '@/lib/use-push-support'
 import type { HomeWeekly } from './types'
 
 /**
+ * 홈 상단 안내 줄(시안 Home 의 `notice`)의 여백. 알림 대체 안내와 오프라인 띠(`OfflineNotice`)가 같이 쓴다.
+ * 모바일은 주차 줄 아래 좌우 20 · 위 12, 태블릿 · 데스크톱은 공식 정보 행 아래 좌우 24 · 32 · 위 12 다.
+ */
+export const HOME_TOP_NOTICE_CLASS = 'mx-5 mt-3 tablet:mx-6 desktop:mx-8'
+
+/**
  * 알림 대신 홈 상단에 띄우는 안내 (State-push-inapp · -T · -D). 회색 `Callout`.
  *
  * **회원이고, 운영자가 이번 주 동네 안내를 발행했고, 이 기기에서 푸시를 받을 수 없을 때만** 보인다 —
@@ -24,7 +30,7 @@ export function PushInappNotice({ week, signedIn }: { week: HomeWeekly; signedIn
     <Callout
       tone="neutral"
       icon={<InfoIcon className="shrink-0 text-fg-sub" />}
-      className="mx-5 mt-3 tablet:mx-6 desktop:mx-8"
+      className={HOME_TOP_NOTICE_CLASS}
     >
       {week.regionName} 이번 주 안내가 발행됐어요 · 알림 대신 여기서 알려드려요
     </Callout>

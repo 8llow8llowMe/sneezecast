@@ -456,3 +456,74 @@ describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 
     expect(router.replace).toHaveBeenCalledWith('/setup/region?reselect=1')
   })
 })
+
+describe('HomeScreen 오프라인 띠 (State-offline)', () => {
+  const OFFLINE_WITH_TIME = '오프라인이에요. 11월 19일 09:00에 받은 정보예요'
+  const PUSH_INAPP = '○○동 이번 주 안내가 발행됐어요 · 알림 대신 여기서 알려드려요'
+
+  /** 브라우저 연결 상태를 바꾸고 그 이벤트를 보낸다 (`useOnline` 이 navigator.onLine 과 online · offline 이벤트를 따른다) */
+  function goOnline(value: boolean) {
+    vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(value)
+    act(() => {
+      window.dispatchEvent(new Event(value ? 'online' : 'offline'))
+    })
+  }
+
+  beforeEach(() => {
+    search = ''
+    window.history.replaceState(null, '', '/')
+    resetMockSession()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('온라인이면 띠가 없고, 끊기면 받은 시각과 함께 띄우고, 다시 연결되면 거둔다', () => {
+    // 2026-11-19 00:00 UTC = 한국 09:00
+    render(<HomeScreen week={HOME_MOCKS.normal} receivedAt="2026-11-19T00:00:00Z" />)
+    expect(screen.queryByText(/오프라인이에요/)).toBeNull()
+
+    goOnline(false)
+    expect(screen.getByText(OFFLINE_WITH_TIME).closest('[role="status"]')?.classList).toContain(
+      'mt-3',
+    )
+
+    goOnline(true)
+    expect(screen.queryByText(/오프라인이에요/)).toBeNull()
+  })
+
+  it('받은 시각을 모르면 시각 없이 "오프라인이에요" 만 보인다', () => {
+    render(<HomeScreen week={HOME_MOCKS.normal} />)
+    goOnline(false)
+    expect(screen.getByText('오프라인이에요')).toBeDefined()
+  })
+
+  it('알림 대체 안내와 함께 나오면 오프라인 띠가 위에 놓이고 둘의 여백이 같다', () => {
+    search = 'mock-auth=member&mock-push=unsupported'
+    render(<HomeScreen week={HOME_MOCKS.high} receivedAt="2026-11-19T00:00:00Z" />)
+    goOnline(false)
+
+    const offline = screen.getByText(OFFLINE_WITH_TIME).closest('[role="status"]')!
+    const pushInapp = screen.getByText(PUSH_INAPP).closest('[role="status"]')!
+    expect(
+      offline.compareDocumentPosition(pushInapp) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      [...offline.classList].filter((name) => /^(tablet:|desktop:)?m[xt]-/.test(name)),
+    ).toEqual([...pushInapp.classList].filter((name) => /^(tablet:|desktop:)?m[xt]-/.test(name)))
+
+    // 다시 연결되면 오프라인 띠만 거두고 알림 대체 안내는 남는다
+    goOnline(true)
+    expect(screen.queryByText(/오프라인이에요/)).toBeNull()
+    expect(screen.getByText(PUSH_INAPP)).toBeDefined()
+  })
+
+  it('서버 그림은 오프라인이어도 띠 없이 그린다 — 하이드레이션 첫 그림과 맞춘다', () => {
+    vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
+    const html = renderToString(
+      <HomeScreen week={HOME_MOCKS.normal} receivedAt="2026-11-19T00:00:00Z" />,
+    )
+    expect(html).not.toContain('오프라인이에요')
+  })
+})
