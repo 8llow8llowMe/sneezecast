@@ -46,12 +46,12 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 |------|------|------|------|
 | id | BIGINT | N | PK (Snowflake) |
 | email | VARCHAR(100) | N | 이메일. **`uk_member_email`** — 동시 가입 요청에서 중복 계정을 DB 가 막는다 |
-| password | VARCHAR(80) | Y | 비밀번호 해시. 소셜 가입자는 최초 설정 전까지 null |
+| password | VARCHAR(80) | Y | 비밀번호 해시. 카카오로만 로그인하는 회원은 null (비밀번호 최초 설정은 두지 않는다 — #61) |
 | nickname | VARCHAR(30) | N | 닉네임 |
 | profile_image_url | VARCHAR(500) | Y | 소셜 제공자가 준 외부 프로필 이미지 URL (직접 업로드하면 null) |
 | profile_image_key | VARCHAR(512) | Y | 직접 업로드한 프로필 이미지 오브젝트 키 (URL 이 아니라 키를 저장한다) |
 | role | VARCHAR(20) | N | `SecurityRole` — USER / OPERATOR / ADMIN. JWT `role` claim 과 같은 값 |
-| provider | VARCHAR(20) | Y | `OAuthProvider` — KAKAO. null 이면 이메일 계정 |
+| provider | VARCHAR(20) | Y | `OAuthProvider` — KAKAO. null 이면 이메일 계정만. KAKAO 면 카카오 로그인 가능(비밀번호가 있으면 이메일 로그인도 — 기존 이메일 계정에 카카오를 연결한 경우) |
 | status | VARCHAR(20) | N | `MemberStatus` — ACTIVE / WITHDRAWN / SUSPENDED |
 | withdrawn_at | TIMESTAMP | Y | 탈퇴 시각. 30일 보존 후 파기 스케줄러의 판정 기준 |
 
