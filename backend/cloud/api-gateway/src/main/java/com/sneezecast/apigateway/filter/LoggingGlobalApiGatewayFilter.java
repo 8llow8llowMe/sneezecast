@@ -96,12 +96,14 @@ public class LoggingGlobalApiGatewayFilter implements GlobalFilter, Ordered {
         return TOKEN_QUERY_PARAMETER.matcher(uriOrQuery).replaceAll(MASKED_TOKEN_QUERY_PARAMETER);
     }
 
+    /**
+     * {@code X-Real-IP} → 접속 주소 순이다. {@code X-Real-IP} 는 nginx 가 접속 주소로 덮어쓰거나, nginx 가 아닌 출발지면
+     * {@code TrustedProxyHeaderWebFilter} 가 덮어쓴 값이다.
+     *
+     * <p>{@code X-Forwarded-For} 는 보지 않는다 — nginx 는 클라이언트가 보낸 값 뒤에 덧붙이므로 첫 값은 nginx 를 거쳐도
+     * 클라이언트가 마음대로 정한다. auth-service 가 발송 제한 키로 쓰는 것과 같은 값을 남겨야 로그로 추적이 된다.
+     */
     private String getClientIp(ServerHttpRequest request) {
-        String forwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isEmpty()) {
-            return forwardedFor.split(",")[0].trim();
-        }
-
         String realIp = request.getHeaders().getFirst("X-Real-IP");
         if (realIp != null) {
             return realIp;
