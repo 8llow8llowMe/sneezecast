@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   EMPTY_SIGNUP,
@@ -9,6 +9,19 @@ import {
   type PasswordResetDraft,
   useOnboarding,
 } from '@/features/onboarding/onboarding-context'
+import {
+  getSessionSnapshot,
+  resetSessionForTests,
+  setSession,
+  startSession,
+} from '@/lib/session/session-store'
+import {
+  holdRequests,
+  memberToken,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
 import type * as authClient from './auth-client'
 import {
@@ -73,8 +86,8 @@ describe('PasswordResetNewScreen', () => {
     router.back.mockClear()
     vi.mocked(resetPassword).mockReset()
     // 목 서버에서 이 이메일의 재설정 토큰을 받는다
-    await sendPasswordResetCode(EMAIL)
-    const verified = await verifyPasswordResetCode(EMAIL, '482915')
+    await sendPasswordResetCode(EMAIL, 'mock')
+    const verified = await verifyPasswordResetCode(EMAIL, '482915', 'mock')
     if (verified.status !== 'ok') throw new Error('목 토큰을 받지 못했다')
     VERIFIED = { email: EMAIL, codeSentAt: 1, resetToken: verified.resetToken }
   })
@@ -137,7 +150,7 @@ describe('PasswordResetNewScreen', () => {
     await waitFor(() =>
       expect(router.replace).toHaveBeenCalledWith('/login/email?reason=reset-done'),
     )
-    expect(resetPassword).toHaveBeenCalledWith(VERIFIED.resetToken, 'newpass2026')
+    expect(resetPassword).toHaveBeenCalledWith(VERIFIED.resetToken, 'newpass2026', EMAIL, 'mock')
     expect(router.replace).toHaveBeenCalledTimes(1)
     expect(router.push).not.toHaveBeenCalled()
     expect(draft()).toEqual({ email: EMAIL, codeSentAt: null, resetToken: null })
@@ -235,7 +248,7 @@ describe('PasswordResetNewScreen', () => {
   })
   it('같은 토큰으로 두 번 바꾸지 못한다 — 이미 쓴 토큰이면 인증 만료로 돌아간다', async () => {
     const used = VERIFIED
-    await resetPassword(used.resetToken ?? '', 'newpass2025')
+    await resetPassword(used.resetToken ?? '', 'newpass2025', EMAIL, 'mock')
     vi.mocked(resetPassword).mockClear()
     const { user } = setup(used)
     await fill(user, 'newpass2026', 'newpass2026')
@@ -283,8 +296,8 @@ describe('PasswordResetNewScreen', () => {
   })
 
   it('재현용 이메일(reset-fail)로 받은 토큰이면 응답을 받지 못해 다시 누를 수 있다', async () => {
-    await sendPasswordResetCode('reset-fail@example.com')
-    const verified = await verifyPasswordResetCode('reset-fail@example.com', '482915')
+    await sendPasswordResetCode('reset-fail@example.com', 'mock')
+    const verified = await verifyPasswordResetCode('reset-fail@example.com', '482915', 'mock')
     if (verified.status !== 'ok') throw new Error('목 토큰을 받지 못했다')
     const { user } = setup({
       email: 'reset-fail@example.com',
@@ -297,5 +310,85 @@ describe('PasswordResetNewScreen', () => {
       '비밀번호를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.',
     )
     expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('limited(이 기기의 시도가 많음)면 회색 상자로 알리고 토큰을 남긴 채 다시 누를 수 있다', async () => {
+    vi.mocked(resetPassword).mockResolvedValueOnce({ status: 'limited' })
+    const { user } = setup()
+    await fill(user, 'newpass2026', 'newpass2026')
+    await user.click(submitButton())
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '요청이 많아 잠시 막혔어요. 조금 뒤 다시 시도해 주세요.',
+    )
+    expect(draft()).toEqual(VERIFIED)
+    expect(isOff(submitButton())).toBe(false)
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('서버가 규칙 위반으로 거절하면(invalid-password) 새 비밀번호 칸 아래 규칙 오류를 보이고 고칠 때까지 버튼을 끈다', async () => {
+    vi.mocked(resetPassword).mockResolvedValueOnce({ status: 'invalid-password' })
+    const { user } = setup()
+    await fill(user, 'newpass2026', 'newpass2026')
+    await user.click(submitButton())
+
+    await waitFor(() => expect(passwordInput().getAttribute('aria-invalid')).toBe('true'))
+    expect(screen.getByText('영문과 숫자를 함께 8~20자로, 띄어쓰기 없이 써 주세요.')).toBeDefined()
+    expect(isOff(submitButton())).toBe(true)
+    expect(draft()).toEqual(VERIFIED)
+
+    await user.type(passwordInput(), '7')
+    expect(passwordInput().getAttribute('aria-invalid')).toBeNull()
+  })
+})
+
+describe('PasswordResetNewScreen 실데이터 (#166)', () => {
+  let stop: () => void = () => {}
+  beforeEach(() => {
+    router.replace.mockClear()
+    vi.mocked(resetPassword).mockReset()
+    resetSessionForTests()
+    // 세션 저장소가 API 계층에 토큰을 준다 — 인증이 필요 없는 요청에 실리지 않는지 본다
+    stop = startSession()
+    selectApiSource()
+  })
+  afterEach(() => {
+    stop()
+    resetApiSession()
+  })
+
+  it('출처 api 로 보내고, 이 탭 계정을 모르면 로그아웃까지 마친 뒤 이메일 로그인으로 간다(서버가 그 계정의 모든 기기를 로그아웃)', async () => {
+    const actual = await vi.importActual<typeof authClient>('./auth-client')
+    vi.mocked(resetPassword).mockImplementation(actual.resetPassword)
+    const server = holdRequests()
+    setSession(memberToken())
+    const { user } = setup({ email: EMAIL, codeSentAt: 1, resetToken: 'server-token' })
+    await fill(user, 'newpass2026', 'newpass2026')
+    await user.click(submitButton())
+
+    expect(resetPassword).toHaveBeenCalledWith('server-token', 'newpass2026', EMAIL, 'api')
+    await waitFor(() => expect(server.requests()).toEqual(['POST /api/v1/auth/password/reset']))
+    // 인증이 필요 없는 요청이라 access 를 싣지 않는다
+    const init = server.fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
+    expect(new Headers(init?.headers).get('Authorization')).toBeNull()
+    expect(JSON.parse(init?.body as string)).toEqual({
+      resetToken: 'server-token',
+      newPassword: 'newpass2026',
+    })
+
+    act(() => server.reply('POST /api/v1/auth/password/reset', okResponse(null)))
+    // 회원 정보 저장소가 켜져 있지 않아 이 탭 계정의 이메일을 모른다 — 로그아웃으로 서버 세션까지 끊는다
+    await waitFor(() =>
+      expect(server.requests()).toEqual([
+        'POST /api/v1/auth/password/reset',
+        'POST /api/v1/auth/logout',
+      ]),
+    )
+    expect(router.replace).not.toHaveBeenCalled()
+    act(() => server.reply('POST /api/v1/auth/logout', okResponse(null)))
+    await waitFor(() =>
+      expect(router.replace).toHaveBeenCalledWith('/login/email?reason=reset-done'),
+    )
+    expect(getSessionSnapshot().status).toBe('guest')
   })
 })

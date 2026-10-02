@@ -15,17 +15,20 @@ import { clearSessionExpiring } from '@/lib/session-expiry'
 
 import type { Consent, ConsentType } from './legal'
 import { type MyRegion, putMyRegion } from './member-client'
-import { setMemberRegion } from './member-info'
+import { getMemberInfoSnapshot, reloadMemberInfo, setMemberRegion } from './member-info'
 
 /* ── 실데이터 연동 (#163) ──────────────────────────────────────────────────────────────
  *
  * 이메일 인증 · 가입 · 이메일 로그인 · 로그아웃(`sendEmailCode` · `verifyEmailCode` · `signup` 이메일 갈래 · `loginWithEmail` ·
- * `logout`)과 내 동네 저장(`saveRegion`, #164)은 마지막 인자로 데이터 출처(`DataSource`)를 받는다. `api` 면 auth API(docs/api-contract-draft.md "인증")를 부르고,
+ * `logout`)과 내 동네 저장(`saveRegion`, #164), 비밀번호 재설정 · 변경과 로그인한 기기(`sendPasswordResetCode` ·
+ * `verifyPasswordResetCode` · `resetPassword` · `changePassword` · `listSessions` · `revokeSession` · `revokeOtherSessions`, #166)는
+ * 마지막 인자로 데이터 출처(`DataSource`)를 받는다. `api` 면 auth · 회원 API(docs/api-contract-draft.md "인증" · "회원")를 부르고,
  * `mock` 이면 아래 목 동작 그대로다. 출처는 부르는 화면이 `useDataSource()` 로 읽어 넘긴다 — 이 모듈은 쿠키를 읽지 않는다
  * (docs/conventions.md "데이터 출처", `features/region/region-client.ts` 와 같다). 그 밖의 함수는 아직 출처와 무관하게 목이다.
  *
- * - 인증이 필요 없는 요청(코드 받기 · 코드 확인 · 가입 · 로그인)은 `auth: false` 로 부른다 — 만료된 access 를 실어
- *   게이트웨이가 `SECURITY_002` 로 거절하는 일이 없게 한다. 로그아웃만 access 를 싣는다(API 계층이 만료 전 재발급을 맡는다)
+ * - 인증이 필요 없는 요청(코드 받기 · 코드 확인 · 가입 · 로그인 · 비밀번호 재설정)은 `auth: false` 로 부른다 — 만료된 access 를
+ *   실어 게이트웨이가 `SECURITY_002` 로 거절하는 일이 없게 한다. 로그아웃 · 비밀번호 변경 · 기기는 access 를 싣는다(API 계층이
+ *   만료 전 재발급을 맡는다)
  * - 서버 오류 코드 중 화면 상태가 있는 것만 결과로 옮긴다. 일시 장애(`UNAVAILABLE` · 503) · 분류 밖 오류는 그대로 거부한다 —
  *   화면은 거부를 "잠시 뒤 다시 시도" 안내로 받는다(목의 응답 없음 재현과 같은 길)
  * - 비밀번호 · 인증 코드는 요청 본문으로만 보내고 로그 · 저장소 · 주소에 남기지 않는다. 토큰은 세션 저장소에만 넘긴다
@@ -47,6 +50,11 @@ const VERIFY_CODE_PATH = '/api/v1/auth/email/verify-code'
 const SIGNUP_PATH = '/api/v1/auth/signup'
 const LOGIN_PATH = '/api/v1/auth/login'
 const LOGOUT_PATH = '/api/v1/auth/logout'
+const SESSIONS_PATH = '/api/v1/auth/sessions'
+const PASSWORD_RESET_SEND_CODE_PATH = '/api/v1/auth/password/reset/send-code'
+const PASSWORD_RESET_VERIFY_CODE_PATH = '/api/v1/auth/password/reset/verify-code'
+const PASSWORD_RESET_PATH = '/api/v1/auth/password/reset'
+const CHANGE_PASSWORD_PATH = '/api/v1/members/me/password'
 
 /* ── 목 회원 상태 ──────────────────────────────────────────────────────────────────
  *
@@ -59,13 +67,12 @@ const LOGOUT_PATH = '/api/v1/auth/logout'
  * - `member`: 회원이고 건강정보 동의를 함 — 보고할 수 있다
  *
  * 값을 바꾸는 곳은 이 모듈의 함수뿐이다: 카카오 가입 성공(`signup` kind kakao) · 이메일 로그인 성공(`loginWithEmail`)은
- * `member-no-consent`, 건강정보 동의 성공(`agreeHealthConsent`)은 `member`, 동의 철회 · 로그아웃 · 탈퇴 성공(`withdrawHealthConsent` ·
- * `logout` · `withdrawMembership`)은 `guest`. 화면 코드는 고치지 않는다.
+ * `member-no-consent`, 건강정보 동의 성공(`agreeHealthConsent`)은 `member`, 동의 철회 · 로그아웃 · 탈퇴 · 비밀번호 재설정 성공
+ * (`withdrawHealthConsent` · `logout` · `withdrawMembership` · `resetPassword`)은 `guest`. 화면 코드는 고치지 않는다.
  * 모듈 메모리에만 두어 새로고침하면 `guest` 로 돌아간다 — 브라우저 저장소에 남기지 않는다.
  *
  * 내 정보(S10)가 보일 프로필(`MockProfile`)도 같은 세션에 둔다. 로그인 · 가입할 때 채우고 로그아웃 · 탈퇴하면 지운다.
- * 비밀번호 설정(`setupPassword`)에 성공하면 `hasPassword` 를 true 로 바꾼다. 내 동네 저장(`saveRegion`)에 성공하면 동네를 바꾸고
- * 폐지 표시를 끄고, 약관 재동의(`agreeTermsReconsent`)에 성공하면 재동의 표시를 끈다.
+ * 내 동네 저장(`saveRegion`)에 성공하면 동네를 바꾸고 폐지 표시를 끄고, 약관 재동의(`agreeTermsReconsent`)에 성공하면 재동의 표시를 끈다.
  * 연동 때 `GET /api/v1/members/me`(백엔드 #58) 응답으로 바꾼다.
  */
 export type MockAuthState = 'guest' | 'member-no-consent' | 'member'
@@ -77,8 +84,8 @@ export const MOCK_AUTH_STATES: readonly MockAuthState[] = ['guest', 'member-no-c
  * 이름 · 연락처 · 주소는 받지 않는다. 연동 때 `GET /api/v1/members/me` 응답으로 바꾼다. 카카오 회원의 이메일 · 닉네임과
  * 이메일 로그인의 닉네임은 목이 모르므로 시안의 예시 값(`EXAMPLE_PROFILES`)을 쓴다.
  *
- * `hasPassword` 는 이메일로도 로그인할 수 있는지다. 이메일 가입은 늘 true, 카카오 가입은 비밀번호를 설정하기 전까지 false 다
- * (내 정보의 `비밀번호 변경` / `비밀번호 설정` 이 이 값으로 갈린다). 연동 때 `GET /me` 가 이 값을 주는지 백엔드와 맞춘다.
+ * `hasPassword` 는 이메일 · 비밀번호로도 로그인할 수 있는지다(`GET /me` 의 같은 이름). 이메일 가입은 늘 true, 카카오 가입은 false 다.
+ * false 면 내 정보의 비밀번호 행 · `/me/password` 를 숨긴다 — 비밀번호 최초 설정 API 는 백엔드 #61 에서 없앴다(#166).
  *
  * 내 동네와 다시 들어올 때 거칠 화면의 조건(`regionAbolished` · `termsReconsentRequired`)도 둔다. 홈 · 내 정보가 이 값으로
  * 약관 재동의(Setup-3-reconsent) · 동네 다시 고르기(Setup-1-reselect)로 먼저 보낸다(`required-steps.ts`).
@@ -448,7 +455,7 @@ export async function verifyEmailCode(
       auth: false,
     })
   } catch (error) {
-    const failure = verifyFailureOf(error, key)
+    const failure = verifyFailureOf(error, key, signupCodeFailures)
     if (failure) return failure
     throw error
   }
@@ -456,22 +463,29 @@ export async function verifyEmailCode(
   return { status: 'ok' }
 }
 
-/** 코드 확인 오류 → 결과. 표에 없으면 null(거부할 오류). 틀림이면 실패 수를 하나 올려 남은 시도를 채운다 */
-function verifyFailureOf(error: unknown, key: string): VerifyCodeFailure | null {
+/**
+ * 코드 확인 오류 → 결과. 표에 없으면 null(거부할 오류). 틀림이면 그 흐름의 실패 수(`failures` — 가입 · 재설정이 따로 둔다)를
+ * 하나 올려 남은 시도를 채운다. 가입 인증과 비밀번호 재설정 인증은 서버가 같은 처리기 · 같은 실패 코드를 쓴다(backend/docs/modules.md)
+ */
+function verifyFailureOf(
+  error: unknown,
+  key: string,
+  failures: Map<string, number>,
+): VerifyCodeFailure | null {
   switch (errorCodeOf(error)) {
     case 'AUTH_003': {
-      const failures = (signupCodeFailures.get(key) ?? 0) + 1
-      signupCodeFailures.set(key, failures)
+      const count = (failures.get(key) ?? 0) + 1
+      failures.set(key, count)
       // 서버는 5번째 실패를 AUTH_005 로 준다. 세던 수가 어긋나도(새로고침 · 다른 탭) 0번으로 보이지 않게 1 이상으로 둔다
-      return { status: 'wrong', remainingAttempts: Math.max(1, CODE_MAX_ATTEMPTS - failures) }
+      return { status: 'wrong', remainingAttempts: Math.max(1, CODE_MAX_ATTEMPTS - count) }
     }
     case 'AUTH_004':
       // 코드가 만료됐거나 없다. 다시 받으면 서버의 실패 수도 0 이다
-      signupCodeFailures.delete(key)
+      failures.delete(key)
       return { status: 'expired' }
     case 'AUTH_005':
       // 서버가 잠그면서 코드를 지웠다
-      signupCodeFailures.delete(key)
+      failures.delete(key)
       return { status: 'locked' }
     case 'AUTH_010':
       // IP 상한이다. 이 이메일의 코드 · 실패 수는 서버에 그대로라 세던 수도 둔다
@@ -814,13 +828,20 @@ export function withdrawMembership(): Promise<void> {
 
 /* ── 로그인한 기기 (S10 Settings-devices) ─────────────────────────────────────────────
  *
- * 연동 때 바꾼다: 목록 `GET /api/v1/auth/sessions`, 한 기기 로그아웃 `DELETE /api/v1/auth/sessions/{sessionId}`(백엔드 #57).
- * 응답 모양은 아직 정해지지 않았다 — 화면이 쓰는 것은 아래 `DeviceSession` 의 네 값뿐이다.
- * **IP · 접속 지역 · 정확한 위치는 받지도 그리지도 않는다**(루트 CLAUDE.md "개인정보"). 기기 이름과 마지막 사용 시각만 쓴다.
- * "다른 기기에서 모두 로그아웃"(`revokeOtherSessions`)은 #57 에 한 번에 지우는 API 가 없어 백엔드와 정할 점이다
- * (SCREENS.md 연동 요구사항). 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다.
+ * 실데이터 (access 필요, 백엔드 #57 — docs/api-contract-draft.md "인증"):
+ * - 목록 `GET /api/v1/auth/sessions` → `{ sessions: [{ sessionId, deviceLabel, createdAt, lastUsedAt, current }], totalCount }`.
+ *   화면 모델(`DeviceSession`)로 옮길 때 **세션 id · 기기 이름 · 마지막 사용 시각 · 이 기기인지만** 고른다 — 응답에 다른 값이 더
+ *   실려 와도 옮기지 않는다. 시각은 ISO-8601 UTC 그대로 두고 화면이 한국 시각으로 쓴다(`formatMonthDayTime` — `Intl` `Asia/Seoul`)
+ * - 한 기기 `DELETE /api/v1/auth/sessions/{sessionId}`(멱등 — 이미 없는 세션도 성공). 지금 기기(`current`)면 서버가 이 기기 세션과
+ *   refresh 쿠키를 지우므로 세션 저장소도 비운다(`endThisDeviceSession`). `AUTH_114`(UUID 형식) 등 그 밖의 오류는 거부한다
+ * - 다른 기기 모두 `DELETE /api/v1/auth/sessions`(지금 기기는 남는다). `AUTH_014`(서버가 이 토큰의 세션을 모름 — 다른 곳에서 이 기기를
+ *   로그아웃했다)면 이 기기의 로그인도 끝난 것이라 `clearSession('expired')`(로그인 만료 안내 → 다시 로그인)로 비운 뒤 거부한다
+ * - 일시 장애 · 분류 밖 오류는 거부한다 — 화면은 "불러오지 못했어요" · "로그아웃하지 못했어요" 로 알린다
  *
- * 성공하면 화면과 무관하게 목 서버 목록에서 먼저 지운다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다).
+ * **IP · 접속 지역 · 정확한 위치는 받지도 그리지도 않는다**(루트 CLAUDE.md "개인정보" — 서버도 IP 를 저장하지 않는다).
+ *
+ * 목: 성공하면 화면과 무관하게 목 서버 목록에서 먼저 지운다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다). 예시 목록
+ * (`EXAMPLE_DEVICE_SESSIONS`)은 목에서만 쓴다 — 실데이터에서 채우지 않는다. 목은 이 기기의 세션을 받지 않는다(거부 — 화면도 보내지 않는다).
  *
  * 목에서 실패를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다). 프로필 이메일로 가린다 — 그 이메일로 이메일 로그인한 뒤 연다:
  * - 목록: `sessions-fail@example.com` → 거부(불러오지 못함)
@@ -832,18 +853,33 @@ export const MOCK_SESSION_REVOKE_FAIL_EMAIL = 'session-revoke-fail@example.com'
 
 /** 로그인한 기기(refresh 세션) 하나 */
 export type DeviceSession = {
-  /** 세션 id. 로그아웃할 때 보낸다 */
+  /** 세션 id(`sessionId`). 로그아웃할 때 보낸다 */
   id: string
-  /** 기기 · 브라우저 (예: `Mac · Chrome`). 서버가 로그인할 때의 User-Agent 로 만든다고 가정한다 */
+  /** 기기 · 브라우저 (예: `Mac · Chrome`). 서버가 로그인할 때 User-Agent 를 줄여 만든 `deviceLabel` 이다(모르면 "알 수 없는 기기") */
   deviceName: string
-  /** 마지막으로 쓴 시각 (ISO 8601). 이 기기는 "지금 사용 중" 으로 그려 이 값을 보이지 않는다 */
+  /** 마지막으로 쓴 시각 (ISO 8601, 실데이터는 UTC `lastUsedAt`). 이 기기는 "지금 사용 중" 으로 그려 이 값을 보이지 않는다 */
   lastActiveAt: string
   /** 지금 이 기기의 세션인지. 이 기기는 이 화면에서 로그아웃하지 않는다(내 정보의 로그아웃) */
   current: boolean
 }
 
+/** `GET /api/v1/auth/sessions` 의 `dataBody` (backend `AuthSessionsResponse` · `AuthSessionItem`) */
+type SessionsResponse = {
+  sessions: {
+    sessionId: string
+    deviceLabel: string
+    createdAt: string
+    lastUsedAt: string
+    current: boolean
+  }[]
+  totalCount: number
+}
+
+/** 서버가 "다른 기기 모두 로그아웃" 을 요청한 토큰의 세션을 모른다(401) — 이 기기 로그인이 끝났다 */
+const SESSION_UNKNOWN = 'AUTH_014'
+
 /**
- * 시안(Settings-devices)의 예시 기기. **기기 이름 · 시각은 예시 값이다** — 실제 값은 `GET /sessions` 에서 받는다.
+ * 시안(Settings-devices)의 예시 기기. **기기 이름 · 시각은 예시 값이다** — 목에서만 쓰고, 실제 값은 `GET /sessions` 에서 받는다.
  * 지금 쓰는 기기가 무엇이든 목의 "이 기기" 는 iPhone · Safari 다.
  */
 const EXAMPLE_DEVICE_SESSIONS: readonly DeviceSession[] = [
@@ -872,57 +908,129 @@ function deviceSessions(): DeviceSession[] {
   return mockDeviceSessions
 }
 
-export function listSessions(): Promise<DeviceSession[]> {
+/**
+ * 서버가 이 기기의 세션을 끝냈다(사용자가 고른 동작 — 이 기기 로그아웃 · 이 탭 계정의 비밀번호 재설정). 세션 저장소가 아직 회원이면
+ * `clearSession('logout')` 으로 비운다: 만료가 아니라 사용자가 고른 결과라 "다시 로그인해 주세요" 안내(`expired`)를 띄우지 않고
+ * (화면이 스스로 이동한다), 같은 refresh 쿠키를 쓰는 다른 탭에도 알린다. `logout` 과 같게 만료 진행 표시도 끈다
+ */
+function endThisDeviceSession(): void {
+  if (getSessionSnapshot().status === 'member') clearSession('logout')
+  clearSessionExpiring()
+}
+
+export async function listSessions(source: DataSource): Promise<DeviceSession[]> {
+  if (source === 'api') {
+    const response = await apiRequest<SessionsResponse>(SESSIONS_PATH)
+    // 화면이 쓰는 네 값만 옮긴다. 생성 시각 · 개수는 그리지 않는다
+    return response.sessions.map((session) => ({
+      id: session.sessionId,
+      deviceName: session.deviceLabel,
+      lastActiveAt: session.lastUsedAt,
+      current: session.current,
+    }))
+  }
   const failure = rejectIfProfileEmail(MOCK_SESSIONS_FAIL_EMAIL, 'list sessions')
   if (failure) return failure
   // 화면이 목록을 고쳐도 목 서버 목록이 바뀌지 않게 복사해 준다
-  return Promise.resolve(deviceSessions().map((session) => ({ ...session })))
+  return deviceSessions().map((session) => ({ ...session }))
 }
 
 /**
- * 다른 기기 하나를 로그아웃한다(그 기기의 refresh 세션 폐기). 이미 없는 세션이면(만료 · 다른 곳에서 지움) 끝난 것으로 본다.
- * 이 기기의 세션은 받지 않는다(거부) — 이 기기 로그아웃은 `logout` 이다.
+ * 기기 하나를 로그아웃한다(그 기기의 refresh 세션 폐기). 이미 없는 세션이면(만료 · 다른 곳에서 지움) 끝난 것으로 본다.
+ * 실데이터는 지금 기기(`current`)도 받는다 — 서버가 이 기기의 쿠키까지 지우므로 세션 저장소를 비운다.
+ * 목은 이 기기의 세션을 받지 않는다(거부) — 이 기기 로그아웃은 `logout` 이다(화면도 이 기기에는 버튼을 두지 않는다).
  */
-export function revokeSession(sessionId: string): Promise<void> {
+export async function revokeSession(
+  session: Pick<DeviceSession, 'id' | 'current'>,
+  source: DataSource,
+): Promise<void> {
+  if (source === 'api') {
+    // 서버가 준 id 지만 경로에 그대로 붙이지 않는다(다른 경로로 새지 않게)
+    await apiRequest<null>(`${SESSIONS_PATH}/${encodeURIComponent(session.id)}`, {
+      method: 'DELETE',
+    })
+    if (session.current) endThisDeviceSession()
+    return
+  }
   const failure = rejectIfProfileEmail(MOCK_SESSION_REVOKE_FAIL_EMAIL, 'revoke session')
   if (failure) return failure
   const sessions = deviceSessions()
-  if (sessions.some((session) => session.id === sessionId && session.current)) {
-    return Promise.reject(new Error('mock: the current session is revoked by logout'))
+  if (sessions.some((item) => item.id === session.id && item.current)) {
+    throw new Error('mock: the current session is revoked by logout')
   }
-  mockDeviceSessions = sessions.filter((session) => session.id !== sessionId)
-  return Promise.resolve()
+  mockDeviceSessions = sessions.filter((item) => item.id !== session.id)
 }
 
 /** 이 기기를 뺀 모든 기기를 로그아웃한다 */
-export function revokeOtherSessions(): Promise<void> {
+export async function revokeOtherSessions(source: DataSource): Promise<void> {
+  if (source === 'api') {
+    try {
+      await apiRequest<null>(SESSIONS_PATH, { method: 'DELETE' })
+    } catch (error) {
+      // 이 기기 세션이 서버에 없다 — 로그인이 끝났으니 만료로 비운다(다시 로그인 안내). 재발급이 이미 비웠으면 다시 비우지 않는다
+      if (errorCodeOf(error) === SESSION_UNKNOWN && getSessionSnapshot().status === 'member') {
+        clearSession('expired')
+      }
+      throw error
+    }
+    return
+  }
   const failure = rejectIfProfileEmail(MOCK_SESSION_REVOKE_FAIL_EMAIL, 'revoke other sessions')
   if (failure) return failure
   mockDeviceSessions = deviceSessions().filter((session) => session.current)
-  return Promise.resolve()
 }
 
-/* ── 비밀번호 변경 · 설정 (S10 Settings-password) ───────────────────────────────────────
+/* ── 비밀번호 변경 (S10 Settings-password) ───────────────────────────────────────────────
  *
- * 연동 때 바꾼다: 변경 `POST /api/v1/members/me/password`(현재 비밀번호 + 새 비밀번호), 설정
- * `POST /api/v1/members/me/password/setup`(카카오 가입자의 첫 비밀번호, 백엔드 #58). 요청 · 응답 모양은 아직 정해지지 않았다.
+ * 실데이터: `POST /api/v1/members/me/password {currentPassword, newPassword}`(access 필요, 백엔드 #58 — docs/api-contract-draft.md "회원").
+ * 성공하면 **이 기기는 로그인 상태로 남고 다른 기기는 모두 로그아웃된다** — 세션 저장소는 건드리지 않는다.
  * 규칙(8~20자 · 영문과 숫자 함께 · 공백 없이)은 가입과 같고 서버가 다시 검사한다. 새 비밀번호가 현재와 같아도 막지 않는다(계약에 없음).
+ *
+ * 오류 코드 → 결과 (backend `MemberErrorCode` · `MemberValidationMessage`):
+ * - `MEMBER_005`(현재 비밀번호 불일치) → `wrong-current`. 검증 `MEMBER_103` · `104`(현재 비밀번호 없음 · 100자 초과)도 맞을 수 없는
+ *   현재 비밀번호라 `wrong-current` 다(로그인의 `AUTH_113` → `wrong` 과 같은 판단)
+ * - `MEMBER_006`(현재 비밀번호 확인 잠금, 429 — 잠금 시간은 서버 설정이라 못 박지 않는다) → `locked`
+ * - 검증 `MEMBER_105~107`(새 비밀번호 없음 · 길이 · 구성) → `invalid-password`(화면 규칙과 어긋났을 때만 온다)
+ * - `MEMBER_007`(비밀번호가 없는 카카오 계정) → `no-password`. 내 정보의 `hasPassword` 와 어긋난 호출이라 내 정보를 다시 읽는다
+ *   (`reloadMemberInfo`) — 다시 읽은 값이 false 면 비밀번호 화면이 내 정보로 돌려보낸다
+ * - 그 밖(`MEMBER_009` 세션 저장소 장애 503 · 일시 장애 · 분류 밖 오류)은 거부한다 — 비밀번호는 바뀌지 않았고, 화면은
+ *   "바꾸지 못했어요 · 잠시 뒤 다시" 로 알린다
+ *
+ * 비밀번호 최초 설정(`POST /me/password/setup`)은 백엔드 #61 에서 없앴다 — 카카오만 쓰는 회원(`hasPassword` false)에게는 비밀번호
+ * 메뉴를 숨긴다(#166). 목도 같은 동작이다(설정 함수 · 화면 없음).
  * 비밀번호는 어디에도 남기지 않는다(로그 · 저장소 · 주소 금지). 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고 실패하면 거부한다.
  *
- * 설정에 성공하면 화면과 무관하게 목 프로필의 `hasPassword` 를 true 로 바꾼다 — 내 정보의 행이 `비밀번호 변경` 이 된다.
- * `?mock-auth=` 덮어쓰기만 있어 세션이 비회원이면 세션은 그대로다(동의 철회와 같다).
- *
- * 목에서 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
- * - 변경: 현재 비밀번호 `wrong` → `wrong-current`(로그인 목과 같은 값)
- * - 변경 · 설정: 프로필 이메일 `password-fail@example.com` → 거부. 카카오 프로필은 이메일이 예시 값으로 정해져 있어
- *   설정은 새 비밀번호 `fail2026` 으로도 거부를 재현한다(변경도 같다)
+ * 목: 성공하면 서버처럼 목 서버 기기 목록에서 이 기기를 뺀 기기를 지운다. 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다):
+ * - 현재 비밀번호 `wrong` → `wrong-current`(로그인 목과 같은 값)
+ * - 프로필 이메일 `password-fail@example.com` 이거나 새 비밀번호 `fail2026` → 거부
  */
 
 export const MOCK_PASSWORD_FAIL_EMAIL = 'password-fail@example.com'
 export const MOCK_PASSWORD_FAIL_NEW = 'fail2026'
 
-/** `wrong-current` 는 현재 비밀번호가 맞지 않다는 뜻이다 */
-export type ChangePasswordResult = { status: 'ok' } | { status: 'wrong-current' }
+export type ChangePasswordResult =
+  | { status: 'ok' }
+  /** 현재 비밀번호가 맞지 않다 */
+  | { status: 'wrong-current' }
+  /** 현재 비밀번호를 여러 번 틀려 잠시 막혔다. 남은 시간은 모른다 */
+  | { status: 'locked' }
+  /** 새 비밀번호가 서버 규칙에 맞지 않는다 */
+  | { status: 'invalid-password' }
+  /** 비밀번호가 없는 계정이다(카카오만 씀). 내 정보를 다시 읽는다 */
+  | { status: 'no-password' }
+
+const CHANGE_PASSWORD_FAILURES: Readonly<
+  Record<string, Exclude<ChangePasswordResult['status'], 'ok'>>
+> = {
+  MEMBER_005: 'wrong-current',
+  MEMBER_103: 'wrong-current',
+  MEMBER_104: 'wrong-current',
+  MEMBER_006: 'locked',
+  MEMBER_105: 'invalid-password',
+  MEMBER_106: 'invalid-password',
+  MEMBER_107: 'invalid-password',
+  MEMBER_007: 'no-password',
+}
 
 function rejectPasswordFailure(newPassword: string): Promise<never> | null {
   if (mockProfile?.email === MOCK_PASSWORD_FAIL_EMAIL || newPassword === MOCK_PASSWORD_FAIL_NEW) {
@@ -931,48 +1039,63 @@ function rejectPasswordFailure(newPassword: string): Promise<never> | null {
   return null
 }
 
-export function changePassword(
+export async function changePassword(
   currentPassword: string,
   newPassword: string,
+  source: DataSource,
 ): Promise<ChangePasswordResult> {
-  const failure = rejectPasswordFailure(newPassword)
-  if (failure) return failure
-  if (currentPassword === MOCK_WRONG_PASSWORD) return Promise.resolve({ status: 'wrong-current' })
-  return Promise.resolve({ status: 'ok' })
-}
-
-/** 카카오 가입자의 첫 비밀번호. 정하면 이메일 · 비밀번호로도 로그인할 수 있다 */
-export function setupPassword(newPassword: string): Promise<void> {
-  const failure = rejectPasswordFailure(newPassword)
-  if (failure) return failure
-  if (mockProfile && !mockProfile.hasPassword) {
-    setMockSession(mockSession, { ...mockProfile, hasPassword: true })
+  if (source === 'api') {
+    try {
+      await apiRequest<null>(CHANGE_PASSWORD_PATH, {
+        method: 'POST',
+        body: { currentPassword, newPassword },
+      })
+    } catch (error) {
+      const failure = mapError(error, CHANGE_PASSWORD_FAILURES)
+      if (!failure) throw error
+      if (failure === 'no-password') reloadMemberInfo()
+      return { status: failure }
+    }
+    return { status: 'ok' }
   }
-  return Promise.resolve()
+  const failure = rejectPasswordFailure(newPassword)
+  if (failure) return failure
+  if (currentPassword === MOCK_WRONG_PASSWORD) return { status: 'wrong-current' }
+  // 서버처럼 다른 기기를 로그아웃한다(이 기기는 남는다)
+  mockDeviceSessions = deviceSessions().filter((session) => session.current)
+  return { status: 'ok' }
 }
 
 /* ── 비밀번호 재설정 (S13-6) ────────────────────────────────────────────────────────
  *
- * **백엔드 #58 은 구현 전이고 경로만 정해져 있다**: `POST /api/v1/auth/password/reset/send-code` · `POST /api/v1/auth/password/reset`.
- * 시안이 코드 확인 단계를 따로 두므로 프론트는 다음 모양을 가정한다(docs/api-contract-draft.md "비밀번호 재설정" 제안 1):
- * 코드 받기 → 코드 확인(**일회용 재설정 토큰을 응답 본문으로 받는다**) → 토큰 + 새 비밀번호로 재설정(토큰을 소비한다).
+ * 실데이터(인증 불필요 — 모두 `auth: false`, 백엔드 #58 · docs/api-contract-draft.md "인증"): 코드 받기
+ * `POST /api/v1/auth/password/reset/send-code {email}` → 코드 확인 `POST /api/v1/auth/password/reset/verify-code {email, code}` →
+ * `{ resetToken }`(**일회용 재설정 토큰**, 15분) → 재설정 `POST /api/v1/auth/password/reset {resetToken, newPassword}`(토큰을 소비한다).
  *
  * 가입처럼 서버가 이메일별 인증 표시를 들고 재설정이 이메일 + 새 비밀번호만 받는 방식은 **쓰지 않는다** — 인증 표시가
  * 살아 있는 동안 코드를 모르고 이메일만 아는 사람이 비밀번호를 바꿀 수 있다. 재설정 권한은 코드를 맞힌 쪽이 받은 토큰에 묶는다.
  *
- * - 코드 받기 · 확인은 **가입 여부와 무관하게 같은 응답**이라고 가정한다(계정 열거 방지 — 가입 인증과 같다). 화면은 늘 코드 단계로 간다
- * - 코드 한도 · 수명은 가입 인증과 같다(6자리 · 5분 · 다시 받기 60초 · 오입력 5회, 위 상수를 같이 쓴다)
- * - 남은 시도 횟수는 가입 인증처럼 서버가 주지 않는다고 보고, 연동 때 이 모듈이 이메일별 실패 수를 세어 `remainingAttempts` 를
- *   채운다. 코드를 다시 받으면(sent) 0 으로 되돌린다
- * - 재설정 토큰은 한 번만 쓰고 수명은 `PASSWORD_RESET_TOKEN_TTL_SECONDS`(15분)다. 화면은 Provider 메모리에만 들고
- *   주소 · 로그 · 브라우저 저장소에 남기지 않는다. 연동 때 요청 본문으로만 보낸다
+ * - 코드 받기 · 확인은 **가입 여부와 무관하게 같은 응답**이다(계정 열거 방지 — 가입 인증과 같다). 화면은 늘 코드 단계로 간다
+ * - 코드 받기 · 확인의 한도 · 오류 코드는 가입 인증과 같다(서버가 같은 처리기를 쓴다): 코드 받기 `AUTH_001` · `002` → `limit`,
+ *   코드 확인 `AUTH_003` → `wrong` · `004` → `expired` · `005` · `010` → `locked`. 남은 시도 횟수도 가입처럼 이 모듈이 이메일별 실패 수를
+ *   세어 채운다 — **세는 곳은 가입과 따로다**(`passwordResetCodeFailures`, 서버의 Redis 키도 따로다)
+ * - 재설정 오류: `AUTH_018`(토큰 없음 · 만료 · 이미 씀) · 검증 `AUTH_115` · `116`(토큰 없음 · 100자 초과 — 받은 토큰이 쓸 수 없다)
+ *   → `verification-expired`(이메일 단계부터 다시). `AUTH_019`(IP 상한, 429 — 토큰은 그대로) → `limited`. 검증 `AUTH_105~107`
+ *   (새 비밀번호) → `invalid-password`. 그 밖(`AUTH_017` 503 — 비밀번호는 그대로이고 토큰은 이미 소비됐다 · 일시 장애)은 거부한다.
+ *   `AUTH_017` 뒤 다시 누르면 `AUTH_018` 로 이메일 단계로 간다
+ * - **재설정에 성공하면 서버가 그 계정의 모든 기기를 로그아웃한다.** 이 탭이 회원이면 재설정한 이메일이 이 탭의 계정인지 보고
+ *   맞출 때만 비운다(`endSessionAfterReset` — 화면이 재설정한 이메일을 넘긴다. 메모리에서만 쓰고 주소 · 로그에 남기지 않는다).
+ *   같은 계정이면 `clearSession('logout')`(만료 안내 없이 — 화면이 이메일 로그인으로 스스로 간다), 다른 계정이면 이 탭 세션을
+ *   건드리지 않는다(서버는 그 계정의 세션만 끊었다), 이 탭 계정의 이메일을 모르면(내 정보를 읽는 중 · 실패) 로그아웃한다
+ * - **재설정 토큰은 메모리에만 둔다.** 화면은 Provider 메모리에만 들고 주소 · 로그 · 브라우저 저장소에 남기지 않는다. 요청 본문으로만 보낸다
  * - 새 비밀번호도 로그나 저장소에 남기지 않는다. 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고 실패하면 Promise 를 거부한다
  *
  * 목에서 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다). 코드는 가입 인증과 같은 입력을 쓰고 저장소는 따로다:
  * - 코드 받기: 이메일 `limit@example.com` → `limit`, 그 밖 → 보냄
  * - 코드 확인: `999999` → `locked`, `000000` → `wrong`(5번째에 `locked`), 5분이 지났거나 보낸 코드가 없으면 `expired`, 그 밖 6자리 → 토큰
  * - 재설정: 이메일 `verify-expired@example.com` 로 받은 토큰은 늘 `verification-expired`, `reset-fail@example.com` 로 받은 토큰이면
- *   응답을 받지 못한다(거부, 토큰은 남는다). 그 밖에도 토큰이 없거나 15분이 지났거나 이미 썼으면 `verification-expired` 다
+ *   응답을 받지 못한다(거부, 토큰은 남는다). 그 밖에도 토큰이 없거나 15분이 지났거나 이미 썼으면 `verification-expired` 다.
+ *   성공하면 서버처럼 그 계정의 목 세션이 로그아웃된다(목 프로필 이메일이 토큰을 받은 이메일과 같을 때)
  */
 
 /** 재설정 토큰 수명(초). 코드를 맞힌 뒤 새 비밀번호를 정할 때까지 쓸 수 있는 시간 */
@@ -989,46 +1112,158 @@ const passwordResetCodes = createMockCodeStore()
 const mockResetTokens = new Map<string, { email: string; issuedAt: number }>()
 let mockResetTokenSeq = 0
 
-export function sendPasswordResetCode(email: string): Promise<SendCodeResult> {
-  return Promise.resolve(passwordResetCodes.send(email))
+/** 실데이터의 이메일별 재설정 코드 확인 실패 수. 가입(`signupCodeFailures`)과 따로 센다. 메모리에만 둔다 */
+const passwordResetCodeFailures = new Map<string, number>()
+
+export async function sendPasswordResetCode(
+  email: string,
+  source: DataSource,
+): Promise<SendCodeResult> {
+  if (source === 'mock') return passwordResetCodes.send(email)
+  try {
+    await apiRequest<null>(PASSWORD_RESET_SEND_CODE_PATH, {
+      method: 'POST',
+      body: { email },
+      auth: false,
+    })
+  } catch (error) {
+    const failure = mapError(error, SEND_CODE_FAILURES)
+    if (failure) return { status: failure }
+    throw error
+  }
+  // 새 코드를 받으면 서버의 실패 수도 0 이다
+  passwordResetCodeFailures.delete(normalizeEmail(email))
+  return { status: 'sent' }
 }
 
-export function verifyPasswordResetCode(
+export async function verifyPasswordResetCode(
   email: string,
   code: string,
+  source: DataSource,
 ): Promise<PasswordResetVerifyResult> {
-  const result = passwordResetCodes.verify(email, code)
-  if (result.status !== 'ok') return Promise.resolve(result)
-  // 목 토큰은 맞히기 쉬운 순번이다. 서버는 추측할 수 없는 값을 준다
-  mockResetTokenSeq += 1
-  const resetToken = `mock-reset-${mockResetTokenSeq}`
-  mockResetTokens.set(resetToken, { email: normalizeEmail(email), issuedAt: Date.now() })
-  return Promise.resolve({ status: 'ok', resetToken })
+  if (source === 'mock') {
+    const result = passwordResetCodes.verify(email, code)
+    if (result.status !== 'ok') return result
+    // 목 토큰은 맞히기 쉬운 순번이다. 서버는 추측할 수 없는 값을 준다
+    mockResetTokenSeq += 1
+    const resetToken = `mock-reset-${mockResetTokenSeq}`
+    mockResetTokens.set(resetToken, { email: normalizeEmail(email), issuedAt: Date.now() })
+    return { status: 'ok', resetToken }
+  }
+  const key = normalizeEmail(email)
+  let response: { resetToken?: unknown } | null
+  try {
+    response = await apiRequest<{ resetToken?: unknown } | null>(PASSWORD_RESET_VERIFY_CODE_PATH, {
+      method: 'POST',
+      body: { email, code },
+      auth: false,
+    })
+  } catch (error) {
+    const failure = verifyFailureOf(error, key, passwordResetCodeFailures)
+    if (failure) return failure
+    throw error
+  }
+  passwordResetCodeFailures.delete(key)
+  const resetToken = response?.resetToken
+  // 토큰이 없는 성공 응답은 계약 밖이다. 다음 단계로 보내지 않고 거부한다(토큰 값은 오류에 싣지 않는다)
+  if (typeof resetToken !== 'string' || resetToken === '') {
+    throw new Error('verifyPasswordResetCode: no reset token in the response')
+  }
+  return { status: 'ok', resetToken }
 }
 
-/** `verification-expired` 는 재설정 토큰이 없거나 15분이 지났거나 이미 썼다는 뜻이다. 이메일 단계부터 다시 한다 */
-export type PasswordResetResult = { status: 'ok' } | { status: 'verification-expired' }
+/**
+ * 재설정이 성공한 뒤 이 탭 세션을 맞춘다. 서버는 재설정한 계정의 모든 기기를 로그아웃했다.
+ * - 비회원이면 아무 일도 없다
+ * - 이 탭 계정의 이메일(회원 정보 저장소의 `MyInfo.email`)을 알면 서버와 같은 정규화(앞뒤 공백 제거 · 소문자)로 비교한다.
+ *   같으면 이 탭 세션도 서버에서 끊겼으니 비우고(`endThisDeviceSession`), 다르면 건드리지 않는다 — 다른 계정의 세션만 끊겼다
+ * - 이메일을 모르면(내 정보를 읽는 중 · 실패) 로그아웃(`logout('api')`)해 서버 세션까지 끊는다. 로그인한 회원이 재설정에 오는 길은
+ *   내 정보의 "비밀번호를 잊었어요" 라 재설정한 계정이 이 계정일 가능성이 높고, 그러면 서버 세션은 이미 끊겨 이 탭만 회원으로 남는다.
+ *   다른 계정이었더라도 서버 세션을 남긴 채 화면만 로그아웃되지 않게 로그아웃 API 로 끊는다. 로그아웃이 거부되면(일시 장애) 그래도
+ *   이 탭을 비운다 — 같은 계정이었다면 서버 세션은 이미 없다(다른 계정이었다면 그 세션은 쿠키로 남지만 힌트 쿠키를 지워 되살리지 않는다)
+ */
+async function endSessionAfterReset(email: string): Promise<void> {
+  const session = getSessionSnapshot()
+  if (session.status !== 'member') return
+  const memberInfo = getMemberInfoSnapshot()
+  const known =
+    memberInfo?.memberId === session.summary.memberId && memberInfo.info.status === 'ready'
+      ? memberInfo.info.value.email
+      : null
+  if (known !== null) {
+    if (normalizeEmail(known) === normalizeEmail(email)) endThisDeviceSession()
+    return
+  }
+  try {
+    await logout('api')
+  } catch {
+    endThisDeviceSession()
+  }
+}
 
-export function resetPassword(
+/**
+ * - `verification-expired`: 재설정 토큰이 없거나 15분이 지났거나 이미 썼다. 이메일 단계부터 다시 한다
+ * - `limited`: 이 기기(IP)의 재설정 시도가 많아 잠시 막혔다. 토큰은 그대로라 잠시 뒤 다시 누를 수 있다. 남은 시간은 모른다
+ * - `invalid-password`: 새 비밀번호가 서버 규칙에 맞지 않는다(화면 규칙과 어긋났을 때만 온다)
+ */
+export type PasswordResetResult =
+  | { status: 'ok' }
+  | { status: 'verification-expired' }
+  | { status: 'limited' }
+  | { status: 'invalid-password' }
+
+const RESET_FAILURES: Readonly<Record<string, Exclude<PasswordResetResult['status'], 'ok'>>> = {
+  AUTH_018: 'verification-expired',
+  AUTH_115: 'verification-expired',
+  AUTH_116: 'verification-expired',
+  AUTH_019: 'limited',
+  AUTH_105: 'invalid-password',
+  AUTH_106: 'invalid-password',
+  AUTH_107: 'invalid-password',
+}
+
+/**
+ * 비밀번호 재설정. `email` 은 재설정한(코드를 받은) 이메일이다 — 성공 뒤 이 탭의 회원이 그 계정인지 가리는 데만 쓰고 서버에는
+ * 보내지 않는다(서버는 토큰으로 계정을 안다)
+ */
+export async function resetPassword(
   resetToken: string,
   newPassword: string,
+  email: string,
+  source: DataSource,
 ): Promise<PasswordResetResult> {
+  if (source === 'api') {
+    try {
+      await apiRequest<null>(PASSWORD_RESET_PATH, {
+        method: 'POST',
+        body: { resetToken, newPassword },
+        auth: false,
+      })
+    } catch (error) {
+      const failure = mapError(error, RESET_FAILURES)
+      if (failure) return { status: failure }
+      throw error
+    }
+    // 서버가 그 계정의 모든 기기를 로그아웃했다(access 도 바로 폐기). 이 탭이 그 계정이면 이 탭 세션도 쓸 수 없다
+    await endSessionAfterReset(email)
+    return { status: 'ok' }
+  }
   // 목은 새 비밀번호를 쓰지 않는다. 규칙(8~20자 · 영문 · 숫자 · 공백 금지)은 서버가 다시 검사한다
   void newPassword
   const issued = mockResetTokens.get(resetToken)
-  if (!issued) return Promise.resolve({ status: 'verification-expired' })
+  if (!issued) return { status: 'verification-expired' }
   // 응답을 받지 못한 경우다. 서버가 바꿨는지 모르므로 토큰은 남겨 다시 누를 수 있게 한다
-  if (issued.email === MOCK_RESET_FAIL_EMAIL) {
-    return Promise.reject(new Error('mock password reset failure'))
-  }
+  if (issued.email === MOCK_RESET_FAIL_EMAIL) throw new Error('mock password reset failure')
   if (
     issued.email === MOCK_VERIFY_EXPIRED_EMAIL ||
     Date.now() - issued.issuedAt > PASSWORD_RESET_TOKEN_TTL_SECONDS * 1000
   ) {
     mockResetTokens.delete(resetToken)
-    return Promise.resolve({ status: 'verification-expired' })
+    return { status: 'verification-expired' }
   }
   // 서버처럼 쓴 토큰은 지운다 — 같은 토큰으로 두 번 바꾸지 못한다
   mockResetTokens.delete(resetToken)
-  return Promise.resolve({ status: 'ok' })
+  // 서버처럼 그 계정의 모든 기기가 로그아웃된다. 목 세션이 그 계정일 때만 비회원이 된다(다른 계정이면 그대로)
+  if (mockProfile?.email === issued.email) setMockSession('guest')
+  return { status: 'ok' }
 }

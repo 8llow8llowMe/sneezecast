@@ -14,12 +14,16 @@ import {
   PASSWORD_RESET_VERIFICATION_EXPIRED_PATH,
 } from '@/features/onboarding/paths'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useDataSource } from '@/lib/use-data-source'
 
 import { type PasswordResetResult, resetPassword } from './auth-client'
 import { confirmProblem, passwordProblem } from './signup-rules'
 
-/** `failed` 는 응답을 받지 못한 경우다(네트워크 · 서버 오류) */
-type Status = 'idle' | 'submitting' | 'failed'
+/**
+ * `failed` 는 응답을 받지 못한 경우다(네트워크 · 서버 오류). `limited` 는 이 기기의 재설정 시도가 많아 잠시 막힘(`AUTH_019`),
+ * `rule` 은 서버가 새 비밀번호를 규칙 위반으로 거절함(`AUTH_105~107` — 화면 규칙과 어긋났을 때만)이다
+ */
+type Status = 'idle' | 'submitting' | 'failed' | 'limited' | 'rule'
 
 /**
  * S13-6 비밀번호 재설정 — 새 비밀번호. 단계 표시는 없다.
@@ -30,6 +34,8 @@ type Status = 'idle' | 'submitting' | 'failed'
  * | rule | 새 비밀번호 칸 아래 규칙 오류 · 버튼 꺼짐 |
  * | mismatch | 확인 칸 아래 "비밀번호가 서로 달라요." · 버튼 꺼짐 |
  * | failed | 빨강 상자 "비밀번호를 바꾸지 못했어요." — 다시 누를 수 있다 |
+ * | limited | 회색 상자 "요청이 많아 잠시 막혔어요." — 토큰은 그대로라 잠시 뒤 다시 누를 수 있다 |
+ * | rule (서버) | 서버가 규칙 위반으로 거절하면 새 비밀번호 칸 아래 규칙 오류(rule 과 같은 문구) |
  *
  * 규칙 · 문구는 가입(S13-4)과 같다(`signup-rules` — 8~20자 · 영문과 숫자 함께 · 공백 없이, 백엔드 #56 규칙).
  * 오류는 "비밀번호 바꾸기" 를 누를 때 처음 보이고, 그 뒤에는 고칠 때마다 다시 판단해 맞으면 바로 지운다.
@@ -39,7 +45,9 @@ type Status = 'idle' | 'submitting' | 'failed'
  * 보내는 중에는 칸을 읽기 전용으로 두고 버튼을 `aria-disabled` 로 꺼 두 번 보내지 않는다.
  *
  * - 바꾸면 재설정 초안을 비우고(이메일만 남긴다) 이메일 로그인(`?reason=reset-done`)으로 기록을 바꿔 간다.
- *   그 화면이 토스트를 띄우고 남긴 이메일로 칸을 채운다
+ *   그 화면이 토스트를 띄우고 남긴 이메일로 칸을 채운다. 서버가 그 계정의 모든 기기를 로그아웃하므로, 이 탭이 그 계정의 회원이면
+ *   (`/me/password` 의 "비밀번호를 잊었어요" 로 왔을 때) `resetPassword` 가 먼저 세션을 비운다. 다른 계정의 회원이면 회원인 채
+ *   이메일 로그인(재설정 완료 안내)에 닿는다 — 첫 진입 가드가 그 화면을 보내지 않으므로 그대로 보이고, 거기서 로그인하면 그 계정으로 바뀐다
  * - 인증 만료(`verification-expired` — 토큰이 없음 · 15분 지남 · 이미 씀)면 보낸 시각 · 토큰을 지우고
  *   이메일 단계(`?reason=verification-expired`)로 기록을 바꿔 간다
  * - 서버에서 끝난 일(바뀜 · 인증 만료)은 화면을 떠났어도 Provider 에 먼저 남긴다. 이동 · 안내만 화면이 떠 있을 때 한다
@@ -53,6 +61,7 @@ export function PasswordResetNewScreen() {
   const { passwordReset, updatePasswordReset, clearPasswordReset, goBack, replace } =
     useOnboarding()
   const active = useActiveRef()
+  const source = useDataSource()
   const formId = useId()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -75,11 +84,12 @@ export function PasswordResetNewScreen() {
   }
   const hasProblem = problems.password !== null || problems.confirm !== null
   const empty = password === '' || confirm === ''
-  const blocked = empty || submitting || (checked && hasProblem)
+  // 서버가 규칙 위반으로 거절했으면 칸을 고칠 때까지 같은 값을 다시 보내지 않는다
+  const blocked = empty || submitting || (checked && hasProblem) || status === 'rule'
 
   function change(set: (value: string) => void, value: string) {
     set(value)
-    if (status === 'failed') setStatus('idle')
+    if (status === 'failed' || status === 'limited' || status === 'rule') setStatus('idle')
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -90,7 +100,8 @@ export function PasswordResetNewScreen() {
     setStatus('submitting')
     let result: PasswordResetResult
     try {
-      result = await resetPassword(token, password)
+      // 재설정한 이메일은 이 탭의 회원이 그 계정인지 가리는 데만 넘긴다(메모리에서만)
+      result = await resetPassword(token, password, passwordReset.email, source)
     } catch {
       if (active.current) setStatus('failed')
       return
@@ -99,6 +110,11 @@ export function PasswordResetNewScreen() {
       // 서버는 이미 바꾸고 토큰을 썼다. 화면을 떠났어도 초안을 비워 이 토큰으로 다시 오지 않게 한다
       clearPasswordReset({ keepEmail: true })
       if (active.current) replace(LOGIN_EMAIL_RESET_DONE_PATH)
+      return
+    }
+    // 잠시 막혔거나 서버가 규칙 위반으로 거절했다. 토큰은 그대로라 이 화면에서 다시 누를 수 있다
+    if (result.status === 'limited' || result.status === 'invalid-password') {
+      if (active.current) setStatus(result.status === 'limited' ? 'limited' : 'rule')
       return
     }
     // 토큰이 없거나 지났거나 이미 썼다. 이메일 인증부터 다시 한다
@@ -147,7 +163,7 @@ export function PasswordResetNewScreen() {
           onChange={(event) => change(setPassword, event.target.value)}
           hint="8~20자 · 영문과 숫자 포함 · 띄어쓰기 없이"
           error={
-            checked && problems.password
+            (checked && problems.password) || status === 'rule'
               ? '영문과 숫자를 함께 8~20자로, 띄어쓰기 없이 써 주세요.'
               : undefined
           }
@@ -164,6 +180,12 @@ export function PasswordResetNewScreen() {
 
         {status === 'failed' && (
           <AlertBox tone="danger">비밀번호를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.</AlertBox>
+        )}
+        {status === 'limited' && (
+          // 새로 나타나는 상자라 꼭 읽히게 alert 로 둔다. 남은 시간은 서버가 주지 않아 못 박지 않는다
+          <AlertBox tone="neutral" role="alert">
+            요청이 많아 잠시 막혔어요. 조금 뒤 다시 시도해 주세요.
+          </AlertBox>
         )}
       </form>
     </OnboardingLayout>

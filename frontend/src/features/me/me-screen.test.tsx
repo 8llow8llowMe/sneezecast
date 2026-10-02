@@ -14,7 +14,6 @@ import {
   logout,
   resetMockSession,
   saveRegion,
-  setupPassword,
   signup,
   withdrawHealthConsent,
   withdrawMembership,
@@ -143,28 +142,20 @@ describe('MeScreen 회원 상태별 화면', () => {
     expect(screen.queryByText('로그인하면 보고할 수 있어요')).toBeNull()
   })
 
-  it('카카오 회원(Settings-kakao): 비밀번호 "설정" 과 이메일로도 로그인 안내', () => {
+  it('카카오 회원(Settings-kakao): 비밀번호가 없어 비밀번호 행을 그리지 않는다 — 설정 행도 없다(#166)', () => {
     search = 'mock-auth=member&mock-provider=kakao'
     renderMe()
 
     expect(screen.getByText('카카오 · dong@kakao.com')).toBeDefined()
-    const setup = screen.getByRole('link', { name: /^비밀번호 설정/ })
-    expect(setup.textContent).toBe('비밀번호 설정이메일로도 로그인할 수 있어요')
-    // 같은 화면이 설정을 맡는다. QA 덮어쓰기를 남겨 하위 화면에서도 같은 회원으로 보인다
-    expect(setup.getAttribute('href')).toBe('/me/password?mock-auth=member&mock-provider=kakao')
-    expect(screen.queryByRole('link', { name: '비밀번호 변경' })).toBeNull()
+    expect(screen.queryByRole('link', { name: /비밀번호/ })).toBeNull()
+    expect(screen.queryByText('이메일로도 로그인할 수 있어요')).toBeNull()
+    expect(screen.getByRole('link', { name: '로그인한 기기' })).toBeDefined()
   })
 
-  it('카카오 회원이 비밀번호를 설정하면 행이 "비밀번호 변경" 으로 바뀐다', async () => {
+  it('카카오로 가입한 목 세션도 비밀번호 행이 없다', async () => {
     await signup({ kind: 'kakao', consents: [consentFor('TERMS_OF_SERVICE')] }, 'mock')
     renderMe()
-    expect(screen.getByRole('link', { name: /^비밀번호 설정/ })).toBeDefined()
-
-    await act(async () => {
-      await setupPassword('newpass2026')
-    })
-    expect(screen.getByRole('link', { name: '비밀번호 변경' })).toBeDefined()
-    expect(screen.queryByText('이메일로도 로그인할 수 있어요')).toBeNull()
+    expect(screen.queryByRole('link', { name: /비밀번호/ })).toBeNull()
   })
 
   it('?mock-auth= 덮어쓰기만 있으면 이메일 예시 프로필을 보인다', () => {
@@ -393,8 +384,7 @@ describe('MeScreen 메뉴', () => {
   })
 
   it.each([
-    ['password-changed', '비밀번호를 바꿨어요'],
-    ['password-set', '비밀번호를 설정했어요. 이제 이메일로도 로그인할 수 있어요'],
+    ['password-changed', '비밀번호를 바꿨어요. 다른 기기에서는 로그아웃됐어요'],
     ['region-changed', '내 동네를 바꿨어요'],
   ] as const)(
     '계정 화면이 남긴 알림(%s)을 회원에게 한 번 띄우고 비운다 — 다시 그려도 뜨지 않는다',
@@ -418,7 +408,7 @@ describe('MeScreen 메뉴', () => {
     const { rerender } = render(withTrail(<TrailProbe />))
     act(() => trail?.leaveNotice('password-changed'))
     rerender(withTrail(<MeScreen regionName="○○동" />))
-    expect(screen.queryByText('비밀번호를 바꿨어요')).toBeNull()
+    expect(screen.queryByText(/비밀번호를 바꿨어요/)).toBeNull()
     expect(trail?.takeNotice()).toBeNull()
   })
 
@@ -852,5 +842,42 @@ describe('MeScreen 실데이터 (회원 API, #164)', () => {
     act(() => server.reply('GET /api/v1/members/me/region', okResponse(null)))
     await flush()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('비밀번호 행은 내 정보를 읽어 hasPassword 가 true 일 때만 보인다 — 읽는 동안 · false 면 없다(#166)', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    renderMe()
+    await flush()
+    expect(screen.queryByRole('link', { name: '비밀번호 변경' })).toBeNull()
+
+    act(() => {
+      server.reply(
+        'GET /api/v1/members/me',
+        okResponse(myInfoBody({ provider: 'KAKAO', hasPassword: false })),
+      )
+      server.reply('GET /api/v1/members/me/region', okResponse(null))
+    })
+    await flush()
+    expect(section('me-account')).toContain('카카오 · me@example.com')
+    expect(screen.queryByRole('link', { name: /비밀번호/ })).toBeNull()
+  })
+
+  it('비밀번호가 있는 회원(카카오를 연결한 이메일 계정 포함)은 비밀번호 변경 행을 본다', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    renderMe()
+    await flush()
+    act(() => {
+      server.reply(
+        'GET /api/v1/members/me',
+        okResponse(myInfoBody({ provider: 'KAKAO', hasPassword: true })),
+      )
+      server.reply('GET /api/v1/members/me/region', okResponse(null))
+    })
+    await flush()
+    expect(screen.getByRole('link', { name: '비밀번호 변경' }).getAttribute('href')).toBe(
+      '/me/password',
+    )
   })
 })

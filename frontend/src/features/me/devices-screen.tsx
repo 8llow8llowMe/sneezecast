@@ -19,6 +19,7 @@ import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { formatMonthDayTime } from '@/lib/format'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useDataSource } from '@/lib/use-data-source'
 
 import { AccountPageLayout } from './account-page-layout'
 import { ME_DEVICES_PATH, ME_PATH, meSearch, regionSearch, reportHrefFor } from './me-paths'
@@ -33,8 +34,8 @@ type Load =
   | { status: 'ready'; sessions: DeviceSession[] }
 
 const OTHERS = Symbol('others')
-/** 로그아웃 대상. 세션 id 이거나 이 기기를 뺀 모두(`OTHERS`)다 */
-type RevokeTarget = string | typeof OTHERS
+/** 로그아웃 대상. 기기 하나이거나 이 기기를 뺀 모두(`OTHERS`)다 */
+type RevokeTarget = DeviceSession | typeof OTHERS
 
 type Revoke = { target: RevokeTarget; state: 'pending' | 'failed' } | null
 
@@ -55,10 +56,12 @@ function sortSessions(sessions: readonly DeviceSession[]): DeviceSession[] {
  * | 로그아웃하지 못함 | 목록 아래 빨강 상자. 목록은 그대로이고 다시 누를 수 있다 |
  *
  * - **기기 이름과 마지막 사용 시각만 보인다.** IP · 접속 지역 · 위치는 받지도 그리지도 않는다(루트 CLAUDE.md "개인정보").
+ *   시각은 서버가 UTC 로 주고 화면은 한국 시각으로 쓴다(`formatMonthDayTime`). 출처는 `useDataSource()` 로 넘긴다(#166) —
+ *   실데이터는 `GET /api/v1/auth/sessions`, 예시 기기 목록은 목에서만 보인다
  * - 이 기기는 여기서 로그아웃하지 않는다 — 내 정보의 `로그아웃` 이 한다.
  * - 시안에 확인 단계가 없어 누르면 바로 보낸다. 보내는 중에는 로그아웃 버튼이 모두 꺼진다(`aria-disabled`, 한 번에 하나).
  * - 성공하면 그 기기를 목록에서 빼고 알림(토스트)으로 알린 뒤, 누른 버튼이 사라지므로 목록으로 포커스를 옮긴다.
- *   목 서버(연동 때는 서버)에서는 화면과 무관하게 이미 끝난 일이다 — 응답 전에 화면을 떠나면 늦은 응답은 버린다.
+ *   서버(목 서버)에서는 화면과 무관하게 이미 끝난 일이다 — 응답 전에 화면을 떠나면 늦은 응답은 버린다.
  * - 다른 기기가 없으면 `다른 기기에서 모두 로그아웃` 을 숨긴다(시안에 없는 상태).
  */
 export function DevicesScreen({
@@ -89,6 +92,7 @@ function Devices({
   const shownRegionName = useShownRegionName(regionName, regionCode)
   const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
   const active = useActiveRef()
+  const source = useDataSource()
   const { toast, show, dismiss } = useToast()
   const [load, setLoad] = useState<Load>({ status: 'loading' })
   const [revoke, setRevoke] = useState<Revoke>(null)
@@ -102,11 +106,11 @@ function Devices({
     const settle = (next: Load) => {
       if (active.current && seq === loadSeq.current) setLoad(next)
     }
-    listSessions().then(
+    listSessions(source).then(
       (sessions) => settle({ status: 'ready', sessions: sortSessions(sessions) }),
       () => settle({ status: 'failed' }),
     )
-  }, [active])
+  }, [active, source])
 
   useEffect(() => {
     fetchSessions()
@@ -123,7 +127,7 @@ function Devices({
     if (pending) return
     setRevoke({ target, state: 'pending' })
     try {
-      await (target === OTHERS ? revokeOtherSessions() : revokeSession(target))
+      await (target === OTHERS ? revokeOtherSessions(source) : revokeSession(target, source))
     } catch {
       if (active.current) setRevoke({ target, state: 'failed' })
       return
@@ -135,7 +139,7 @@ function Devices({
         ? {
             ...current,
             sessions: current.sessions.filter((session) =>
-              target === OTHERS ? session.current : session.id !== target,
+              target === OTHERS ? session.current : session.id !== target.id,
             ),
           }
         : current,
@@ -210,7 +214,7 @@ function Devices({
                 key={session.id}
                 session={session}
                 disabled={pending}
-                onRevoke={() => void run(session.id, `${session.deviceName}에서 로그아웃했어요`)}
+                onRevoke={() => void run(session, `${session.deviceName}에서 로그아웃했어요`)}
               />
             ))}
           </ul>

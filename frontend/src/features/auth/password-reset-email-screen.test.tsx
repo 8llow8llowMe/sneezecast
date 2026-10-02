@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   EMPTY_PASSWORD_RESET,
@@ -11,6 +11,7 @@ import {
   type SignupDraft,
   useOnboarding,
 } from '@/features/onboarding/onboarding-context'
+import { resetApiSession, selectApiSource } from '@/test/api-session'
 
 import type * as authClient from './auth-client'
 import { sendEmailCode, sendPasswordResetCode } from './auth-client'
@@ -71,6 +72,18 @@ describe('PasswordResetEmailScreen', () => {
     vi.mocked(sendEmailCode).mockReset()
   })
 
+  afterEach(() => resetApiSession())
+
+  it('실데이터 모드면 출처 api 로 코드를 받는다', async () => {
+    selectApiSource()
+    vi.mocked(sendPasswordResetCode).mockResolvedValueOnce({ status: 'sent' })
+    const { user, email, submit } = setup()
+    await user.type(email, 'dong@example.com')
+    await user.click(submit)
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/password/reset/code'))
+    expect(sendPasswordResetCode).toHaveBeenCalledWith('dong@example.com', 'api')
+  })
+
   it('가입 이메일 화면을 제목만 바꿔 쓴다', () => {
     setup()
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
@@ -87,7 +100,7 @@ describe('PasswordResetEmailScreen', () => {
     await user.click(submit)
 
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/password/reset/code'))
-    expect(sendPasswordResetCode).toHaveBeenCalledWith('dong@example.com')
+    expect(sendPasswordResetCode).toHaveBeenCalledWith('dong@example.com', 'mock')
     expect(sendEmailCode).not.toHaveBeenCalled()
     const { passwordReset, signup } = drafts()
     expect(passwordReset.email).toBe('dong@example.com')

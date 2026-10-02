@@ -1,6 +1,6 @@
 'use client'
 
-import { type FormEvent, useId, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AlertBox } from '@/components/alert-box'
@@ -8,7 +8,11 @@ import { Button } from '@/components/button'
 import { ErrorState } from '@/components/error-state'
 import { TextField } from '@/components/text-field'
 import { ToastRegion, useToast } from '@/components/toast'
-import { changePassword, type MockAuthState, setupPassword } from '@/features/auth/auth-client'
+import {
+  changePassword,
+  type ChangePasswordResult,
+  type MockAuthState,
+} from '@/features/auth/auth-client'
 import { retryMemberInfo } from '@/features/auth/member-info'
 import { confirmProblem, passwordProblem } from '@/features/auth/signup-rules'
 import { useMockProfile, useMockProfileStatus } from '@/features/auth/use-mock-auth'
@@ -18,74 +22,38 @@ import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useDataSource } from '@/lib/use-data-source'
 
 import { AccountPageLayout } from './account-page-layout'
-import {
-  ME_PASSWORD_PATH,
-  ME_PATH,
-  type MeNotice,
-  meSearch,
-  regionSearch,
-  reportHrefFor,
-} from './me-paths'
+import { ME_PASSWORD_PATH, ME_PATH, meSearch, regionSearch, reportHrefFor } from './me-paths'
 import { useMeTrail } from './me-trail'
 import { useMemberGate } from './member-gate'
 import { useShownRegionName } from './member-region'
 
-/** 바꾸기(이메일 회원 · 비밀번호를 정한 카카오 회원) · 설정(아직 비밀번호가 없는 카카오 회원) */
-type Mode = 'change' | 'setup'
-
 /**
- * `wrong-current` 는 현재 비밀번호가 맞지 않음, `failed` 는 응답을 받지 못함(네트워크 · 서버 오류), `done` 은 마치고 내 정보로 가는 중이다
+ * `wrong-current` 는 현재 비밀번호가 맞지 않음, `locked` 는 현재 비밀번호를 여러 번 틀려 잠시 막힘(`MEMBER_006`), `rule` 은 서버가
+ * 새 비밀번호를 규칙 위반으로 거절함, `failed` 는 응답을 받지 못함(네트워크 · 서버 오류 · 비밀번호 없는 계정), `done` 은 마치고
+ * 내 정보로 가는 중이다
  */
-type Status = 'idle' | 'submitting' | 'wrong-current' | 'failed' | 'done'
-
-const COPY: Record<
-  Mode,
-  {
-    title: string
-    password: string
-    confirm: string
-    submit: string
-    failed: string
-    notice: MeNotice
-  }
-> = {
-  change: {
-    title: '비밀번호 변경',
-    password: '새 비밀번호',
-    confirm: '새 비밀번호 확인',
-    submit: '비밀번호 바꾸기',
-    failed: '비밀번호를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.',
-    notice: 'password-changed',
-  },
-  setup: {
-    title: '비밀번호 설정',
-    password: '비밀번호',
-    confirm: '비밀번호 확인',
-    submit: '비밀번호 설정하기',
-    failed: '비밀번호를 설정하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
-    notice: 'password-set',
-  },
-}
+type Status = 'idle' | 'submitting' | 'wrong-current' | 'locked' | 'rule' | 'failed' | 'done'
 
 /**
- * S10 비밀번호 변경 · 설정 (`/me/password`, Settings-password). 회원만 본다(`useMemberGate`).
+ * S10 비밀번호 변경 (`/me/password`, Settings-password). 회원만 본다(`useMemberGate`).
  *
- * | 회원 | 화면 |
- * | --- | --- |
- * | 비밀번호가 있음 (이메일 회원 · 설정을 마친 카카오 회원) | `비밀번호 변경`: 현재 비밀번호 · 새 비밀번호 · 확인 · `비밀번호를 잊었어요` |
- * | 비밀번호가 없음 (카카오 가입) | `비밀번호 설정`: 안내 문단 · 비밀번호 · 확인 (현재 비밀번호 없음) |
- *
+ * - 현재 비밀번호 · 새 비밀번호 · 확인 · `비밀번호를 잊었어요`. **비밀번호가 없는 회원(카카오로만 로그인, `hasPassword` false)에게는
+ *   이 화면이 없다** — 비밀번호 최초 설정 API 를 백엔드 #61 에서 없앴다(#166). 그리지 않고 내 정보로 돌려보낸다(`useMeTrail().goBack`
+ *   — 주소로 들어온 그림에서는 기록을 바꿔 가고, 화면을 연 뒤 내 정보를 다시 읽어 false 가 됐으면 내 정보에서 왔을 때 기록을 되돌린다).
+ *   내 정보도 비밀번호 행을 숨긴다
  * - 규칙 · 문구는 가입(S13-4) · 재설정(S13-6)과 같다(`signup-rules`). 오류는 버튼을 누를 때 처음 보이고 그 뒤 고칠 때마다 다시 판단한다.
  *   새 비밀번호가 현재와 같아도 막지 않는다(백엔드 계약에 없음)
- * - 현재 비밀번호가 맞지 않으면 그 칸 아래에 알리고 그 칸으로 포커스를 옮긴다. 응답을 받지 못하면 빨강 상자로 알린다
- * - **비밀번호는 이 화면 상태에만 둔다**(Provider · 목 세션 · 주소 · 로그 금지). 마치면 칸을 비우고 알림(`password-changed` ·
- *   `password-set`)을 내 정보 레이아웃에 남긴 뒤 내 정보로 간다 — 내 정보에서 왔으면 `router.back()`, 주소로 바로 들어왔으면
- *   `/me` 로 기록을 바꿔 간다. 어느 쪽이든 뒤로 가기로 이 화면에 돌아오지 않고, 기록에 `/me` 가 두 번 남지 않는다
+ * - 현재 비밀번호가 맞지 않으면 그 칸 아래에 알리고 그 칸으로 포커스를 옮긴다. 확인 시도가 많아 막히면 회색 상자, 응답을 받지 못하면
+ *   빨강 상자로 알린다. 서버가 비밀번호 없는 계정이라고 하면(`no-password` — 내 정보와 어긋남) 빨강 상자로 알리고, 내 정보를 다시 읽어
+ *   `hasPassword` 가 false 면 위처럼 내 정보로 돌아간다
+ * - **비밀번호는 이 화면 상태에만 둔다**(Provider · 목 세션 · 주소 · 로그 금지). 마치면 칸을 비우고 알림(`password-changed` — 다른 기기는
+ *   로그아웃됐다는 안내 포함)을 내 정보 레이아웃에 남긴 뒤 내 정보로 간다 — 내 정보에서 왔으면 `router.back()`, 주소로 바로 들어왔으면
+ *   `/me` 로 기록을 바꿔 간다. 어느 쪽이든 뒤로 가기로 이 화면에 돌아오지 않고, 기록에 `/me` 가 두 번 남지 않는다.
+ *   이 기기는 로그인 상태로 남는다(서버가 다른 기기만 로그아웃한다)
  * - 보내는 중에는 칸을 읽기 전용으로, 버튼 · 뒤로를 `aria-disabled` 로 꺼 두 번 보내지 않는다
- * - 설정에 성공하면 목 프로필의 `hasPassword` 가 화면과 무관하게 먼저 바뀐다. 이동할 때까지 화면이 바꾸기로 뒤집히지 않게
- *   처음 그린 모드를 그대로 쓴다
  */
 export function PasswordScreen({
   regionName,
@@ -97,27 +65,27 @@ export function PasswordScreen({
   const auth = useMemberGate()
   const profile = useMockProfile()
   const profileStatus = useMockProfileStatus()
-  // 실데이터 프로필(`GET /me`)을 읽지 못하면 공통 오류 화면이다. 읽는 동안은 그리지 않는다(어느 모드인지 모른다)
+  const searchParams = useSearchParams()
+  const { goBack } = useMeTrail()
+  const noPassword = auth !== null && profile !== null && !profile.hasPassword
+  const backHref = navHref(ME_PATH, meSearch(regionCode, searchParams))
+  useEffect(() => {
+    // 비밀번호가 없는 회원에게는 바꿀 비밀번호가 없다. 내 정보로 돌려보낸다(알림 없음)
+    if (noPassword) goBack(backHref)
+  }, [noPassword, goBack, backHref])
+
+  // 실데이터 프로필(`GET /me`)을 읽지 못하면 공통 오류 화면이다. 읽는 동안은 그리지 않는다(비밀번호가 있는지 모른다)
   if (auth && profileStatus === 'failed') return <ErrorState onRetry={retryMemberInfo} nav="me" />
-  if (!auth || !profile) return null
-  return (
-    <PasswordForm
-      auth={auth}
-      initialMode={profile.hasPassword ? 'change' : 'setup'}
-      regionName={regionName}
-      regionCode={regionCode}
-    />
-  )
+  if (!auth || !profile || noPassword) return null
+  return <PasswordForm auth={auth} regionName={regionName} regionCode={regionCode} />
 }
 
 function PasswordForm({
   auth,
-  initialMode,
   regionName,
   regionCode,
 }: {
   auth: MockAuthState
-  initialMode: Mode
   regionName: string
   regionCode: string | null
 }) {
@@ -128,16 +96,15 @@ function PasswordForm({
   const shownRegionName = useShownRegionName(regionName, regionCode)
   const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
   const active = useActiveRef()
+  const source = useDataSource()
   const { toast, show, dismiss } = useToast()
   const formId = useId()
   const currentRef = useRef<HTMLInputElement>(null)
-  const [mode] = useState(initialMode)
   const [current, setCurrent] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [checked, setChecked] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
-  const copy = COPY[mode]
 
   const busy = status === 'submitting' || status === 'done'
   const problems = {
@@ -145,12 +112,13 @@ function PasswordForm({
     confirm: confirmProblem(password, confirm),
   }
   const hasProblem = problems.password !== null || problems.confirm !== null
-  const empty = (mode === 'change' && current === '') || password === '' || confirm === ''
-  const blocked = empty || busy || (checked && hasProblem)
+  const empty = current === '' || password === '' || confirm === ''
+  // 서버가 규칙 위반으로 거절했으면 칸을 고칠 때까지 같은 값을 다시 보내지 않는다
+  const blocked = empty || busy || (checked && hasProblem) || status === 'rule'
 
   function change(set: (value: string) => void, value: string) {
     set(value)
-    if (status === 'failed') setStatus('idle')
+    if (status === 'failed' || status === 'locked' || status === 'rule') setStatus('idle')
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -159,30 +127,37 @@ function PasswordForm({
     setChecked(true)
     if (hasProblem) return
     setStatus('submitting')
+    let result: ChangePasswordResult
     try {
-      if (mode === 'change') {
-        const result = await changePassword(current, password)
-        if (result.status === 'wrong-current') {
-          if (!active.current) return
-          setStatus('wrong-current')
-          currentRef.current?.focus()
-          return
-        }
-      } else {
-        await setupPassword(password)
-      }
+      result = await changePassword(current, password, source)
     } catch {
       if (active.current) setStatus('failed')
       return
     }
     if (!active.current) return
+    if (result.status === 'wrong-current') {
+      setStatus('wrong-current')
+      currentRef.current?.focus()
+      return
+    }
+    if (result.status !== 'ok') {
+      // 비밀번호 없는 계정(`no-password`)은 내 정보를 다시 읽는 중이다 — false 로 바뀌면 화면이 내 정보로 돌아간다
+      setStatus(
+        result.status === 'locked'
+          ? 'locked'
+          : result.status === 'invalid-password'
+            ? 'rule'
+            : 'failed',
+      )
+      return
+    }
     setCurrent('')
     setPassword('')
     setConfirm('')
     setStatus('done')
     // 알림은 내 정보 레이아웃에 남긴다. 내 정보에서 왔으면 기록을 되돌려(기록에 /me 가 두 번 남지 않게),
     // 주소로 바로 들어왔으면 동네 · 덮어쓰기를 남긴 내 정보로 기록을 바꿔 간다 — 어느 쪽이든 뒤로 가기로 이 화면에 돌아오지 않는다
-    leaveNotice(copy.notice)
+    leaveNotice('password-changed')
     goBack(navHref(ME_PATH, meSearch(regionCode, searchParams)))
   }
 
@@ -190,7 +165,7 @@ function PasswordForm({
 
   return (
     <AccountPageLayout
-      title={copy.title}
+      title="비밀번호 변경"
       regionName={shownRegionName}
       navSearch={regionSearch(regionCode)}
       onBack={() => {
@@ -204,19 +179,17 @@ function PasswordForm({
       footer={
         <>
           <Button type="submit" form={formId} fullWidth aria-disabled={blocked || undefined}>
-            {copy.submit}
+            비밀번호 바꾸기
           </Button>
-          {mode === 'change' && (
-            <Button
-              variant="subtle"
-              aria-disabled={busy || undefined}
-              onClick={() => {
-                if (!busy) router.push(PASSWORD_RESET_PATH)
-              }}
-            >
-              비밀번호를 잊었어요
-            </Button>
-          )}
+          <Button
+            variant="subtle"
+            aria-disabled={busy || undefined}
+            onClick={() => {
+              if (!busy) router.push(PASSWORD_RESET_PATH)
+            }}
+          >
+            비밀번호를 잊었어요
+          </Button>
         </>
       }
     >
@@ -226,29 +199,24 @@ function PasswordForm({
         noValidate
         className="flex flex-col gap-5"
       >
-        {mode === 'setup' && (
-          <p className="text-body leading-[1.6] text-fg-sub">
-            비밀번호를 정하면 이메일로도 로그인할 수 있어요.
-          </p>
-        )}
-
-        {mode === 'change' && (
-          <TextField
-            ref={currentRef}
-            label="현재 비밀번호"
-            type="password"
-            autoComplete="current-password"
-            value={current}
-            readOnly={busy}
-            onChange={(event) => {
-              setCurrent(event.target.value)
-              if (status === 'wrong-current' || status === 'failed') setStatus('idle')
-            }}
-            error={status === 'wrong-current' ? '현재 비밀번호가 맞지 않아요.' : undefined}
-          />
-        )}
         <TextField
-          label={copy.password}
+          ref={currentRef}
+          label="현재 비밀번호"
+          type="password"
+          autoComplete="current-password"
+          value={current}
+          readOnly={busy}
+          onChange={(event) => {
+            setCurrent(event.target.value)
+            // 새 비밀번호의 규칙 오류(rule)는 새 비밀번호를 고칠 때 지운다
+            if (status === 'wrong-current' || status === 'locked' || status === 'failed') {
+              setStatus('idle')
+            }
+          }}
+          error={status === 'wrong-current' ? '현재 비밀번호가 맞지 않아요.' : undefined}
+        />
+        <TextField
+          label="새 비밀번호"
           type="password"
           autoComplete="new-password"
           value={password}
@@ -256,13 +224,13 @@ function PasswordForm({
           onChange={(event) => change(setPassword, event.target.value)}
           hint="8~20자 · 영문과 숫자 포함 · 띄어쓰기 없이"
           error={
-            checked && problems.password
+            (checked && problems.password) || status === 'rule'
               ? '영문과 숫자를 함께 8~20자로, 띄어쓰기 없이 써 주세요.'
               : undefined
           }
         />
         <TextField
-          label={copy.confirm}
+          label="새 비밀번호 확인"
           type="password"
           autoComplete="new-password"
           value={confirm}
@@ -271,7 +239,15 @@ function PasswordForm({
           error={checked && problems.confirm ? '비밀번호가 서로 달라요.' : undefined}
         />
 
-        {status === 'failed' && <AlertBox tone="danger">{copy.failed}</AlertBox>}
+        {status === 'locked' && (
+          // 새로 나타나는 상자라 꼭 읽히게 alert 로 둔다. 잠금 시간은 서버 설정이라 못 박지 않는다
+          <AlertBox tone="neutral" role="alert">
+            비밀번호 확인 시도가 많아 잠시 막혔어요. 조금 뒤 다시 시도해 주세요.
+          </AlertBox>
+        )}
+        {status === 'failed' && (
+          <AlertBox tone="danger">비밀번호를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.</AlertBox>
+        )}
       </form>
 
       <ToastRegion

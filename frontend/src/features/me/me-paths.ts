@@ -9,7 +9,7 @@ import { REPORT_PARAM } from '@/features/report/report-flow'
 export const ME_PATH = '/me'
 /** 로그인한 기기 (Settings-devices) */
 export const ME_DEVICES_PATH = '/me/devices'
-/** 비밀번호 변경 · 설정 (Settings-password). 카카오 회원이 아직 비밀번호가 없으면 설정 화면이다 */
+/** 비밀번호 변경 (Settings-password). 비밀번호가 없는 회원(카카오로만 로그인)에게는 없다 — 내 정보로 돌려보낸다(#166) */
 export const ME_PASSWORD_PATH = '/me/password'
 /** 내 동네 바꾸기 (#141, 시안 없음). 보고 · 알림 기준인 회원의 동네를 검색으로 직접 고른다 */
 export const ME_REGION_PATH = '/me/region'
@@ -61,8 +61,8 @@ export function reportHrefFor(auth: MockAuthState, regionCode: string | null): s
  * 비밀번호 같은 값은 넣지 않는다 — 무슨 일을 마쳤는지만 넣는다.
  */
 export const ME_NOTICES = {
-  'password-changed': '비밀번호를 바꿨어요',
-  'password-set': '비밀번호를 설정했어요. 이제 이메일로도 로그인할 수 있어요',
+  // 서버가 이 기기만 남기고 다른 기기를 로그아웃한다(backend/docs/modules.md "화면 계약", #166)
+  'password-changed': '비밀번호를 바꿨어요. 다른 기기에서는 로그아웃됐어요',
   'region-changed': '내 동네를 바꿨어요',
 } as const
 
