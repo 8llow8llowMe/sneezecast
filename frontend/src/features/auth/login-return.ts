@@ -41,6 +41,16 @@ export type LoginReturn = {
   intent: LoginIntent | null
 }
 
+/**
+ * 카카오 로그인 · 계정 연결을 마친 뒤 갈 곳 (#167). 지금은 늘 홈이다 — 카카오는 문서를 카카오 인가 화면으로 옮겼다 돌아와(콜백)
+ * 첫 진입 Provider · 주소 쿼리가 비므로 돌아갈 곳(`next` · `region` · `intent`)을 이어 받지 못한다.
+ * **#140 이 여기에 끼운다**: 카카오를 떠나기 전에 돌아갈 곳을 들고 가서(콜백 · 가입 마무리 내내) 이 함수가 그곳을 돌려주게 한다.
+ * 부르는 곳은 콜백(`LOGGED_IN`)과 계정 연결 확인(연결 성공)이다. 가입 마무리(S02-4 → 홈)는 아직 따로다
+ */
+export function afterKakaoLoginPath(): string {
+  return HOME_PATH
+}
+
 /** 돌아갈 곳이 없는 로그인(시작 화면에서 옴) — 로그인 뒤 홈으로 간다 */
 export const NO_LOGIN_RETURN: LoginReturn = { next: HOME_PATH, region: null, intent: null }
 

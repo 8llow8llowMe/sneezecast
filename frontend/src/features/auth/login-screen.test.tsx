@@ -9,11 +9,12 @@ import {
   type SignupDraft,
   useOnboarding,
 } from '@/features/onboarding/onboarding-context'
+import { assignLocation } from '@/lib/location'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
-import type * as authClient from './auth-client'
-import { startKakaoLogin } from './auth-client'
-import type { LoginNotice } from './login-notice'
+import type * as kakaoClient from './kakao-client'
+import { type KakaoStartResult, startKakaoLogin } from './kakao-client'
+import type { KakaoFailReason, LoginNotice } from './login-notice'
 import type { LoginReturn } from './login-return'
 import { LoginScreen } from './login-screen'
 
@@ -24,10 +25,13 @@ vi.mock('next/navigation', () => ({
   usePathname: () => pathname.value,
 }))
 
-vi.mock('./auth-client', async (importOriginal) => {
-  const actual = await importOriginal<typeof authClient>()
+vi.mock('./kakao-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof kakaoClient>()
   return { ...actual, startKakaoLogin: vi.fn(actual.startKakaoLogin) }
 })
+vi.mock('@/lib/location', () => ({ assignLocation: vi.fn() }))
+
+const internal = (href: string): KakaoStartResult => ({ status: 'redirect', href, external: false })
 
 /** 그만둔 이메일 가입 초안 */
 const ABANDONED: SignupDraft = {
@@ -53,10 +57,15 @@ function renderLogin(
   notice: LoginNotice | null = null,
   initialSignup: SignupDraft = EMPTY_SIGNUP,
   loginReturn?: LoginReturn,
+  kakaoReason: KakaoFailReason | null = null,
 ) {
   return render(
     <OnboardingProvider initialSignup={initialSignup}>
-      <LoginScreen notice={notice} {...(loginReturn ? { loginReturn } : {})} />
+      <LoginScreen
+        notice={notice}
+        kakaoReason={kakaoReason}
+        {...(loginReturn ? { loginReturn } : {})}
+      />
       <Probe />
     </OnboardingProvider>,
   )
@@ -68,6 +77,7 @@ describe('LoginScreen', () => {
     router.replace.mockClear()
     router.back.mockClear()
     vi.mocked(startKakaoLogin).mockReset()
+    vi.mocked(assignLocation).mockReset()
   })
 
   it('기본은 카카오 · 이메일 가입 · 이메일 로그인을 보이고 알림이 없다', () => {
@@ -92,7 +102,7 @@ describe('LoginScreen', () => {
   })
 
   it('카카오를 기다리는 동안 · 이동하는 동안 버튼이 꺼진 채다', async () => {
-    let resolve: (value: { redirectTo: string }) => void = () => {}
+    let resolve: (value: KakaoStartResult) => void = () => {}
     vi.mocked(startKakaoLogin).mockImplementationOnce(() => new Promise((done) => (resolve = done)))
     renderLogin()
     const kakao = screen.getByRole<HTMLButtonElement>('button', { name: '카카오로 계속하기' })
@@ -100,9 +110,59 @@ describe('LoginScreen', () => {
     await userEvent.setup().click(kakao)
     expect(kakao.disabled).toBe(true)
 
-    resolve({ redirectTo: '/setup/region' })
+    resolve(internal('/setup/region'))
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/setup/region'))
     expect(kakao.disabled).toBe(true)
+  })
+
+  it('실데이터 인가 주소면 앱 밖으로 문서를 옮기고(router 가 아님) 버튼을 꺼 둔다', async () => {
+    vi.mocked(startKakaoLogin).mockResolvedValueOnce({
+      status: 'redirect',
+      href: 'https://kauth.kakao.com/oauth/authorize?state=s',
+      external: true,
+    })
+    renderLogin()
+    const kakao = screen.getByRole<HTMLButtonElement>('button', { name: '카카오로 계속하기' })
+    await userEvent.setup().click(kakao)
+    await waitFor(() =>
+      expect(assignLocation).toHaveBeenCalledWith(
+        'https://kauth.kakao.com/oauth/authorize?state=s',
+      ),
+    )
+    expect(router.push).not.toHaveBeenCalled()
+    expect(kakao.disabled).toBe(true)
+    // 출처를 첫 인자로 넘긴다(테스트는 목 기본값)
+    expect(startKakaoLogin).toHaveBeenCalledWith('mock', {})
+  })
+
+  it('카카오 화면에서 뒤로 와 bfcache 로 다시 보이면 버튼을 다시 켠다', async () => {
+    vi.mocked(startKakaoLogin).mockResolvedValueOnce({
+      status: 'redirect',
+      href: 'https://kauth.kakao.com/oauth/authorize?state=s',
+      external: true,
+    })
+    renderLogin()
+    const kakao = screen.getByRole<HTMLButtonElement>('button', { name: '카카오로 계속하기' })
+    await userEvent.setup().click(kakao)
+    await waitFor(() => expect(assignLocation).toHaveBeenCalled())
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
+    })
+    expect(kakao.disabled).toBe(false)
+  })
+
+  it('요청이 많으면(AUTH_028) 잠시 막혔다고 알리고 버튼을 다시 켠다', async () => {
+    vi.mocked(startKakaoLogin).mockResolvedValueOnce({ status: 'limited' })
+    renderLogin()
+    const kakao = screen.getByRole<HTMLButtonElement>('button', { name: '카카오로 계속하기' })
+    await userEvent.setup().click(kakao)
+    await waitFor(() => expect(kakao.disabled).toBe(false))
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((region) => region.textContent?.includes('요청이 많아 잠시 막혔어요')),
+    ).toBe(true)
+    expect(router.push).not.toHaveBeenCalled()
   })
 
   it('카카오 시작이 거부되면 토스트로 알리고 버튼을 다시 켠다', async () => {
@@ -157,13 +217,13 @@ describe('LoginScreen', () => {
   })
 
   it('카카오를 기다리는 동안 화면을 떠나면 늦은 응답으로 이동하지 않는다', async () => {
-    let resolve: (value: { redirectTo: string }) => void = () => {}
+    let resolve: (value: KakaoStartResult) => void = () => {}
     vi.mocked(startKakaoLogin).mockImplementationOnce(() => new Promise((done) => (resolve = done)))
     const { unmount } = renderLogin()
     await userEvent.setup().click(screen.getByRole('button', { name: '카카오로 계속하기' }))
     unmount()
     await act(async () => {
-      resolve({ redirectTo: '/setup/region' })
+      resolve(internal('/setup/region'))
       await Promise.resolve()
     })
     expect(router.push).not.toHaveBeenCalled()
@@ -183,18 +243,40 @@ describe('LoginScreen', () => {
     expect(screen.getByRole('button', { name: '카카오로 계속하기' })).toBeDefined()
   })
 
-  it('kakao-exists 면 이메일로 로그인과 다른 카카오 계정으로 계속하기만 보인다', async () => {
-    renderLogin('kakao-exists')
-    const status = screen
-      .getAllByRole('status')
-      .find((region) => region.textContent?.includes('이미 이메일 회원으로'))
-    expect(status).toBeDefined()
+  it.each([
+    [
+      'email-required',
+      '카카오 계정의 이메일을 받지 못했어요. 다시 시도할 때 이메일 제공에 동의해 주세요.',
+    ],
+    [
+      'email-unverified',
+      '카카오 계정의 이메일이 인증되지 않았어요. 카카오에서 이메일을 인증한 뒤 다시 시도해 주세요.',
+    ],
+    ['expired', '시간이 지나 카카오 로그인을 마치지 못했어요. 카카오 로그인부터 다시 해 주세요.'],
+    ['suspended', '이용이 정지된 계정이에요.'],
+  ] as const)('kakao-fail 사유 %s 면 사유별 문장을 알린다', (reason, text) => {
+    renderLogin('kakao-fail', EMPTY_SIGNUP, undefined, reason)
+    expect(screen.getByRole('alert').textContent).toBe(text)
+    expect(screen.getByRole('button', { name: '카카오로 계속하기' })).toBeDefined()
+  })
 
-    expect(screen.queryByRole('button', { name: '이메일로 가입하기' })).toBeNull()
-    expect(screen.getByRole('button', { name: '다른 카카오 계정으로 계속하기' })).toBeDefined()
+  it('사유는 kakao-fail 일 때만 보인다', () => {
+    renderLogin(null, EMPTY_SIGNUP, undefined, 'expired')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
 
-    await userEvent.setup().click(screen.getByRole('button', { name: '이메일로 로그인' }))
-    expect(router.push).toHaveBeenCalledWith('/login/email')
+  it('들어오면 그만둔 카카오 계정 연결 확인의 가린 이메일을 지운다', () => {
+    function LinkProbe() {
+      const { kakaoLinkEmail } = useOnboarding()
+      return <span data-testid="link">{kakaoLinkEmail ?? 'none'}</span>
+    }
+    render(
+      <OnboardingProvider initialKakaoLinkEmail="d***@example.com">
+        <LoginScreen notice={null} />
+        <LinkProbe />
+      </OnboardingProvider>,
+    )
+    expect(screen.getByTestId('link').textContent).toBe('none')
   })
 
   it('expired 면 다시 로그인하라는 토스트를 띄운다', async () => {
@@ -214,17 +296,12 @@ describe('LoginScreen', () => {
     expect(router.replace).toHaveBeenCalledWith('/start')
   })
 
-  it('돌아갈 곳(?next=/me)을 이메일 로그인 링크 · 버튼에 이어 넘긴다', async () => {
+  it('돌아갈 곳(?next=/me)을 이메일 로그인 링크에 이어 넘긴다', () => {
     const ret = { next: '/me', region: '11440660', intent: null }
-    const { unmount } = renderLogin(null, EMPTY_SIGNUP, ret)
+    renderLogin(null, EMPTY_SIGNUP, ret)
     expect(screen.getByRole('link', { name: '이메일로 로그인' }).getAttribute('href')).toBe(
       '/login/email?next=%2Fme&region=11440660',
     )
-    unmount()
-
-    renderLogin('kakao-exists', EMPTY_SIGNUP, ret)
-    await userEvent.setup().click(screen.getByRole('button', { name: '이메일로 로그인' }))
-    expect(router.push).toHaveBeenCalledWith('/login/email?next=%2Fme&region=11440660')
   })
 
   it('보고하려던 로그인(?intent=report)을 이메일 로그인 링크에 이어 넘긴다', () => {

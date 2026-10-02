@@ -213,6 +213,105 @@ describe('TermsScreen', () => {
     expect(state().membership).toEqual({ accountCreated: true, loggedIn: true, regionSaved: true })
   })
 
+  it('실데이터 카카오 가입이면 가입 응답으로 회원이 된 뒤 동네 저장을 실제로 보낸다(#167)', async () => {
+    selectApiSource()
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      void init
+      const body = url.endsWith('/api/v1/auth/kakao/signup')
+        ? memberToken({ reportWritable: false })
+        : url.endsWith('/api/v1/members/me/region')
+          ? { code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구', abolished: false }
+          : null
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            dataHeader: { success: true, resultCode: null, resultMessage: null, fieldErrors: null },
+            dataBody: body,
+          }),
+          { status: 200 },
+        ),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { user } = setup({ draft: KAKAO_DRAFT })
+    await agreeAndSubmit(user)
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/setup/health-consent'))
+    const calls = fetchMock.mock.calls.map(([url]) => new URL(url).pathname)
+    // 가입 뒤 로그인 요청이 없다. 회원 정보 저장소가 읽는 내 정보 · 내 동네 요청은 따로 나갈 수 있다
+    expect(calls[0]).toBe('/api/v1/auth/kakao/signup')
+    expect(calls).not.toContain('/api/v1/auth/login')
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')
+    expect(put && new URL(put[0]).pathname).toBe('/api/v1/members/me/region')
+    expect(put?.[1]).toMatchObject({ body: JSON.stringify({ code: '11680640' }) })
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ termsAgreed: true, privacyAgreed: true, ageOver19Confirmed: true }),
+    })
+    expect(getSessionSnapshot()).toMatchObject({ status: 'member' })
+    expect(loginWithEmail).not.toHaveBeenCalled()
+    expect(state().membership).toEqual({ accountCreated: true, loggedIn: true, regionSaved: true })
+  })
+
+  it.each([
+    [{ status: 'kakao-restart', reason: 'expired' }, '/login?error=kakao-fail&kakao=expired'],
+    [{ status: 'kakao-restart', reason: null }, '/login?error=kakao-fail'],
+  ] as const)(
+    '카카오 가입표가 없으면(%o) 카카오 로그인부터 다시 하게 로그인 화면으로 간다',
+    async (result, path) => {
+      vi.mocked(signup).mockResolvedValueOnce(result)
+      const { user } = setup({ draft: KAKAO_DRAFT })
+      await agreeAndSubmit(user)
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith(path))
+      expect(router.replace).toHaveBeenCalledTimes(1)
+      expect(saveRegion).not.toHaveBeenCalled()
+      expect(state().membership).toEqual(NO_MEMBERSHIP)
+    },
+  )
+
+  it('실데이터 카카오 가입에 서비스가 업무 오류(AUTH_017)로 답하면 가입표를 잃었으므로 바로 카카오 로그인부터 다시 하게 한다', async () => {
+    selectApiSource()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              dataHeader: {
+                success: false,
+                resultCode: 'AUTH_017',
+                resultMessage: '거절',
+                fieldErrors: null,
+              },
+              dataBody: null,
+            }),
+            { status: 503 },
+          ),
+        ),
+      ),
+    )
+    const { user } = setup({ draft: KAKAO_DRAFT })
+    await agreeAndSubmit(user)
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/login?error=kakao-fail'))
+    expect(screen.queryByText('가입하지 못했어요. 잠시 뒤 다시 시도해 주세요.')).toBeNull()
+    expect(saveRegion).not.toHaveBeenCalled()
+  })
+
+  it('실데이터 카카오 가입이 응답을 받지 못하면(네트워크) 상자로 알리고 다시 누르게 한다', async () => {
+    selectApiSource()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
+    )
+    const { user } = setup({ draft: KAKAO_DRAFT })
+    await agreeAndSubmit(user)
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '가입하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    )
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(state().membership).toEqual(NO_MEMBERSHIP)
+  })
+
   it('카카오 가입이면 동의만 보내고 로그인 없이 동네를 저장한다', async () => {
     const { user } = setup({ draft: KAKAO_DRAFT })
     await agreeAndSubmit(user)

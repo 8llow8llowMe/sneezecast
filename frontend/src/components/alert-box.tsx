@@ -34,7 +34,7 @@ export function AlertBox({
    */
   role?: 'alert' | 'status'
   children: ReactNode
-  /** 문장 아래 동작 (예: kakao-exists 의 "이메일로 로그인") */
+  /** 문장 아래 동작 (예: 카카오 계정 연결 확인의 "연결하고 계속하기") */
   action?: ReactNode
   className?: string
 }) {
