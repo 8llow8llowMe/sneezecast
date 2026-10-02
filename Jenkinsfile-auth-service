@@ -53,6 +53,11 @@ backendPipeline.run([
         'MINIO_SECRET_KEY',
         // 이메일 인증코드 발송 SMTP 계정. auth 전용(Vault {env}/auth-service). host · port · 발신자 표시는 기본값이 있다.
         'MAIL_USERNAME',
-        'MAIL_PASSWORD'
+        'MAIL_PASSWORD',
+        // 카카오 로그인 앱 키 · 시크릿 · 콜백 주소. auth 전용(Vault {env}/auth-service). 비거나 공백이면 기동 실패다.
+        // redirect URI 는 프론트 콜백 페이지(예: https://dev.sneezecast.com/login/kakao/callback)이고 카카오 개발자 콘솔에 등록한 값과 같아야 한다.
+        'KAKAO_CLIENT_ID',
+        'KAKAO_CLIENT_SECRET',
+        'KAKAO_REDIRECT_URI'
     ]
 ])
