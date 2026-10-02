@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-import { THEME_COLOR } from './theme-color'
+import { BRAND_COLOR, THEME_COLOR } from './theme-color'
 
 /**
  * docs/design/tokens.json(시안 원본)과 src/styles/tokens.css(코드 정본)가 같은 값을 갖는지 확인한다.
@@ -151,5 +151,11 @@ describe('tokens.json ↔ tokens.css', () => {
     const bg = flatten(tokensJson).find(([path]) => path === 'color.bg')?.[1]
     expect(bg).toBeDefined()
     expect(normalize(THEME_COLOR)).toBe(normalize(bg ?? ''))
+  })
+
+  it('BRAND_COLOR(앱 아이콘 바탕)가 color.brand 와 같다', () => {
+    const brand = flatten(tokensJson).find(([path]) => path === 'color.brand')?.[1]
+    expect(brand).toBeDefined()
+    expect(normalize(BRAND_COLOR)).toBe(normalize(brand ?? ''))
   })
 })
