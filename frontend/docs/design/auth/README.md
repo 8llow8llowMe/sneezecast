@@ -17,7 +17,7 @@ Claude Design 캔버스 "우리동네체온계 로그인·가입·계정 시안"
 
 | ID | 화면 | 파일 (모바일 / -T / -D) | 상태 (state) | 우선순위 | 제안 라우트 |
 | --- | --- | --- | --- | --- | --- |
-| S13-1 | 로그인 방법 선택 | Login | default · kakao-fail · kakao-exists · expired | 필수 | `/login` |
+| S13-1 | 로그인 방법 선택 | Login | default · kakao-fail · kakao-exists(→ #167 에서 `/login/kakao/link`(계정 연결 확인)로 옮김) · expired | 필수 | `/login` |
 | S13-2 | 이메일 입력 | Signup-email | default · invalid · exists · limit | 필수 | `/signup/email` |
 | S13-3 | 인증 코드 | Signup-code | default · wrong · expired · locked | 필수 | `/signup/code` |
 | S13-4 | 비밀번호 · 닉네임 | Signup-account | default · pw-rule · pw-mismatch · nick-long | 필수 | `/signup/account` |
