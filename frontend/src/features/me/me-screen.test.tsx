@@ -327,7 +327,7 @@ describe('MeScreen 메뉴', () => {
 
   it('보고 동네 행은 둘러보는 동네가 아니라 내 동네를 보이고 내 동네 바꾸기로 간다', async () => {
     await loginWithEmail('dong@example.com', 'dongne2026')
-    await saveRegion({ code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구' })
+    await saveRegion({ code: '11680640', name: '역삼1동' })
     search = 'region=11440660&mock-provider=email'
     renderMe({ regionCode: '11440660' })
 
@@ -344,7 +344,7 @@ describe('MeScreen 메뉴', () => {
 
   it('머리줄 동네 이름은 둘러보기 동네가 없으면 내 동네이고, 내 정보로 돌아올 둘러볼 동네 고르기를 연다', async () => {
     await loginWithEmail('dong@example.com', 'dongne2026')
-    await saveRegion({ code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구' })
+    await saveRegion({ code: '11680640', name: '역삼1동' })
     renderMe()
 
     await userEvent.setup().click(screen.getByRole('button', { name: '동네 바꾸기, 현재 역삼1동' }))

@@ -27,7 +27,8 @@ export function MapView({
 }: {
   weekLabel: string
   districts: readonly MapDistrict[]
-  mineCode: string
+  /** `(내 동네)` 를 붙일 동네. 회원이 내 동네를 정하지 않았으면 null 이다(`MapScreen`) */
+  mineCode: string | null
   selectedCode: string | null
   onSelect: (code: string) => void
   /** 행정동 이름으로 찾기. 지도와 함께 붙인다 — 지금은 준비 중 알림 */

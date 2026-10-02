@@ -1,4 +1,4 @@
-import { type MouseEvent, type PointerEvent, useId, useRef } from 'react'
+import { type MouseEvent, type PointerEvent, type Ref, useId, useRef } from 'react'
 import Link from 'next/link'
 
 import clsx from 'clsx'
@@ -32,7 +32,8 @@ const TILE_CLASS = 'flex flex-1 basis-0 flex-col gap-1 rounded-button bg-section
  *
  * 모바일 접힘 · 펼침은 손잡이 버튼(누름)과 위 · 아래로 밀기로 바꾼다. 상태는 부모가 갖는다.
  * **자료 부족이면 수치 · 상태색 없이 `자료 부족` 글자와 참여 진행 막대만** 보인다 — 증상 비율 · 기준선은 타입에 없다.
- * `이 동네 안내 보기` 는 운영자가 발행한 안내가 있는 동네에만 있다. `내 동네로 설정` 은 처음 고른 동네에는 없다.
+ * `이 동네 안내 보기` 는 운영자가 발행한 안내가 있는 동네에만 있다. `내 동네로 설정` 은 내 동네(`mine`)에는 없고,
+ * 대신 이름 뒤 `(내 동네)` 로 이미 내 동네임을 보인다(Map-collapsed 시안 — 꺼진 버튼보다 상태를 알린다).
  */
 export function DistrictPanel({
   district,
@@ -42,8 +43,10 @@ export function DistrictPanel({
   onSetMine,
   onExplain,
   navSearch,
+  nameRef,
 }: {
   district: MapDistrict
+  /** 내 동네인지. 회원은 프로필의 내 동네, 비회원은 처음 고른 동네다(`MapScreen`) */
   mine: boolean
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
@@ -51,6 +54,8 @@ export function DistrictPanel({
   onExplain: () => void
   /** 동네 안내 링크 뒤에 붙일 둘러보기 동네(`region=<코드>`) */
   navSearch?: string | undefined
+  /** 동네 이름 제목. 내 동네로 설정한 뒤 사라진 버튼 대신 포커스를 받는다(`MapScreen`) */
+  nameRef?: Ref<HTMLHeadingElement> | undefined
 }) {
   const { week } = district
   const detailsId = useId()
@@ -96,7 +101,13 @@ export function DistrictPanel({
         </button>
 
         <div className="flex items-baseline gap-2">
-          <h2 id={`${detailsId}-name`} className="text-screen-title font-bold text-fg">
+          {/* 탭 순서에는 들지 않고 스크립트로만 포커스를 받는다(내 정보의 섹션 바로가기와 같다) */}
+          <h2
+            ref={nameRef}
+            id={`${detailsId}-name`}
+            tabIndex={-1}
+            className="text-screen-title font-bold text-fg focus:outline-none"
+          >
             {week.regionName}
             {mine && ' (내 동네)'}
           </h2>
