@@ -9,7 +9,7 @@
 3. [docs/design/SCREENS.md](docs/design/SCREENS.md) — 화면 ID ↔ 시안 파일 ↔ 라우트. 로그인 · 가입 · 계정 화면은 [docs/design/auth/README.md](docs/design/auth/README.md) (별도 캔버스, 우선순위 포함)
 4. [docs/conventions.md](docs/conventions.md) — 도구 체인, 디렉터리 구조, import · 스타일 · 환경변수 · 테스트 규칙
 5. [docs/design/tokens.json](docs/design/tokens.json) — 디자인 토큰 원본 (코드 쪽 정본은 `src/styles/tokens.css`)
-6. [docs/api-contract-draft.md](docs/api-contract-draft.md) — API 계약 초안 (백엔드와 맞추기 전)
+6. [docs/api-contract-draft.md](docs/api-contract-draft.md) — API 계약 (인증 · 회원 · 행정동 확정, 그 밖은 BE 미정 초안)
 
 도메인 불변식(보고·집계·자료 부족·운영자 검토·개인정보)은 루트 [`CLAUDE.md`](../CLAUDE.md) 가 정본이다.
 
