@@ -40,6 +40,7 @@ backendPipeline.run([
         'REDIS_SENTINEL_NODES',
         'REDIS_PASSWORD',
         'AUTH_SERVICE_APP_NAME',
-        'SURVEILLANCE_SERVICE_APP_NAME'
+        'SURVEILLANCE_SERVICE_APP_NAME',
+        'GATEWAY_TRUSTED_PROXIES'
     ]
 ])
