@@ -9,6 +9,7 @@ import {
   type SignupDraft,
   useOnboarding,
 } from '@/features/onboarding/onboarding-context'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import type * as authClient from './auth-client'
 import { sendEmailCode, verifyEmailCode } from './auth-client'
@@ -44,10 +45,12 @@ function Probe() {
 
 function tree(initial: SignupDraft) {
   return (
-    <OnboardingProvider initialSignup={initial}>
-      <SignupCodeScreen />
-      <Probe />
-    </OnboardingProvider>
+    <NavTrailProvider>
+      <OnboardingProvider initialSignup={initial}>
+        <SignupCodeScreen />
+        <Probe />
+      </OnboardingProvider>
+    </NavTrailProvider>
   )
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { canGoBackTo, nextTrail } from './onboarding-trail'
+import { canGoBackTo, nextTrail, settleReplace } from './nav-trail'
 
 describe('nextTrail', () => {
   it('처음 들어온 주소를 쌓고 같은 주소면 그대로 둔다', () => {
@@ -29,5 +29,29 @@ describe('canGoBackTo', () => {
     )
     expect(canGoBackTo(['/setup/region'], ['/start'])).toBe(false)
     expect(canGoBackTo(['/setup/adult', '/setup/region'], ['/start'])).toBe(false)
+  })
+
+  it('후보를 생략하면 바로 앞이 앱 안 화면이기만 하면 되돌릴 수 있다', () => {
+    expect(canGoBackTo(['/', '/official'])).toBe(true)
+    expect(canGoBackTo(['/notice/11680640/2025-W47', '/official'])).toBe(true)
+    expect(canGoBackTo(['/official'])).toBe(false)
+    expect(canGoBackTo([])).toBe(false)
+  })
+})
+
+describe('settleReplace', () => {
+  const pending = { from: '/', to: '/terms/reconsent' }
+
+  it('바꿔 갈 경로에 닿으면 replace 로 보고 비운다', () => {
+    expect(settleReplace(pending, '/terms/reconsent')).toEqual({ replaced: true, pending: null })
+  })
+
+  it('건 화면에 닿은 커밋(도착한 커밋에서 걸었다)이면 기다린다', () => {
+    expect(settleReplace(pending, '/')).toEqual({ replaced: false, pending })
+  })
+
+  it('다른 곳에 닿으면(버려진 이동) 버린다. 걸어 둔 것이 없으면 replace 가 아니다', () => {
+    expect(settleReplace(pending, '/official')).toEqual({ replaced: false, pending: null })
+    expect(settleReplace(null, '/official')).toEqual({ replaced: false, pending: null })
   })
 })

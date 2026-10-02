@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as regionClient from '@/features/region/region-client'
 import { searchDistricts } from '@/features/region/region-client'
 import type { District } from '@/features/region/types'
+import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import {
   EMPTY_SIGNUP,
@@ -37,9 +38,11 @@ function setup({
 }: { browse?: boolean; initial?: District | null } = {}) {
   const user = userEvent.setup()
   render(
-    <OnboardingProvider initialDistrict={initial}>
-      <RegionScreen browse={browse} />
-    </OnboardingProvider>,
+    <NavTrailProvider>
+      <OnboardingProvider initialDistrict={initial}>
+        <RegionScreen browse={browse} />
+      </OnboardingProvider>
+    </NavTrailProvider>,
   )
   const input = screen.getByRole('searchbox', { name: '행정동 이름' })
   const next = screen.getByRole<HTMLButtonElement>('button', {
@@ -186,9 +189,11 @@ describe('RegionScreen', () => {
     location.pathname = from
     // 같은 요소 객체를 다시 넘기면 React 가 다시 그리지 않아 매번 새로 만든다
     const tree = () => (
-      <OnboardingProvider>
-        <RegionScreen browse={browse} />
-      </OnboardingProvider>
+      <NavTrailProvider>
+        <OnboardingProvider>
+          <RegionScreen browse={browse} />
+        </OnboardingProvider>
+      </NavTrailProvider>
     )
     const { rerender } = render(tree())
     location.pathname = to
@@ -253,10 +258,12 @@ describe('RegionScreen 카카오에서 돌아옴 (?from=kakao)', () => {
     fromKakao?: boolean
   } = {}) {
     render(
-      <OnboardingProvider initialSignup={draft} initialMembership={membership}>
-        <RegionScreen browse={browse} fromKakao={fromKakao} />
-        <Probe />
-      </OnboardingProvider>,
+      <NavTrailProvider>
+        <OnboardingProvider initialSignup={draft} initialMembership={membership}>
+          <RegionScreen browse={browse} fromKakao={fromKakao} />
+          <Probe />
+        </OnboardingProvider>
+      </NavTrailProvider>,
     )
   }
 

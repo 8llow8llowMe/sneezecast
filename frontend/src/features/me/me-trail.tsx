@@ -1,17 +1,8 @@
 'use client'
 
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-} from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef } from 'react'
 
-import { canGoBackTo, nextTrail } from '@/features/onboarding/onboarding-trail'
+import { useNavTrail } from '@/lib/use-nav-trail'
 
 import { ME_PATH, type MeNotice } from './me-paths'
 
@@ -30,46 +21,22 @@ type MeTrail = {
 const MeTrailContext = createContext<MeTrail | null>(null)
 
 /**
- * 내 정보(`/me`)와 그 아래 계정 화면(`/me/devices` · `/me/password`) 사이의 앱 안 이동 기록 (`app/me/layout.tsx`).
+ * 내 정보(`/me`)와 그 아래 계정 화면(`/me/devices` · `/me/password`)이 같이 쓰는 이동 · 알림 (`app/me/layout.tsx`).
  *
- * 첫 진입의 "뒤로" 와 같은 판단이다(docs/conventions.md "단계 화면의 뒤로", `features/onboarding/onboarding-trail.ts`).
- * 내 정보는 첫 진입 Provider 밖이라 같은 기록을 이 레이아웃이 따로 센다 — 레이아웃은 세 화면 사이를 오가도 다시 그려지지 않고,
- * 다른 곳(홈 · 지도)으로 나가면 기록이 사라진다. 주소의 경로만 보고 쿼리는 보지 않는다
- * (내 정보의 확인 대화상자 `?confirm=` 은 같은 경로라 기록에 들지 않는다).
+ * "뒤로" 는 앞 화면을 내 정보(`/me`)로 정해 루트의 앱 안 이동 기록에 묻는다(`useNavTrail`, docs/conventions.md "화면의 뒤로").
+ * 기록은 경로만 보고 쿼리는 보지 않는다(내 정보의 확인 대화상자 `?confirm=` 은 같은 경로라 기록에 들지 않는다).
  *
  * 비밀번호를 바꾸거나 정한 뒤의 알림도 여기 둔다(`leaveNotice` → 내 정보의 `takeNotice`). 주소 쿼리로 넘기면 성공 뒤
  * `router.back()` 으로 돌아갈 수 없고(돌아갈 기록 항목의 주소를 바꿀 수 없다), replace 하면 기록에 `/me` 가 두 번 남아
  * 휴대폰 뒤로 가기가 한 번 헛돈다. 레이아웃 메모리라 새로고침 · 다른 곳으로 나가면 사라진다 — 알림은 그래도 된다.
- * 레이아웃이 다시 마운트되면(홈에 나갔다 브라우저 뒤로로 돌아옴) 이동 기록도 비어, 그때의 뒤로는 내 정보로 replace 해
- * 기록에 `/me` 가 두 번 남는다. 첫 진입 Provider 와 같은 성질이라 그대로 둔다.
  */
 export function MeTrailProvider({ children }: { children: ReactNode }) {
-  const pathname = usePathname()
-  const router = useRouter()
-  // 렌더에 쓰지 않는 이동 기록이라 ref 에 둔다. 주소가 바뀐 뒤(effect)에 갱신한다
-  const trail = useRef<string[]>([])
-  const replacing = useRef(false)
+  const { goBack: goBackInTrail } = useNavTrail()
   const notice = useRef<MeNotice | null>(null)
 
-  useEffect(() => {
-    trail.current = nextTrail(trail.current, pathname, replacing.current)
-    replacing.current = false
-  }, [pathname])
-
-  const replace = useCallback(
-    (path: string) => {
-      replacing.current = true
-      router.replace(path)
-    },
-    [router],
-  )
-
   const goBack = useCallback(
-    (fallback: string) => {
-      if (canGoBackTo(trail.current, [ME_PATH])) router.back()
-      else replace(fallback)
-    },
-    [router, replace],
+    (fallback: string) => goBackInTrail(fallback, [ME_PATH]),
+    [goBackInTrail],
   )
 
   const leaveNotice = useCallback((next: MeNotice) => {
