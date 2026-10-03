@@ -16,6 +16,7 @@ import {
   REISSUE_PATH,
   resetSessionForTests,
   restoreSession,
+  revalidateSession,
   setSession,
   startSession,
 } from './session-store'
@@ -423,6 +424,117 @@ describe('refreshSession — 회원 요약 다시 맞추기', () => {
 
     expect(getSessionSnapshot().status).toBe('guest')
     expect(expired).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('revalidateSession — 뒤로 가기 캐시(bfcache)에서 되살아난 세션 다시 확인', () => {
+  it('회원이 아니면 아무 요청도 하지 않는다 (비회원 · 복원 전)', async () => {
+    await revalidateSession()
+    expect(getSessionSnapshot()).toEqual({ status: 'idle' })
+
+    clearSession('logout')
+    await revalidateSession()
+    expect(getSessionSnapshot()).toEqual({ status: 'guest' })
+    expect(reissueMock).not.toHaveBeenCalled()
+  })
+
+  it('회원이면 바로 복원 중으로 가리고 그동안 옛 토큰을 주지 않는다 — 재발급에 성공하면 그 토큰으로 회원이다', async () => {
+    setSession(token('access-1'))
+    sync.posted = []
+    const reply = deferred<AuthToken>()
+    reissueMock.mockReturnValueOnce(reply.promise)
+
+    const revalidating = revalidateSession()
+    expect(getSessionSnapshot()).toEqual({ status: 'restoring' })
+    expect(reissueMock).toHaveBeenCalledExactlyOnceWith(REISSUE_PATH, {
+      method: 'POST',
+      auth: false,
+    })
+    // 다시 확인하는 동안 나간 요청은 옛 토큰(access-1)이 아니라 확인 결과를 기다린다
+    const provided = resolveAccessToken()
+
+    reply.resolve(token('access-2'))
+    await revalidating
+
+    await expect(provided).resolves.toBe('access-2')
+    expect(getSessionSnapshot()).toMatchObject({
+      status: 'member',
+      summary: { memberId: '1843956734582784' },
+    })
+  })
+
+  it('그사이 다른 회원으로 바뀌었으면(다른 탭 로그인) 그 회원으로 정해진다', async () => {
+    setSession(token('access-1'))
+    reissueMock.mockResolvedValueOnce(token('access-b', { memberId: '999' }))
+
+    await revalidateSession()
+
+    expect(getSessionSnapshot()).toMatchObject({ status: 'member', summary: { memberId: '999' } })
+    await expect(resolveAccessToken()).resolves.toBe('access-b')
+  })
+
+  it.each([
+    ['AUTH_014', 401],
+    ['AUTH_015', 401],
+    ['MEMBER_002', 403],
+  ])(
+    '재발급이 %s 면(다른 탭 · 기기에서 끝난 세션) 비회원이고 힌트를 지운다 — 만료 안내 · 방송 없음',
+    async (code, status) => {
+      setSession(token('access-1'))
+      sync.posted = []
+      reissueMock.mockRejectedValueOnce(apiError(code, status))
+
+      await revalidateSession()
+
+      expect(getSessionSnapshot()).toEqual({ status: 'guest' })
+      expect(hasSessionHint()).toBe(false)
+      expect(expired).not.toHaveBeenCalled()
+      expect(sync.posted).toEqual([])
+      await expect(resolveAccessToken()).resolves.toBeNull()
+    },
+  )
+
+  it('재발급이 일시 장애면 확인하지 못했으니 비회원으로 보인다 — 힌트는 남겨 다시 열 때 해 본다', async () => {
+    setSession(token('access-1'))
+    reissueMock.mockRejectedValueOnce(unavailableError('network', 0))
+
+    await revalidateSession()
+
+    expect(getSessionSnapshot()).toEqual({ status: 'guest' })
+    expect(hasSessionHint()).toBe(true)
+    expect(expired).not.toHaveBeenCalled()
+    await expect(resolveAccessToken()).resolves.toBeNull()
+  })
+
+  it('얼리기 전에 시작한 재발급이 있으면 새로 보내지 않고 그 결과를 쓴다 — 일시 장애로 끝나도 복원 중에 남지 않는다', async () => {
+    setSession(token('access-1', { accessTokenExpiresIn: 10 }))
+    const reply = deferred<AuthToken>()
+    reissueMock.mockReturnValueOnce(reply.promise)
+    // 만료가 가까워 공급자가 재발급을 시작했다
+    const provided = resolveAccessToken()
+
+    const revalidating = revalidateSession()
+    expect(getSessionSnapshot()).toEqual({ status: 'restoring' })
+    reply.reject(unavailableError('network', 0))
+
+    await expect(provided).rejects.toMatchObject({ code: UNAVAILABLE_CODE })
+    await revalidating
+    expect(reissueMock).toHaveBeenCalledTimes(1)
+    expect(getSessionSnapshot()).toEqual({ status: 'guest' })
+  })
+
+  it('복원 중에 부르면 그 복원을 기다린다 (두 번 보내지 않는다)', async () => {
+    writeSessionHint(true)
+    const reply = deferred<AuthToken>()
+    reissueMock.mockReturnValueOnce(reply.promise)
+
+    const restoring = restoreSession()
+    const revalidating = revalidateSession()
+    reply.resolve(token('access-1'))
+    await Promise.all([restoring, revalidating])
+
+    expect(reissueMock).toHaveBeenCalledTimes(1)
+    expect(getSessionSnapshot().status).toBe('member')
   })
 })
 

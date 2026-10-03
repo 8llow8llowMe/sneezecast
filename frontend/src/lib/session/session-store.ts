@@ -288,6 +288,37 @@ export async function refreshSession(): Promise<void> {
   }
 }
 
+/**
+ * 뒤로 가기 캐시(bfcache)에서 되살아난 화면의 세션을 다시 확인한다(#186). `SessionBootstrap` 이 `pageshow` 의 `persisted` 에서 부른다.
+ *
+ * 얼어 있던 동안 다른 탭 · 기기에서 로그아웃 · 다른 회원 로그인 · 세션 만료가 있었을 수 있다(탭 사이 알림을 놓친 경우 —
+ * 그 알림을 받으면 Chrome 은 화면을 캐시에서 버린다). 그래서 회원이었으면
+ * - **바로 `restoring` 으로 가린다.** 회원 UI(`useAuth` 는 `guest`) · 회원 정보 · 이번 주 보고 저장소(비회원이 되면 지운다)가 회원으로 그리지 않고,
+ *   가드는 정해질 때까지 판단하지 않는다(`useAuthSettled`). 옛 access token 도 버려 그동안의 요청은 확인 결과를 기다린다
+ * - 재발급을 한 번 한다(앱을 다시 열 때와 같은 `restore` 결과 처리). 성공하면 그 응답의 회원(바뀌었으면 다른 회원)이고,
+ *   재로그인 · 탈퇴 · 정지면 조용히 비회원(힌트 삭제), 일시 장애면 확인하지 못했으니 비회원으로 보인다(힌트를 남긴다)
+ *
+ * 회원이 아니면 아무 일도 없다. 복원 중이면 그 복원을 기다린다. 던지지 않는다
+ */
+export async function revalidateSession(): Promise<void> {
+  if (snapshot.status === 'restoring') {
+    await inflight
+    return
+  }
+  if (snapshot.status !== 'member') return
+  accessToken = null
+  expiresAt = 0
+  publish(RESTORING)
+  try {
+    // 얼기 전에 시작한 재발급이 있으면 그 결과를 쓴다(reissue 가 하나로 묶는다)
+    await reissue('restore')
+  } catch {
+    // 묶인 세션 중 재발급의 일시 장애: 아래에서 비회원으로 보인다
+  }
+  // 기다리는 동안 바뀐 값을 읽는다(함수로 읽어 위의 좁혀진 타입을 쓰지 않는다)
+  if (getSessionSnapshot().status === 'restoring') publish(GUEST)
+}
+
 function receive(message: SessionMessage): void {
   if (message.type === 'signed-in') setSession(message.token, { broadcast: false })
   else clearSession('remote', { broadcast: false })
