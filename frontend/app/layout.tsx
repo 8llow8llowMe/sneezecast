@@ -1,5 +1,6 @@
 import { type ReactNode, Suspense } from 'react'
 import type { Metadata, Viewport } from 'next'
+import { connection } from 'next/server'
 
 import { DataSourceToggle } from '@/components/data-source-toggle'
 import { SessionBootstrap } from '@/features/auth/session-bootstrap'
@@ -44,7 +45,10 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 }
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  // 모든 화면을 요청 때 그린다(동적 렌더링). CSP nonce 는 요청마다 proxy 가 만들고 Next 가 렌더링 때 자기 스크립트에 붙이므로,
+  // 빌드 때 미리 그린 정적 화면에는 nonce 가 없어 인라인 스크립트가 막히고 하이드레이션이 깨진다(docs/conventions.md "보안 헤더 · CSP").
+  await connection()
   return (
     <html lang="ko">
       <body className="min-h-dvh antialiased">
