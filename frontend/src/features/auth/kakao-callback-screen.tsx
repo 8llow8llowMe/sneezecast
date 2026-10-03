@@ -14,11 +14,20 @@ import { kakaoFailPath } from './login-notice'
 import { afterKakaoLoginPath, withSavedLoginReturn } from './login-return-store'
 
 /**
- * 카카오가 붙여 보낸 콜백 쿼리에서 로그인에 쓸 값을 읽는다. 카카오가 `error`(사용자 취소 `access_denied` 등)를 붙였거나
- * `code` · `state` 중 하나라도 없으면 null 이다 — 보내지 않고 실패로 본다
+ * 콜백 값이 든 부분. proxy 가 카카오가 붙인 쿼리를 fragment 로 옮겨 303 으로 다시 열게 하므로(`kakao-callback-redirect.ts`, #176)
+ * **hash 가 먼저**다. hash 가 비었으면(proxy 를 거치지 않음) 쿼리를 읽는다. 앞의 `#` · `?` 는 뗀다
  */
-export function readKakaoCallback(search: string): { code: string; state: string } | null {
-  const params = new URLSearchParams(search)
+export function kakaoCallbackParams({ search, hash }: { search: string; hash: string }): string {
+  const fragment = hash.replace(/^#/, '')
+  return fragment !== '' ? fragment : search.replace(/^\?/, '')
+}
+
+/**
+ * 카카오가 붙여 보낸 콜백 값(`code=…&state=…`, 앞의 `?` 는 있어도 된다)에서 로그인에 쓸 값을 읽는다. 카카오가 `error`
+ * (사용자 취소 `access_denied` 등)를 붙였거나 `code` · `state` 중 하나라도 없으면 null 이다 — 보내지 않고 실패로 본다
+ */
+export function readKakaoCallback(value: string): { code: string; state: string } | null {
+  const params = new URLSearchParams(value)
   if (params.has('error')) return null
   const code = params.get('code')
   const state = params.get('state')
@@ -40,7 +49,8 @@ function targetOf(result: KakaoLoginResult): string {
 }
 
 /**
- * 카카오 콜백 (`/login/kakao/callback`, #167). 카카오 인가 화면이 `code` · `state`(또는 `error`)를 붙여 이 주소로 돌아온다.
+ * 카카오 콜백 (`/login/kakao/callback`, #167). 카카오 인가 화면이 `code` · `state`(또는 `error`)를 쿼리로 붙여 이 주소로 돌아오고,
+ * proxy 가 그 쿼리를 fragment 로 옮겨 303 으로 다시 열게 한다(#176 — 서버가 그린 HTML 에 인가 코드가 실리지 않게). 화면은 hash 를 먼저 읽는다.
  *
  * 1. **값을 읽자마자 주소에서 지운다**(`history.replaceState`) — 인가 코드가 방문 기록 · 다음 화면의 리퍼러 · 공유 주소에 남지 않게.
  *    마운트 effect 에서 바로 바꾸면 하이드레이션 첫 커밋이라 Next 가 모르므로 `setTimeout(0)` 으로 미룬다(docs/conventions.md).
@@ -74,7 +84,7 @@ export function KakaoCallbackScreen() {
       if (started.current) return
       started.current = true
       const { pathname, search, hash } = window.location
-      const callback = readKakaoCallback(search)
+      const callback = readKakaoCallback(kakaoCallbackParams({ search, hash }))
       // Next 가 자기 기록 상태를 덧붙이고 주소를 따라가게 state 는 null 로 넘긴다
       if (search || hash) window.history.replaceState(null, '', pathname)
       if (!callback) {
