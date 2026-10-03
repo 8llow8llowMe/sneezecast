@@ -184,12 +184,12 @@ frontend/
 
 `src/lib/session/` 이 로그인 · 재발급 응답(`AuthToken { memberId, role, accessToken, accessTokenExpiresIn, pendingConsents, reportWritable }`)을 들고 API 계층에 토큰을 준다. 루트 레이아웃의 `features/auth/session-bootstrap.tsx` 가 켠다.
 
-| 모듈               | 하는 일                                                                                                                               |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `session-store.ts` | 스냅숏(`idle` · `restoring` · `guest` · `member`+요약) · `setSession` · `clearSession` · `restoreSession` · `startSession`(슬롯 설치) |
-| `session-hint.ts`  | 힌트 쿠키 `sc_session` 읽기 · 쓰기                                                                                                    |
-| `session-sync.ts`  | 탭 사이 알림(`BroadcastChannel` `sneezecast:session`) · 재발급 잠금(`navigator.locks` `sneezecast:session-reissue`). 없으면 강등      |
-| `use-session.ts`   | `useSession()` — 서버 · 하이드레이션 첫 그림은 늘 `idle`                                                                              |
+| 모듈               | 하는 일                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session-store.ts` | 스냅숏(`idle` · `restoring` · `guest` · `member`+요약) · `setSession` · `clearSession` · `restoreSession` · `revalidateSession`(bfcache 복원) · `startSession`(슬롯 설치) |
+| `session-hint.ts`  | 힌트 쿠키 `sc_session` 읽기 · 쓰기                                                                                                                                        |
+| `session-sync.ts`  | 탭 사이 알림(`BroadcastChannel` `sneezecast:session`) · 재발급 잠금(`navigator.locks` `sneezecast:session-reissue`). 없으면 강등                                          |
+| `use-session.ts`   | `useSession()` — 서버 · 하이드레이션 첫 그림은 늘 `idle`                                                                                                                  |
 
 - **토큰은 `session-store.ts` 의 지역 변수에만 둔다.** 화면이 읽는 스냅숏에는 회원 요약(아이디 · 역할 · 재동의 항목 · 보고 가능)만 있다. 쿠키 · 브라우저 저장소 · 주소 · `console` 에 남기지 않고, 같은 오리진의 다른 탭에만 알림으로 넘긴다.
 - 만료 시각은 `accessTokenExpiresIn`(초)으로 정한다(JWT 를 풀지 않음). 요청 직전에 만료 30초 전(`ACCESS_EXPIRY_MARGIN_MS`)이면 먼저 재발급한다 — 타이머는 없다. 재발급은 `POST /api/v1/auth/token/reissue` 를 `auth: false` 로 부른다.
@@ -198,6 +198,7 @@ frontend/
 - 재발급이 일시 장애(`unavailable`)이거나 분류에 없는 오류면 세션을 끝내지 않는다 — 회원 요약은 두고 토큰만 버린다. 세션 중이면 공급자 · 갈아 끼우기가 일시 장애(`UNAVAILABLE`)를 던져 요청이 "잠시 뒤 다시" 로 끝난다(토큰 없이 보내 `SECURITY_001` 로 보이지 않게). 다음 요청이 다시 재발급한다.
 - **새로고침 복원**: refresh 쿠키는 게이트웨이 호스트 · `Path=/api/v1/auth` 전용 HttpOnly 라 화면이 있는지 모른다. 로그인 · 재발급에 성공하면 1st-party 힌트 쿠키 **`sc_session=1`**(`Path=/` · `SameSite=Lax` · HTTPS 면 `Secure` · 14일, 값은 고정 `1`)을 남기고, 로그아웃 · 만료 · 재로그인 응답이면 지운다. 앱을 열 때 실데이터 모드이고 힌트가 있을 때만 재발급을 한 번 한다(`restoring` → `member`). `SessionBootstrap` 은 하이드레이션 커밋의 effect 에서 출처 쿠키를 직접 읽어(`readBrowserDataSource`) 바로 시작한다 — 훅 값(첫 그림은 서버 기본값)을 기다리면 `idle` 동안 나간 회원 요청이 토큰 없이 나간다. 힌트가 없으면 요청 없이 `guest` 다. 복원이 재로그인 · 탈퇴 · 정지 · 두 번째 경합으로 끝나면 알리지 않고(방송도 없음) 힌트를 지우며, 일시 장애면 힌트를 남긴 채 `guest` 로 보인다. 복원 중 요청은 복원을 기다려 그 토큰을 싣는다.
 - 만료 알림(`notifySessionExpired`)은 이 탭에 세션이 있었을 때만 부른다. 다른 탭의 로그아웃 · 만료 알림을 받으면 조용히 `guest` 가 된다.
+- **뒤로 가기 캐시 복원**(#186): 화면이 bfcache 에서 되살아나면(`pageshow` 의 `persisted`) `SessionBootstrap` 이 실데이터 모드에서 `revalidateSession()` 을 부른다. 회원이었으면 바로 `restoring` 으로 가리고(옛 토큰도 버림) 재발급을 한 번 해 다시 확인한다 — 결과 처리는 새로고침 복원과 같다. 근거는 아래 "뒤로 가기 캐시(bfcache)".
 - 화면은 `features/auth/use-auth.ts` 의 `useAuth()`(회원 상태) · `useAuthSettled()`(정해졌는지)로 읽는다. `useMockAuth` 는 같은 훅의 옛 이름이다(이름 정리는 후속).
 - **실데이터 모드에서 회원이 되는 길은 이메일 로그인(#163)이다.** `loginWithEmail(…, 'api')` 이 응답을 `setSession` 에 넣고, `logout(…, 'api')` 이 `clearSession('logout')` 을 부른다(실패 정책은 [api-contract-draft.md](api-contract-draft.md) "인증" 의 "프론트 연동 (#163)"). 비밀번호 재설정 · 변경과 로그인한 기기는 #166 에서 연동했다 — 재설정 성공(재설정한 이메일이 이 탭 계정의 이메일과 같을 때 — 다르면 그대로, 모르면 `logout('api')`) · 이 기기 세션 로그아웃(`revokeSession` 의 `current`)은 서버가 이 기기 세션도 끝내므로 `clearSession('logout')`, 다른 기기 모두 로그아웃이 `AUTH_014`(이 기기 세션을 서버가 모름)면 `clearSession('expired')` 이고, 비밀번호 변경은 이 기기 세션을 그대로 둔다(계약 · 오류 매핑은 [api-contract-draft.md](api-contract-draft.md) "인증" · "회원" 의 "프론트 연동 (#166)"). 카카오 로그인 · 카카오 가입 · 계정 연결은 #167 에서 연동했다 — 콜백의 `LOGGED_IN` · 카카오 가입 · 연결 응답을 `setSession` 에 넣는다(`features/auth/kakao-client.ts` · `signup` 카카오 갈래, 계약 · 오류 매핑은 [api-contract-draft.md](api-contract-draft.md) "인증" 의 "프론트 연동 (#167)"). 동의(건강정보 · 재동의) · 탈퇴는 아직 출처와 무관하게 목이다. 로그아웃 중 재발급이 재로그인으로 끝나 세션이 이미 비었으면 다시 비우지 않고, 성공 · 세션 사라짐 모두 만료 진행 표시(`clearSessionExpiring`)를 끈다.
 - **회원 정보 저장소**(`features/auth/member-info.ts`, #164): 세션이 회원이 되면(`memberId` 가 바뀔 때만) 내 정보(`GET /api/v1/members/me`) · 내 동네(`GET /api/v1/members/me/region`)를 한 번씩 읽어 메모리에 두고, 비회원이 되면 바로 지운다(늦은 응답은 버린다). 두 요청은 따로 `loading` · `ready` · `failed` 이고 `retryMemberInfo()` 는 실패한 쪽만 다시 읽는다. 서버 응답이 읽은 값과 어긋났을 때는 지금 값을 둔 채 다시 읽는다(`reloadMemberRegion()` #165 · `reloadMemberInfo()` #166 — 비밀번호 변경이 `MEMBER_007`). `SessionBootstrap` 이 `startMemberInfo()` 로 세션에 잇는다. 화면은 출처를 가리는 훅(`useMockProfile` · `useMockProfileStatus` · `useMemberRegion` · `useMemberRegionStatus` · `useMemberRequirements`)으로만 읽는다 — 실데이터에서 읽기 전 · 실패면 프로필 · 내 동네가 null 이고 **예시 값으로 채우지 않는다.** 내 정보가 `MEMBER_004` 면 `clearSession('withdrawn')`, 탈퇴 · 정지(`MEMBER_002` · `003`)면 재발급과 같은 `clearSession('expired')` 다. 실데이터 `saveRegion` 은 세션이 회원이 아니면 요청 없이 거부한다. 내 동네 저장(`saveRegion(…, 'api')`)은 응답을 저장소에 바로 넣는다(계약 · 오류 매핑은 [api-contract-draft.md](api-contract-draft.md) "회원").
@@ -235,7 +236,7 @@ frontend/
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/lib/security/content-security-policy.ts`             | 지시어 · nonce 만들기 · 게이트웨이 오리진 뽑기 · 요청 · 응답 헤더에 싣기                                                                                                                                                                   |
 | `proxy.ts`                                                | 화면 요청마다 nonce 를 새로 만들어 CSP 를 싣는다. 카카오 콜백의 쿼리는 fragment 로 옮겨 303 으로 보낸다(아래). matcher 밖(`_next/` · `api/` · `icon*` · `apple-icon*` 로 시작하는 경로 · `app-icons/` · 점이 든 경로)은 CSP 를 받지 않는다 |
-| `src/lib/security/security-headers.ts` + `next.config.ts` | 모든 경로(`/(.*)`, 빌드 산출물 포함)의 `nosniff` · `Referrer-Policy` · `Permissions-Policy` · `X-Frame-Options`, 콜백 예외                                                                                                                 |
+| `src/lib/security/security-headers.ts` + `next.config.ts` | 모든 경로(`/(.*)`, 빌드 산출물 포함)의 `nosniff` · `Referrer-Policy` · `Permissions-Policy` · `X-Frame-Options`, 콜백 예외. RSC 응답의 `Cache-Control`(`cache-headers.ts`, 아래 "뒤로 가기 캐시(bfcache)")                                 |
 | `app/layout.tsx`                                          | `await connection()` — 모든 화면을 요청 때 그린다                                                                                                                                                                                          |
 
 ### 고른 방식: nonce + `'strict-dynamic'`
@@ -305,6 +306,33 @@ frontend/
   - `curl -s -i 'http://localhost:3000/login/kakao/callback?code=SECRETCODE123&state=STATEXYZ'` → `303` · `location: /login/kakao/callback#code=SECRETCODE123&state=STATEXYZ`
   - `curl -s -H 'Cookie: sc_visited=1' 'http://localhost:3000/login/kakao/callback' | grep -c SECRETCODE123` → `0`
   - 브라우저로 `?code=link&state=x`(목데이터)를 열어 계정 연결 확인(`/login/kakao/link`)으로 가고 주소에 `#` 가 남지 않는지 본다.
+
+## 뒤로 가기 캐시(bfcache)
+
+뒤로 · 앞으로 가기에서 화면을 다시 받지 않고 메모리에서 바로 되살리는 브라우저 캐시다(#186). **개인정보(건강 · 증상)와 맞바꾸지 않는 범위에서만 연다.** 서버가 그리는 HTML · RSC 는 회원별이 아니다 — 세션 · 내 정보 · 이번 주 보고는 서버가 모르고 클라이언트 메모리(세션 · 회원 정보 · 이번 주 보고 저장소)에만 있다. 위험은 메모리째 되살아난 회원 화면이다.
+
+| 응답                                            | `Cache-Control`                                                            | 어디서                                                             |
+| ----------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 화면 문서                                       | Next 기본값 `private, no-cache, no-store, max-age=0, must-revalidate` 유지 | Next(동적 렌더링)                                                  |
+| 앱 안 이동 · 미리 받기(RSC, 요청 헤더 `rsc: 1`) | **`private, no-cache`** (`max-age` 없음 — 쓸 때마다 다시 확인)             | `next.config.ts` `headers()` + `src/lib/security/cache-headers.ts` |
+| 카카오 콜백(`/login/kakao/callback`) 문서 · RSC | `no-store`(문서 기본값과 같은 값)                                          | `next.config.ts` 콜백 규칙(맨 뒤)                                  |
+| proxy 리다이렉트(첫 진입 307 · 콜백 303)        | `private, no-store` · `no-store` 그대로                                    | proxy — `headers()` 가 덮지 않는다(실측)                           |
+
+- **막던 것은 RSC 응답이다.** 프로덕션 빌드를 헤드리스 Chrome 154 로 열어 CDP `Page.backForwardCacheNotUsed` 를 보면(2026-10-03) `/` · `/login` · `/map` · `/official` 은 `JsNetworkRequestReceivedCacheControlNoStoreResource` 로 막혔다 — 화면의 `Link` 가 미리 받은 RSC(`?_rsc=`) 응답이 `no-store` 였다. `MainResourceHasCacheControlNoStore` 는 같이 찍히지만 혼자서는 막지 않는다(RSC 요청이 없는 `/start` · `/install` 은 문서가 `no-store` 여도 들어갔다). RSC 응답만 `private, no-cache` 로 바꾸자 7개 주소(목 회원 홈 포함)가 모두 되살아났고 콘솔 오류 · CSP 위반은 0 이었다.
+- **문서를 `no-store` 로 두는 이유.** Chrome 은 `no-store` 문서도 bfcache 에 넣되, 문서를 받은 뒤 그 주소에 실리는 쿠키가 바뀌었으면(화면 자신이 바꾼 것 포함) 되살리지 않는다(`CacheControlNoStoreCookieModified`). 로그아웃 · 만료 · 재로그인 응답은 세션 힌트 쿠키(`sc_session`)를 지우므로, 같은 기기의 다른 탭에서 로그아웃하면 앞 회원 화면이 되살아나지 않는다. 실데이터 회원 화면은 세션을 정할 때마다 힌트 쿠키를 다시 써서(14일 연장) Chrome 에서는 bfcache 에 들지 않는다 — 개인정보 쪽으로 기운 결과라 그대로 둔다. 문서를 `no-cache` 로 바꾸면 이 보호가 사라지고, 기록 이동이 디스크 캐시의 문서를 재검증 없이 쓴다(아래).
+- **nonce CSP 와 HTTP 캐시.** `max-age` 를 주지 않는다. 시험 삼아 문서까지 `private, no-cache` 로 빌드하고 bfcache 를 끈 Chrome 으로 뒤로 가 보면 문서를 디스크 캐시에서 재검증 없이 꺼내고, 캐시된 CSP 헤더의 nonce 와 문서 스크립트의 nonce 가 같아 스크립트 · 하이드레이션이 정상이었다(위반 0). 지금 정책은 문서를 저장하지 않으니 nonce 는 늘 새 응답 것이다. RSC 페이로드에도 그 응답의 nonce 가 실리지만 문서 CSP 와 무관하고(앱 안 이동이 넣는 청크는 `'strict-dynamic'` 으로 돈다), 검증자(ETag)가 없어 HTTP 캐시에서 재사용되지 않는다.
+- **복원 시 세션 재확인**(위 "세션 저장소"): Safari 등 다른 브라우저 · 쿠키가 바뀌지 않은 경우(다른 기기 로그아웃 · refresh 만료 · 탭 알림을 놓침)를 위한 두 번째 장치다. `pageshow` 의 `persisted` 에서 회원이었으면 바로 `restoring` 으로 가려 회원 UI(`useAuth` 는 `guest`) · 회원 정보 · 이번 주 보고(저장소가 지운다)가 회원으로 그리지 않고 가드는 판단을 미룬다. 재발급에 성공하면 그 응답의 회원으로 다시 읽고, 재로그인 · 탈퇴 · 정지면 조용히 비회원(힌트 삭제), 일시 장애면 확인하지 못했으니 비회원으로 보인다(힌트는 남김). 문서도 `no-cache` 로 둔 시험 빌드에서 회원 화면이 되살아날 때 `pageshow` 직후 첫 프레임에 회원 표시가 없었고, 서버에서 세션을 끝냈으면 비회원, 다른 회원으로 바뀌었으면 그 회원으로 정해졌다. 목데이터 모드는 그대로다(목 세션을 건드리지 않는다).
+- **민감 입력은 얼기 전에 비운다.** 비회원 화면이 bfcache 에 들면서 입력만 하고 보내지 않은 값도 함께 되살아난다(공용 기기의 다음 사람이 `비밀번호 보기`로 평문을 보거나 그대로 보낼 수 있다). 그래서 `src/lib/use-clear-on-page-freeze.ts` 의 `useClearOnPageFreeze(clear)` 가 `pagehide` 의 `persisted`(얼기 직전)에 `clear` 를 `flushSync` 로 그 자리에서 커밋해 얼기 전 DOM 에 값을 남기지 않고, `pageshow` 의 `persisted` 에서 한 번 더 부른다.
+  - 거는 곳: 이메일 로그인(이메일 · 비밀번호), 가입 · 재설정의 이메일 단계(`email-step.tsx`) · 코드 단계(`code-step.tsx`), 가입 계정(비밀번호 · 확인 · 닉네임), 새 비밀번호(재설정), 내 비밀번호 변경(현재 · 새 · 확인), `TextField` 의 비밀번호 보기(끈다)
+  - 첫 진입 Provider(`onboarding-context.tsx`)는 메모리의 가입 초안(비밀번호 · 이메일 · 닉네임 · 가입 종류) · 재설정 초안(재설정 토큰) · 카카오 연결 확인의 가린 이메일을 비운다. 성인 확인 · 알림 선택도 사람마다 받으므로 비운다. 가입 마무리 진행(`membership`) · 동네(개인을 알아보는 값이 아니다)는 둔다
+  - 비우면 단계 화면은 값이 없을 때처럼 흐름의 처음으로 간다 — 가입 코드 · 계정 → 가입 이메일, 새 비밀번호 → 재설정 이메일, 카카오 연결 확인 → 로그인 방법 선택(다음 사람이 `연결하고 계속하기` 를 누를 수 없다). 얼기 직전에 보낸 이동은 브라우저가 버려 빈 화면으로 되살아났으므로(Chrome 실측), Provider 가 되살아날 때(`pageshow` 의 `persisted`) 화면을 다시 붙여 단계 확인을 다시 돌린다
+  - 실측(프로덕션 빌드 · 헤드리스 Chrome, 목데이터): 위 8개 흐름에서 입력 → 다른 사이트 → 뒤로 하면 모두 `persisted` 로 되살아나고, `pageshow` 첫 처리 시점(얼어 있던 DOM)에 이미 칸이 비어 있었으며, 콘솔 오류 · CSP 위반은 0 이었다. `/` · `/login` · `/map` 의 bfcache 는 그대로다
+  - **새 인증 폼(비밀번호 · 인증 코드 · 이메일 칸)을 만들거나 그런 값을 메모리(Provider · 모듈)에 들면 이 훅을 건다.** 동네 검색어 · 공유 링크처럼 개인을 알아보지 않는 칸은 걸지 않는다
+- **탭 알림.** 얼어 있는 화면이 `BroadcastChannel`(`sneezecast:session`) 메시지를 받으면 Chrome 은 캐시에서 버린다(`BroadcastChannelOnMessage`). 통로를 열어 두는 것만으로는 막지 않는다. 재발급 잠금(`navigator.locks`)은 재발급하는 동안만 잡는다.
+- **회귀 확인**(캐시 헤더 · proxy · 세션 복원을 바꿀 때): `pnpm build` → `next start` 뒤
+  - `curl -s -o /dev/null -D - -H 'Cookie: sc_visited=1' -H 'RSC: 1' 'http://localhost:3000/map?_rsc'` → `Cache-Control: private, no-cache`, 같은 요청을 `/login/kakao/callback?_rsc` 로 → `no-store`. 문서(`RSC` 헤더 없이)는 모두 Next 기본값.
+  - Lighthouse `bf-cache` 감사(`pnpm perf:lighthouse`)가 7개 주소 모두 통과(performance.md "bfcache (#186)").
+- **한계.** 되살아난 화면은 `pageshow` 처리 전까지 얼기 전 DOM(회원 표시)을 메모리에 들고 있다. 첫 프레임 전에 가리는 것은 확인했지만, 브라우저가 그 전에 옛 화면을 잠깐 보이는지는 구현에 달렸다. Safari · Firefox 는 실측하지 않았다.
 
 ## 테스트
 
