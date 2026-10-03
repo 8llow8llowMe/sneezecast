@@ -59,7 +59,8 @@ jobs:
   verify:
     needs: changes
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Lighthouse(아래, 10분 상한)를 더해 늘렸다. 검사 단계만으로는 15분 안에 끝난다
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: frontend
@@ -96,3 +97,41 @@ jobs:
         env:
           NEXT_PUBLIC_SITE_URL: https://dev.sneezecast.com
           NEXT_PUBLIC_API_BASE_URL: https://api-dev.sneezecast.com
+
+      # **Lighthouse — 경고만 낸다(#177).** 위 빌드를 그대로 `next start -p 3100` 으로 띄워 모바일 기본 설정으로
+      # URL 마다 3회 잰다(lighthouserc.yml, 측정 방법 · 예산 · 기준선은 docs/performance.md).
+      # - `continue-on-error` 라 수집 실패 · 시간 초과가 이 잡을 빨간불로 만들지 않는다. 예산은 모두 `warn` 이라 넘어도 통과다.
+      # - 결과는 외부(temporary-public-storage · LHCI 서버)에 올리지 않는다. 요약(Step Summary)과 아티팩트로만 남긴다.
+      # - 러너에 깔린 Google Chrome 을 쓴다(내려받지 않음). ubuntu 러너는 Chrome 샌드박스를 쓸 수 없어 `--no-sandbox` 를 준다.
+      # - 문서만 바뀐 PR(`docs`)은 빌드가 없어 돌지 않는다(scripts/classify-frontend-changes.sh).
+      - name: Lighthouse (경고만)
+        id: lighthouse
+        if: needs.changes.outputs.kind == 'code'
+        continue-on-error: true
+        timeout-minutes: 10
+        # 측정 전 확인(포트 · 빌드 · 지난 결과 정리)은 로컬 `pnpm perf:lighthouse` 와 같다 — scripts/lighthouse-preflight.mjs
+        run: |
+          node scripts/lighthouse-preflight.mjs
+          pnpm exec lhci autorun --config=lighthouserc.yml --collect.settings.chromeFlags="--headless=new --no-sandbox"
+
+      # 수집이 돌았을 때만(성공 · 실패) 요약 · 아티팩트를 남긴다. 앞 단계가 실패해 건너뛰었으면 남기지 않는다.
+      # 요약은 표 · 기기 지표 · 경고(예산 초과 · 리다이렉트)를 Step Summary 에 붙이고, 경고가 있으면 `::warning` 으로
+      # 체크 화면에 띄운다(차단하지 않음). 결과가 없으면 이 단계가 실패하지만 `continue-on-error` 라 잡은 초록불이다
+      - name: Lighthouse 요약
+        if: steps.lighthouse.outcome == 'success' || steps.lighthouse.outcome == 'failure'
+        continue-on-error: true
+        run: node scripts/lighthouse-summary.mjs --github
+
+      # `.lighthouseci` 는 숨김 폴더라 `include-hidden-files` 가 없으면 통째로 빠진다(기본 false).
+      # 실행마다의 HTML 보고서(report/)와 예산 확인 결과만 올린다 — 같은 HTML 이 `.lighthouseci/lhr-*.html` 에도 있어 중복을 뺀다
+      - uses: actions/upload-artifact@v4
+        if: steps.lighthouse.outcome == 'success' || steps.lighthouse.outcome == 'failure'
+        continue-on-error: true
+        with:
+          name: lighthouse-report
+          path: |
+            frontend/.lighthouseci/report/
+            frontend/.lighthouseci/assertion-results.json
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: warn
