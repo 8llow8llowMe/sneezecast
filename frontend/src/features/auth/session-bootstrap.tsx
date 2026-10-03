@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 
 import { startCurrentReport } from '@/features/report/current-report'
 import { readBrowserDataSource } from '@/lib/data-source'
-import { restoreSession, startSession } from '@/lib/session/session-store'
+import { restoreSession, revalidateSession, startSession } from '@/lib/session/session-store'
 import { useDataSource } from '@/lib/use-data-source'
 
 import { startMemberInfo } from './member-info'
@@ -23,6 +23,10 @@ import { startMemberInfo } from './member-info'
  *   되면 지운다. 목데이터 모드는 세션이 회원이 되지 않아 요청하지 않는다
  * - 이번 주 보고 저장소(`features/report/current-report.ts`, #165)도 같이 잇는다. 보고할 수 있는 회원(`reportWritable`)이 되면
  *   이번 주 보고를 읽고, 아니게 되면 지운다
+ * - 화면이 뒤로 가기 캐시(bfcache)에서 되살아나면(`pageshow` 의 `persisted`, #186) 실데이터 모드의 회원 세션을 다시 확인한다
+ *   (`revalidateSession`). 확인하는 동안 `restoring` 으로 가려 회원 UI · 회원 정보 · 이번 주 보고가 보이지 않고, 실패하면 비회원이다 —
+ *   얼어 있던 동안 다른 탭 · 기기에서 로그아웃했으면 앞 회원의 화면이 다시 보이지 않게 한다. 출처는 복원 때와 같이 쿠키를 직접 읽는다.
+ *   목데이터 모드는 그대로다(목 세션을 건드리지 않는다)
  */
 export function SessionBootstrap(): null {
   const source = useDataSource()
@@ -32,6 +36,14 @@ export function SessionBootstrap(): null {
   useEffect(() => startMemberInfo(), [])
 
   useEffect(() => startCurrentReport(), [])
+
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted && readBrowserDataSource() === 'api') void revalidateSession()
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [])
 
   useEffect(() => {
     if (readBrowserDataSource() === 'api') void restoreSession()
