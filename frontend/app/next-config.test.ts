@@ -1,29 +1,45 @@
+import type { NextConfig } from 'next'
+
 import { describe, expect, it } from 'vitest'
 
 import { KAKAO_CALLBACK_PATH } from '@/features/onboarding/paths'
+import { NO_STORE_CACHE_CONTROL, RSC_CACHE_CONTROL, RSC_HEADER } from '@/lib/security/cache-headers'
 import { PERMISSIONS_POLICY, SECURITY_HEADERS } from '@/lib/security/security-headers'
 
 import nextConfig from '../next.config'
 
-type HeaderRule = { source: string; headers: { key: string; value: string }[] }
+/** `headers()` 규칙 하나(Next 의 타입) */
+type HeaderRule = Awaited<ReturnType<NonNullable<NextConfig['headers']>>>[number]
 
 async function rules(): Promise<HeaderRule[]> {
   return (await nextConfig.headers?.()) ?? []
 }
 
 /**
- * 한 경로가 받는 헤더. Next 는 맞는 규칙을 순서대로 적용하고 같은 키는 뒤 규칙이 이긴다
+ * 한 요청이 받는 헤더. Next 는 맞는 규칙을 순서대로 적용하고 같은 키는 뒤 규칙이 이긴다
  * (node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/headers.md).
- * 이 테스트의 경로 맞춤은 이 파일의 두 모양(`/(.*)` · 정확한 경로)만 다룬다.
+ * 이 테스트의 맞춤은 이 파일의 모양(경로 `/(.*)` · 정확한 경로, 조건 `has` 의 요청 헤더 값 같음)만 다룬다.
  */
-async function headersFor(path: string): Promise<Map<string, string>> {
+async function headersFor(
+  path: string,
+  requestHeaders: Record<string, string> = {},
+): Promise<Map<string, string>> {
   const result = new Map<string, string>()
   for (const rule of await rules()) {
     if (rule.source !== '/(.*)' && rule.source !== path) continue
+    const matches = (rule.has ?? []).every(
+      (condition) =>
+        condition.type === 'header' &&
+        condition.key !== undefined &&
+        requestHeaders[condition.key] === condition.value,
+    )
+    if (!matches) continue
     for (const { key, value } of rule.headers) result.set(key.toLowerCase(), value)
   }
   return result
 }
+
+const RSC_REQUEST = { [RSC_HEADER.key]: RSC_HEADER.value }
 
 describe('next.config headers', () => {
   it('모든 경로에 보안 헤더를 붙인다', async () => {
@@ -40,13 +56,39 @@ describe('next.config headers', () => {
     const all = await rules()
     const callback = all.findIndex((rule) => rule.source === KAKAO_CALLBACK_PATH)
     const global = all.findIndex((rule) => rule.source === '/(.*)')
-    expect(all[callback]?.headers).toEqual([{ key: 'Referrer-Policy', value: 'no-referrer' }])
+    expect(all[callback]?.headers).toContainEqual({ key: 'Referrer-Policy', value: 'no-referrer' })
     // 같은 키는 뒤 규칙이 이긴다 — 콜백 규칙이 전체 규칙보다 뒤에 있어야 한다
     expect(callback).toBeGreaterThan(global)
     const headers = await headersFor(KAKAO_CALLBACK_PATH)
     expect(headers.get('referrer-policy')).toBe('no-referrer')
     // 나머지 보안 헤더는 콜백에도 그대로다
     expect(headers.get('x-content-type-options')).toBe('nosniff')
+  })
+
+  it('문서의 Cache-Control 은 건드리지 않는다 — Next 기본값(no-store)이 그대로다', async () => {
+    for (const path of ['/', '/login', '/map', '/me']) {
+      expect((await headersFor(path)).has('cache-control')).toBe(false)
+    }
+  })
+
+  it('앱 안 이동 · 미리 받기(RSC) 응답은 private, no-cache 다 — bfcache 를 막지 않고, max-age 없이 쓸 때마다 다시 확인한다', async () => {
+    for (const path of ['/', '/login', '/map', '/me']) {
+      expect((await headersFor(path, RSC_REQUEST)).get('cache-control')).toBe(RSC_CACHE_CONTROL)
+    }
+    expect(RSC_CACHE_CONTROL).not.toMatch(/max-age|no-store|public/)
+  })
+
+  it('카카오 콜백은 RSC 요청도 no-store 다 (문서와 같은 값, 콜백 규칙이 RSC 규칙보다 뒤)', async () => {
+    const all = await rules()
+    const callback = all.findIndex((rule) => rule.source === KAKAO_CALLBACK_PATH)
+    const rsc = all.findIndex((rule) => rule.has?.some((condition) => condition.key === 'rsc'))
+    expect(callback).toBeGreaterThan(rsc)
+    expect((await headersFor(KAKAO_CALLBACK_PATH, RSC_REQUEST)).get('cache-control')).toBe(
+      NO_STORE_CACHE_CONTROL,
+    )
+    expect((await headersFor(KAKAO_CALLBACK_PATH)).get('cache-control')).toBe(
+      NO_STORE_CACHE_CONTROL,
+    )
   })
 
   it('CSP 는 여기 두지 않는다 — 요청마다 nonce 가 바뀌어 proxy 가 붙인다', async () => {
