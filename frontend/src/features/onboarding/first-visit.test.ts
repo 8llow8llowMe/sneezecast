@@ -94,6 +94,30 @@ describe('firstVisit — 처음 온 사람', () => {
   })
 })
 
+describe('firstVisit — 화면으로 넘길 때 덮어쓴 요청 헤더 (#176 CSP)', () => {
+  const init = () => ({
+    request: { headers: new Headers({ 'content-security-policy': 'policy' }) },
+  })
+  const overridden = (response: Response) =>
+    response.headers.get('x-middleware-request-content-security-policy')
+
+  it('다시 온 사람의 요청은 받은 요청 헤더를 그대로 넘긴다', () => {
+    expect(overridden(firstVisit(request('/', { visited: true }), init()))).toBe('policy')
+  })
+
+  it('방문 표시를 심으며 넘기는 요청도 받은 요청 헤더를 넘긴다', () => {
+    const response = firstVisit(request('/map', { dest: 'document' }), init())
+    expect(overridden(response)).toBe('policy')
+    expect(response.cookies.get(VISITED_COOKIE)?.value).toBe('1')
+  })
+
+  it('시작 화면으로 보낼 때는 화면을 그리지 않아 쓰지 않는다', () => {
+    const response = firstVisit(request('/', { dest: 'document' }), init())
+    expect(redirectOf(response)).toBe(`${ORIGIN}/start`)
+    expect(overridden(response)).toBeNull()
+  })
+})
+
 describe('proxy matcher', () => {
   it.each([
     '/',
@@ -103,6 +127,7 @@ describe('proxy matcher', () => {
     '/notice/11440660/2026-W39',
     '/me/devices',
     '/install',
+    '/login/kakao/callback?code=abc&state=xyz',
   ])('화면 경로 %s 에서 돈다', (url) => {
     expect(unstable_doesMiddlewareMatch({ config, url })).toBe(true)
   })

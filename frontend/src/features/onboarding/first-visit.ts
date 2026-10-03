@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 
+import type { ProxyNextInit } from '@/lib/security/content-security-policy'
+
 import { HOME_PATH, START_PATH } from './paths'
 
 /* ── 처음 온 사람은 시작 화면으로 (#127) ─────────────────────────────────────────────────────────
@@ -51,14 +53,17 @@ function isHttps(request: NextRequest): boolean {
 /**
  * 처음 온 사람의 홈 요청은 시작 화면으로 보내고, 쿠키가 없는 응답에는 방문 표시를 심는다.
  * 쿠키가 이미 있으면 아무것도 바꾸지 않는다.
+ *
+ * `nextInit` 은 화면으로 넘길 때(`NextResponse.next`) 그대로 쓴다 — proxy 가 CSP 를 실은 요청 헤더를 넘긴다(#176).
+ * 시작 화면으로 보낼 때는 화면을 그리지 않아 쓰지 않는다.
  */
-export function firstVisit(request: NextRequest): NextResponse {
-  if (request.cookies.has(VISITED_COOKIE)) return NextResponse.next()
+export function firstVisit(request: NextRequest, nextInit?: ProxyNextInit): NextResponse {
+  if (request.cookies.has(VISITED_COOKIE)) return NextResponse.next(nextInit)
 
   const toStart = shouldSendToStart(request)
   const response = toStart
     ? NextResponse.redirect(new URL(START_PATH, request.url))
-    : NextResponse.next()
+    : NextResponse.next(nextInit)
   if (toStart) {
     // 쿠키에 따라 갈리는 응답이라 중간 캐시가 다른 사람에게 다시 쓰지 않게 한다
     response.headers.set('Cache-Control', 'private, no-store')
