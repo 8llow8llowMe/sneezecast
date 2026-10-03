@@ -419,3 +419,40 @@ describe('LoginEmailScreen 뒤로 — 앱 안 이동 기록', () => {
     expect(router.back).toHaveBeenCalledOnce()
   })
 })
+
+/** 뒤로 가기 캐시에 들어가기 직전 (#186) */
+const freezePage = (persisted = true) =>
+  act(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted }))
+  })
+
+describe('LoginEmailScreen 뒤로 가기 캐시 (#186)', () => {
+  it('얼기 직전에 입력만 한 이메일 · 비밀번호를 비운다', async () => {
+    const { user, email, password } = setup()
+    await fill(user, email, password, 'me@example.com', 'Secret-PW-123')
+
+    freezePage()
+
+    expect((email as HTMLInputElement).value).toBe('')
+    expect((password as HTMLInputElement).value).toBe('')
+  })
+
+  it('비밀번호 보기를 켰어도 끈다 — 다음 사람이 쓴 글자가 평문으로 보이지 않는다', async () => {
+    const { user, password } = setup()
+    await user.click(screen.getByRole('button', { name: /비밀번호 보기/ }))
+    expect(password.getAttribute('type')).toBe('text')
+
+    freezePage()
+
+    expect(password.getAttribute('type')).toBe('password')
+  })
+
+  it('캐시에 들지 않는 떠나기(persisted false)는 그대로 둔다', async () => {
+    const { user, email, password } = setup()
+    await fill(user, email, password, 'me@example.com', 'Secret-PW-123')
+
+    freezePage(false)
+
+    expect((password as HTMLInputElement).value).toBe('Secret-PW-123')
+  })
+})

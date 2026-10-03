@@ -23,6 +23,7 @@ import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { navHref } from '@/lib/nav'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
 import { useDataSource } from '@/lib/use-data-source'
 
 import { AccountPageLayout } from './account-page-layout'
@@ -106,6 +107,13 @@ function PasswordForm({
   const [confirm, setConfirm] = useState('')
   const [checked, setChecked] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
+  // 뒤로 가기 캐시에 들어가기 전에 현재 · 새 비밀번호 칸을 비운다(#186)
+  useClearOnPageFreeze(() => {
+    setCurrent('')
+    setPassword('')
+    setConfirm('')
+    setChecked(false)
+  })
 
   const busy = status === 'submitting' || status === 'done'
   const problems = {

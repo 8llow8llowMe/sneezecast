@@ -392,3 +392,24 @@ describe('PasswordResetNewScreen 실데이터 (#166)', () => {
     expect(getSessionSnapshot().status).toBe('guest')
   })
 })
+
+/** 뒤로 가기 캐시에 들어가기 직전 (#186) */
+const freezePage = (persisted = true) =>
+  act(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted }))
+  })
+
+describe('PasswordResetNewScreen 뒤로 가기 캐시 (#186)', () => {
+  it('얼기 직전에 새 비밀번호 칸과 메모리의 재설정 토큰을 비우고 재설정 처음으로 보낸다', async () => {
+    router.replace.mockClear()
+    const { user } = setup()
+    await fill(user, 'Secret-PW-123', 'Secret-PW-123')
+    const input = passwordInput() as HTMLInputElement
+
+    freezePage()
+
+    expect(input.value).toBe('')
+    expect(draft()).toEqual({ email: '', codeSentAt: null, resetToken: null })
+    expect(router.replace).toHaveBeenCalledWith('/password/reset')
+  })
+})

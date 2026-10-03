@@ -9,6 +9,7 @@ import { TextField } from '@/components/text-field'
 import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
 
 import type { SendCodeResult } from './auth-client'
 import { isEmailFormat } from './signup-rules'
@@ -70,6 +71,11 @@ export function EmailStep({
   const formId = useId()
   const [email, setEmail] = useState(initialEmail)
   const [status, setStatus] = useState<Status>('idle')
+  // 뒤로 가기 캐시에 들어가기 전에 입력한 이메일을 비운다(#186)
+  useClearOnPageFreeze(() => {
+    setEmail('')
+    setStatus('idle')
+  })
   const submitting = status === 'submitting'
   const blocked = email.trim() === '' || submitting || status === 'invalid' || status === 'limit'
 

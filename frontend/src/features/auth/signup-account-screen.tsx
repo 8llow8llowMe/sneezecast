@@ -8,6 +8,7 @@ import { TextField } from '@/components/text-field'
 import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
 import { SETUP_REGION_PATH, SIGNUP_CODE_PATH, SIGNUP_EMAIL_PATH } from '@/features/onboarding/paths'
+import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
 
 import {
   confirmProblem,
@@ -41,6 +42,13 @@ export function SignupAccountScreen() {
   const [confirm, setConfirm] = useState(signup.password)
   const [nickname, setNickname] = useState(signup.nickname)
   const [checked, setChecked] = useState(false)
+  // 뒤로 가기 캐시에 들어가기 전에 비밀번호 · 닉네임 칸을 비운다(#186). 초안은 Provider 가 비워 이메일 단계로 돌아간다
+  useClearOnPageFreeze(() => {
+    setPassword('')
+    setConfirm('')
+    setNickname('')
+    setChecked(false)
+  })
 
   const verified = signup.verifiedAt !== null
   useEffect(() => {

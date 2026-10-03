@@ -10,6 +10,7 @@ import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
 import { formatMinSec, useSecondsLeft } from '@/lib/countdown'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
 
 import {
   CODE_TTL_SECONDS,
@@ -107,6 +108,8 @@ export function CodeStep<Ok extends { status: 'ok' }>({
   const formId = useId()
   const [code, setCode] = useState('')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  // 뒤로 가기 캐시에 들어가기 전에 입력한 인증 코드를 비운다(#186). 이메일 · 보낸 시각은 Provider 가 비워 이메일 단계로 돌아간다
+  useClearOnPageFreeze(() => setCode(''))
   const secondsLeft = useSecondsLeft(sentAt === null ? null : sentAt + CODE_TTL_SECONDS * 1000)
   const resendIn = useSecondsLeft(sentAt === null ? null : sentAt + RESEND_COOLDOWN_SECONDS * 1000)
 
