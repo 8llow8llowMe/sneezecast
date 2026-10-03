@@ -12,6 +12,7 @@ import {
   setSession,
   startSession,
 } from '@/lib/session/session-store'
+import { SESSION_CHANNEL_NAME } from '@/lib/session/session-sync'
 import {
   errorResponse,
   holdRequests,
@@ -399,5 +400,92 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
     expect(
       screen.getByText('내 동네를 고르면 보낼 수 있어요. 내 정보의 내 동네에서 골라 주세요.'),
     ).toBeTruthy()
+  })
+})
+
+describe('실데이터 보고 흐름 — 다른 탭에서 내 동네를 바꿨을 때 (#190)', () => {
+  const YEOKSAM2 = {
+    code: '11680650',
+    name: '역삼2동',
+    sigungu: '서울특별시 강남구',
+    abolished: false,
+  }
+  const LOADING_MESSAGE = '내 동네를 불러오고 있어요. 잠시 뒤 다시 보내 주세요.'
+  const FAILED_MESSAGE = '내 동네를 불러오지 못해 보내지 못했어요. 잠시 뒤 다시 보내 주세요.'
+
+  /** 같은 브라우저의 다른 탭이 보내는 알림. 이 탭의 세션 통로(가짜 BroadcastChannel)로만 전한다 */
+  let postFromOtherTab: (data: unknown) => void = () => {}
+
+  beforeEach(() => {
+    const listeners: ((event: MessageEvent) => void)[] = []
+    vi.stubGlobal(
+      'BroadcastChannel',
+      vi.fn(function (name: string) {
+        const channel = {
+          onmessage: null as ((event: MessageEvent) => void) | null,
+          postMessage: () => {},
+          close: () => {},
+        }
+        if (name === SESSION_CHANNEL_NAME) {
+          listeners.push((event) => channel.onmessage?.(event))
+        }
+        return channel
+      }),
+    )
+    stops.push(startSession())
+    postFromOtherTab = (data) => {
+      listeners.forEach((listener) => listener(new MessageEvent('message', { data })))
+    }
+  })
+
+  const regionChanged = () => {
+    act(() => postFromOtherTab({ type: 'region-changed', memberId: '1843956734582784' }))
+  }
+
+  it('알림을 받으면 다시 읽는 동안 · 읽지 못하면 보내지 않고, 다시 읽은 뒤에는 새 동네로 보낸다', async () => {
+    await signedIn()
+    const user = userEvent.setup()
+    renderHome('/?report=start')
+
+    regionChanged()
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
+    await flush()
+    expect(server.requests()).not.toContain(PUT)
+    expect(screen.getByText(LOADING_MESSAGE)).toBeTruthy()
+
+    server.reply(REGION, errorResponse('REGION_004', 503))
+    await flush()
+    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await flush()
+    expect(server.requests()).not.toContain(PUT)
+    expect(await screen.findByText(FAILED_MESSAGE)).toBeTruthy()
+
+    // 실패 안내와 함께 다시 읽었다
+    server.reply(REGION, okResponse(YEOKSAM2))
+    await flush()
+    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await flush()
+    expect(sentBody(PUT)).toEqual({ districtCode: '11680650', symptomGroups: [] })
+  })
+
+  it('읽지 못한 상태에서 알림을 받아도 다시 읽고, 받은 새 동네로 보낸다', async () => {
+    setSession(memberToken())
+    await flush()
+    server.reply(INFO, okResponse(myInfoBody()))
+    server.reply(REGION, errorResponse('REGION_004', 503))
+    server.reply(CURRENT, okResponse(null))
+    await flush()
+    const user = userEvent.setup()
+    renderHome('/?report=start')
+
+    regionChanged()
+    await flush()
+    expect(server.requests().filter((key) => key === REGION)).toHaveLength(2)
+    server.reply(REGION, okResponse(YEOKSAM2))
+    await flush()
+
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
+    await flush()
+    expect(sentBody(PUT)).toEqual({ districtCode: '11680650', symptomGroups: [] })
   })
 })
