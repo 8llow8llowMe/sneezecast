@@ -16,6 +16,7 @@ import {
   SIGNUP_EMAIL_PATH,
 } from '@/features/onboarding/paths'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
 import { useDataSource } from '@/lib/use-data-source'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
@@ -72,6 +73,12 @@ export function LoginEmailScreen({
   const [email, setEmail] = useState(resetDone ? passwordReset.email : '')
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<Status>('idle')
+  // 뒤로 가기 캐시에 들어가기 전에 입력만 하고 보내지 않은 이메일 · 비밀번호를 비운다(#186). 공용 기기의 다음 사람이 보지 못하게
+  useClearOnPageFreeze(() => {
+    setEmail('')
+    setPassword('')
+    setStatus('idle')
+  })
 
   // 그만둔(또는 마친) 비밀번호 재설정의 보낸 시각 · 토큰을 지운다. 공용 기기에서 앞으로 가기로 새 비밀번호 화면에 다시
   // 들어가지 못하게 한다. 이메일은 남긴다 — 위 칸의 처음 값은 이 effect 보다 먼저(첫 렌더) 읽힌다

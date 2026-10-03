@@ -60,6 +60,28 @@ describe('SignupEmailScreen', () => {
     vi.mocked(sendEmailCode).mockReset()
   })
 
+  it('뒤로 가기 캐시에 들어가기 직전(pagehide persisted)에 입력한 이메일을 비운다 (#186)', async () => {
+    const { user, email } = setup()
+    await user.type(email, 'victim@example.com')
+
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))
+    })
+
+    expect((email as HTMLInputElement).value).toBe('')
+  })
+
+  it('보통 떠나기(persisted false)는 입력한 이메일을 그대로 둔다', async () => {
+    const { user, email } = setup()
+    await user.type(email, 'me@example.com')
+
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }))
+    })
+
+    expect((email as HTMLInputElement).value).toBe('me@example.com')
+  })
+
   it('가입 문구를 보인다 (재설정과 같은 틀을 쓴다)', () => {
     setup()
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('이메일을 알려 주세요')

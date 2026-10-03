@@ -507,3 +507,23 @@ describe('PasswordScreen 실데이터 (#164)', () => {
     expect(router.replace).not.toHaveBeenCalled()
   })
 })
+
+/** 뒤로 가기 캐시에 들어가기 직전 (#186) */
+const freezePage = (persisted = true) =>
+  act(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted }))
+  })
+
+describe('PasswordScreen 뒤로 가기 캐시 (#186)', () => {
+  it('얼기 직전에 현재 · 새 · 확인 비밀번호 칸을 비운다', async () => {
+    const user = userEvent.setup()
+    renderPassword()
+    await fillChange(user, { current: 'Secret-PW-123' })
+
+    freezePage()
+
+    for (const label of ['현재 비밀번호', '새 비밀번호', '새 비밀번호 확인']) {
+      expect(screen.getByLabelText<HTMLInputElement>(label).value).toBe('')
+    }
+  })
+})

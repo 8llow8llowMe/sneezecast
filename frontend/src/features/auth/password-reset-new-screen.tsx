@@ -14,6 +14,7 @@ import {
   PASSWORD_RESET_VERIFICATION_EXPIRED_PATH,
 } from '@/features/onboarding/paths'
 import { useActiveRef } from '@/lib/use-active-ref'
+import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
 import { useDataSource } from '@/lib/use-data-source'
 
 import { type PasswordResetResult, resetPassword } from './auth-client'
@@ -70,6 +71,12 @@ export function PasswordResetNewScreen() {
   const [confirm, setConfirm] = useState('')
   const [checked, setChecked] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
+  // 뒤로 가기 캐시에 들어가기 전에 새 비밀번호 칸을 비운다(#186). 재설정 토큰은 Provider 가 비워 재설정 처음으로 돌아간다
+  useClearOnPageFreeze(() => {
+    setPassword('')
+    setConfirm('')
+    setChecked(false)
+  })
   const submitting = status === 'submitting'
 
   const token = passwordReset.resetToken

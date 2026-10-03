@@ -4,6 +4,8 @@ import { type ComponentProps, type ReactNode, useId, useState } from 'react'
 
 import clsx from 'clsx'
 
+import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
+
 export type TextFieldProps = Omit<ComponentProps<'input'>, 'id' | 'className' | 'children'> & {
   /** 칸 위 라벨 (14 굵게). 입력칸 이름으로 읽힌다 */
   label: ReactNode
@@ -52,6 +54,8 @@ export function TextField({
   const id = useId()
   const messageId = useId()
   const [revealed, setRevealed] = useState(false)
+  // 뒤로 가기 캐시에 들어가기 전에 비밀번호 보기를 끈다(#186). 다음 사람이 이어 쓴 글자가 평문으로 보이지 않게
+  useClearOnPageFreeze(() => setRevealed(false))
   const password = type === 'password'
   const wideRight = password || trailing != null
   const invalid = Boolean(error)

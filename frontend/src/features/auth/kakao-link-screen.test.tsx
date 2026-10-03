@@ -299,3 +299,23 @@ describe('KakaoLinkScreen', () => {
     expect(router.replace).not.toHaveBeenCalled()
   })
 })
+
+/** 뒤로 가기 캐시에 들어가기 직전 (#186) */
+const freezePage = (persisted = true) =>
+  act(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted }))
+  })
+
+describe('KakaoLinkScreen 뒤로 가기 캐시 (#186)', () => {
+  it('얼기 직전에 가린 이메일을 비우고 로그인 화면으로 보낸다 — 다음 사람이 연결하고 계속하기를 누를 수 없다', () => {
+    router.replace.mockClear()
+    renderLink()
+    expect(linkButton()).toBeDefined()
+
+    freezePage()
+
+    expect(screen.queryByRole('button', { name: '연결하고 계속하기' })).toBeNull()
+    expect(screen.queryByText(MASKED)).toBeNull()
+    expect(router.replace).toHaveBeenCalledWith('/login')
+  })
+})

@@ -1,8 +1,18 @@
 'use client'
 
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react'
+import {
+  createContext,
+  Fragment,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 
 import type { District } from '@/features/region/types'
+import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
 /**
@@ -12,6 +22,11 @@ import { useNavTrail } from '@/lib/use-nav-trail'
  *
  * **브라우저 저장소에 남기지 않는다** (docs/conventions.md "데이터와 환경변수"). 새로고침하면 사라지고,
  * 다음 단계는 값이 없으면 앞 단계로 돌려보낸다. 서버에는 가입 동의(S02-3)에서 가입 · 로그인 · 내 동네 저장을 잇달아 보낸다.
+ *
+ * **뒤로 가기 캐시(bfcache)에 들어가기 직전에 가입 초안(비밀번호 · 이메일 · 닉네임 · 가입 종류) · 재설정 초안(토큰) · 연결 확인 이메일을
+ * 비운다**(#186, `useClearOnPageFreeze`). 공용 기기에서 다음 사람이 뒤로 가기로 되살린 화면에서 앞 사람의 가입 · 재설정 · 카카오
+ * 연결을 이어 가지 못하게 한다. 비우면 각 단계 화면이 값이 없을 때처럼 흐름의 처음(이메일 단계 · 로그인 방법 선택)으로 돌려보낸다.
+ * 동네 · 성인 확인 · 가입 마무리 진행(`membership`)은 둔다 — 진행은 이미 만든 계정 · 세션에 딸린 값이고 세션은 세션 저장소가 다시 확인한다
  */
 /**
  * 가입(S13-2 ~ S13-4 · S02-3) 중에 모으는 값. **메모리에만 둔다** — 브라우저 저장소 · 주소 · 로그에 남기지 않는다.
@@ -199,6 +214,25 @@ export function OnboardingProvider({
     [],
   )
 
+  useClearOnPageFreeze(() => {
+    setSignup(EMPTY_SIGNUP)
+    setPasswordReset(EMPTY_PASSWORD_RESET)
+    setKakaoLinkEmail(null)
+    // 성인 확인 · 알림 선택도 사람마다 받는다 — 다음 사람의 가입에 미리 체크된 채로 보이지 않게(가입 초안을 비우면 흐름은 어차피 처음부터다)
+    setAdultConfirmed(false)
+    setNotificationOptIn(false)
+  })
+  // 비운 뒤 단계 화면이 보내는 이동(값이 없으면 처음으로)은 얼기 직전에 나가 브라우저가 버린다(Chrome 실측 — 빈 화면으로 되살아났다).
+  // 되살아나면 화면을 다시 붙여 단계 확인을 다시 돌린다. 화면 상태는 어차피 비웠다
+  const [restored, setRestored] = useState(0)
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setRestored((count) => count + 1)
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [])
+
   const goBack = useCallback(
     (previousPaths: string | readonly [string, ...string[]]) => {
       const candidates = typeof previousPaths === 'string' ? [previousPaths] : previousPaths
@@ -246,7 +280,11 @@ export function OnboardingProvider({
     ],
   )
 
-  return <OnboardingContext value={value}>{children}</OnboardingContext>
+  return (
+    <OnboardingContext value={value}>
+      <Fragment key={restored}>{children}</Fragment>
+    </OnboardingContext>
+  )
 }
 
 export function useOnboarding(): OnboardingState {

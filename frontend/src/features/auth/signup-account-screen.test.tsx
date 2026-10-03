@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -179,5 +179,25 @@ describe('SignupAccountScreen', () => {
     const { user } = setup()
     await user.click(screen.getByRole('button', { name: '뒤로' }))
     expect(router.replace).toHaveBeenCalledWith('/signup/code')
+  })
+})
+
+/** 뒤로 가기 캐시에 들어가기 직전 (#186) */
+const freezePage = (persisted = true) =>
+  act(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted }))
+  })
+
+describe('SignupAccountScreen 뒤로 가기 캐시 (#186)', () => {
+  it('얼기 직전에 비밀번호 · 닉네임 칸과 가입 초안을 비우고 가입 처음(이메일 단계)으로 보낸다', async () => {
+    router.replace.mockClear()
+    const utils = setup()
+    await fill(utils, { password: 'Secret-PW-123', nickname: '재채기탐정' })
+
+    freezePage()
+
+    expect(router.replace).toHaveBeenCalledWith('/signup/email')
+    expect(screen.queryByLabelText('비밀번호', { selector: 'input' })).toBeNull()
+    expect((utils.password as HTMLInputElement).value).toBe('')
   })
 })

@@ -336,3 +336,29 @@ describe('SignupCodeScreen', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 })
+
+/** 뒤로 가기 캐시에 들어가기 직전 (#186) */
+const freezePage = (persisted = true) =>
+  act(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted }))
+  })
+
+describe('SignupCodeScreen 뒤로 가기 캐시 (#186)', () => {
+  it('얼기 직전에 입력한 코드를 비우고, 이메일 · 보낸 시각이 지워져 이메일 단계로 보낸다', async () => {
+    router.replace.mockClear()
+    const user = userEvent.setup()
+    render(tree({ ...EMPTY_SIGNUP, email: EMAIL, codeSentAt: Date.now() }))
+    const input = codeInput() as HTMLInputElement
+    await user.type(input, '482915')
+
+    freezePage()
+    expect(input.value).toBe('')
+
+    // 얼기 직전에 보낸 이동은 브라우저가 버린다 — 되살아날 때 다시 보낸다
+    router.replace.mockClear()
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
+    })
+    expect(router.replace).toHaveBeenCalledWith('/signup/email')
+  })
+})
