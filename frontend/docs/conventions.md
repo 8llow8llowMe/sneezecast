@@ -4,15 +4,16 @@
 
 ## 도구 체인
 
-| 항목          | 버전 · 설정                                                                                                |
-| ------------- | ---------------------------------------------------------------------------------------------------------- |
-| 런타임        | Node 22 (`.nvmrc`), `engines: ^22.13.0 \|\| >=24`                                                          |
-| 패키지 매니저 | pnpm 10 (`packageManager` 고정)                                                                            |
-| 프레임워크    | Next.js 16 (App Router, Turbopack), React 19                                                               |
-| 언어          | TypeScript 5.9 strict + `noUncheckedIndexedAccess` · `exactOptionalPropertyTypes` · `verbatimModuleSyntax` |
-| 스타일        | Tailwind CSS v4 (CSS 우선 설정, `tailwind.config` 없음)                                                    |
-| 린트 · 포맷   | ESLint flat config (typed) + Prettier (`prettier-plugin-tailwindcss`)                                      |
-| 테스트        | Vitest (기본 node 환경)                                                                                    |
+| 항목          | 버전 · 설정                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 런타임        | Node 22 (`.nvmrc`), `engines: ^22.13.0 \|\| >=24`                                                                        |
+| 패키지 매니저 | pnpm 10 (`packageManager` 고정)                                                                                          |
+| 프레임워크    | Next.js 16 (App Router, Turbopack), React 19                                                                             |
+| 언어          | TypeScript 5.9 strict + `noUncheckedIndexedAccess` · `exactOptionalPropertyTypes` · `verbatimModuleSyntax`               |
+| 스타일        | Tailwind CSS v4 (CSS 우선 설정, `tailwind.config` 없음)                                                                  |
+| 린트 · 포맷   | ESLint flat config (typed) + Prettier (`prettier-plugin-tailwindcss`)                                                    |
+| 테스트        | Vitest (기본 node 환경)                                                                                                  |
+| 성능 측정     | Lighthouse CI (`@lhci/cli`, Lighthouse 12) — 프로덕션 빌드 · 모바일 기본 설정, 경고만 ([performance.md](performance.md)) |
 
 ## 디렉터리 구조
 
@@ -31,6 +32,8 @@ frontend/
 │   ├── styles/          # tokens.css (토큰 정본) 와 토큰 검사 테스트
 │   └── types/           # 공용 타입
 ├── public/              # 정적 파일. 시안에서 뽑은 그림(onboarding/neighborhood.svg)
+├── scripts/             # 도구 스크립트(.mjs). Lighthouse 측정 전 확인(lighthouse-preflight) · 결과 요약(lighthouse-summary) — docs/performance.md
+├── lighthouserc.yml     # Lighthouse CI 설정(대상 URL · 예산)
 └── docs/                # 규칙 정본과 시안 원본
 ```
 
@@ -303,13 +306,22 @@ frontend/
 
 ## 테스트
 
-- 파일은 대상 옆에 `*.test.ts(x)` 로 둔다.
+- 파일은 대상 옆에 `*.test.ts(x)` 로 둔다. 도구 스크립트(`scripts/*.mjs`, 빌드 · 타입체크 밖)는 옆에 `*.test.mjs` 로 둔다.
 - 기본 환경은 node 다. DOM 이 필요한 컴포넌트 테스트는 파일 맨 위에 `// @vitest-environment jsdom` 을 적어 그 파일만 켠다.
 - 컴포넌트 테스트는 Testing Library(`@testing-library/react` · `user-event`)로 역할·이름으로 찾는다(`getByRole`). 렌더 정리는 `src/test/setup.ts` 가 DOM 환경일 때만 등록한다.
 - 테스트에는 Next 라우터가 없다. `useSearchParams` 를 쓰는 화면은 `vi.mock('next/navigation', …)` 으로 쿼리를 흉내 낸다 (`features/home/home-screen.test.tsx`).
 - 스타일은 클래스 이름(`classList`)으로 확인한다. 실제 픽셀 값은 `/dev/components` 를 브라우저로 열어 확인한다.
 - jsdom 은 `<dialog>` 의 `showModal()` · `close()` 가 없어 `src/test/setup.ts` 가 `open` 속성만 흉내 낸다. 포커스 가두기 · Esc 같은 실제 동작은 브라우저로 확인한다.
 - jsdom 은 27 을 쓴다. 30 은 Node 22.22.2 이상을 요구해 `engines`(22.13 이상)와 맞지 않는다.
+
+## 성능 측정
+
+측정 방법 · 예산 · 기준선 · 후속 후보의 정본은 [performance.md](performance.md) 다.
+
+- 프로덕션 빌드를 잰다(`pnpm build` → `pnpm perf:lighthouse`, `next start -p 3100`). 개발 서버는 재지 않는다.
+- Lighthouse 기본 설정(모바일 · 시뮬레이션 쓰로틀링)으로 URL 마다 3회 재고 중앙값을 본다. 대상 URL · 예산은 `lighthouserc.yml` 에 있다.
+- 예산은 모두 경고(`warn`)다. `frontend-ci` 에서도 경고만 내고 PR 을 막지 않는다. 결과를 외부에 올리지 않는다.
+- 화면 · 의존성을 크게 바꾼 PR 은 CI 요약의 예산 경고를 보고, 의도한 변화면 performance.md 의 기준선 · 예산을 함께 고친다.
 
 ## 완료 전 확인
 
