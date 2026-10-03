@@ -18,7 +18,11 @@ import {
 } from '@/test/api-session'
 
 import { getMockSession, resetMockSession } from './auth-client'
-import { KakaoCallbackScreen, readKakaoCallback } from './kakao-callback-screen'
+import {
+  kakaoCallbackParams,
+  KakaoCallbackScreen,
+  readKakaoCallback,
+} from './kakao-callback-screen'
 import type * as kakaoClient from './kakao-client'
 import { kakaoLogin, type KakaoLoginResult } from './kakao-client'
 import {
@@ -90,6 +94,31 @@ describe('readKakaoCallback', () => {
   })
 })
 
+describe('kakaoCallbackParams — hash 가 먼저, 없으면 쿼리', () => {
+  it.each([
+    [{ search: '', hash: '#code=c1&state=s1' }, 'code=c1&state=s1'],
+    [{ search: '?code=q1&state=s1', hash: '' }, 'code=q1&state=s1'],
+    // proxy 를 거쳐 왔으면 쿼리는 없다. 둘 다 있으면 proxy 가 옮긴 hash 를 믿는다
+    [{ search: '?code=q1&state=s1', hash: '#code=h1&state=s1' }, 'code=h1&state=s1'],
+    [{ search: '', hash: '#' }, ''],
+    [{ search: '', hash: '' }, ''],
+  ])('%o → %s', (location, expected) => {
+    expect(kakaoCallbackParams(location)).toBe(expected)
+  })
+
+  it('hash 값도 readKakaoCallback 으로 같은 규칙대로 읽는다', () => {
+    expect(
+      readKakaoCallback(kakaoCallbackParams({ search: '', hash: '#code=a%2Fb&state=s1' })),
+    ).toEqual({
+      code: 'a/b',
+      state: 's1',
+    })
+    expect(
+      readKakaoCallback(kakaoCallbackParams({ search: '', hash: '#error=access_denied&state=s1' })),
+    ).toBeNull()
+  })
+})
+
 describe('KakaoCallbackScreen', () => {
   beforeEach(() => {
     router.replace.mockClear()
@@ -124,6 +153,29 @@ describe('KakaoCallbackScreen', () => {
     expect(searchAtRequest).toBe('')
     expect(window.location.pathname).toBe(CALLBACK)
     expect(window.location.search).toBe('')
+  })
+
+  it('proxy 가 옮긴 hash(#code=…&state=…)에서 읽고 hash 를 지운 뒤 한 번만 보낸다', async () => {
+    let hrefAtRequest: string | null = null
+    vi.mocked(kakaoLogin).mockImplementationOnce(() => {
+      hrefAtRequest = window.location.href
+      return Promise.resolve({ status: 'link-required', maskedEmail: 'd***@example.com' })
+    })
+    visit('#code=h1&state=s1', { strict: true })
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/login/kakao/link'))
+
+    expect(kakaoLogin).toHaveBeenCalledTimes(1)
+    expect(kakaoLogin).toHaveBeenCalledWith('h1', 's1', 'mock')
+    expect(hrefAtRequest).toBe(`${window.location.origin}${CALLBACK}`)
+    expect(window.location.hash).toBe('')
+    expect(window.location.search).toBe('')
+  })
+
+  it('hash 의 사용자 취소(error)면 보내지 않고 로그인 화면으로 간다', async () => {
+    visit('#error=access_denied&state=s1')
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/login?error=kakao-fail'))
+    expect(kakaoLogin).not.toHaveBeenCalled()
+    expect(window.location.hash).toBe('')
   })
 
   it('로그인됨이면 홈으로 기록을 바꿔 간다', async () => {
