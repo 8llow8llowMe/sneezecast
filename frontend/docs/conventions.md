@@ -19,14 +19,15 @@
 ```text
 frontend/
 ├── app/                 # 라우트 (App Router). 화면 조립만 하고 로직은 src/ 로 보낸다
-│   ├── layout.tsx       # 서체 · 메타데이터 · 뷰포트
+│   ├── layout.tsx       # 서체 · 메타데이터 · 뷰포트. `connection()` 으로 모든 화면을 동적 렌더링한다(아래 "보안 헤더 · CSP")
 │   ├── manifest.ts      # 웹 앱 매니페스트. 아이콘 라우트(icon · apple-icon · app-icons/)와 함께 docs/design/SCREENS.md "앱 매니페스트 · 아이콘"
 │   └── globals.css      # Tailwind 진입점 + 토큰 → 테마 매핑
-├── proxy.ts             # Next 16 Proxy(옛 미들웨어). 처음 온 사람을 시작 화면으로 보낸다 — 로직은 features/onboarding/first-visit.ts
+├── next.config.ts       # 빌드 설정 · 모든 응답의 보안 헤더(headers())
+├── proxy.ts             # Next 16 Proxy(옛 미들웨어). 화면 요청에 CSP(요청마다 nonce)를 싣고, 카카오 콜백 쿼리를 fragment 로 303 리다이렉트하고, 처음 온 사람을 시작 화면으로 보낸다 — 로직은 lib/security/ · features/auth/kakao-callback-redirect.ts · features/onboarding/first-visit.ts
 ├── src/
 │   ├── components/      # 도메인을 모르는 공통 UI (버튼, 리스트 행, 바텀시트 …)
 │   ├── features/<도메인>/ # 화면별 UI (home, report, onboarding, region, map, notice, official, admin …)
-│   ├── lib/             # 로직. api/ 는 API 호출 계층, session/ 은 세션 저장소, env.client.ts 는 공개 환경변수
+│   ├── lib/             # 로직. api/ 는 API 호출 계층, session/ 은 세션 저장소, security/ 는 보안 헤더 · CSP, env.client.ts 는 공개 환경변수
 │   ├── styles/          # tokens.css (토큰 정본) 와 토큰 검사 테스트
 │   └── types/           # 공용 타입
 ├── public/              # 정적 파일. 시안에서 뽑은 그림(onboarding/neighborhood.svg)
@@ -132,14 +133,14 @@ frontend/
 - **회원만 보는 화면의 가드는 회원 상태가 정해진 뒤 판단한다.** 서버와 하이드레이션 첫 그림의 회원 상태는 늘 `guest` 이고(`useAuth`), 실데이터 모드는 새로고침 뒤 세션을 되살리는(재발급) 동안에도 `guest` 다. 그 값으로 로그인에 보내면 회원도 튕긴다. `features/auth/use-auth.ts` 의 `useAuthSettled()`(하이드레이션을 마쳤고, 목데이터이거나 실데이터 세션이 `member` · `guest` 로 정해짐)가 true 인 그림의 상태로만 판단하고 Next 라우터(`router.replace`)로 보낸다 (`features/me/member-gate.ts`, 약관 재동의 · 동네 다시 고르기 화면도 같다).
   - 반대 방향(회원이 연 시작 · 로그인 · 가입 화면 → 홈 또는 `?next=`)은 첫 진입 레이아웃의 `features/auth/guest-only-gate.tsx` 다. 같은 이유로 `useAuthSettled()` 가 true 일 때 판단하고, **화면에 닿을 때의 상태로 한 번만** 판단한다 — 그 화면에서 회원이 되는 것(로그인 성공)은 화면이 스스로 이동하므로 두 이동이 겹치지 않게 끼어들지 않는다(docs/design/SCREENS.md "첫 진입").
 - **router 내비게이션이 대기 중일 때 `history.replaceState` · `pushState` 를 부르면 Next 가 그 내비게이션을 버린다 — 가드가 보낼 곳이 있으면 주소 정리를 하지 않는다.** 원시 history 변경이 Next 의 복원(ACTION_RESTORE)을 일으켜 대기 중인 `router.replace` 가 버려진다(프로덕션 빌드에서 재현). 같은 그림에서 주소 쿼리를 정리하는 화면(홈의 `?report=` · 내 정보의 `?confirm=` 정리)은 `useRequiredStepsGate` · `useRequiredStepsTarget`(`features/me/member-gate.ts`)이 돌려준 보낼 곳이 있으면 정리를 건너뛴다.
-- **레이아웃 · 정적 라우트에서 `useSearchParams` 를 읽는 클라이언트 컴포넌트는 `<Suspense>` 로 감싼다.** 감싸지 않으면 `next build` 의 정적 생성이 `missing-suspense-with-csr-bailout` 으로 멈춘다(dev 서버에서는 드러나지 않는다). 하이드레이션 뒤에야 그리는 화면은 대체 그림을 비워 둔다(`app/me/layout.tsx` 의 가드, `app/(onboarding)/terms/reconsent/page.tsx`). 페이지가 `searchParams` 를 await 하면 동적 라우트라 필요 없다.
+- **레이아웃 · 정적 라우트에서 `useSearchParams` 를 읽는 클라이언트 컴포넌트는 `<Suspense>` 로 감싼다.** 감싸지 않으면 `next build` 의 정적 생성이 `missing-suspense-with-csr-bailout` 으로 멈춘다(dev 서버에서는 드러나지 않는다). 지금은 CSP nonce 때문에 모든 화면이 동적이라 빌드가 멈추지 않지만, 정적 렌더링으로 돌아갈 수 있게 그대로 지킨다(아래 "보안 헤더 · CSP"). 하이드레이션 뒤에야 그리는 화면은 대체 그림을 비워 둔다(`app/me/layout.tsx` 의 가드, `app/(onboarding)/terms/reconsent/page.tsx`). 페이지가 `searchParams` 를 await 하면 동적 라우트라 필요 없다.
 - **돌아갈 곳(`?next=`)은 허용 목록 안의 경로만 받는다.** 가드가 다른 화면으로 보냈다가 돌려보낼 때 `?next=` 를 쓰고, 받는 쪽은 `features/auth/required-steps.ts` 의 `safeNextPath` 로 정확히 같은 경로(`NEXT_PATHS`: `/` · `/me` · `/me/devices` · `/me/password` · `/me/region`)일 때만 따른다. 머리줄 동네 이름이 여는 둘러볼 동네 고르기(`/browse/region?next=`)는 따로 둔 허용 목록(`features/onboarding/browse-return.ts` 의 `BROWSE_NEXT_PATHS`, 머리줄에 동네 이름이 있는 화면)을 같은 방식으로 받는다(#141). 로그인 화면(`/login` → `/login/email`)도 `features/auth/login-return.ts` 로 `?next=` 를 받아 로그인 뒤 그곳으로 간다(내 정보 · 로그인한 기기 · 비밀번호 · 내 동네의 비회원 가드 `useMemberGate({ next })` 가 씀 — `next` 는 생략할 수 없다, #140). 보고하려던 로그인은 `?intent=report` 를 더 받아 로그인 뒤 같은 동네 홈의 보고 진입(`/?region=…&report=start`)으로 간다 — 받는 값은 `report` 하나, 돌아갈 곳이 홈일 때만 받고(그 밖이면 버림) `NEXT_PATHS` 규칙은 그대로이며, 회원 상태에 맞는 시트는 홈의 `guardReportEntry` 가 고친다(#136). 로그인 결과에 조건(약관 재동의 · 동네 다시 고르기)이 남으면 홈의 조건 가드가 보고 진입(`?report=`)을 조건 화면의 `?intent=report` 로 바꿔 싣고, 조건 화면을 **마친** 뒤(`targetAfter`) 남은 조건이 없으면 같은 동네 홈의 보고 진입으로 간다 — 조건 화면에 조건 없이 닿아 내보낼 때(`stepTarget`)는 보고 진입을 붙이지 않는다(브라우저 뒤로를 붙잡지 않게, #140). 회원이 그 로그인 화면에 닿으면(사실상 로그인 성공 뒤 브라우저 뒤로) 첫 진입 가드는 보고 진입을 붙이지 않고 홈으로만 보낸다 — 뒤로 가려는 사람을 붙잡지 않는다. 로그인으로 넘기는 쿼리는 `next` 와 둘러보기 동네뿐이고 목 덮어쓰기는 넘기지 않는다(로그인이 세션을 바꾸므로). 쿼리 · `#` 가 붙었거나 다른 오리진(`//…` · `https://…`)이면 홈으로 보낸다(오픈 리다이렉트 방지). 함께 넘길 쿼리는 둘러보기 동네(`region`)와 QA 용 목 덮어쓰기(`mock-auth` · `mock-provider` · `mock-required`, 목데이터 모드에서만 듣는다 — 아래 "데이터 출처")뿐이다(`carriedParams`). 새 화면을 가드에 걸면 목록에 더한다.
 - **페이지를 새로 열어도 이을 돌아갈 곳은 `features/auth/login-return-store.ts` 하나로 둔다**(#140). 로그인 화면 · 로그인 안내 시트가 받은 돌아갈 곳(`next` · `region` · `intent`)을 가입(이메일 · 카카오) · 카카오 로그인 · 비밀번호 재설정을 거치는 동안 들고 간다 — 이 흐름들은 단계마다 주소 쿼리를 넘기지 않고, 카카오는 문서를 옮겼다 돌아와 메모리가 빈다.
   - **떠날 때 쓴다**(`saveLoginReturn`): 카카오로 계속하기(`useKakaoStart(…).start(loginReturn)` — 로그인 방법 고르기 · 로그인 안내 시트 · 다른 카카오 계정), 이메일로 가입하기 · 비밀번호를 잊었어요(로그인 방법 고르기 · 이메일 로그인). 들고 갈 것이 없으면 지운다(앞서 그만둔 흐름의 값이 끼어들지 않게). **마칠 때 읽고 지운다**(`takeLoginReturn`): 가입 마무리 S02-4(`나중에 할게요` 는 보고 진입을 빼고 — 미룬 동의 시트를 다시 열지 않게), 카카오 로그인됨 · 계정 연결 성공(`afterKakaoLoginPath`), 비밀번호 재설정 성공(`/login/email?reason=reset-done` 에 쿼리로 붙임). 카카오 실패 · 가입된 이메일로 로그인처럼 로그인 화면으로 돌려보낼 때는 지우지 않고 그 주소에 쿼리로 다시 싣는다(`withSavedLoginReturn`) — 이렇게 온 로그인 방법 고르기의 뒤로가 그만둔 단계로 되돌아가지 않게, 그 화면은 바로 앞 기록이 흐름 단계(`features/onboarding/paths.ts` 의 `isFlowStepPath`)면 시작 화면으로 바꿔 간다(`useNavTrail().goBack` 은 후보 목록 대신 바로 앞 경로를 받는 함수도 받는다). 이메일 로그인에 성공하면 지운다. 회원이 비밀번호 변경의 `비밀번호를 잊었어요` 로 재설정에 가면 돌아갈 곳을 내 정보로 둔다.
   - 저장 위치는 모듈 변수(같은 문서 안 이동 — 첫 진입 레이아웃 밖의 시트에서 들어와도, 저장소가 막혀도 남는다) + `sessionStorage`(새로고침 · 카카오 왕복). 읽을 때는 모듈 변수가 먼저다. `sessionStorage` 는 그 탭에만 살고 탭을 닫으면 사라져 다른 탭 · 다음 방문에 새지 않으며, 서버가 읽을 일이 없어 쿠키로 두지 않는다.
   - 키 `sc_login_return`, 값 `{"v":1,"next","region","intent","savedAt"}` — **허용 목록 경로 · 행정동 코드(8자리 숫자) · `report` 만** 담는다(이메일 · 토큰 · 건강 정보 금지). 수명 30분(카카오 가입표 · 이메일 인증 표시의 서버 수명과 같다) — 지난 값 · 앞으로의 시각은 버린다.
   - 읽을 때 다시 검증한다: `next` 는 `safeNextPath`, 동네는 모양, `intent` 는 `report` 이고 홈일 때만. 모양 · 판이 다르면 통째로 버리고 지운다. 저장소가 없거나 예외면 모듈 변수만, 그것도 없으면(새로고침 + 저장소 없음) 홈이다 — 흐름은 그대로 된다. 이메일 가입 단계를 새로고침하면 가입 초안(Provider)은 비어 처음 단계로 돌아가지만 돌아갈 곳은 저장소에서 살아 가입을 다시 마치면 그곳으로 간다.
-- **앱 밖 주소로 문서를 옮기는 일은 `src/lib/location.ts` 의 `assignLocation` 하나로 한다**(카카오 인가 화면, #167). 옮기기 전에 부르는 쪽이 주소의 오리진 · 경로를 허용 목록으로 확인한다(`features/auth/kakao-client.ts` 의 `isKakaoAuthorizeUrl` — 오픈 리다이렉트 방지). 돌아오는 콜백(`/login/kakao/callback`)은 주소에 실려 온 값(인가 코드)을 읽자마자 `history.replaceState` 로 지운다 — 마운트 effect 에서 바로가 아니라 `setTimeout(0)` 뒤에, 라우터 이동을 걸기 **전에** 지운다(위 두 규칙). 카카오로 떠나기 전에 둔 돌아갈 곳을 콜백(로그인됨) · 계정 연결 · 카카오 가입 마무리가 읽는다(위 "페이지를 새로 열어도 이을 돌아갈 곳").
+- **앱 밖 주소로 문서를 옮기는 일은 `src/lib/location.ts` 의 `assignLocation` 하나로 한다**(카카오 인가 화면, #167). 옮기기 전에 부르는 쪽이 주소의 오리진 · 경로를 허용 목록으로 확인한다(`features/auth/kakao-client.ts` 의 `isKakaoAuthorizeUrl` — 오픈 리다이렉트 방지). 돌아오는 콜백(`/login/kakao/callback`)은 주소에 실려 온 값(인가 코드 — proxy 가 쿼리를 fragment 로 옮겨 보낸다, 아래 "보안 헤더 · CSP" 의 "카카오 콜백")을 읽자마자 `history.replaceState` 로 지운다 — 마운트 effect 에서 바로가 아니라 `setTimeout(0)` 뒤에, 라우터 이동을 걸기 **전에** 지운다(위 두 규칙). 카카오로 떠나기 전에 둔 돌아갈 곳을 콜백(로그인됨) · 계정 연결 · 카카오 가입 마무리가 읽는다(위 "페이지를 새로 열어도 이을 돌아갈 곳").
 - **화면 위에 뜨는 시트 · 대화상자의 열림 상태는 주소 쿼리에 둔다** (`docs/design/SCREENS.md` 의 제안 라우트, 예: 판단 기준 `/?explain=1`). 새로고침 · 공유해도 같은 화면이 열린다. `src/lib/use-modal-param.ts` 를 쓴다. 단계마다 `push` 로 기록을 쌓아 휴대폰 뒤로 가기가 이전 단계 · 닫기로 이어지게 하고, 보낸 뒤 완료처럼 되돌아오면 안 되는 단계는 `replace` 로 바꾼다(`remove` 로 다른 쿼리를 같은 기록 항목에서 함께 지울 수 있다). `close` 는 이 훅이 쌓은 깊이만큼만 되돌린다 — 깊이는 `history.state` 에 두어 뒤로 가기로 단계를 되돌린 뒤 닫아도 홈 앞까지만 간다. 주소로 바로 들어와 쌓은 기록이 없으면 쿼리만 지운다. `router.push` 는 서버에 화면을 다시 요청하므로 쓰지 않는다.
 - **같은 문서 안 `#` 링크(`<a href="#id">`)를 쓰지 않는다.** Next 가 모르는 기록 항목(`history.state` 가 null)이 생겨, 그 뒤 연 시트 · 대화상자의 닫기(`history.go(-1)`)가 그 항목으로 돌아가고 Next 가 무시해 첫 닫기에 닫히지 않는다. 섹션 바로가기는 버튼으로 `scrollIntoView` 한 뒤 제목(`tabIndex={-1}`)에 포커스를 준다(`features/me/me-screen.tsx`).
 - **마운트 effect 에서 history 를 바꾸지 않는다.** 하이드레이션 첫 커밋에서는 Next 가 아직 history 를 감싸지 않는다(최상위 라우터 effect 보다 자식 effect 가 먼저 돈다) — 그때 바꾼 주소는 `useSearchParams` 가 모른다. 미뤄야 하면 `setTimeout(0)` 으로 미루고 cleanup 에서 취소한다(`features/home/home-screen.tsx` 의 보고 진입 정리). 열림처럼 그 값으로 그리는 것은 바뀔 값으로 미리 계산해 첫 그림부터 맞춘다.
@@ -214,12 +215,91 @@ frontend/
 - 쿠키가 없거나 모르는 값이면 기본값 — 공개 환경변수 `NEXT_PUBLIC_DATA_SOURCE`(`.env.example`), 그것도 없거나 모르는 값이면 `mock` 이다.
 - **전환은 허용 목록의 사이트에서만 된다(`isDataSourceSwitchable`).** `clientEnv.siteUrl` 이 dev 웹 `https://dev.sneezecast.com` 이거나, `http:` 이면서 호스트가 `localhost` · `127.0.0.1` · `[::1]` · `*.localhost` 일 때만이다. 그 밖(운영 · 빈 값 · 오타 · 주소가 아님)은 쿠키 · 환경변수를 무시하고 늘 `api` 이고 토글을 그리지 않는다. 막을 곳이 아니라 열 곳을 적는다 — 운영 빌드에 사이트 주소를 잘못 넣어도 토글이 열리지 않게 한다. 쿠키는 누구나 고칠 수 있어, 운영에서 목으로 바꿀 수 있으면 지어낸 수치 · 안내가 실제 정보처럼 보이고 목 회원 상태로 회원 화면이 열린다.
 - **출처는 부르는 쪽이 정해 넘긴다.** 서버 페이지는 `readServerDataSource()`, 클라이언트 훅은 `useDataSource()` 로 읽어 도메인 클라이언트 함수에 넘긴다(`districtFromParam(value, source)` · `useDistrictSearch`). 도메인 클라이언트는 쿠키를 직접 읽지 않는다 — 서버 · 클라이언트 양쪽에서 같은 함수를 쓰고 테스트가 출처를 정해 부를 수 있게.
-- **루트 레이아웃에서 `cookies()` 를 부르지 않는다** — 모든 라우트가 동적 렌더링이 된다. 쿠키는 이미 동적인(`searchParams` 를 await 하는) 페이지에서만 읽는다. 그래서 루트 레이아웃의 토글과 `useDataSource()` 는 서버 그림 · 하이드레이션 첫 그림에서 기본값이고 그 뒤 쿠키 값을 읽는다(토글은 하이드레이션 뒤에만 그린다). 출처로 요청하는 effect 는 출처를 의존값에 넣는다.
+- **루트 레이아웃에서 `cookies()` 를 부르지 않는다** — 모든 라우트가 동적 렌더링이 된다. 지금은 CSP nonce 때문에 루트 레이아웃이 `connection()` 으로 이미 모든 화면을 동적으로 그리지만(아래 "보안 헤더 · CSP"), 정적 렌더링으로 돌아갈 길을 막지 않게 쿠키는 계속 페이지에서만 읽는다. 쿠키는 이미 동적인(`searchParams` 를 await 하는) 페이지에서만 읽는다. 그래서 루트 레이아웃의 토글과 `useDataSource()` 는 서버 그림 · 하이드레이션 첫 그림에서 기본값이고 그 뒤 쿠키 값을 읽는다(토글은 하이드레이션 뒤에만 그린다). 출처로 요청하는 effect 는 출처를 의존값에 넣는다.
 - 토글은 쿠키를 쓰고 `router.refresh()` 로 서버 컴포넌트를 다시 그린다. 클라이언트 화면은 `useDataSource()` 로 따라간다.
 - 토글은 body 마지막 자식이다(맨 앞이면 Tab 첫 포커스가 된다). z-index 를 주지 않는다 — z-index 가 있는 시트 · 버튼 묶음 · 가림막(z-10 · z-20)은 DOM 순서와 무관하게 토글 위에 온다. 모바일은 탭바 · 화면 아래 버튼 묶음보다 위(`bottom-dev-toggle`)에 띄운다.
 - 백엔드에 아직 없는 API(BE 미정)는 출처와 무관하게 목이다(예: `listSuccessorDistricts`, 동네 안내 내용). 함수 주석에 적는다.
 - **회원 상태도 출처를 따른다.** 실데이터는 세션 저장소(위), 목데이터는 목 세션(`features/auth/auth-client.ts`)이다. 둘은 따로라 토글은 어느 쪽도 지우지 않고, 토글로 실데이터가 되면 `SessionBootstrap` 이 세션을 되살린다(여러 번 불러도 한 번).
 - **QA 덮어쓰기(`?mock-auth=` · `?mock-provider=` · `?mock-required=` · `?mock-session=`)는 목데이터 모드에서만 듣는다.** 실데이터에서 들으면 주소만으로 회원 · 동의 확인을 건너뛴다. 운영은 늘 실데이터라 덮어쓰기가 듣지 않는다. 홈 자료 덮어쓰기(`?mock=`) · 알림 덮어쓰기(`?mock-push=`)는 회원 확인과 무관해 그대로다.
+
+## 보안 헤더 · CSP
+
+화면 응답에 CSP(Content-Security-Policy)를, 모든 응답에 브라우저 보안 헤더를 붙인다(#176). access token 은 메모리, refresh 는 HttpOnly 쿠키라 토큰을 훔칠 길은 좁지만, XSS 가 나면 메모리 토큰과 화면의 증상(민감정보)이 밖으로 나갈 수 있다. CSP 로 돌 수 있는 스크립트와 요청 · 이미지 대상을 묶어 그 피해를 줄인다. 구조(브라우저 → 게이트웨이)는 그대로다.
+
+| 어디                                                      | 하는 일                                                                                                                                                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/lib/security/content-security-policy.ts`             | 지시어 · nonce 만들기 · 게이트웨이 오리진 뽑기 · 요청 · 응답 헤더에 싣기                                                                                                                                                                   |
+| `proxy.ts`                                                | 화면 요청마다 nonce 를 새로 만들어 CSP 를 싣는다. 카카오 콜백의 쿼리는 fragment 로 옮겨 303 으로 보낸다(아래). matcher 밖(`_next/` · `api/` · `icon*` · `apple-icon*` 로 시작하는 경로 · `app-icons/` · 점이 든 경로)은 CSP 를 받지 않는다 |
+| `src/lib/security/security-headers.ts` + `next.config.ts` | 모든 경로(`/(.*)`, 빌드 산출물 포함)의 `nosniff` · `Referrer-Policy` · `Permissions-Policy` · `X-Frame-Options`, 콜백 예외                                                                                                                 |
+| `app/layout.tsx`                                          | `await connection()` — 모든 화면을 요청 때 그린다                                                                                                                                                                                          |
+
+### 고른 방식: nonce + `'strict-dynamic'`
+
+- **SRI(해시, `experimental.sri`)를 먼저 시험했다가 접었다.** `script-src 'self'`(`'unsafe-inline'` 없음) + SRI 로 `pnpm build` → `pnpm start` 를 헤드리스 Chrome 으로 열자(2026-10-03, Next 16.3.8 · Chrome 154) `/start` · `/` · `/login` 모두 Next 가 문서에 넣는 인라인 스크립트(`self.__next_f.push(…)` RSC 페이로드)가 `script-src-elem` 위반으로 막히고, React 오류 #412 와 함께 하이드레이션이 되지 않았다. SRI 는 외부 청크(`<script src>`)에 `integrity` 를 붙일 뿐 인라인 스크립트를 덮지 않는다.
+- **인라인 스크립트 해시를 CSP 에 싣는 길도 없다.** 페이로드는 화면마다(동적 화면은 요청마다) 내용이 달라 해시가 바뀌는데, `headers()` 는 빌드 전에 정해지는 고정 값이라 화면별 해시를 실을 수 없다.
+- 그래서 Next 가이드(`node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md` "Nonces")대로 proxy 가 요청마다 128비트 nonce 를 만들어 CSP 를 **요청 헤더**와 **응답 헤더**에 싣는다. Next 는 렌더링 때 요청 헤더의 `script-src` 에서 nonce 를 읽어 자기 스크립트(프레임워크 · 화면 청크 · 인라인 페이로드)에 붙인다. 브라우저가 보낸 `Content-Security-Policy` 요청 헤더는 덮어쓴다(남기면 공격자가 아는 nonce 가 붙는다).
+- `'strict-dynamic'`: nonce 가 붙은 스크립트가 넣은 스크립트(앱 안 이동 때 Next 가 받는 청크)도 돈다. 이를 아는 브라우저는 `'self'` 를 무시하고, 모르는 브라우저(CSP 2)는 `'self'` 로 같은 오리진 청크를 받는다.
+- 확인(같은 방법, nonce 방식): 시작 · 로그인 · 이메일 로그인 · 가입 · 홈(둘러보기 · 보고 시트) · 지도 · 내 정보와 그 아래 화면 · 카카오 콜백 · 계정 연결 · 설치 안내 · 공식 정보 · 동네 안내 · 동네 고르기 · 비밀번호 재설정 · 없는 화면까지 30개 주소에서 위반 0 · 하이드레이션 정상. 데이터 출처 토글(쿠키 쓰기 · `router.refresh()`)과 앱 안 이동(새 청크 4개)도 위반이 없고, 다른 오리진 `fetch` · 외부 이미지 · 인라인 이벤트 처리기(`onerror=`)는 막혔다. `pnpm dev` 도 같은 화면에서 위반이 없다.
+
+**성능 영향.** 화면이 모두 동적 렌더링이다 — 빌드 결과 정적(○) 18 → 3(아이콘 · 매니페스트 라우트만 남음), 동적(ƒ) 15 → 30, SSG(●, 매니페스트 아이콘) 4 그대로. 정적이던 15개 화면(시작 · 가입 단계 · 카카오 콜백 · 없는 화면 등)도 요청마다 서버가 그려 첫 응답이 늦어지고 서버 부하가 늘며, 문서를 CDN 에 둘 수 없다(동적 문서는 Next 가 `private, no-store` 로 보낸다). 빌드 산출물(`_next/static`)의 캐시는 그대로다. 화면의 서버 렌더링이 가벼워 영향은 작다고 보지만 측정은 #177(Lighthouse)에서 한다. 정적으로 돌아가려면 Next 가 인라인 페이로드를 해시로 덮을 수 있어야 한다 — 그때 다시 정한다.
+
+### 지시어
+
+| 지시어                      | 값                                                             | 근거                                                                                                                                                                                                                                                                     |
+| --------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `default-src`               | `'self'`                                                       | 적지 않은 종류(`frame-src` · `media-src` 등)는 같은 오리진만                                                                                                                                                                                                             |
+| `script-src`                | `'self' 'nonce-…' 'strict-dynamic'` (+ 개발만 `'unsafe-eval'`) | `'unsafe-inline'` 없음. 개발 모드의 React 는 서버 오류 스택을 `eval` 로 되살린다                                                                                                                                                                                         |
+| `style-src`                 | `'self' 'unsafe-inline'`                                       | 서버가 그린 `style` 속성(next/image `fill` · 진행 막대 너비 · 증상 추이 높이 · 카카오 버튼 색)이 있다. nonce · 해시는 `style` 속성을 덮지 못하고, `style-src` 에 nonce 를 넣으면 `'unsafe-inline'` 이 무시돼 이 속성들이 막힌다(SRI 시험에서 `style-src-attr` 위반 확인) |
+| `img-src` · `font-src`      | `'self'`                                                       | 이미지는 `public/` · 아이콘 라우트, 글꼴은 번들된 Pretendard 뿐이다. `data:` · `blob:` 을 쓰지 않는다                                                                                                                                                                    |
+| `connect-src`               | `'self'` + 게이트웨이 오리진                                   | `NEXT_PUBLIC_API_BASE_URL`(`clientEnv.apiBaseUrl`)에서 오리진만 뽑는다. 주소가 아니거나 http(s) 가 아니면 `'self'` 만 둔다 — 빌드는 깨지지 않고 게이트웨이 요청만 막힌다(그런 값이면 API 계층도 요청을 만들 수 없다)                                                     |
+| `manifest-src`              | `'self'`                                                       | `app/manifest.ts`                                                                                                                                                                                                                                                        |
+| `worker-src`                | `'self'`                                                       | 2단계 서비스 워커(`public/sw.js`) 대비. 적지 않으면 `script-src` 로 떨어지는데, `'strict-dynamic'` 이 `'self'` 를 무시하고 nonce 는 워커에 붙지 않아 등록이 막힌다                                                                                                       |
+| `object-src` · `base-uri`   | `'none'` · `'self'`                                            | 플러그인 · `<base>` 로 스크립트 주소를 바꾸는 길을 막는다                                                                                                                                                                                                                |
+| `form-action`               | `'self'`                                                       | 폼은 화면 안에서 `fetch` 로 보낸다. 카카오 인가 이동은 `location.assign`(문서 이동)이라 CSP 대상이 아니다                                                                                                                                                                |
+| `frame-ancestors`           | `'none'`                                                       | 다른 사이트가 화면을 iframe 에 넣지 못한다(`X-Frame-Options: DENY` 와 같은 뜻)                                                                                                                                                                                           |
+| `upgrade-insecure-requests` | 사이트 주소가 https 인 운영 빌드만                             | `NEXT_PUBLIC_SITE_URL` 이 https(dev · 운영 웹)이고 개발 모드가 아닐 때. 로컬 http(`next start`)에서 켜면 브라우저에 따라 같은 오리진 http 요청까지 https 로 올려 청크를 받지 못할 수 있다                                                                                |
+
+위반 보고(`report-to` · `report-uri`)는 아직 받지 않는다(후속). 받을 곳(게이트웨이 · 수집 서비스)과 보관 정책을 먼저 정한다 — 보고에는 주소(쿼리)가 실릴 수 있다.
+
+**개발 모드 차이.** `pnpm dev` 는 `'unsafe-eval'` 을 더하고 `upgrade-insecure-requests` 를 빼며, HMR 웹소켓은 `connect-src 'self'` 로 받는다(Chrome 확인). 그 밖은 같다 — 개발 서버에서 위반이 없어도 프로덕션 빌드로 한 번 더 본다.
+
+### 그 밖의 헤더
+
+| 헤더                        | 값                                                                                 | 근거                                                                                                                                                                                                                                      |
+| --------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `X-Content-Type-Options`    | `nosniff`                                                                          | 선언한 Content-Type 대로만 읽는다. 빌드 산출물(스크립트 · 스타일)에 의미가 커서 모든 경로에 붙인다                                                                                                                                        |
+| `Referrer-Policy`           | `strict-origin-when-cross-origin`, 카카오 콜백만 `no-referrer`                     | 다른 오리진에는 오리진만 보낸다. 콜백은 주소의 인가 코드가 새지 않게(#167). `headers()` 는 같은 키를 **뒤 규칙이 덮어써** 콜백 규칙을 맨 뒤에 둔다                                                                                        |
+| `Permissions-Policy`        | `geolocation=()` · `camera=()` · `microphone=()` · 결제 · USB · 블루투스 · 센서 등 | 위치를 쓰지 않는다는 도메인 규칙과 같다. 공유 창(`web-share`) · 링크 복사(`clipboard-write`)는 보고 공유 시트가 써 끄지 않는다. 알림 · 푸시는 이 헤더가 다루지 않는다. Chrome 이 모르는 이름을 넣으면 콘솔 경고가 나므로 아는 이름만 쓴다 |
+| `X-Frame-Options`           | `DENY`                                                                             | `frame-ancestors` 를 모르는 브라우저와 CSP 가 붙지 않는 응답용                                                                                                                                                                            |
+| `Strict-Transport-Security` | 앱에서 걸지 않는다                                                                 | TLS 를 끝내는 Infra nginx 가 웹 · API 도메인에 함께 건다(앱은 TLS 를 끝내는 곳이 아니고, API 도메인은 앱을 거치지 않으며, 두 곳에서 걸면 헤더가 겹친다). 브라우저는 http 응답의 HSTS 를 무시해 로컬에는 어느 쪽이든 영향이 없다           |
+
+### 새 출처를 쓸 때
+
+`src/lib/security/content-security-policy.ts` 의 `buildContentSecurityPolicy` 와 그 테스트, 위 표를 함께 고친다. 고친 뒤 프로덕션 빌드(`pnpm build` → `pnpm start`)를 브라우저로 열어 콘솔에 `Refused to …` · `violates the following Content Security Policy directive` 가 없는지 본다.
+
+- 외부 이미지 · `data:` · `blob:`(예: 지도 타일, 캡처 미리보기) → `img-src`
+- 백엔드 말고 다른 API(예: SGIS 를 브라우저에서 직접) → `connect-src`. 게이트웨이는 환경변수에서 자동으로 들어간다
+- 외부 스크립트(예: 카카오 SDK) → `script-src` 에 출처를 더해도 `'strict-dynamic'` 이 무시한다. `next/script` 에 nonce 를 넘긴다 — proxy 에서 요청 헤더 `x-nonce` 를 더하고 서버 컴포넌트에서 `(await headers()).get('x-nonce')` 로 읽는다(가이드 "Reading the nonce"). 지금은 쓰는 곳이 없어 싣지 않는다. 그 스크립트가 부르는 요청 · 이미지 · iframe 출처도 따로 더한다
+- iframe(예: 외부 공유 · 지도 위젯) → `frame-src`(지금은 `default-src 'self'` 로 막힌다)
+- 다른 오리진으로 폼을 바로 보냄 → `form-action`. 외부 글꼴 · 스타일시트 → `font-src` · `style-src`
+- 새 브라우저 기능(예: 2단계 카메라) → `security-headers.ts` 의 `PERMISSIONS_POLICY` 에서 그 이름을 뺀다
+
+**한계.** proxy matcher 밖 주소에서 HTML 문서(없는 화면 404)가 나오면 CSP 가 붙지 않는다 — 점이 든 경로(`/x.txt`), `api/` 로 시작하는 경로, `icon` · `apple-icon` 으로 시작하는 경로(접두어로 맞춰 `/iconx` 도 빠진다), `app-icons/` 아래다. nonce 없이 고정 CSP 를 붙이면 그 화면의 스크립트가 막힌다. 보안 헤더는 붙는다. Next 의 SRI 는 실험 기능이라 켜지 않았다.
+
+### 카카오 콜백 — 쿼리를 fragment 로 옮겨 303
+
+동적 렌더링이면 Next 가 요청 주소를 응답 HTML 의 RSC 페이로드(첫 주소 `"c"` · `"q"` · 페이지 세그먼트 키 `__PAGE__?{"code":…}`)에 싣는다. #167 은 콜백이 정적 페이지라 본문에 인가 코드가 없었는데, 모든 화면이 동적이 되면서 `?code=…&state=…` 를 단 채 그리면 `code` · `state` 가 문서 HTML 에 남는다. 그래서 proxy 가 GET 콜백(`KAKAO_CALLBACK_PATH`)에 쿼리가 있으면 쿼리를 fragment 로 옮겨(Next 가 Location 을 다시 인코딩할 수 있어 바이트는 달라질 수 있으나 URLSearchParams 로 읽는 키 · 값은 같다) 같은 경로로 **303** 리다이렉트한다(`features/auth/kakao-callback-redirect.ts`, `#code=…&state=…` · `#error=…`). 백엔드 `KAKAO_REDIRECT_URI` 는 그대로다.
+
+- **rewrite 로는 안 된다.** 쿼리를 뗀 경로로 rewrite 해도 `"q"` · 세그먼트 키만 빠지고 첫 주소 `"c"` 에는 남는다 — app-render 가 첫 주소를 rewrite 와 무관하게 원래 요청 주소(`req.url`)로 만든다(`node_modules/next/dist/server/app-render/app-render.js` 의 `parseRelativeUrl(req.url)` → `prepareInitialCanonicalUrl`). fragment 는 서버로 가지 않아 다시 받은 문서는 쿼리 없이 그려진다.
+- 303 응답: `Cache-Control: no-store` · `Referrer-Policy: no-referrer` 와 CSP · 보안 헤더. 303 이라 `?code=` 주소는 방문 기록에 남지 않고(최종 주소만 남음), 화면이 hash 를 지운 뒤 다음 화면으로 기록을 바꿔 간다.
+- 리다이렉트 응답 본문에는 Next 가 Location 값을 그대로 쓴다(`node_modules/next/dist/server/lib/router-server.js` 의 `res.end(destination)` — proxy 리다이렉트는 본문을 줄 수 없다). Location 헤더와 같은 값이고 브라우저는 그리지 않는다.
+- 첫 진입보다 먼저 본다. 콜백은 원래 시작 화면으로 보내지 않는 화면이고, 방문 표시는 리다이렉트를 받은 문서 요청에서 심는다.
+- 화면(`kakao-callback-screen.tsx`)은 hash 를 먼저, 비었으면 쿼리를 읽는다(proxy 를 거치지 않은 경우). 주소 지우기 · 한 번만 보내기 · 복원 대기는 그대로다.
+- **서버에서 콜백 값을 읽는 코드를 두지 않는다**(페이지 `searchParams` · `generateMetadata` 등) — 서버는 값을 받지 않는다.
+- **회귀 확인**(콜백 · proxy · 렌더링 방식을 바꿀 때): `pnpm build` → `pnpm start` 뒤
+  - `curl -s -i 'http://localhost:3000/login/kakao/callback?code=SECRETCODE123&state=STATEXYZ'` → `303` · `location: /login/kakao/callback#code=SECRETCODE123&state=STATEXYZ`
+  - `curl -s -H 'Cookie: sc_visited=1' 'http://localhost:3000/login/kakao/callback' | grep -c SECRETCODE123` → `0`
+  - 브라우저로 `?code=link&state=x`(목데이터)를 열어 계정 연결 확인(`/login/kakao/link`)으로 가고 주소에 `#` 가 남지 않는지 본다.
 
 ## 테스트
 
