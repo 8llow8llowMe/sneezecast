@@ -9,6 +9,7 @@ import { onSessionExpired } from '@/lib/session-expiry'
 import { hasSessionHint, writeSessionHint } from './session-hint'
 import {
   type AuthToken,
+  broadcastMemberRegionChanged,
   clearSession,
   getSessionSnapshot,
   refreshSession,
@@ -19,6 +20,7 @@ import {
   revalidateSession,
   setSession,
   startSession,
+  subscribeMemberRegionChanged,
 } from './session-store'
 import type { SessionMessage } from './session-sync'
 
@@ -591,6 +593,43 @@ describe('setSession · clearSession · 탭 사이 소식', () => {
     expect(getSessionSnapshot()).toEqual({ status: 'guest' })
     expect(sync.posted).toEqual([])
     expect(expired).not.toHaveBeenCalled()
+  })
+
+  it('내 동네를 저장했다고 알리면 값 없이 회원 구분만 보내고, 자기 구독에는 알리지 않는다', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeMemberRegionChanged(listener)
+    setSession(token('access-1'))
+    sync.posted = []
+
+    broadcastMemberRegionChanged('1843956734582784')
+
+    expect(sync.posted).toEqual([{ type: 'region-changed', memberId: '1843956734582784' }])
+    expect(listener).not.toHaveBeenCalled()
+    unsubscribe()
+  })
+
+  it('다른 탭의 region-changed 는 이 탭의 회원과 같을 때만 넘기고, 세션은 바꾸지 않는다', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeMemberRegionChanged(listener)
+
+    // 비회원이면 버린다
+    sync.receive?.({ type: 'region-changed', memberId: '1843956734582784' })
+    expect(listener).not.toHaveBeenCalled()
+
+    setSession(token('access-1'))
+    const before = getSessionSnapshot()
+    sync.posted = []
+    sync.receive?.({ type: 'region-changed', memberId: '다른 회원' })
+    expect(listener).not.toHaveBeenCalled()
+
+    sync.receive?.({ type: 'region-changed', memberId: '1843956734582784' })
+    expect(listener).toHaveBeenCalledOnce()
+    expect(getSessionSnapshot()).toBe(before)
+    expect(sync.posted).toEqual([])
+
+    unsubscribe()
+    sync.receive?.({ type: 'region-changed', memberId: '1843956734582784' })
+    expect(listener).toHaveBeenCalledOnce()
   })
 
   it('스냅숏 · 쿠키에 access token 이 없다', () => {

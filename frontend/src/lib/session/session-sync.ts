@@ -7,6 +7,8 @@ import type { AuthToken } from './session-store'
  * - 재발급은 탭 사이 잠금(`navigator.locks`, `SESSION_LOCK_NAME`)으로 한 번에 하나만 한다
  * - 재발급 · 로그인 결과(`signed-in`)와 로그아웃 · 만료(`signed-out`)를 `BroadcastChannel`(`SESSION_CHANNEL_NAME`)로 알린다.
  *   받은 탭은 재발급 없이 그 토큰을 쓰거나 세션을 비운다
+ * - 같은 통로로 회원 데이터가 바뀐 것도 알린다. 내 동네를 저장하면(`region-changed`, #190) 받은 탭이 내 동네를 다시 읽는다 —
+ *   **값(동네 코드 · 이름)은 싣지 않고** "다시 읽어라" 와 누구의 것인지(`memberId`)만 싣는다
  *
  * 둘 다 없는 환경(오래된 브라우저 · 테스트)에서는 조용히 강등한다 — 잠금 없이 바로 하고, 알리지 않는다. 경합에 진 탭은
  * `AUTH_016` 을 받아 재발급을 한 번 다시 한다(세션 저장소).
@@ -20,6 +22,12 @@ export const SESSION_LOCK_NAME = 'sneezecast:session-reissue'
 export type SessionMessage =
   | { type: 'signed-in'; token: AuthToken }
   | { type: 'signed-out'; reason: 'logout' | 'expired' | 'withdrawn' }
+  /**
+   * 이 회원의 내 동네가 바뀌었다(다시 읽어라). `memberId` 는 받은 탭이 자기 세션의 회원과 같은지 보려고 싣는다 —
+   * 서버가 정한 불투명한 번호라 이름 · 연락처가 아니고, 같은 통로의 `signed-in` 이 이미 토큰째 싣는 값이다(같은 오리진 탭 밖으로
+   * 나가지 않는다). 동네 값은 싣지 않는다 — 받은 탭이 서버에서 다시 읽어 서버 값만 쓴다
+   */
+  | { type: 'region-changed'; memberId: string }
 
 export type SessionChannel = {
   post: (message: SessionMessage) => void
@@ -58,7 +66,10 @@ function isAuthToken(value: unknown): value is AuthToken {
   )
 }
 
-/** 받은 값을 메시지로. 모양이 다르면 null 이다(버린다) */
+/**
+ * 받은 값을 메시지로. 모양이 다르거나 모르는 종류면 null 이다(버린다) — 판이 다른 탭(배포 중 옛 화면 · 새 화면)이 섞여도
+ * 서로 모르는 메시지는 무시한다
+ */
 export function parseSessionMessage(data: unknown): SessionMessage | null {
   if (!isRecord(data)) return null
   if (data.type === 'signed-in' && isAuthToken(data.token)) {
@@ -70,6 +81,9 @@ export function parseSessionMessage(data: unknown): SessionMessage | null {
     SIGNED_OUT_REASONS.includes(data.reason)
   ) {
     return { type: 'signed-out', reason: data.reason as 'logout' | 'expired' | 'withdrawn' }
+  }
+  if (data.type === 'region-changed' && typeof data.memberId === 'string' && data.memberId !== '') {
+    return { type: 'region-changed', memberId: data.memberId }
   }
   return null
 }

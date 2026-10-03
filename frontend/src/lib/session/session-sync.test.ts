@@ -52,7 +52,7 @@ function fakeChannels() {
 }
 
 describe('parseSessionMessage', () => {
-  it('모양이 맞는 signed-in · signed-out 만 받는다', () => {
+  it('모양이 맞는 signed-in · signed-out · region-changed 만 받는다', () => {
     expect(parseSessionMessage({ type: 'signed-in', token: TOKEN })).toEqual({
       type: 'signed-in',
       token: TOKEN,
@@ -61,6 +61,21 @@ describe('parseSessionMessage', () => {
       type: 'signed-out',
       reason: 'logout',
     })
+    expect(parseSessionMessage({ type: 'region-changed', memberId: '1843956734582784' })).toEqual({
+      type: 'region-changed',
+      memberId: '1843956734582784',
+    })
+  })
+
+  it('region-changed 는 회원 구분만 남긴다 — 함께 실린 값은 버린다', () => {
+    expect(
+      parseSessionMessage({
+        type: 'region-changed',
+        memberId: '1',
+        code: '11680640',
+        name: '역삼1동',
+      }),
+    ).toEqual({ type: 'region-changed', memberId: '1' })
   })
 
   it.each([
@@ -71,7 +86,11 @@ describe('parseSessionMessage', () => {
     { type: 'signed-in', token: { ...TOKEN, role: 'ROOT' } },
     { type: 'signed-in', token: { ...TOKEN, pendingConsents: [1] } },
     { type: 'signed-out', reason: 'remote' },
+    { type: 'region-changed' },
+    { type: 'region-changed', memberId: '' },
+    { type: 'region-changed', memberId: 1843956734582784 },
     { type: 'other' },
+    { type: 'other', memberId: '1' },
   ])('모양이 다르면 버린다 %#', (data) => {
     expect(parseSessionMessage(data)).toBeNull()
   })
