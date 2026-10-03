@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -120,7 +120,7 @@ describe('실데이터 홈 보고 버튼 — 이번 주 보고', () => {
     renderHome('/?report=start')
     await flush()
     expect(screen.getAllByRole('button', { name: REPORT })).toHaveLength(2)
-    expect(screen.getByText('이번 주 보고를 확인하고 있어요.')).toBeTruthy()
+    expect(await screen.findByText('이번 주 보고를 확인하고 있어요.')).toBeTruthy()
     expect(screen.getByRole('button', { name: '증상 없었어요' })).toHaveProperty('disabled', true)
 
     server.reply(CURRENT, okResponse(SENT_NONE))
@@ -142,7 +142,7 @@ describe('실데이터 홈 보고 버튼 — 이번 주 보고', () => {
     renderHome('/?report=start')
 
     expect(screen.getAllByRole('button', { name: REPORT })).toHaveLength(2)
-    expect(screen.getByText(/이번 주에 보낸 보고를 불러오지 못했어요/)).toBeTruthy()
+    expect(await screen.findByText(/이번 주에 보낸 보고를 불러오지 못했어요/)).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: '다시 불러오기' }))
     await flush()
@@ -178,7 +178,7 @@ describe('실데이터 새로고침한 보고 완료 (?report=done)', () => {
     server.reply(REGION, okResponse(YEOKSAM1))
     // 이번 주 보고를 읽는 동안은 시작 단계(확인 중)로 보인다 — 주소는 그대로다
     refresh()
-    expect(screen.getByText('이번 주 보고를 확인하고 있어요.')).toBeTruthy()
+    expect(await screen.findByText('이번 주 보고를 확인하고 있어요.')).toBeTruthy()
 
     server.reply(CURRENT, okResponse(SENT_NONE))
     await flush()
@@ -209,7 +209,7 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
     const user = userEvent.setup()
     const { refresh } = renderHome('/?report=start')
 
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
     await flush()
     expect(sentBody(PUT)).toEqual({ districtCode: '11680640', symptomGroups: [] })
 
@@ -225,7 +225,7 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
     const user = userEvent.setup()
     const { refresh } = renderHome('/?report=start')
 
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
     await flush()
     server.reply(
       PUT,
@@ -247,7 +247,7 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
     await signedIn()
     const user = userEvent.setup()
     const { refresh } = renderHome('/?report=start')
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
     await flush()
     server.reply(PUT, okResponse(SENT_NONE))
     await flush()
@@ -277,7 +277,7 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
     await signedIn()
     const user = userEvent.setup()
     const { refresh } = renderHome('/?report=start')
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
     await flush()
     server.reply(PUT, okResponse(SENT_NONE))
     await flush()
@@ -308,7 +308,7 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
     const user = userEvent.setup()
     const { refresh } = renderHome('/?report=start')
 
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
     await flush()
     server.reply(PUT, errorResponse('SECURITY_006', 403))
     await flush()
@@ -325,7 +325,8 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
 
     expect(getSessionSnapshot()).toMatchObject({ summary: { reportWritable: false } })
     expect(window.location.search).toBe('?report=health-consent')
-    expect(dialogTitle()).toBe('증상 보고에 동의해 주세요')
+    // 동의 시트는 처음 열 때 받는다(지연 로드, #184)
+    await waitFor(() => expect(dialogTitle()).toBe('증상 보고에 동의해 주세요'))
   })
 
   it('폐지된 동네(REPORT_003)면 내 동네를 다시 읽고, 폐지로 확인되면 동네 다시 고르기로 보낸다', async () => {
@@ -333,7 +334,7 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
     const user = userEvent.setup()
     renderHome('/?report=start')
 
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
     await flush()
     server.reply(PUT, errorResponse('REPORT_003', 400))
     await flush()
@@ -353,7 +354,7 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
     const user = userEvent.setup()
     renderHome('/?report=start')
 
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
     await flush()
     server.reply(PUT, errorResponse('REPORT_001', 409))
     await flush()
@@ -372,7 +373,7 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
     const user = userEvent.setup()
     renderHome('/?report=start')
 
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
     await flush()
 
     expect(server.requests()).not.toContain(PUT)
@@ -392,7 +393,7 @@ describe('실데이터 보고 흐름 — 보내기 · 되돌리기 · 오류', (
     const user = userEvent.setup()
     renderHome('/?report=start')
 
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
 
     expect(server.requests()).not.toContain(PUT)
     expect(

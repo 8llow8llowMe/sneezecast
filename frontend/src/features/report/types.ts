@@ -17,6 +17,13 @@ export type SubmittedReport = {
 }
 
 /**
+ * 보고 흐름을 여는 주소 쿼리 (docs/design/SCREENS.md S05 `/?report=start`).
+ * 보고 흐름(`report-flow.tsx`)이 아니라 이 파일에 둔다 — 쿼리 이름만 쓰는 화면(지도 · 공식 정보 · 내 정보의 보고 링크)이
+ * 보고 흐름 · 공유 시트 코드를 첫 로드에 끌어오지 않게 한다(#184)
+ */
+export const REPORT_PARAM = 'report'
+
+/**
  * 보고 흐름 단계. 주소 `?report=` 값과 같다.
  * `share` 는 완료 화면 위에 연 함께 채우기 공유 시트다(#151) — 완료 다음 단계라 같은 쿼리에 둔다(`report-flow.tsx`)
  */

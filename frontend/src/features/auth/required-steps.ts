@@ -146,7 +146,7 @@ export const INTENT_PARAM = 'intent'
 /** 로그인하려던 까닭. 지금은 보고뿐이다 */
 export type LoginIntent = 'report'
 
-/** 홈의 보고 진입 쿼리(`features/report/report-flow.tsx` 의 `REPORT_PARAM` 과 같다 — 테스트가 맞춰 본다). 첫 진입 화면이 보고 흐름을 끌어오지 않게 다시 적는다 */
+/** 홈의 보고 진입 쿼리(`features/report/types.ts` 의 `REPORT_PARAM` 과 같다 — 테스트가 맞춰 본다). 첫 진입 화면이 보고 흐름을 끌어오지 않게 다시 적는다 */
 export const REPORT_ENTRY_PARAM = 'report'
 /** 로그인 · 조건 화면을 마친 뒤 열 보고 진입 값. 미동의 회원이면 홈이 동의 시트로 고친다(`guardReportEntry`) */
 export const REPORT_ENTRY_VALUE: ReportStep = 'start'

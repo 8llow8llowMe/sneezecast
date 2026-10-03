@@ -132,12 +132,13 @@ describe('HomeScreen 판단 기준', () => {
     expect(pushState).toHaveBeenCalledWith({ sneezecastModalDepth: 1 }, '', '?mock=high&explain=1')
   })
 
-  it('?explain=1 이면 판단 기준이 열린다', () => {
+  it('?explain=1 이면 판단 기준이 열린다', async () => {
     search = 'explain=1'
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
+    // 판단 기준은 처음 열 때 받는다(지연 로드, #184)
+    expect(await screen.findByRole('dialog', { name: '이렇게 판단했어요' })).toBeDefined()
     expect(explainDialog()?.open).toBe(true)
-    expect(screen.getByRole('dialog', { name: '이렇게 판단했어요' })).toBeDefined()
   })
 
   it('주소로 바로 열린 판단 기준을 닫으면 뒤로 가지 않고 주소에서 explain 만 지운다', async () => {
@@ -146,7 +147,7 @@ describe('HomeScreen 판단 기준', () => {
     const go = vi.spyOn(window.history, 'go')
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
-    await userEvent.setup().click(screen.getByRole('button', { name: '확인' }))
+    await userEvent.setup().click(await screen.findByRole('button', { name: '확인' }))
     expect(replaceState).toHaveBeenCalledWith({ sneezecastModalDepth: 0 }, '', '?mock=high')
     expect(go).not.toHaveBeenCalled()
   })
@@ -160,7 +161,7 @@ describe('HomeScreen 판단 기준', () => {
     // 테스트의 useSearchParams 는 주소를 따라가지 않으므로, 열린 뒤 다시 그린 상태를 흉내 낸다
     search = 'explain=1'
     rerender(<HomeScreen week={{ ...HOME_MOCKS.high }} />)
-    await user.click(screen.getByRole('button', { name: '확인' }))
+    await user.click(await screen.findByRole('button', { name: '확인' }))
 
     expect(go).toHaveBeenCalledWith(-1)
   })
@@ -181,6 +182,11 @@ function dialogTitled(title: string) {
       dialog.querySelector('h2')?.textContent?.includes(title),
     ) ?? null
   )
+}
+
+/** 시트가 열리기를 기다린다. 홈의 시트는 처음 열 때 받는다(지연 로드, #184) */
+async function waitForOpenDialog(title: string) {
+  await waitFor(() => expect(dialogTitled(title)?.open).toBe(true))
 }
 
 const REPORT_BUTTONS = {
@@ -254,7 +260,11 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
 
     const buttons = screen.getAllByRole('button', { name: REPORT_BUTTONS.member })
     expect(buttons).toHaveLength(2)
-    for (const button of buttons) await user.click(button)
+    // 시트 쿼리가 이미 있으면 다시 열지 않으므로 버튼마다 주소를 되돌린다
+    for (const button of buttons) {
+      await user.click(button)
+      window.history.replaceState(null, '', '/')
+    }
     expect(pushState).toHaveBeenNthCalledWith(1, { sneezecastModalDepth: 1 }, '', url)
     expect(pushState).toHaveBeenCalledTimes(2)
   })
@@ -274,11 +284,25 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     )
   })
 
-  it('?report=login 이면 비회원에게 로그인 안내 시트가 열리고 보고 흐름은 없다', () => {
+  it('보고 버튼으로 연 시트는 닫은 뒤에도 남는다 — 닫힘 · 포커스 되돌림을 Modal 이 맡는다', async () => {
+    search = ''
+    const { rerender } = render(<HomeScreen week={HOME_MOCKS.high} />)
+    await userEvent.setup().click(screen.getAllByRole('button', { name: REPORT_BUTTONS.guest })[0]!)
+    // 테스트의 useSearchParams 는 주소를 따라가지 않으므로, 열린 뒤 · 닫힌 뒤 다시 그린 상태를 흉내 낸다
+    search = 'report=login'
+    rerender(<HomeScreen week={{ ...HOME_MOCKS.high }} />)
+    await waitForOpenDialog('보고는 회원만 할 수 있어요')
+
+    search = ''
+    rerender(<HomeScreen week={{ ...HOME_MOCKS.high }} />)
+    expect(dialogTitled('보고는 회원만 할 수 있어요')?.open).toBe(false)
+  })
+
+  it('?report=login 이면 비회원에게 로그인 안내 시트가 열리고 보고 흐름은 없다', async () => {
     search = 'report=login'
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
-    expect(dialogTitled('보고는 회원만 할 수 있어요')?.open).toBe(true)
+    await waitForOpenDialog('보고는 회원만 할 수 있어요')
     expect(dialogTitled('건강은 어땠나요?')).toBeNull()
   })
 
@@ -299,14 +323,12 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
 
       // 첫 커밋의 effect 안에서 바로 바꾸면 Next 가 아직 history 를 감싸지 않아 모른다. 다음 틱으로 미뤘는지 본다
       expect(replaceState).not.toHaveBeenCalled()
-      // 주소를 정리하기 전에도 맞는 시트가 바로 열려 있다
-      expect(
-        dialogTitled(
-          expected.includes('health-consent')
-            ? '증상 보고에 동의해 주세요'
-            : '보고는 회원만 할 수 있어요',
-        )?.open,
-      ).toBe(true)
+      // 열 시트는 바뀔 값으로 미리 정한다 — 주소 정리를 기다리지 않고 맞는 시트가 열린다
+      await waitForOpenDialog(
+        expected.includes('health-consent')
+          ? '증상 보고에 동의해 주세요'
+          : '보고는 회원만 할 수 있어요',
+      )
       await waitFor(() =>
         expect(replaceState).toHaveBeenCalledWith({ sneezecastModalDepth: 0 }, '', expected),
       )
@@ -315,12 +337,12 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     },
   )
 
-  it('동의한 회원은 ?report=start 로 바로 보고 흐름이 열린다', () => {
+  it('동의한 회원은 ?report=start 로 바로 보고 흐름이 열린다', async () => {
     search = 'mock-auth=member&report=start'
     const replaceState = vi.spyOn(window.history, 'replaceState')
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
-    expect(dialogTitled('건강은 어땠나요?')?.open).toBe(true)
+    await waitForOpenDialog('건강은 어땠나요?')
     expect(replaceState).not.toHaveBeenCalled()
   })
 
@@ -329,7 +351,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     const replaceState = vi.spyOn(window.history, 'replaceState')
     render(<HomeScreen week={HOME_MOCKS.high} regionCode="1111051500" />)
 
-    await userEvent.setup().click(screen.getByRole('button', { name: '닫기' }))
+    await userEvent.setup().click(await screen.findByRole('button', { name: '닫기' }))
     expect(replaceState).toHaveBeenLastCalledWith(
       { sneezecastModalDepth: 0 },
       '',
@@ -341,7 +363,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     search = 'region=11680640&report=login'
     render(<HomeScreen week={HOME_MOCKS.high} regionCode="11680640" />)
 
-    await userEvent.setup().click(screen.getByRole('button', { name: '이메일로 시작하기' }))
+    await userEvent.setup().click(await screen.findByRole('button', { name: '이메일로 시작하기' }))
     expect(router.push).toHaveBeenCalledWith('/login/email?region=11680640&intent=report')
   })
 
@@ -352,7 +374,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     const replaceState = vi.spyOn(window.history, 'replaceState')
     render(<HomeScreen week={HOME_MOCKS.high} regionCode="11680640" />)
 
-    expect(dialogTitled('증상 보고에 동의해 주세요')?.open).toBe(true)
+    await waitForOpenDialog('증상 보고에 동의해 주세요')
     expect(dialogTitled('건강은 어땠나요?')).toBeNull()
     await waitFor(() =>
       expect(replaceState).toHaveBeenCalledWith(
@@ -374,7 +396,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     const user = userEvent.setup()
     render(<HomeScreen week={HOME_MOCKS.high} regionCode="1111051500" />)
 
-    expect(dialogTitled('증상 보고에 동의해 주세요')?.open).toBe(true)
+    await waitForOpenDialog('증상 보고에 동의해 주세요')
     await user.click(
       screen.getByRole('checkbox', { name: /건강·증상 정보\(민감정보\) 처리에 동의해요/ }),
     )
@@ -399,7 +421,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
     await user.click(
-      screen.getByRole('checkbox', { name: /건강·증상 정보\(민감정보\) 처리에 동의해요/ }),
+      await screen.findByRole('checkbox', { name: /건강·증상 정보\(민감정보\) 처리에 동의해요/ }),
     )
     await user.click(screen.getByRole('button', { name: '동의하고 보고하기' }))
 
@@ -414,7 +436,7 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     const replaceState = vi.spyOn(window.history, 'replaceState')
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
-    await userEvent.setup().click(screen.getByRole('button', { name: '나중에 할게요' }))
+    await userEvent.setup().click(await screen.findByRole('button', { name: '나중에 할게요' }))
     expect(replaceState).toHaveBeenLastCalledWith(
       { sneezecastModalDepth: 0 },
       '',
@@ -480,8 +502,10 @@ describe('HomeScreen 보낸 뒤 보고 버튼 (Flow 의 reported)', () => {
     const user = userEvent.setup()
     render(<HomeScreen week={HOME_MOCKS.high} />)
 
+    // 시트 쿼리가 이미 있으면 다시 열지 않으므로 버튼마다 주소를 되돌린다
     for (const button of screen.getAllByRole('button', { name: REPORT_BUTTONS.reported })) {
       await user.click(button)
+      window.history.replaceState(null, '', '/?mock-auth=member')
     }
     expect(pushState).toHaveBeenNthCalledWith(
       1,

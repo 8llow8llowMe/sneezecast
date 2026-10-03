@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { REPORT_PARAM } from '@/features/report/report-flow'
+import { REPORT_PARAM } from '@/features/report/types'
 
 import {
   afterLoginHref,

@@ -45,15 +45,23 @@ export function reportDone(auth: MockAuthState, submitted: boolean): boolean {
   return auth === 'member' && submitted
 }
 
+/** `?report=` 값이 홈이 아는 보고 진입(시트 · 보고 흐름 단계)인지. 모르는 값이면 아무 시트도 열리지 않는다 */
+export function isReportEntryValue(value: string | null): boolean {
+  return (
+    value === REPORT_GATE.login ||
+    value === REPORT_GATE.healthConsent ||
+    REPORT_STEPS.some((step) => step === value)
+  )
+}
+
 /**
  * 주소의 `?report=` 값이 지금 회원 상태에 맞지 않으면 바꿀 값을 돌려준다. 맞으면 null 이다.
  * 주소로 바로 들어온 비회원 · 미동의 회원에게 보고 흐름을 열지 않고 맞는 시트로 바꾼다.
  * 모르는 값은 그대로 둔다(아무 것도 열리지 않는다).
  */
 export function guardReportEntry(value: string | null, auth: MockAuthState): string | null {
-  const isGate = value === REPORT_GATE.login || value === REPORT_GATE.healthConsent
+  if (!isReportEntryValue(value)) return null
   const isStep = REPORT_STEPS.some((step) => step === value)
-  if (!isGate && !isStep) return null
   const entry = reportEntryFor(auth)
   // 동의한 회원은 보고 흐름의 어느 단계든 그대로 둔다. 시트 값이면 보고 시작으로 바꾼다
   if (auth === 'member') return isStep ? null : entry

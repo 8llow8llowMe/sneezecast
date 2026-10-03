@@ -25,6 +25,7 @@ import { buildShareLink } from './share-link'
 import { ShareSheet } from './share-sheet'
 import { summarizeAnswer, SYMPTOM_OPTIONS, toggleSymptom } from './symptoms'
 import {
+  REPORT_PARAM,
   REPORT_STEPS,
   type ReportAnswer,
   type ReportStep,
@@ -33,9 +34,6 @@ import {
   type SubmittedReport,
 } from './types'
 import { useSubmittedReport, useSubmittedReportStatus } from './use-submitted-report'
-
-/** 보고 흐름을 여는 주소 (docs/design/SCREENS.md S05 `/?report=start`) */
-export const REPORT_PARAM = 'report'
 
 export type ReportFlowProps = {
   /** 이번 주 정보. 동네는 **보고 동네(회원의 내 동네)** 다 — 둘러보는 동네가 아니다 */

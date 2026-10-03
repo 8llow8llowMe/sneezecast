@@ -2,7 +2,7 @@ import { type ReactNode, Suspense } from 'react'
 import type { Metadata, Viewport } from 'next'
 import { connection } from 'next/server'
 
-import { DataSourceToggle } from '@/components/data-source-toggle'
+import { LazyDataSourceToggle } from '@/components/lazy-data-source-toggle'
 import { SessionBootstrap } from '@/features/auth/session-bootstrap'
 import { SessionExpiryWatcher } from '@/features/auth/session-expiry-watcher'
 import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME } from '@/lib/app-info'
@@ -64,8 +64,9 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           </Suspense>
         </NavTrailProvider>
         {/* 데이터 출처 토글(개발용). 전환할 수 있는 사이트(dev 웹 · 로컬)에서만 그린다. body 마지막에 두어 Tab 첫 포커스가 되지 않게 한다.
-            z-index 를 주지 않는다 — z-index 가 있는 시트 · 버튼 묶음 · 가림막은 DOM 순서와 무관하게 위에 온다(components/data-source-toggle.tsx) */}
-        {isDataSourceSwitchable() ? <DataSourceToggle /> : null}
+            z-index 를 주지 않는다 — z-index 가 있는 시트 · 버튼 묶음 · 가림막은 DOM 순서와 무관하게 위에 온다(components/data-source-toggle.tsx).
+            토글 코드는 그릴 때만 따로 받는다 — 그리지 않는 운영 빌드의 첫 로드에 들지 않는다(components/lazy-data-source-toggle.tsx) */}
+        {isDataSourceSwitchable() ? <LazyDataSourceToggle /> : null}
       </body>
     </html>
   )
