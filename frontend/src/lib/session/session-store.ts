@@ -319,9 +319,42 @@ export async function revalidateSession(): Promise<void> {
   if (getSessionSnapshot().status === 'restoring') publish(GUEST)
 }
 
+const regionChangeListeners = new Set<() => void>()
+
+/**
+ * 이 탭의 회원이 내 동네를 저장했다고 다른 탭에 알린다(#190). 실데이터 `saveRegion` 이 성공하면 부른다. 값은 싣지 않는다 —
+ * 받은 탭이 서버에서 다시 읽는다(`session-sync.ts` 의 `region-changed`). 자기가 보낸 알림은 자기에게 오지 않는다(이 탭은 이미
+ * 응답을 넣었다). 통로가 없으면(시작 전 · `BroadcastChannel` 없음) 아무 일도 없다
+ */
+export function broadcastMemberRegionChanged(memberId: string): void {
+  channel?.post({ type: 'region-changed', memberId })
+}
+
+/**
+ * 다른 탭이 **이 탭의 회원과 같은 회원**의 내 동네를 바꿨다는 알림을 받는다(다른 회원 · 비회원이면 버린다).
+ * 회원 정보 저장소(`features/auth/member-info.ts`)가 듣고 다시 읽는다. 돌려준 함수로 그만 받는다
+ */
+export function subscribeMemberRegionChanged(listener: () => void): () => void {
+  regionChangeListeners.add(listener)
+  return () => {
+    regionChangeListeners.delete(listener)
+  }
+}
+
 function receive(message: SessionMessage): void {
-  if (message.type === 'signed-in') setSession(message.token, { broadcast: false })
-  else clearSession('remote', { broadcast: false })
+  switch (message.type) {
+    case 'signed-in':
+      setSession(message.token, { broadcast: false })
+      return
+    case 'signed-out':
+      clearSession('remote', { broadcast: false })
+      return
+    case 'region-changed':
+      // 다른 회원의 소식이면(이 탭이 아직 그 회원의 signed-in 을 받기 전 등) 이 탭의 회원 데이터와 무관하다
+      if (snapshot.status === 'member' && snapshot.summary.memberId === message.memberId) {
+        regionChangeListeners.forEach((listener) => listener())
+      }
+  }
 }
 
 /**
