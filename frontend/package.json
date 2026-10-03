@@ -17,7 +17,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "qa:verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "qa:verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "perf:lighthouse": "node scripts/lighthouse-preflight.mjs && lhci autorun --config=lighthouserc.yml && node scripts/lighthouse-summary.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -27,6 +28,7 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@lhci/cli": "^0.15.1",
     "@next/eslint-plugin-next": "^16.3.8",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.2",

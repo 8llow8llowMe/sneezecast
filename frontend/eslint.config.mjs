@@ -62,8 +62,8 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        // 루트 설정 파일들은 tsconfig include 밖이므로 기본 프로젝트로 허용한다
-        projectService: { allowDefaultProject: ['*.mjs', '*.mts'] },
+        // 루트 설정 파일들과 도구 스크립트(scripts/*.mjs)는 tsconfig include 밖이므로 기본 프로젝트로 허용한다
+        projectService: { allowDefaultProject: ['*.mjs', '*.mts', 'scripts/*.mjs'] },
         tsconfigRootDir: import.meta.dirname,
       },
     },
