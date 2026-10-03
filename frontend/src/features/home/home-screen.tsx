@@ -9,8 +9,6 @@ import { OfflineNotice } from '@/components/offline-notice'
 import { SectionBand } from '@/components/section'
 import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
-import { HealthConsentSheet } from '@/features/auth/health-consent-sheet'
-import { LoginSheet } from '@/features/auth/login-sheet'
 import { useAuthSettled } from '@/features/auth/use-auth'
 import { MOCK_AUTH_PARAM, useMockAuth } from '@/features/auth/use-mock-auth'
 import { takeHomeNotice } from '@/features/me/leave-notice'
@@ -18,18 +16,26 @@ import { useRequiredStepsGate } from '@/features/me/member-gate'
 import { useMemberRegion } from '@/features/me/member-region'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
-import { REPORT_PARAM, ReportFlow } from '@/features/report/report-flow'
+import { REPORT_PARAM, REPORT_STEPS } from '@/features/report/types'
 import { useSubmittedReport } from '@/features/report/use-submitted-report'
+import { preloadWhenIdle, useLazyComponent } from '@/lib/lazy-component'
 import { useModalParam } from '@/lib/use-modal-param'
 import { useOnline } from '@/lib/use-online'
 
-import { ExplainSheet } from './explain-sheet'
+import {
+  explainSheet,
+  healthConsentSheet,
+  HOME_SHEETS,
+  loginSheet,
+  reportFlow,
+} from './home-sheets'
 import { MapPlaceholder } from './map-placeholder'
 import { NoticeSection } from './notice-section'
 import { officialHref, OfficialPanel, OfficialRow } from './official'
 import { HOME_TOP_NOTICE_CLASS, PushInappNotice } from './push-inapp-notice'
 import {
   guardReportEntry,
+  isReportEntryValue,
   REPORT_GATE,
   reportButtonLabel,
   reportDone,
@@ -38,7 +44,10 @@ import {
 import { StatusCard } from './status-card'
 import { SymptomTrends } from './symptom-trends'
 import type { HomeWeekly } from './types'
-import { useExplainParam } from './use-explain-param'
+import { EXPLAIN_PARAM, useExplainParam } from './use-explain-param'
+
+/** 지연 로드한 시트의 청크를 받지 못했을 때 알림 — 화면을 연 뒤 연결이 끊겼거나, 배포 뒤 오래 열어 둔 탭이라 청크 이름(해시)이 바뀌었다 */
+const SHEET_LOAD_FAILED_MESSAGE = '화면을 불러오지 못했어요. 연결을 확인하고 새로고침해 주세요.'
 
 /**
  * S03 홈. 폭에 따라 구성이 바뀐다 (시안 Home · Tablet · Desktop).
@@ -106,7 +115,16 @@ export function HomeScreen({
   const reportLabel = reportButtonLabel(auth, submitted)
   // 재동의 · 동네 다시 고르기로 보낼 곳. 있으면 아래 보고 진입 정리(원시 history)를 하지 않는다 — 정리가 그 이동을 버리게 한다
   const requiredTarget = useRequiredStepsGate(HOME_PATH)
-  const openReport = () => report.open(reportEntryFor(auth))
+  // 시트 쿼리가 이미 있으면(같은 시트 · 다른 시트, 청크를 받는 중 포함) 새로 열지 않는다 — 시트가 뜬 뒤에는 `showModal()` 이
+  // 뒤 화면을 막지만, 받는 동안에는 홈이 눌려 같은 기록이 두 번 쌓이거나 시트 둘이 겹친다. 누른 순간의 주소로 본다
+  // 자료 부족이면 판단 기준 시트를 그리지 않으므로 `?explain=1` 이 남아 있어도 열린 시트로 치지 않는다(보고 버튼이 막히지 않게)
+  const explainRenderable = week.status !== 'insufficient'
+  const openReport = () => {
+    if (!modalQueryOpen(explainRenderable)) report.open(reportEntryFor(auth))
+  }
+  const openExplain = () => {
+    if (!modalQueryOpen(explainRenderable)) explain.openExplain()
+  }
   const navSearch = regionCode ? new URLSearchParams({ region: regionCode }).toString() : undefined
 
   // 주소로 바로 들어온 ?report= 가 지금 상태에 맞지 않으면 기록을 쌓지 않고 맞는 시트로 바꾼다.
@@ -130,6 +148,36 @@ export function HomeScreen({
     const timer = setTimeout(() => replaceReport(fixed), 0)
     return () => clearTimeout(timer)
   }, [authSettled, reportValue, auth, replaceReport, requiredTarget])
+
+  // 지연 로드한 시트는 열 때 받고, 받은 뒤에는 닫혀도 그린다(`useLazyComponent`).
+  // 보고 흐름은 스스로 주소의 단계(`resolveStep`)로 열리므로 같은 조건으로 본다
+  const loginOpen = reportEntry === REPORT_GATE.login
+  const consentOpen = reportEntry === REPORT_GATE.healthConsent
+  const reportFlowOpen = auth === 'member' && REPORT_STEPS.some((step) => step === reportValue)
+  const sheetLoadFailed = (close: () => void) => () => {
+    close()
+    show({ message: SHEET_LOAD_FAILED_MESSAGE })
+  }
+  const LoginSheet = useLazyComponent(loginSheet, loginOpen, sheetLoadFailed(report.close))
+  const HealthConsentSheet = useLazyComponent(
+    healthConsentSheet,
+    consentOpen,
+    sheetLoadFailed(report.close),
+  )
+  const ReportFlow = useLazyComponent(reportFlow, reportFlowOpen, sheetLoadFailed(report.close))
+  // 자료 부족이면 그리지 않으므로(아래) 받지도 않는다
+  const ExplainSheet = useLazyComponent(
+    explainSheet,
+    explain.open && week.status !== 'insufficient',
+    sheetLoadFailed(explain.closeExplain),
+  )
+  // 동의 시트 다음은 보고 흐름이다. 동의하는 동안 받아 두어 두 시트가 같은 그림에서 바뀌게 한다(사이에 홈이 비치지 않게).
+  // 받지 못해도 여기서는 알리지 않는다 — 보고 흐름을 열 때 다시 받아 보고 알린다
+  useEffect(() => {
+    if (consentOpen) reportFlow.load().catch(() => undefined)
+  }, [consentOpen])
+  // 하이드레이션 뒤 유휴 시간에 시트 넷을 미리 받는다. 대개 열기 전에 받아 두어 바로 그린다(받는 동안 눌리는 틈이 줄어든다)
+  useEffect(() => preloadWhenIdle(HOME_SHEETS), [])
 
   // 내 정보에서 건강정보 동의를 철회하고 왔으면 알림을 한 번 띄운다(`features/me/leave-notice.ts`)
   useEffect(() => {
@@ -177,7 +225,7 @@ export function HomeScreen({
             </div>
           )}
 
-          <StatusCard week={week} onExplain={explain.openExplain} />
+          <StatusCard week={week} onExplain={openExplain} />
 
           <SectionBand className="tablet:hidden" />
           <div className="tablet:hidden">
@@ -225,23 +273,21 @@ export function HomeScreen({
       </div>
 
       {/* reportEntry 는 회원 상태에 맞춘 값이라 login 은 비회원, health-consent 는 미동의 회원에게만 나온다 */}
-      <LoginSheet
-        open={reportEntry === REPORT_GATE.login}
-        onClose={report.close}
-        regionCode={regionCode}
-      />
+      {LoginSheet && <LoginSheet open={loginOpen} onClose={report.close} regionCode={regionCode} />}
 
-      <HealthConsentSheet
-        open={reportEntry === REPORT_GATE.healthConsent}
-        onClose={report.close}
-        // 동의 시트를 보고 시작으로 바꾼다(replace) — 뒤로 가기로 동의 시트에 돌아오지 않고, 닫으면 홈이다.
-        // QA 덮어쓰기(?mock-auth=member-no-consent)가 남으면 동의한 뒤에도 미동의로 보여 함께 지운다.
-        // 덮어쓰기가 없으면 동의 순간 목 세션이 member 가 되어 시트가 먼저 닫힐 수 있다 — 그때는 위 guard 가 같은 값으로 바꾼다
-        onAgreed={() => report.replace('start', { remove: [MOCK_AUTH_PARAM] })}
-      />
+      {HealthConsentSheet && (
+        <HealthConsentSheet
+          open={consentOpen}
+          onClose={report.close}
+          // 동의 시트를 보고 시작으로 바꾼다(replace) — 뒤로 가기로 동의 시트에 돌아오지 않고, 닫으면 홈이다.
+          // QA 덮어쓰기(?mock-auth=member-no-consent)가 남으면 동의한 뒤에도 미동의로 보여 함께 지운다.
+          // 덮어쓰기가 없으면 동의 순간 목 세션이 member 가 되어 시트가 먼저 닫힐 수 있다 — 그때는 위 guard 가 같은 값으로 바꾼다
+          onAgreed={() => report.replace('start', { remove: [MOCK_AUTH_PARAM] })}
+        />
+      )}
 
       {/* 보고 흐름과 보낸 보고는 동의한 회원만 쓴다 */}
-      {auth === 'member' && (
+      {auth === 'member' && ReportFlow && (
         <ReportFlow
           week={reportWeek}
           regionCode={regionCode}
@@ -251,7 +297,7 @@ export function HomeScreen({
       )}
 
       {/* 자료 부족이면 보일 숫자가 없어 ?explain=1 로 들어와도 열지 않는다 */}
-      {week.status !== 'insufficient' && (
+      {week.status !== 'insufficient' && ExplainSheet && (
         <ExplainSheet week={week} open={explain.open} onClose={explain.closeExplain} />
       )}
 
@@ -261,5 +307,17 @@ export function HomeScreen({
         className="fixed inset-x-0 bottom-40 px-page-mobile tablet:bottom-20 tablet:mx-auto tablet:w-dialog-tablet tablet:px-0 desktop:bottom-8"
       />
     </div>
+  )
+}
+
+/**
+ * 지금 주소에 홈 시트 쿼리(보고 진입 · 판단 기준)가 있는지. 렌더 값이 아니라 누른 순간의 주소를 본다 — 연달아 누르면 다음 그림 전에 두 번째가 온다.
+ * 판단 기준은 그릴 수 있을 때(`explainRenderable`, 자료 부족이 아님)만 센다 — 그리지 않는 시트의 쿼리가 다른 시트를 막지 않게
+ */
+function modalQueryOpen(explainRenderable: boolean): boolean {
+  const params = new URLSearchParams(window.location.search)
+  return (
+    isReportEntryValue(params.get(REPORT_PARAM)) ||
+    (explainRenderable && params.get(EXPLAIN_PARAM) === '1')
   )
 }

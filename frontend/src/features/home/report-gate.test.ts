@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { guardReportEntry, reportButtonLabel, reportEntryFor } from './report-gate'
+import {
+  guardReportEntry,
+  isReportEntryValue,
+  reportButtonLabel,
+  reportEntryFor,
+} from './report-gate'
 
 describe('reportEntryFor', () => {
   it('비회원은 로그인 안내, 미동의 회원은 동의 시트, 동의한 회원은 보고 시작을 연다', () => {
@@ -61,5 +66,18 @@ describe('guardReportEntry', () => {
     ['unknown', 'guest'],
   ] as const)('?report=%s · %s 는 그대로 둔다', (value, auth) => {
     expect(guardReportEntry(value, auth)).toBeNull()
+  })
+})
+
+describe('isReportEntryValue', () => {
+  it.each(['login', 'health-consent', 'start', 'symptom', 'confirm', 'done', 'share'])(
+    '%s 는 홈이 아는 보고 진입이다',
+    (value) => {
+      expect(isReportEntryValue(value)).toBe(true)
+    },
+  )
+
+  it.each([null, '', 'unknown', 'Login'])('%s 는 보고 진입이 아니다', (value) => {
+    expect(isReportEntryValue(value)).toBe(false)
   })
 })

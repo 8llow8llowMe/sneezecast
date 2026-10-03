@@ -3,7 +3,7 @@ import { loginHref } from '@/features/auth/login-return'
 import { MOCK_AUTH_PARAM, MOCK_PROVIDER_PARAM } from '@/features/auth/use-mock-auth'
 import { reportEntryFor } from '@/features/home/report-gate'
 import { HOME_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
-import { REPORT_PARAM } from '@/features/report/report-flow'
+import { REPORT_PARAM } from '@/features/report/types'
 
 /** 내 정보(S10)와 그 아래 계정 화면 주소 (docs/design/SCREENS.md) */
 export const ME_PATH = '/me'

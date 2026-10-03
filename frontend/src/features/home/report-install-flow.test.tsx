@@ -56,7 +56,7 @@ describe('보고 완료 → 홈 화면 추가 안내 → 닫기', () => {
     const view = render(app(<HomeScreen week={HOME_MOCKS.normal} />))
 
     // 1) 증상 없음으로 보내면 완료 단계(기록 없이 바꿈)
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
     view.rerender(app(<HomeScreen week={HOME_MOCKS.normal} />))
     expect(window.location.search).toBe(`?report=done&${QA}`)
     expect(openDialogTitle()).toBe('이번 주 보고를 받았어요')
@@ -92,7 +92,7 @@ describe('보고 완료 → 홈 화면 추가 안내 → 닫기', () => {
     const user = userEvent.setup()
     window.history.replaceState({ sneezecastModalDepth: 1 }, '', `/?report=start&${QA}`)
     const home = render(<HomeScreen week={HOME_MOCKS.normal} />)
-    await user.click(screen.getByRole('button', { name: '증상 없었어요' }))
+    await user.click(await screen.findByRole('button', { name: '증상 없었어요' }))
     home.unmount()
 
     // 홈을 떠났다 돌아와 새로 그린 뒤
