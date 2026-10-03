@@ -27,16 +27,16 @@ ci:
       extraHeaders: '{"Cookie":"sc_visited=1; sc_data_source=mock"}'
   assert:
     # **경고만 낸다(차단하지 않는다).** 모든 항목이 `warn` 이라 넘어도 종료 코드는 0 이다.
-    # 값은 기준선(docs/performance.md "기준선")보다 조금 느슨하게 잡았다 — 같은 빌드도 실행마다 수 % 흔들린다.
+    # 값은 CI 기준선(docs/performance.md "CI 기준선", GitHub ubuntu 러너)보다 조금 느슨하게 잡았다 — 러너는 회차마다 TBT · 점수가 튄다.
     # 화면마다 따로 두지 않고 모든 URL 에 같은 값을 건다. 값을 바꾸면 docs/performance.md "예산" 표도 고친다.
     assertions:
-      categories:performance: [warn, { minScore: 0.85, aggregationMethod: median }]
+      categories:performance: [warn, { minScore: 0.83, aggregationMethod: median }]
       categories:accessibility: [warn, { minScore: 0.95, aggregationMethod: median }]
       categories:best-practices: [warn, { minScore: 0.95, aggregationMethod: median }]
       categories:seo: [warn, { minScore: 0.95, aggregationMethod: median }]
-      largest-contentful-paint: [warn, { maxNumericValue: 4000, aggregationMethod: median }]
+      largest-contentful-paint: [warn, { maxNumericValue: 4200, aggregationMethod: median }]
       cumulative-layout-shift: [warn, { maxNumericValue: 0.05, aggregationMethod: median }]
-      total-blocking-time: [warn, { maxNumericValue: 150, aggregationMethod: median }]
+      total-blocking-time: [warn, { maxNumericValue: 200, aggregationMethod: median }]
       # 로드 중 받은 스크립트 전송량(바이트, 압축 뒤) — 225 KiB
       resource-summary:script:size: [warn, { maxNumericValue: 230400, aggregationMethod: median }]
   upload:
