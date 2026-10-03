@@ -4,6 +4,7 @@ import { ApiError, unavailableError } from '@/lib/api/api-error'
 import { apiRequest } from '@/lib/api/client'
 import {
   type AuthToken,
+  broadcastMemberRegionChanged,
   clearSession,
   getSessionSnapshot,
   setSession,
@@ -43,6 +44,7 @@ import { getMemberInfoSnapshot, reloadMemberInfo, setMemberRegion } from './memb
 
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
 vi.mock('@/lib/session/session-store', () => ({
+  broadcastMemberRegionChanged: vi.fn(),
   setSession: vi.fn(),
   clearSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
@@ -59,6 +61,7 @@ beforeEach(() => {
   vi.mocked(clearSession).mockReset()
   vi.mocked(getSessionSnapshot).mockReset()
   vi.mocked(setMemberRegion).mockReset()
+  vi.mocked(broadcastMemberRegionChanged).mockReset()
   vi.mocked(reloadMemberInfo).mockReset()
   vi.mocked(getMemberInfoSnapshot).mockReset()
   vi.mocked(getMemberInfoSnapshot).mockReturnValue(null)
@@ -1141,6 +1144,8 @@ describe('saveRegion (API)', () => {
       body: { code: '11680640' },
     })
     expect(setMemberRegion).toHaveBeenCalledWith('1', SAVED)
+    // 다른 탭이 다시 읽게 알린다(#190). 동네 값은 싣지 않는다
+    expect(broadcastMemberRegionChanged).toHaveBeenCalledExactlyOnceWith('1')
   })
 
   it.each([
@@ -1153,6 +1158,7 @@ describe('saveRegion (API)', () => {
     expect(await saveRegion(YEOKSAM1, 'api')).toEqual({ status: 'invalid' })
     expect(apiRequest).toHaveBeenCalledTimes(1)
     expect(setMemberRegion).not.toHaveBeenCalled()
+    expect(broadcastMemberRegionChanged).not.toHaveBeenCalled()
   })
 
   it('동시 첫 저장 경합(REGION_003)이면 한 번만 다시 보낸다', async () => {
@@ -1177,6 +1183,7 @@ describe('saveRegion (API)', () => {
     await expect(saveRegion(YEOKSAM1, 'api')).rejects.toThrow(ApiError)
     expect(apiRequest).toHaveBeenCalledTimes(2)
     expect(setMemberRegion).not.toHaveBeenCalled()
+    expect(broadcastMemberRegionChanged).not.toHaveBeenCalled()
   })
 
   it.each([{ status: 'guest' }, { status: 'restoring' }, { status: 'idle' }] as const)(
@@ -1191,10 +1198,11 @@ describe('saveRegion (API)', () => {
     },
   )
 
-  it('목데이터면 API 를 부르지 않는다', async () => {
+  it('목데이터면 API 를 부르지 않고 다른 탭에 알리지 않는다', async () => {
     await saveRegion(YEOKSAM1, 'mock')
     expect(apiRequest).not.toHaveBeenCalled()
     expect(setMemberRegion).not.toHaveBeenCalled()
+    expect(broadcastMemberRegionChanged).not.toHaveBeenCalled()
   })
 })
 

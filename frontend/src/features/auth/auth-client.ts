@@ -6,6 +6,7 @@ import { type ApiErrorKind, classifyApiError } from '@/lib/api/error-kind'
 import type { DataSource } from '@/lib/data-source'
 import {
   type AuthToken,
+  broadcastMemberRegionChanged,
   clearSession,
   getSessionSnapshot,
   setSession,
@@ -698,6 +699,8 @@ async function putRegionWithRetry(code: string): Promise<MyRegion> {
  *   세션을 넣은 뒤에 부른다
  * - 성공하면 응답(서버가 방금 확인한 동네)을 회원 정보 저장소의 내 동네로 넣는다(`setMemberRegion`) — 다시 읽지 않는다.
  *   보낼 때의 회원과 저장소의 회원이 다르면(그사이 로그아웃 · 다른 회원) 넣지 않는다
+ * - 성공하면 같은 브라우저의 다른 탭에 알린다(`broadcastMemberRegionChanged`, #190) — 그 탭들이 옛 동네로 보고를 보내지 않게
+ *   내 동네를 다시 읽는다. 값은 싣지 않는다. 이 탭은 위에서 넣었으니 다시 읽지 않는다
  * - `REGION_001` · `002` · `101` · `102` → `invalid`. `REGION_003`(동시 첫 저장 경합, 409)은 한 번 다시 보낸다
  * - 그 밖(`REGION_004` 행정동 확인 장애 503 · 일시 장애 · 두 번째 경합)은 거부한다 — 서버는 저장하지 않았고, 화면은
  *   "바꾸지 못했어요 · 잠시 뒤 다시" 로 알린다
@@ -724,6 +727,7 @@ export async function saveRegion(
       throw error
     }
     setMemberRegion(memberId, saved)
+    broadcastMemberRegionChanged(memberId)
     return { status: 'ok' }
   }
   const failure = rejectIfProfileEmail(MOCK_RESELECT_FAIL_EMAIL, 'save region')
