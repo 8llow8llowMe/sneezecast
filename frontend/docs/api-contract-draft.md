@@ -106,7 +106,7 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
 | 요청                | 바디 → `dataBody`                                                 | 주요 오류                                                                                                                     | 프론트 함수                       |
 | ------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | `GET /me`           | → `MyInfo`                                                        | `MEMBER_004` 회원 없음(404, 로그아웃 상태로), `002` · `003`(403)                                                              | `fetchMyInfo`(회원 정보 저장소)   |
-| `PATCH /me`         | `{ nickname }` → `MyInfo`                                         | 검증 `MEMBER_101` · `102`                                                                                                     | (연동 이슈)                       |
+| `PATCH /me`         | `{ nickname }` → `MyInfo`                                         | 검증 `MEMBER_101` · `102`                                                                                                     | `updateNickname`                  |
 | `POST /me/password` | `{ currentPassword, newPassword }` → null (다른 기기 로그아웃)    | `MEMBER_005` 불일치(400) · `006` 잠금(429) · `007` 비밀번호 없음(409) · `009`(503), 검증 `103~107`                            | `changePassword`                  |
 | `GET /me/region`    | → `MemberRegion` \| null (아직 고르지 않음)                       | `REGION_004` 행정동 확인 장애(503)                                                                                            | `fetchMyRegion`(회원 정보 저장소) |
 | `PUT /me/region`    | `{ code }`(숫자 8자리) → `MemberRegion` (`abolished` 는 늘 false) | `REGION_001` 없는 코드 · `002` 폐지(400), `003` 동시 첫 저장 경합(409, 다시 보내면 갱신), `004`(503), 검증 `101` · `102`(400) | `saveRegion`                      |
@@ -122,6 +122,9 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
 - **프론트 연동 (#166)** — `changePassword(current, next, source)`: `POST /me/password` 를 access 를 실어 보낸다. 성공하면 **이 기기는 그대로**(세션 저장소를 건드리지 않음)이고 다른 기기는 서버가 로그아웃한다 — 내 정보 알림 "비밀번호를 바꿨어요. 다른 기기에서는 로그아웃됐어요".
   - 오류 매핑: `MEMBER_005` · 검증 `103` · `104`(현재 비밀번호 없음 · 100자 초과 — 맞을 수 없음) → `wrong-current`, `006` → `locked`(회색 상자, 잠금 시간은 서버 설정이라 못 박지 않음), 검증 `105~107` → `invalid-password`(새 비밀번호 칸 아래 규칙 문구), `007` → `no-password`(내 정보와 어긋남 — `reloadMemberInfo()` 로 내 정보를 다시 읽고, `hasPassword` 가 false 면 비밀번호 화면이 내 정보로 돌아간다). `009` · 일시 장애 · 분류 밖 오류는 거부("바꾸지 못했어요").
   - 비밀번호 행 · 화면: 실데이터는 내 정보를 읽어 `hasPassword` 가 true 일 때만 행을 보인다(읽는 동안 · 실패 · false 면 없음). `/me/password` 는 `hasPassword` false 면 그리지 않고 내 정보로 돌려보낸다.
+- **프론트 연동 (#192)** — `updateNickname(nickname, source)`(요청은 `member-client.ts` 의 `patchMyNickname`): 앞뒤 공백을 지운 닉네임을 `PATCH /me` 로 access 를 실어 보낸다(규칙은 가입과 같은 2~10자, 코드포인트 기준 — 화면이 `signup-rules` 로 먼저 막는다). 세션 저장소가 회원이 아니면 요청 없이 거부한다.
+  - 성공하면 응답(`MyInfo`)을 회원 정보 저장소의 내 정보로 바로 넣는다(`setMemberInfo` — 다시 읽지 않음, 먼저 나간 조회 · 다시 읽기의 늦은 응답은 버림, 보낸 회원이 아니면 넣지 않음). 다른 탭에는 알리지 않는다(닉네임은 보고 · 집계에 쓰이지 않는다 — 그 탭은 다음에 내 정보를 읽을 때 맞는다).
+  - 오류 매핑: 검증 `MEMBER_101` · `102` → `invalid`(닉네임 칸 아래 규칙 문구). 회원 상태 오류(`MEMBER_004` · `002` · `003`)는 거부하면서 `reloadMemberInfo()` 로 내 정보를 다시 읽어 저장소가 `GET /me` 와 같은 판단으로 세션을 끝내게 한다. 일시 장애 · 분류 밖 오류는 거부("바꾸지 못했어요").
 - **BE 미정**: 프로필 이미지(#112).
 
 ## 행정동 `/api/v1/districts` (확정)
