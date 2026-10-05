@@ -123,7 +123,9 @@ describe('MeScreen 회원 상태별 화면', () => {
     expect(screen.getByRole('heading', { level: 2, name: '계정' })).toBeDefined()
     expect(screen.getByText('이메일 · me@example.com')).toBeDefined()
     // 행의 이름은 제목 · 값을 이어 읽는다
-    expect(screen.getByRole('button', { name: /^닉네임/ }).textContent).toBe('닉네임동네지기')
+    const nicknameRow = screen.getByRole('link', { name: /^닉네임/ })
+    expect(nicknameRow.textContent).toBe('닉네임동네지기')
+    expect(nicknameRow.getAttribute('href')).toBe('/me/nickname')
     expect(screen.getByRole('link', { name: '비밀번호 변경' }).getAttribute('href')).toBe(
       '/me/password',
     )
@@ -340,15 +342,18 @@ describe('MeScreen 메뉴', () => {
     search = 'mock-auth=member'
     renderMe()
 
-    await userEvent.setup().click(screen.getByRole('button', { name: /^닉네임/ }))
+    await userEvent.setup().click(screen.getByRole('button', { name: /^관심 동네/ }))
     expect(
-      screen.getByText('닉네임 바꾸기 화면은 준비하고 있어요').closest('[role="status"]'),
+      screen.getByText('관심 동네 화면은 준비하고 있어요').closest('[role="status"]'),
     ).not.toBeNull()
   })
 
-  it('로그인한 기기 · 비밀번호 행은 동네 · 덮어쓰기를 남긴 채 계정 화면으로 간다 (다른 쿼리는 뺀다)', () => {
+  it('닉네임 · 로그인한 기기 · 비밀번호 행은 동네 · 덮어쓰기를 남긴 채 계정 화면으로 간다 (다른 쿼리는 뺀다)', () => {
     search = 'region=11440660&mock-auth=member&confirm=unknown'
     renderMe({ regionCode: '11440660' })
+    expect(screen.getByRole('link', { name: /^닉네임/ }).getAttribute('href')).toBe(
+      '/me/nickname?region=11440660&mock-auth=member',
+    )
     expect(screen.getByRole('link', { name: '로그인한 기기' }).getAttribute('href')).toBe(
       '/me/devices?region=11440660&mock-auth=member',
     )

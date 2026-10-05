@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { ME_DEVICES_PATH, ME_PASSWORD_PATH, ME_PATH, ME_REGION_PATH } from '@/features/me/me-paths'
+import {
+  ME_DEVICES_PATH,
+  ME_NICKNAME_PATH,
+  ME_PASSWORD_PATH,
+  ME_PATH,
+  ME_REGION_PATH,
+} from '@/features/me/me-paths'
 import { OFFICIAL_PATH } from '@/features/official/official-screen'
 import { MAIN_NAV } from '@/lib/nav'
 
@@ -23,6 +29,7 @@ describe('BROWSE_NEXT_PATHS', () => {
       ME_DEVICES_PATH,
       ME_PASSWORD_PATH,
       ME_REGION_PATH,
+      ME_NICKNAME_PATH,
     ])
   })
 })

@@ -132,6 +132,7 @@ export const NEXT_PATHS: readonly string[] = [
   '/me/devices',
   '/me/password',
   '/me/region',
+  '/me/nickname',
 ]
 
 /** `?next=` 값을 돌아갈 경로로. 없거나 목록 밖이면 홈이다 */
