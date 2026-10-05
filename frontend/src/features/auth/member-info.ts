@@ -29,7 +29,8 @@ import { fetchMyInfo, fetchMyRegion, type MyInfo, type MyRegion } from './member
  *   `withdrawn` 은 만료 알림 없이 비회원이 되고 같은 refresh 쿠키를 쓰는 다른 탭에도 알린다(세션 저장소 `clearSession`).
  *   탈퇴 · 정지(`MEMBER_002` · `003`)는 재발급과 같게 `expired` 로 끝낸다(`MEMBER_ENDED`)
  * - 내 동네를 저장하면(`saveRegion`) 응답을 바로 넣는다(`setMemberRegion`). 그보다 먼저 보낸 조회 응답이 늦게 와도 덮어쓰지 않는다
- *   — 가입 마무리는 로그인 직후(조회가 나간 사이) 동네를 저장한다
+ *   — 가입 마무리는 로그인 직후(조회가 나간 사이) 동네를 저장한다. 닉네임을 바꾸면(`updateNickname`, #192) 응답(내 정보)을 같은 방식으로
+ *   넣는다(`setMemberInfo`)
  * - **내 동네가 다른 곳에서 바뀌었을 수 있으면 다시 읽는다(#190).** 보고는 이 탭이 들고 있는 내 동네 코드로 나가므로, 낡은 값이면
  *   사용자가 고르지 않은 동네의 집계에 들어간다. 그래서
  *   - 같은 브라우저의 다른 탭이 저장하면 탭 사이 알림(`region-changed`, 세션 저장소가 같은 회원일 때만 넘긴다)을 받아 `loading` 으로
@@ -65,6 +66,14 @@ const MEMBER_NOT_FOUND = 'MEMBER_004'
  */
 const MEMBER_ENDED: ReadonlySet<string> = new Set(['MEMBER_002', 'MEMBER_003'])
 
+/**
+ * 내 정보 조회가 이 코드로 거절되면 세션을 끝내는지(회원 없음 · 탈퇴 · 정지). 다른 회원 API(닉네임 바꾸기 `updateNickname`)가
+ * 같은 코드를 받으면 내 정보를 다시 읽어(`reloadMemberInfo`) 이 저장소가 끝내게 한다 — 판정은 이 함수 한 곳이다
+ */
+export function endsMemberSession(code: string | null): boolean {
+  return code === MEMBER_NOT_FOUND || (code !== null && MEMBER_ENDED.has(code))
+}
+
 /** 화면이 다시 보일 때 내 동네를 다시 읽는 최소 간격(#190) */
 export const REGION_REFRESH_INTERVAL_MS = 60_000
 
@@ -72,7 +81,10 @@ const LOADING: Load<never> = Object.freeze({ status: 'loading' })
 const FAILED: Load<never> = Object.freeze({ status: 'failed' })
 
 let snapshot: MemberInfoSnapshot | null = null
-/** 내 정보 · 내 동네 요청의 차례. 회원이 바뀌거나 지울 때(둘 다) · 내 동네를 저장할 때(동네) 늘려 늦은 응답을 버린다 */
+/**
+ * 내 정보 · 내 동네 요청의 차례. 회원이 바뀌거나 지울 때(둘 다) · 내 동네를 저장할 때(동네) · 닉네임을 바꿀 때(정보) 늘려
+ * 늦은 응답을 버린다
+ */
 let infoSeq = 0
 let regionSeq = 0
 /** 마지막으로 내 동네를 읽은 때(조회를 보낸 · 저장 응답을 넣은 `Date.now()`). 화면이 다시 보일 때의 간격을 잰다 */
@@ -121,7 +133,7 @@ function loadInfo(memberId: string, keepOnFailure = false): void {
     (error: unknown) => {
       if (infoSeq !== sent) return
       const code = error instanceof ApiError ? error.code : null
-      if (code === MEMBER_NOT_FOUND || (code !== null && MEMBER_ENDED.has(code))) {
+      if (endsMemberSession(code)) {
         // 세션을 비우면 세션 알림(sync)이 저장소도 지운다. 알림을 받기 전(시작 전)이어도 지우게 한 번 더 맞춘다
         if (getSessionSnapshot().status === 'member') {
           clearSession(code === MEMBER_NOT_FOUND ? 'withdrawn' : 'expired')
@@ -287,6 +299,17 @@ export function setMemberRegion(memberId: string, region: MyRegion): void {
   regionSeq += 1
   regionReadAt = Date.now()
   patch(memberId, { region: Object.freeze({ status: 'ready', value: region }) })
+}
+
+/**
+ * 닉네임을 바꾼 결과(서버가 돌려준 내 정보)를 넣는다(`updateNickname`, #192). `setMemberRegion` 과 같은 규칙이다 — 보낸 회원이 지금 저장소의
+ * 회원일 때만 넣고, 그보다 먼저 보낸 조회 · 다시 읽기 응답은 버린다. 다른 탭에는 알리지 않는다 — 닉네임은 보고 · 집계에 쓰이지 않아
+ * 낡아도 내 정보 화면의 글자만 다르다(그 탭이 다음에 회원 정보를 읽을 때 맞는다)
+ */
+export function setMemberInfo(memberId: string, info: MyInfo): void {
+  if (snapshot?.memberId !== memberId) return
+  infoSeq += 1
+  patch(memberId, { info: Object.freeze({ status: 'ready', value: info }) })
 }
 
 /** 테스트 정리용. 저장소를 비우고 기다리던 응답을 버린다 — 구독은 건드리지 않는다 */

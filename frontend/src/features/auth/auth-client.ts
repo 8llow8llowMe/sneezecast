@@ -16,15 +16,21 @@ import { clearSessionExpiring } from '@/lib/session-expiry'
 import { kakaoTicketLost } from './kakao-ticket'
 import type { Consent, ConsentType } from './legal'
 import type { KakaoFailReason } from './login-notice'
-import { type MyRegion, putMyRegion } from './member-client'
-import { getMemberInfoSnapshot, reloadMemberInfo, setMemberRegion } from './member-info'
+import { type MyInfo, type MyRegion, patchMyNickname, putMyRegion } from './member-client'
+import {
+  endsMemberSession,
+  getMemberInfoSnapshot,
+  reloadMemberInfo,
+  setMemberInfo,
+  setMemberRegion,
+} from './member-info'
 
 /* ── 실데이터 연동 (#163) ──────────────────────────────────────────────────────────────
  *
  * 이메일 인증 · 가입 · 이메일 로그인 · 로그아웃(`sendEmailCode` · `verifyEmailCode` · `signup` 이메일 갈래 · `loginWithEmail` ·
  * `logout`)과 내 동네 저장(`saveRegion`, #164), 비밀번호 재설정 · 변경과 로그인한 기기(`sendPasswordResetCode` ·
  * `verifyPasswordResetCode` · `resetPassword` · `changePassword` · `listSessions` · `revokeSession` · `revokeOtherSessions`, #166),
- * 카카오 가입(`signup` 카카오 갈래, #167 — 카카오 로그인 · 연결은 `kakao-client.ts`)은 마지막 인자로 데이터 출처(`DataSource`)를
+ * 카카오 가입(`signup` 카카오 갈래, #167 — 카카오 로그인 · 연결은 `kakao-client.ts`), 닉네임 바꾸기(`updateNickname`, #192)는 마지막 인자로 데이터 출처(`DataSource`)를
  * 받는다. `api` 면 auth · 회원 API(docs/api-contract-draft.md "인증" · "회원")를 부르고, `mock` 이면 아래 목 동작 그대로다. 출처는 부르는 화면이 `useDataSource()` 로 읽어 넘긴다 — 이 모듈은 쿠키를 읽지 않는다
  * (docs/conventions.md "데이터 출처", `features/region/region-client.ts` 와 같다). 그 밖의 함수는 아직 출처와 무관하게 목이다.
  *
@@ -76,6 +82,7 @@ const CHANGE_PASSWORD_PATH = '/api/v1/members/me/password'
  *
  * 내 정보(S10)가 보일 프로필(`MockProfile`)도 같은 세션에 둔다. 로그인 · 가입할 때 채우고 로그아웃 · 탈퇴하면 지운다.
  * 내 동네 저장(`saveRegion`)에 성공하면 동네를 바꾸고 폐지 표시를 끄고, 약관 재동의(`agreeTermsReconsent`)에 성공하면 재동의 표시를 끈다.
+ * 닉네임 바꾸기(`updateNickname`)에 성공하면 닉네임을 바꾼다.
  * 연동 때 `GET /api/v1/members/me`(백엔드 #58) 응답으로 바꾼다.
  */
 export type MockAuthState = 'guest' | 'member-no-consent' | 'member'
@@ -1112,6 +1119,69 @@ export async function changePassword(
   if (currentPassword === MOCK_WRONG_PASSWORD) return { status: 'wrong-current' }
   // 서버처럼 다른 기기를 로그아웃한다(이 기기는 남는다)
   mockDeviceSessions = deviceSessions().filter((session) => session.current)
+  return { status: 'ok' }
+}
+
+/* ── 닉네임 바꾸기 (S10 `/me/nickname`, #192) ───────────────────────────────────────────────────
+ *
+ * 실데이터: `PATCH /api/v1/members/me {nickname}`(access 필요 — docs/api-contract-draft.md "회원"). 규칙은 가입과 같다 — 앞뒤 공백을
+ * 지운 뒤 2~10자(코드포인트 기준, `signup-rules` 의 `nicknameProblem` 과 같은 판정). 앞뒤 공백을 지워 보낸다(서버도 지우고 저장한다).
+ * 응답은 내 정보 조회와 같은 모양이라 회원 정보 저장소의 내 정보로 바로 넣는다(`setMemberInfo` — 다시 읽지 않는다). 보낼 때의 회원과
+ * 저장소의 회원이 다르면(그사이 로그아웃 · 다른 회원) 넣지 않는다. 세션 저장소가 회원이 아니면 요청 없이 거부한다(`saveRegion` 과 같다).
+ *
+ * 오류 코드 → 결과:
+ * - 검증 `MEMBER_101`(없음 · 공백만) · `102`(길이) → `invalid`(화면 규칙과 어긋났을 때만 온다 — 화면은 닉네임 칸 아래 규칙 문구)
+ * - 회원 상태 오류(`MEMBER_004` 회원 없음 · `002` 탈퇴 · `003` 정지)는 내 정보 조회와 같은 판단이 필요하다. 거부하면서 내 정보를 다시
+ *   읽게 해(`reloadMemberInfo`) 회원 정보 저장소가 처음 읽을 때처럼 세션을 끝내게 한다
+ * - 그 밖(일시 장애 · 분류 밖 오류)은 거부한다 — 닉네임은 바뀌지 않았고, 화면은 "바꾸지 못했어요 · 잠시 뒤 다시" 로 알린다
+ *
+ * 목: 성공하면 화면과 무관하게 목 프로필의 닉네임을 바꾸고(구독자에게 알림) 그 이메일의 목 서버 닉네임도 바꾼다 — 다시 이메일 로그인해도
+ * 바꾼 닉네임이다. 프로필이 없으면(`?mock-auth=` 덮어쓰기만 있음) 세션은 그대로다. 목은 `invalid` 를 돌려주지 않는다.
+ * 목 재현 (docs/design/SCREENS.md 에도 적어 둔다): 프로필 이메일 `nickname-fail@example.com` 이면 거부한다.
+ */
+
+export const MOCK_NICKNAME_FAIL_EMAIL = 'nickname-fail@example.com'
+
+/**
+ * - `ok`: 바꿨다
+ * - `invalid`: 서버가 닉네임을 규칙 위반으로 거절했다(`MEMBER_101` · `102`)
+ */
+export type UpdateNicknameResult = { status: 'ok' } | { status: 'invalid' }
+
+const UPDATE_NICKNAME_FAILURES: Readonly<Record<string, 'invalid'>> = {
+  MEMBER_101: 'invalid',
+  MEMBER_102: 'invalid',
+}
+
+export async function updateNickname(
+  nickname: string,
+  source: DataSource,
+): Promise<UpdateNicknameResult> {
+  const trimmed = nickname.trim()
+  if (source === 'api') {
+    const session = getSessionSnapshot()
+    // 실데이터 세션이 없으면 보내지 않고 거부한다 — 토큰 없이 보내 401(SECURITY_001)을 받으러 가지 않는다
+    if (session.status !== 'member') throw new Error('updateNickname: no member session')
+    const { memberId } = session.summary
+    let info: MyInfo
+    try {
+      info = await patchMyNickname(trimmed)
+    } catch (error) {
+      const failure = mapError(error, UPDATE_NICKNAME_FAILURES)
+      if (failure) return { status: failure }
+      // 회원 상태 오류 판정은 회원 정보 저장소가 정한다(`endsMemberSession`)
+      if (endsMemberSession(errorCodeOf(error))) reloadMemberInfo()
+      throw error
+    }
+    setMemberInfo(memberId, info)
+    return { status: 'ok' }
+  }
+  const failure = rejectIfProfileEmail(MOCK_NICKNAME_FAIL_EMAIL, 'update nickname')
+  if (failure) return failure
+  if (mockProfile) {
+    mockNicknames.set(mockProfile.email, trimmed)
+    setMockSession(mockSession, { ...mockProfile, nickname: trimmed })
+  }
   return { status: 'ok' }
 }
 

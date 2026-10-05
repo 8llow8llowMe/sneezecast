@@ -2,18 +2,18 @@ import { apiRequest } from '@/lib/api/client'
 
 /* ── 회원 API (`/api/v1/members/me`, 실데이터) ─────────────────────────────────────────────
  *
- * 내 정보(`GET /me`)와 내 동네(`GET` · `PUT /me/region`)를 부른다(docs/api-contract-draft.md "회원"). 모두 access 를 싣는다 —
+ * 내 정보(`GET` · `PATCH /me`)와 내 동네(`GET` · `PUT /me/region`)를 부른다(docs/api-contract-draft.md "회원"). 모두 access 를 싣는다 —
  * 만료가 가까우면 API 계층이 먼저 재발급한다. 응답은 화면이 쓰는 필드만 골라 옮긴다.
  *
  * 내 동네는 `/me` 와 따로 읽는다. 백엔드가 이름 · 폐지 여부를 그때 행정동 서비스(surveillance)에서 읽어, 그 서비스가 멈추면
  * 내 동네만 `REGION_004`(503)이고 `/me` 는 그대로 온다(backend/docs/modules.md "내 동네").
- * 요청을 언제 보낼지 · 결과를 어디 둘지는 회원 정보 저장소(`member-info.ts`)와 `saveRegion`(`auth-client.ts`)이 정한다.
+ * 요청을 언제 보낼지 · 결과를 어디 둘지는 회원 정보 저장소(`member-info.ts`)와 `saveRegion` · `updateNickname`(`auth-client.ts`)이 정한다.
  */
 
 export const MY_INFO_PATH = '/api/v1/members/me'
 export const MY_REGION_PATH = '/api/v1/members/me/region'
 
-/** `GET /api/v1/members/me` 의 `dataBody` (backend `MemberMyInfoResponse`) */
+/** `GET` · `PATCH /api/v1/members/me` 의 `dataBody` (backend `MemberMyInfoResponse`) */
 type MyInfoResponse = {
   memberId: string
   email: string
@@ -76,6 +76,16 @@ function toMyRegion(response: MyRegionResponse): MyRegion {
 /** 내 정보. 실패는 거부한다(`MEMBER_004` 회원 없음 포함 — 저장소가 세션을 비운다) */
 export async function fetchMyInfo(): Promise<MyInfo> {
   return toMyInfo(await apiRequest<MyInfoResponse>(MY_INFO_PATH))
+}
+
+/**
+ * 닉네임 수정(`PATCH /me {nickname}`). 응답은 내 정보 조회와 같은 모양이다(서버가 앞뒤 공백을 지우고 저장한 값).
+ * 오류 해석(검증 `MEMBER_101` · `102`)은 `updateNickname` 이 한다
+ */
+export async function patchMyNickname(nickname: string): Promise<MyInfo> {
+  return toMyInfo(
+    await apiRequest<MyInfoResponse>(MY_INFO_PATH, { method: 'PATCH', body: { nickname } }),
+  )
 }
 
 /** 내 동네. 아직 고르지 않았으면 null 이다(200 + `dataBody: null`). 실패(`REGION_004` 503 등)는 거부한다 */

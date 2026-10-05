@@ -9,6 +9,10 @@ export const PASSWORD_MAX_LENGTH = 20
 export const NICKNAME_MIN_LENGTH = 2
 export const NICKNAME_MAX_LENGTH = 10
 
+/** 닉네임 칸 도움말 · 규칙 오류 문구. 가입(S13-4 Signup-account)과 닉네임 바꾸기(`/me/nickname`)가 같이 쓴다 */
+export const NICKNAME_HINT = '내 정보에서만 보여요. 다른 사람에게는 보이지 않아요.'
+export const NICKNAME_RULE_ERROR = '닉네임은 2~10자로 써 주세요.'
+
 /** `이름@도메인.최상위` 꼴인지. 실제로 받을 수 있는지는 인증 코드가 확인한다 */
 export function isEmailFormat(value: string): boolean {
   return /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(value.trim())

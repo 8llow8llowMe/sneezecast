@@ -34,13 +34,20 @@ import {
   signup,
   type SignupRequest,
   subscribeMockSession,
+  updateNickname,
   verifyEmailCode,
   verifyPasswordResetCode,
   withdrawHealthConsent,
   withdrawMembership,
 } from './auth-client'
 import { consentFor, LEGAL_VERSIONS } from './legal'
-import { getMemberInfoSnapshot, reloadMemberInfo, setMemberRegion } from './member-info'
+import type * as memberInfo from './member-info'
+import {
+  getMemberInfoSnapshot,
+  reloadMemberInfo,
+  setMemberInfo,
+  setMemberRegion,
+} from './member-info'
 
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
 vi.mock('@/lib/session/session-store', () => ({
@@ -49,7 +56,10 @@ vi.mock('@/lib/session/session-store', () => ({
   clearSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
 }))
-vi.mock('./member-info', () => ({
+vi.mock('./member-info', async (importOriginal) => ({
+  // 회원 상태 오류 판정은 실제 함수를 쓴다(저장소와 같은 코드 목록)
+  endsMemberSession: (await importOriginal<typeof memberInfo>()).endsMemberSession,
+  setMemberInfo: vi.fn(),
   setMemberRegion: vi.fn(),
   reloadMemberInfo: vi.fn(),
   getMemberInfoSnapshot: vi.fn(),
@@ -61,6 +71,7 @@ beforeEach(() => {
   vi.mocked(clearSession).mockReset()
   vi.mocked(getSessionSnapshot).mockReset()
   vi.mocked(setMemberRegion).mockReset()
+  vi.mocked(setMemberInfo).mockReset()
   vi.mocked(broadcastMemberRegionChanged).mockReset()
   vi.mocked(reloadMemberInfo).mockReset()
   vi.mocked(getMemberInfoSnapshot).mockReset()
@@ -642,6 +653,38 @@ describe('비밀번호 변경 (목)', () => {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     await expect(changePassword('dongne2026', 'fail2026', 'mock')).rejects.toThrow()
     expect(await listSessions('mock')).toHaveLength(3)
+  })
+})
+
+describe('닉네임 바꾸기 (목, #192)', () => {
+  beforeEach(() => resetMockSession())
+
+  it('앞뒤 공백을 지운 닉네임으로 목 프로필을 바꾸고 구독자에게 알린다 — 다시 로그인해도 바꾼 닉네임이다', async () => {
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
+    const listener = vi.fn()
+    const unsubscribe = subscribeMockSession(listener)
+
+    expect(await updateNickname('  재채기탐정 ', 'mock')).toEqual({ status: 'ok' })
+    expect(getMockProfile()?.nickname).toBe('재채기탐정')
+    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
+
+    await logout('mock')
+    await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
+    expect(getMockProfile()?.nickname).toBe('재채기탐정')
+    expect(apiRequest).not.toHaveBeenCalled()
+  })
+
+  it('프로필 없이(?mock-auth= 덮어쓰기만) 바꾸면 성공이지만 세션은 그대로다', async () => {
+    expect(await updateNickname('재채기탐정', 'mock')).toEqual({ status: 'ok' })
+    expect(getMockProfile()).toBeNull()
+    expect(getMockSession()).toBe('guest')
+  })
+
+  it('재현 이메일(nickname-fail@example.com)이면 거부하고 닉네임을 그대로 둔다', async () => {
+    await loginWithEmail('nickname-fail@example.com', 'dongne2026', 'mock')
+    await expect(updateNickname('재채기탐정', 'mock')).rejects.toThrow()
+    expect(getMockProfile()?.nickname).toBe(EXAMPLE_PROFILES.email.nickname)
   })
 })
 
@@ -1496,6 +1539,83 @@ describe('changePassword (API)', () => {
     vi.mocked(apiRequest).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
     expect(await changePassword('wrong', 'newpass2026', 'api')).toEqual({ status: 'ok' })
     expect(await changePassword('dongne2026', 'fail2026', 'api')).toEqual({ status: 'ok' })
+  })
+})
+
+describe('updateNickname (API, #192)', () => {
+  const CHANGED = {
+    memberId: '1',
+    email: 'me@example.com',
+    nickname: '재채기탐정',
+    provider: 'EMAIL',
+    hasPassword: true,
+    role: 'USER',
+    pendingConsents: [],
+    reportWritable: true,
+  }
+
+  it('access 를 실어 앞뒤 공백을 지운 닉네임을 PATCH 로 보내고, 응답을 보낸 회원의 내 정보로 넣는다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(CHANGED)
+    expect(await updateNickname(' 재채기탐정  ', 'api')).toEqual({ status: 'ok' })
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/members/me', {
+      method: 'PATCH',
+      body: { nickname: '재채기탐정' },
+    })
+    expect(setMemberInfo).toHaveBeenCalledWith('1', {
+      memberId: '1',
+      email: 'me@example.com',
+      nickname: '재채기탐정',
+      provider: 'email',
+      hasPassword: true,
+      pendingConsents: [],
+    })
+    expect(reloadMemberInfo).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['MEMBER_101', 400],
+    ['MEMBER_102', 400],
+  ])('%s 면 invalid 이고 내 정보를 바꾸지 않는다', async (code, status) => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, status))
+    expect(await updateNickname('재채기탐정', 'api')).toEqual({ status: 'invalid' })
+    expect(setMemberInfo).not.toHaveBeenCalled()
+    expect(reloadMemberInfo).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['MEMBER_004', 404],
+    ['MEMBER_002', 403],
+    ['MEMBER_003', 403],
+  ])(
+    '회원 상태 오류(%s)면 거부하고 내 정보를 다시 읽게 한다 — 저장소가 세션을 끝낸다',
+    async (code, status) => {
+      const error = apiError(code, status)
+      vi.mocked(apiRequest).mockRejectedValueOnce(error)
+      await expect(updateNickname('재채기탐정', 'api')).rejects.toBe(error)
+      expect(reloadMemberInfo).toHaveBeenCalledTimes(1)
+      expect(setMemberInfo).not.toHaveBeenCalled()
+    },
+  )
+
+  it('일시 장애 · 분류 밖 오류는 거부하고 내 정보를 다시 읽지 않는다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('network', 0))
+    await expect(updateNickname('재채기탐정', 'api')).rejects.toThrow(ApiError)
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('MEMBER_100', 400))
+    await expect(updateNickname('재채기탐정', 'api')).rejects.toThrow(ApiError)
+    expect(setMemberInfo).not.toHaveBeenCalled()
+    expect(reloadMemberInfo).not.toHaveBeenCalled()
+  })
+
+  it('실데이터 세션이 회원이 아니면 요청 없이 거부하고, 목 프로필 · 목 재현 값을 듣지 않는다', async () => {
+    resetMockSession()
+    await loginWithEmail('nickname-fail@example.com', 'dongne2026', 'mock')
+    vi.mocked(getSessionSnapshot).mockReturnValueOnce({ status: 'guest' })
+    await expect(updateNickname('재채기탐정', 'api')).rejects.toThrow()
+    expect(apiRequest).not.toHaveBeenCalled()
+
+    vi.mocked(apiRequest).mockResolvedValueOnce(CHANGED)
+    expect(await updateNickname('재채기탐정', 'api')).toEqual({ status: 'ok' })
+    expect(getMockProfile()?.nickname).toBe(EXAMPLE_PROFILES.email.nickname)
   })
 })
 

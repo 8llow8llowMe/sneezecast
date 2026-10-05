@@ -12,7 +12,9 @@ import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
 
 import {
   confirmProblem,
+  NICKNAME_HINT,
   NICKNAME_MAX_LENGTH,
+  NICKNAME_RULE_ERROR,
   nicknameLength,
   nicknameProblem,
   passwordProblem,
@@ -124,8 +126,8 @@ export function SignupAccountScreen() {
           autoComplete="nickname"
           value={nickname}
           onChange={(event) => setNickname(event.target.value)}
-          hint="내 정보에서만 보여요. 다른 사람에게는 보이지 않아요."
-          error={checked && problems.nickname ? '닉네임은 2~10자로 써 주세요.' : undefined}
+          hint={NICKNAME_HINT}
+          error={checked && problems.nickname ? NICKNAME_RULE_ERROR : undefined}
           counter={{ current: nicknameLength(nickname), max: NICKNAME_MAX_LENGTH }}
         />
       </form>
