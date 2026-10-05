@@ -13,6 +13,8 @@ export const ME_DEVICES_PATH = '/me/devices'
 export const ME_PASSWORD_PATH = '/me/password'
 /** 내 동네 바꾸기 (#141, 시안 없음). 보고 · 알림 기준인 회원의 동네를 검색으로 직접 고른다 */
 export const ME_REGION_PATH = '/me/region'
+/** 닉네임 바꾸기 (#192, 시안 없음). 가입과 같은 2~10자 규칙 */
+export const ME_NICKNAME_PATH = '/me/nickname'
 
 /** 둘러보기 동네 (`?region=<행정동 코드>`). 홈 · 내 정보와 같은 쿼리다 */
 const REGION_PARAM = 'region'
@@ -64,6 +66,7 @@ export const ME_NOTICES = {
   // 서버가 이 기기만 남기고 다른 기기를 로그아웃한다(backend/docs/modules.md "화면 계약", #166)
   'password-changed': '비밀번호를 바꿨어요. 다른 기기에서는 로그아웃됐어요',
   'region-changed': '내 동네를 바꿨어요',
+  'nickname-changed': '닉네임을 바꿨어요',
 } as const
 
 export type MeNotice = keyof typeof ME_NOTICES

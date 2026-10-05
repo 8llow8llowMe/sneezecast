@@ -41,6 +41,7 @@ import { ConfirmDialog } from './confirm-dialog'
 import { CONSENT_WITHDRAWN_NOTICE, leaveHomeNotice } from './leave-notice'
 import {
   ME_DEVICES_PATH,
+  ME_NICKNAME_PATH,
   ME_NOTICES,
   ME_PASSWORD_PATH,
   ME_PATH,
@@ -104,9 +105,9 @@ function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label
  * 데스크톱 설정 메뉴의 바로가기는 `#id` 링크가 아니라 버튼이다. 같은 문서 `#` 링크는 Next 가 모르는 기록 항목(state 가 null)을
  * 쌓아, 그 뒤 연 대화상자의 닫기(`history.go(-1)`)가 그 항목으로 돌아가며 첫 닫기에 닫히지 않는다(docs/conventions.md).
  *
- * 로그인한 기기(`/me/devices`) · 비밀번호 변경(`/me/password`) · 보고 동네(`/me/region`) 행은 그 화면으로 간다. 동네(`region`)와 QA 덮어쓰기
- * (`mock-auth` · `mock-provider`)를 주소에 남긴다. 비밀번호를 바꾸고 돌아오면 계정 화면이 내 정보 레이아웃
- * (`MeTrailProvider`)에 남긴 알림을 한 번 꺼내 토스트로 띄운다 — 회원일 때만 띄운다(내 동네를 바꾸고 와도 같다).
+ * 닉네임(`/me/nickname`) · 로그인한 기기(`/me/devices`) · 비밀번호 변경(`/me/password`) · 보고 동네(`/me/region`) 행은 그 화면으로 간다.
+ * 동네(`region`)와 QA 덮어쓰기(`mock-auth` · `mock-provider`)를 주소에 남긴다. 비밀번호를 바꾸고 돌아오면 계정 화면이 내 정보 레이아웃
+ * (`MeTrailProvider`)에 남긴 알림을 한 번 꺼내 토스트로 띄운다 — 회원일 때만 띄운다(내 동네 · 닉네임을 바꾸고 와도 같다).
  * 아직 없는 화면(관심 동네 · 알림 설정 · 안내 본문 등)은 홈처럼 "준비하고 있어요" 알림을 띄운다.
  *
  * **보고 동네 행은 늘 회원의 내 동네**다(#141). 머리줄 동네 이름은 둘러보기 동네(`?region=`)가 있으면 그 동네, 없으면 내 동네이고
@@ -280,7 +281,7 @@ export function MeScreen({
                   <MenuRow
                     title="닉네임"
                     value={profile?.nickname}
-                    onClick={() => notReady('닉네임 바꾸기')}
+                    href={navHref(ME_NICKNAME_PATH, accountSearch)}
                   />
                   <MenuRow
                     title="로그인 방법"
