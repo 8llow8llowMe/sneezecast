@@ -21,6 +21,7 @@ import {
 } from '@/test/api-session'
 
 import { saveRegion } from './auth-client'
+import type { MyInfo } from './member-client'
 import {
   getMemberInfoSnapshot,
   REGION_REFRESH_INTERVAL_MS,
@@ -28,6 +29,7 @@ import {
   reloadMemberRegion,
   resetMemberInfoForTests,
   retryMemberInfo,
+  setMemberInfo,
   setMemberRegion,
   startMemberInfo,
 } from './member-info'
@@ -241,6 +243,48 @@ describe('회원 정보 저장소', () => {
     setSession(memberToken())
     setMemberRegion('다른 회원', { ...YEOKSAM1 })
     expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'loading' })
+  })
+
+  describe('setMemberInfo — 닉네임을 바꾼 응답 넣기 (#192)', () => {
+    const CHANGED: MyInfo = {
+      memberId: '1843956734582784',
+      email: 'me@example.com',
+      nickname: '새닉네임',
+      provider: 'email',
+      hasPassword: true,
+      pendingConsents: [],
+    }
+    const nickname = () => {
+      const info = getMemberInfoSnapshot()?.info
+      return info?.status === 'ready' ? info.value.nickname : null
+    }
+
+    it('넣으면 그보다 먼저 보낸 조회 · 다시 읽기의 늦은 응답은 버린다 (내 동네는 그대로)', async () => {
+      const server = holdRequests()
+      setSession(memberToken())
+      await flush()
+      server.reply(INFO, okResponse(myInfoBody()))
+      server.reply(REGION, okResponse(YEOKSAM1))
+      await flush()
+
+      reloadMemberInfo()
+      await flush()
+      setMemberInfo('1843956734582784', CHANGED)
+      expect(nickname()).toBe('새닉네임')
+
+      // 바꾸기 전에 나간 다시 읽기가 옛 닉네임으로 늦게 온다
+      server.reply(INFO, okResponse(myInfoBody()))
+      await flush()
+      expect(nickname()).toBe('새닉네임')
+      expect(getMemberInfoSnapshot()?.region).toEqual({ status: 'ready', value: YEOKSAM1 })
+    })
+
+    it('보낸 회원이 지금 회원이 아니면 넣지 않는다', () => {
+      holdRequests()
+      setSession(memberToken())
+      setMemberInfo('다른 회원', { ...CHANGED, memberId: '다른 회원' })
+      expect(getMemberInfoSnapshot()?.info).toEqual({ status: 'loading' })
+    })
   })
 
   describe('reloadMemberRegion — 보고가 동네로 거절됐을 때 다시 읽기 (#165)', () => {
