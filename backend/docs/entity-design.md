@@ -74,10 +74,10 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | withdrawn_at | TIMESTAMP | Y | 철회 시각. 철회 가능한 항목만 채운다 |
 
 - 인덱스: `idx_member_consent_member_id_type`
-- **현재 유효한 동의** = 항목별 `agreed_at` 최대 행이고 `withdrawn_at` 이 null 이며 `document_version` 이 현재 설정 버전과 같은 것.
+- **현재 유효한 동의** = 항목별 `agreed_at` 최대 행이고 `withdrawn_at` 이 null 이며 `document_version` 이 현재 설정 버전과 같은 것. **예외: `AGE_OVER_19` 는 버전을 보지 않는다**(사실 확인이라 약관 개정 때 다시 받지 않는다 — 2026-10-02 결정, 기록에는 처음 확인 때의 약관 버전이 남는다).
 - 운영 흐름
   - **문서 개정**: `legal.*-version` 설정만 올린다. 이전 버전 동의자는 "유효 동의 없음" 이 되어 다음 로그인 때 재동의 화면으로 간다. 기존 행은 고치지 않는다.
-  - **철회**: 해당 행에 `withdrawn_at` 을 채운다. 건강정보 동의 철회는 같은 트랜잭션에서 `report_purge_request` 를 만들고, refresh 세션을 전부 폐기하고, 요청한 기기의 access token `jti` 를 블랙리스트에 올린다 (§1-5).
+  - **철회**: 해당 행에 `withdrawn_at` 을 채운다(철회 대상은 최신 행이 철회되지 않은 것 — 버전과 무관, 옛 버전 동의로 쓴 보고도 파기해야 해서). 건강정보 동의 철회는 같은 트랜잭션에서 `report_purge_request` 를 만들고(미완료 요청이 이미 있으면 만들지 않는다), 커밋 뒤 refresh 세션을 전부 폐기하고 그 세션들 · 요청 기기의 access token `jti` 를 블랙리스트에 올린다 (§1-5).
   - **재동의**: 새 행을 추가한다. 미완료 파기 요청이 있으면 완료될 때까지 `report:write` scope 를 발급하지 않는다 (§1-5 2차 파기가 새 보고를 지우지 않게).
 
 ### 1-3. 동의 항목 (`ConsentType`)
@@ -87,7 +87,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | TERMS_OF_SERVICE | 이용약관 | 가입 필수 | 탈퇴로만 | 이용약관 버전 |
 | PRIVACY_POLICY | 개인정보 수집·이용 (이메일 · 닉네임 · 프로필 이미지 · 행정동) | 가입 필수 | 탈퇴로만 | 개인정보 처리방침 버전 |
 | SENSITIVE_HEALTH_INFO | **민감정보(건강정보) 별도 동의** — 증상 보고 | 보고 필수 (가입은 가능) | **가능** | 민감정보 수집·이용 동의서 버전 |
-| AGE_OVER_19 | 만 19세 이상 확인 (자기신고) | 가입 필수 | 없음 (사실 확인이라 철회 개념이 없다) | 성인 기준을 정한 이용약관 버전 |
+| AGE_OVER_19 | 만 19세 이상 확인 (자기신고) | 가입 필수 | 없음 (사실 확인이라 철회 개념이 없다) | 성인 기준을 정한 이용약관 버전 (약관 개정 때 다시 받지 않는다 — 유효 판정에서 버전을 보지 않음) |
 
 - **개인정보 보호법 제23조 민감정보는 증상 보고뿐이다.** 이메일 · 닉네임 · 프로필 이미지는 일반 개인정보라 PRIVACY_POLICY 로 받는다.
 - 건강정보 동의는 가입 동의와 **화면 · 체크를 분리**한다 (별도 동의 요건). 동의 여부는 JWT `scope` 의 `report:write` 로 전달된다.
@@ -118,7 +118,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | requested_at | TIMESTAMP | N | 요청 시각 (탈퇴 · 철회 시각) |
 | first_purged_at | TIMESTAMP | Y | 첫 파기 성공 시각 |
 | completed_at | TIMESTAMP | Y | 완료 시각. **null = 미완료** |
-| attempt_count | INT | N | 호출 시도 횟수, default 0 |
+| attempt_count | INT | N | 호출 시도 횟수, default 0 (`@ColumnDefault("0")`) |
 | last_error | VARCHAR(200) | Y | 마지막 실패 사유 (예외 코드 · 상태 코드만. 응답 본문을 넣지 않는다) |
 
 - 인덱스: `idx_report_purge_request_member_id`, `idx_report_purge_request_completed_at`
