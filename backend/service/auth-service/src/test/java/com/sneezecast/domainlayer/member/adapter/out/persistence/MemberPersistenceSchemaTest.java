@@ -10,10 +10,13 @@ import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.mapper.MemberConsentMapperImpl;
 import com.sneezecast.domainlayer.member.application.mapper.MemberMapperImpl;
+import com.sneezecast.domainlayer.member.application.mapper.ReportPurgeRequestMapperImpl;
 import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
 import com.sneezecast.domainlayer.member.domain.enums.MemberStatus;
+import com.sneezecast.domainlayer.member.domain.enums.PurgeReason;
 import com.sneezecast.domainlayer.member.domain.model.Member;
 import com.sneezecast.domainlayer.member.domain.model.MemberConsent;
+import com.sneezecast.domainlayer.member.domain.model.ReportPurgeRequest;
 import com.sneezecast.persistence.config.JpaAuditConfig;
 import com.sneezecast.security.common.enums.SecurityRole;
 import java.sql.Connection;
@@ -38,12 +41,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * member · member_consent 가 entity-design §1-1 · §1-2 대로 만들어지는지 H2 에 실제 스키마를 만들어 본다. 마이그레이션 도구가 없어
+ * member · member_consent · report_purge_request 가 entity-design §1-1 · §1-2 · §1-5 대로 만들어지는지 H2 에 실제 스키마를 만들어 본다. 마이그레이션 도구가 없어
  * dev 스키마는 ddl-auto 가 만들고 prod DDL 은 이 매핑에서 뽑으므로, 매핑이 곧 스키마 정본이다.
  */
 @DataJpaTest
 @TestPropertySource(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
-@Import({JpaAuditConfig.class, MemberRepositoryAdapter.class, MemberConsentRepositoryAdapter.class, MemberMapperImpl.class, MemberConsentMapperImpl.class})
+@Import({JpaAuditConfig.class, MemberRepositoryAdapter.class, MemberConsentRepositoryAdapter.class, ReportPurgeRequestRepositoryAdapter.class, MemberMapperImpl.class,
+    MemberConsentMapperImpl.class, ReportPurgeRequestMapperImpl.class})
 class MemberPersistenceSchemaTest {
 
     @Autowired
@@ -59,7 +63,81 @@ class MemberPersistenceSchemaTest {
     private MemberConsentRepository memberConsentRepository;
 
     @Autowired
+    private ReportPurgeRequestRepositoryAdapter reportPurgeRequestRepositoryAdapter;
+
+    @Autowired
     private TestEntityManager testEntityManager;
+
+    @Test
+    @DisplayName("report_purge_request 컬럼이 entity-design §1-5 와 같다 — 사유는 네이티브 enum 이 아니라 VARCHAR 이고 시도 횟수 기본값은 0 이다")
+    void reportPurgeRequestColumnsMatchEntityDesign() throws SQLException {
+        Map<String, ColumnSpec> columns = columns("REPORT_PURGE_REQUEST");
+
+        assertThat(columns.keySet()).containsExactlyInAnyOrder("ID", "MEMBER_ID", "REASON", "REQUESTED_AT", "FIRST_PURGED_AT", "COMPLETED_AT",
+            "ATTEMPT_COUNT", "LAST_ERROR", "CREATED_AT", "UPDATED_AT");
+        assertThat(columns).containsEntry("REASON", new ColumnSpec(30, false))
+            .containsEntry("LAST_ERROR", new ColumnSpec(200, true));
+        assertThat(columns.get("MEMBER_ID").nullable()).isFalse();
+        assertThat(columns.get("REQUESTED_AT").nullable()).isFalse();
+        assertThat(columns.get("ATTEMPT_COUNT").nullable()).isFalse();
+        assertThat(columns.get("FIRST_PURGED_AT").nullable()).isTrue();
+        assertThat(columns.get("COMPLETED_AT").nullable()).isTrue();
+        assertThat(typeNames("REPORT_PURGE_REQUEST")).containsEntry("REASON", "CHARACTER VARYING");
+        try (Connection connection = dataSource.getConnection();
+             ResultSet rs = connection.getMetaData().getColumns(null, null, "REPORT_PURGE_REQUEST", "ATTEMPT_COUNT")) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("COLUMN_DEF")).isEqualTo("0");
+        }
+    }
+
+    @Test
+    @DisplayName("report_purge_request 는 member_id · completed_at 조회 인덱스가 있고 unique 가 아니며 DB FK 제약이 없다")
+    void reportPurgeRequestIndexesAndNoForeignKey() throws SQLException {
+        assertThat(indexes("REPORT_PURGE_REQUEST", false))
+            .containsEntry("IDX_REPORT_PURGE_REQUEST_MEMBER_ID", List.of("MEMBER_ID"))
+            .containsEntry("IDX_REPORT_PURGE_REQUEST_COMPLETED_AT", List.of("COMPLETED_AT"));
+        assertThat(indexes("REPORT_PURGE_REQUEST", true)).allSatisfy((name, columns) -> assertThat(columns).containsExactly("ID"));
+        try (Connection connection = dataSource.getConnection();
+             ResultSet keys = connection.getMetaData().getImportedKeys(null, null, "REPORT_PURGE_REQUEST")) {
+            assertThat(keys.next()).isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("파기 요청을 저장하면 미완료(completed_at null) 요청으로 잡히고, 완료된 요청 · 다른 회원의 요청은 잡히지 않는다")
+    void savedPurgeRequestIsIncomplete() {
+        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
+        reportPurgeRequestRepositoryAdapter.save(purge(40L, 99L, now, now.plusMinutes(30)));
+        reportPurgeRequestRepositoryAdapter.save(purge(41L, 100L, now, null));
+        testEntityManager.flush();
+
+        assertThat(reportPurgeRequestRepositoryAdapter.existsIncompleteByMemberId(99L)).as("완료된 요청뿐").isFalse();
+        assertThat(reportPurgeRequestRepositoryAdapter.existsIncompleteByMemberId(100L)).isTrue();
+        Map<String, Object> row = new JdbcTemplate(dataSource).queryForMap("select reason, attempt_count, created_at from report_purge_request where id = 41");
+        assertThat(row).containsEntry("REASON", "HEALTH_CONSENT_WITHDRAWN").containsEntry("ATTEMPT_COUNT", 0);
+        assertThat(row.get("CREATED_AT")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("동의 철회는 조회한 행에 철회 시각만 채운다(변경 감지) — 새 행이 없고 동의 내용은 그대로다. 항목별 잠금 조회는 그 항목 행만 읽는다")
+    void withdrawUpdatesExistingConsentRow() {
+        LocalDateTime agreedAt = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
+        memberConsentRepositoryAdapter.saveAll(List.of(
+            consent(50L, ConsentType.SENSITIVE_HEALTH_INFO, "2026-10-01", agreedAt),
+            consent(51L, ConsentType.TERMS_OF_SERVICE, "2026-10-01", agreedAt)));
+        testEntityManager.flush();
+        testEntityManager.clear();
+
+        assertThat(memberConsentRepositoryAdapter.findAllByMemberIdAndTypeForUpdate(99L, ConsentType.SENSITIVE_HEALTH_INFO))
+            .extracting(MemberConsent::id).containsExactly(50L);
+        memberConsentRepositoryAdapter.withdraw(50L, agreedAt.plusHours(1));
+        testEntityManager.flush();
+
+        Map<String, Object> row = new JdbcTemplate(dataSource).queryForMap("select document_version, withdrawn_at from member_consent where id = 50");
+        assertThat(row).containsEntry("DOCUMENT_VERSION", "2026-10-01");
+        assertThat(row.get("WITHDRAWN_AT")).isNotNull();
+        assertThat(memberConsentRepository.count()).isEqualTo(2);
+    }
 
     @Test
     @DisplayName("member.email 에 uk_member_email unique 인덱스가 있다 — 동시 가입 중복을 DB 가 막는다")
@@ -126,7 +204,7 @@ class MemberPersistenceSchemaTest {
     @Test
     @DisplayName("모든 컬럼에 @Comment 가 붙어 있다")
     void everyColumnHasComment() throws SQLException {
-        for (String table : List.of("MEMBER", "MEMBER_CONSENT")) {
+        for (String table : List.of("MEMBER", "MEMBER_CONSENT", "REPORT_PURGE_REQUEST")) {
             try (Connection connection = dataSource.getConnection();
                  ResultSet rs = connection.getMetaData().getColumns(null, null, table, null)) {
                 while (rs.next()) {
@@ -260,6 +338,11 @@ class MemberPersistenceSchemaTest {
 
     private static MemberConsent consent(long id, ConsentType type, String version, LocalDateTime agreedAt) {
         return MemberConsent.builder().id(id).memberId(99L).type(type).documentVersion(version).agreedAt(agreedAt).build();
+    }
+
+    private static ReportPurgeRequest purge(long id, long memberId, LocalDateTime requestedAt, LocalDateTime completedAt) {
+        return ReportPurgeRequest.builder().id(id).memberId(memberId).reason(PurgeReason.HEALTH_CONSENT_WITHDRAWN).requestedAt(requestedAt)
+            .completedAt(completedAt).attemptCount(0).build();
     }
 
     private record ColumnSpec(int size, boolean nullable) {

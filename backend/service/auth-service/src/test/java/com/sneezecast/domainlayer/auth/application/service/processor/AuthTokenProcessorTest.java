@@ -60,7 +60,7 @@ class AuthTokenProcessorTest {
     private static final String REFRESH_KEY = "sneezecast-auth-token-test-refresh-key-0123456789abcdef0123456789abcdef0123456";
     private static final JwtAuthProperties JWT = new JwtAuthProperties(ACCESS_KEY, Duration.ofMinutes(15), REFRESH_KEY, Duration.ofDays(14));
     private static final AuthSessionProperties SESSION = new AuthSessionProperties(5, Duration.ofSeconds(10));
-    private static final MemberConsentStatusInfo ALL_AGREED = new MemberConsentStatusInfo(List.of(), true);
+    private static final MemberConsentStatusInfo ALL_AGREED = new MemberConsentStatusInfo(List.of(), true, false);
 
     private final JwtAuthProvider jwtAuthProvider = new JwtAuthProvider(JWT);
     private RefreshSessionStorePort store;
@@ -134,13 +134,28 @@ class AuthTokenProcessorTest {
     @Test
     @DisplayName("재동의할 필수 항목이 있으면 로그인은 되고 응답으로 알리며, report:write 는 싣지 않는다")
     void issueWithPendingConsent() {
-        when(memberConsentProcessor.currentStatus(MEMBER_ID)).thenReturn(new MemberConsentStatusInfo(List.of(ConsentType.PRIVACY_POLICY), true));
+        when(memberConsentProcessor.currentStatus(MEMBER_ID)).thenReturn(new MemberConsentStatusInfo(List.of(ConsentType.PRIVACY_POLICY), true, false));
 
         AuthTokenInfo info = processor.issue(member(MemberStatus.ACTIVE), "Mac · Chrome");
 
         assertThat(info.pendingConsents()).containsExactly(ConsentType.PRIVACY_POLICY);
         assertThat(info.reportWritable()).isFalse();
         assertThat(jwtAuthProvider.parseAccessToken(info.accessToken()).scopes()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("미완료 보고 파기 요청이 있으면 동의가 모두 유효해도 로그인 · 재발급 모두 report:write 를 싣지 않는다")
+    void pendingPurgeBlocksReportWriteOnIssueAndReissue() {
+        when(memberConsentProcessor.currentStatus(MEMBER_ID)).thenReturn(new MemberConsentStatusInfo(List.of(), true, true));
+        when(store.rotate(any(), eq(SESSION.rotationGrace()), eq(JWT.refreshExpiration()))).thenReturn(RefreshRotationResult.of(Outcome.ROTATED));
+
+        AuthTokenInfo issued = processor.issue(member(MemberStatus.ACTIVE), "Mac · Chrome");
+        AuthTokenInfo reissued = processor.reissue(jwtAuthProvider.issueRefreshToken(MEMBER_ID, "session-1").value());
+
+        assertThat(issued.reportWritable()).isFalse();
+        assertThat(jwtAuthProvider.parseAccessToken(issued.accessToken()).scopes()).isEmpty();
+        assertThat(reissued.reportWritable()).isFalse();
+        assertThat(jwtAuthProvider.parseAccessToken(reissued.accessToken()).scopes()).isEmpty();
     }
 
     @Test
@@ -178,7 +193,7 @@ class AuthTokenProcessorTest {
         String presented = jwtAuthProvider.issueRefreshToken(MEMBER_ID, "session-1").value();
         RefreshTokenClaims presentedClaims = jwtAuthProvider.parseRefreshToken(presented);
         when(store.rotate(any(), eq(SESSION.rotationGrace()), eq(JWT.refreshExpiration()))).thenReturn(RefreshRotationResult.of(Outcome.ROTATED));
-        when(memberConsentProcessor.currentStatus(MEMBER_ID)).thenReturn(new MemberConsentStatusInfo(List.of(), false));
+        when(memberConsentProcessor.currentStatus(MEMBER_ID)).thenReturn(new MemberConsentStatusInfo(List.of(), false, false));
 
         AuthTokenInfo info = processor.reissue(presented);
 

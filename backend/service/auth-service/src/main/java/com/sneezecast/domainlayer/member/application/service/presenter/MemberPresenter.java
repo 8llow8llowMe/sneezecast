@@ -1,6 +1,8 @@
 package com.sneezecast.domainlayer.member.application.service.presenter;
 
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberConsentStatusResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
+import com.sneezecast.domainlayer.member.application.info.MemberConsentStatusInfo;
 import com.sneezecast.domainlayer.member.application.info.MemberMyInfo;
 import org.springframework.stereotype.Component;
 
@@ -23,6 +25,16 @@ public class MemberPresenter {
             .role(info.role().name())
             .pendingConsents(info.pendingConsents().stream().map(Enum::name).toList())
             .reportWritable(info.reportWritable())
+            .build();
+    }
+
+    /** @param reportWritable 같은 상태로 계산한 보고 가능 여부(auth 의 scope 정책) */
+    public MemberConsentStatusResponse toConsentStatusResponse(MemberConsentStatusInfo status, boolean reportWritable) {
+        return MemberConsentStatusResponse.builder()
+            .pendingConsents(status.pendingRequiredConsents().stream().map(Enum::name).toList())
+            .healthInfoAgreed(status.healthInfoAgreed())
+            .reportWritable(reportWritable)
+            .purgePending(status.purgePending())
             .build();
     }
 }

@@ -12,6 +12,7 @@ import com.sneezecast.domainlayer.auth.application.model.OAuthLinkTicket;
 import com.sneezecast.domainlayer.auth.application.model.OAuthSignupTicket;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.MemberConsentRepositoryAdapter;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.MemberRepositoryAdapter;
+import com.sneezecast.domainlayer.member.adapter.out.persistence.ReportPurgeRequestRepositoryAdapter;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.entity.MemberConsentEntity;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.entity.MemberEntity;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.repository.MemberConsentRepository;
@@ -20,8 +21,10 @@ import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.mapper.MemberConsentMapperImpl;
 import com.sneezecast.domainlayer.member.application.mapper.MemberMapperImpl;
+import com.sneezecast.domainlayer.member.application.mapper.ReportPurgeRequestMapperImpl;
 import com.sneezecast.domainlayer.member.application.service.processor.MemberCommandProcessor;
 import com.sneezecast.domainlayer.member.application.service.processor.MemberConsentProcessor;
+import com.sneezecast.domainlayer.member.application.service.processor.ReportPurgeRequestProcessor;
 import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
 import com.sneezecast.domainlayer.member.domain.enums.MemberStatus;
 import com.sneezecast.domainlayer.member.domain.enums.OAuthProvider;
@@ -53,6 +56,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Import({
     JpaAuditConfig.class, OAuthMemberProcessor.class, MemberConsentProcessor.class, MemberCommandProcessor.class,
     MemberRepositoryAdapter.class, MemberConsentRepositoryAdapter.class, MemberMapperImpl.class, MemberConsentMapperImpl.class,
+    ReportPurgeRequestProcessor.class, ReportPurgeRequestRepositoryAdapter.class, ReportPurgeRequestMapperImpl.class,
     OAuthMemberTransactionTest.Beans.class
 })
 class OAuthMemberTransactionTest {

@@ -1,8 +1,10 @@
 package com.sneezecast.domainlayer.member.application.port.out;
 
+import java.time.Instant;
+
 /**
- * 회원 보안 이벤트(비밀번호 변경) 때 로그인 세션을 끊는 계약. member 컨텍스트가 auth 컨텍스트 구현(세션 저장소 · 블랙리스트)에 직접 의존하지
- * 않도록 경계를 둔다.
+ * 회원 보안 이벤트(비밀번호 변경 · 건강정보 동의 철회) 때 로그인 세션을 끊는 계약. member 컨텍스트가 auth 컨텍스트 구현(세션 저장소 · 블랙리스트)에
+ * 직접 의존하지 않도록 경계를 둔다.
  */
 public interface MemberSessionRevokePort {
 
@@ -13,4 +15,13 @@ public interface MemberSessionRevokePort {
      * @throws com.sneezecast.domainlayer.member.application.exception.MemberException 세션 저장소 장애면 {@code SESSION_REVOKE_UNAVAILABLE}(503)
      */
     void revokeOtherSessions(long memberId, String keepSessionId);
+
+    /**
+     * 회원의 모든 세션과 그 세션들의 마지막 access, 그리고 요청한 access 까지 폐기한다 — 모든 기기 로그아웃.
+     *
+     * @param accessTokenId   요청 access 의 jti
+     * @param accessExpiresAt 요청 access 의 만료 시각
+     * @throws com.sneezecast.domainlayer.member.application.exception.MemberException 세션 저장소 장애면 {@code SESSION_REVOKE_UNAVAILABLE}(503)
+     */
+    void revokeAllSessions(long memberId, String accessTokenId, Instant accessExpiresAt);
 }

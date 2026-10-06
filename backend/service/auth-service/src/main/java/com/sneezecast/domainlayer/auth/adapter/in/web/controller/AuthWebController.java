@@ -109,7 +109,7 @@ public class AuthWebController {
         정지 MEMBER_003(403) 을 알려 줍니다. 세션 저장소 장애는 AUTH_017(503).
 
         응답의 `pendingConsents` 가 비어 있지 않으면 약관 개정 등으로 다시 동의해야 하는 필수 항목입니다 — 로그인은 됐으니 재동의 화면으로 이끕니다.
-        `reportWritable` 이 false 면 주간 보고 전에 건강정보 동의가 필요합니다.
+        `reportWritable` 이 false 면 주간 보고 전에 건강정보 동의가 필요하거나, 동의 철회로 보고를 지우는 중입니다(동의 API 응답의 `purgePending`).
 
         인증 불필요. **필수: email, password.** 비밀번호는 가입 규칙을 검사하지 않고 100자 상한만 봅니다.
 

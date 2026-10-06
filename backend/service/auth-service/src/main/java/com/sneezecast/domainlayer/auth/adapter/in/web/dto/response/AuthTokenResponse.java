@@ -23,8 +23,8 @@ public record AuthTokenResponse(
         example = "[\"PRIVACY_POLICY\"]")
     List<String> pendingConsents,
 
-    @Schema(description = "주간 보고를 쓸 수 있는지 (access token 에 report:write 가 실렸는지). 필수 동의가 모두 유효하고 건강정보 동의가 유효해야 true",
-        example = "true")
+    @Schema(description = "주간 보고를 쓸 수 있는지 (access token 에 report:write 가 실렸는지). 필수 동의가 모두 유효하고 건강정보 동의가 유효하며 "
+        + "미완료 보고 파기 요청이 없어야 true (파기 중인지는 동의 API 응답의 purgePending 으로 구분)", example = "true")
     boolean reportWritable
 ) {
 

@@ -21,6 +21,13 @@ public final class MemberValidationMessage {
     // 길이는 @Size(MEMBER_106), 문자 구성은 @Pattern(MEMBER_107)이 맡는다.
     public static final String NEW_PASSWORD_LENGTH_INVALID = "MEMBER_106:새 비밀번호는 8자 이상 20자 이하여야 합니다.";
     public static final String NEW_PASSWORD_PATTERN_INVALID = "MEMBER_107:새 비밀번호는 공백 없이 영문자와 숫자를 각각 1자 이상 포함해야 합니다.";
+    public static final String CONSENT_TYPE_REQUIRED = "MEMBER_108:동의 항목은 필수입니다.";
+    public static final String DOCUMENT_VERSION_REQUIRED = "MEMBER_109:문서 버전은 필수입니다.";
+    // 상한은 member_consent.document_version 컬럼 길이다. 저장값은 서버 설정이고 요청값은 현재 버전과 같은지(MEMBER_011)만 본다.
+    public static final String DOCUMENT_VERSION_LENGTH_INVALID = "MEMBER_110:문서 버전은 20자 이하여야 합니다.";
+
+    /** 문서 버전 상한 — member_consent.document_version VARCHAR(20) · legal.*-version 설정 상한과 같다. */
+    public static final int DOCUMENT_VERSION_MAX_LENGTH = 20;
 
     /** 새 비밀번호 문자 구성 규칙 — 가입과 같은 정규식(회원 입력 정책)을 쓴다. */
     public static final String PASSWORD_REGEXP = MemberInputPolicy.PASSWORD_REGEXP;

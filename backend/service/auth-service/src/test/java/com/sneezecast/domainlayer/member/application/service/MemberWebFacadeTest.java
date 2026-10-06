@@ -17,11 +17,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.sneezecast.domainlayer.auth.application.service.support.ReportScopePolicy;
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberConsentStatusResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
 import com.sneezecast.domainlayer.member.adapter.out.auth.MemberReportScopeAdapter;
 import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.info.MemberConsentStatusInfo;
+import com.sneezecast.domainlayer.member.application.port.in.MemberConsentWithdrawResult;
 import com.sneezecast.domainlayer.member.application.port.out.MemberPasswordAttemptPort;
 import com.sneezecast.domainlayer.member.application.port.out.MemberRepositoryPort;
 import com.sneezecast.domainlayer.member.application.port.out.MemberSessionRevokePort;
@@ -37,6 +39,7 @@ import com.sneezecast.domainlayer.member.domain.model.Member;
 import com.sneezecast.global.properties.LoginAttemptProperties;
 import com.sneezecast.security.common.enums.SecurityRole;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -72,11 +75,113 @@ class MemberWebFacadeTest {
         MemberPasswordAttemptPort attemptPort = mock(MemberPasswordAttemptPort.class);
         when(attemptPort.increaseFailureCount(anyLong(), any())).thenReturn(1L);
         when(memberConsentProcessor.currentStatus(anyLong())).thenReturn(MemberConsentStatusInfo.builder().healthInfoAgreed(true).build());
-        MemberQueryProcessor queryProcessor = new MemberQueryProcessor(memberRepositoryPort, memberConsentProcessor,
-            new MemberReportScopeAdapter(new ReportScopePolicy()));
+        MemberReportScopeAdapter reportScopeAdapter = new MemberReportScopeAdapter(new ReportScopePolicy());
+        MemberQueryProcessor queryProcessor = new MemberQueryProcessor(memberRepositoryPort, memberConsentProcessor, reportScopeAdapter);
         facade = new MemberWebFacade(queryProcessor, memberCommandProcessor,
             new MemberPasswordProcessor(passwordEncoder, attemptPort, new LoginAttemptProperties(5, Duration.ofMinutes(10), 30, Duration.ofHours(1))),
-            memberSessionRevokePort, passwordEncoder, new MemberPresenter());
+            memberConsentProcessor, reportScopeAdapter, memberSessionRevokePort, passwordEncoder, new MemberPresenter());
+    }
+
+    @Test
+    @DisplayName("동의는 회원 상태를 확인하고 처리기에 넘긴 뒤, 동의 뒤의 상태를 토큰과 같은 계산으로 돌려준다")
+    void agreeConsentReturnsStatus() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        when(memberConsentProcessor.currentStatus(42L)).thenReturn(MemberConsentStatusInfo.builder().healthInfoAgreed(true).build());
+
+        MemberConsentStatusResponse response = facade.agreeConsent(42L, ConsentType.SENSITIVE_HEALTH_INFO, "2026-10-01");
+
+        verify(memberConsentProcessor).agree(42L, ConsentType.SENSITIVE_HEALTH_INFO, "2026-10-01");
+        assertThat(response.pendingConsents()).isEmpty();
+        assertThat(response.healthInfoAgreed()).isTrue();
+        assertThat(response.reportWritable()).isTrue();
+        assertThat(response.purgePending()).isFalse();
+    }
+
+    @Test
+    @DisplayName("미완료 파기가 있으면 건강정보에 다시 동의해도 reportWritable false · purgePending true 다")
+    void agreeConsentWithPendingPurgeIsNotWritable() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        when(memberConsentProcessor.currentStatus(42L)).thenReturn(MemberConsentStatusInfo.builder().healthInfoAgreed(true).purgePending(true).build());
+
+        MemberConsentStatusResponse response = facade.agreeConsent(42L, ConsentType.SENSITIVE_HEALTH_INFO, "2026-10-01");
+
+        assertThat(response.healthInfoAgreed()).isTrue();
+        assertThat(response.reportWritable()).isFalse();
+        assertThat(response.purgePending()).isTrue();
+    }
+
+    @Test
+    @DisplayName("미완료 파기가 있으면 내 정보의 reportWritable 도 false 다 — 토큰 · 동의 응답과 같은 계산")
+    void myInfoWithPendingPurgeIsNotWritable() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        when(memberConsentProcessor.currentStatus(42L)).thenReturn(MemberConsentStatusInfo.builder().healthInfoAgreed(true).purgePending(true).build());
+
+        assertThat(facade.getMyInfo(42L).reportWritable()).isFalse();
+    }
+
+    @Test
+    @DisplayName("탈퇴 · 정지 회원은 동의 · 철회할 수 없다 — 처리기를 부르지 않는다")
+    void consentRequiresActiveMember() {
+        givenMember(emailMember(MemberStatus.SUSPENDED));
+
+        assertThat(failure(() -> facade.agreeConsent(42L, ConsentType.SENSITIVE_HEALTH_INFO, "v"))).isEqualTo(MemberErrorCode.SUSPENDED_MEMBER);
+        assertThat(failure(() -> facade.withdrawConsent(42L, ConsentType.SENSITIVE_HEALTH_INFO, "jti", null))).isEqualTo(MemberErrorCode.SUSPENDED_MEMBER);
+        verify(memberConsentProcessor, never()).agree(anyLong(), any(), any());
+        verify(memberConsentProcessor, never()).withdraw(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("철회하면 커밋(처리기 반환) 뒤에 요청 access 를 포함해 모든 기기를 로그아웃시키고, 로그아웃했음을 알린다")
+    void withdrawRevokesAllSessionsAfterCommit() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        Instant expiresAt = Instant.now().plusSeconds(600);
+        when(memberConsentProcessor.withdraw(42L, ConsentType.SENSITIVE_HEALTH_INFO)).thenReturn(true);
+        when(memberConsentProcessor.currentStatus(42L)).thenReturn(MemberConsentStatusInfo.builder().purgePending(true).build());
+
+        MemberConsentWithdrawResult result = facade.withdrawConsent(42L, ConsentType.SENSITIVE_HEALTH_INFO, "access-jti", expiresAt);
+
+        InOrder order = inOrder(memberConsentProcessor, memberSessionRevokePort);
+        order.verify(memberConsentProcessor).withdraw(42L, ConsentType.SENSITIVE_HEALTH_INFO);
+        order.verify(memberSessionRevokePort).revokeAllSessions(42L, "access-jti", expiresAt);
+        assertThat(result.loggedOut()).isTrue();
+        assertThat(result.response().healthInfoAgreed()).isFalse();
+        assertThat(result.response().reportWritable()).isFalse();
+        assertThat(result.response().purgePending()).isTrue();
+    }
+
+    @Test
+    @DisplayName("철회할 동의가 없으면(멱등) 세션을 건드리지 않고 로그아웃하지 않았다고 알린다")
+    void withdrawWithoutConsentDoesNothing() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        when(memberConsentProcessor.withdraw(42L, ConsentType.SENSITIVE_HEALTH_INFO)).thenReturn(false);
+
+        MemberConsentWithdrawResult result = facade.withdrawConsent(42L, ConsentType.SENSITIVE_HEALTH_INFO, "access-jti", null);
+
+        assertThat(result.loggedOut()).isFalse();
+        verify(memberSessionRevokePort, never()).revokeAllSessions(anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("커밋 뒤 로그아웃이 실패해도(MEMBER_009) 철회는 성공이다 — 철회 · 파기 요청은 이미 커밋됐다")
+    void withdrawToleratesRevokeFailure() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        when(memberConsentProcessor.withdraw(42L, ConsentType.SENSITIVE_HEALTH_INFO)).thenReturn(true);
+        doThrow(new MemberException(MemberErrorCode.SESSION_REVOKE_UNAVAILABLE)).when(memberSessionRevokePort).revokeAllSessions(anyLong(), any(), any());
+
+        MemberConsentWithdrawResult result = facade.withdrawConsent(42L, ConsentType.SENSITIVE_HEALTH_INFO, "access-jti", null);
+
+        assertThat(result.loggedOut()).as("쿠키는 지운다").isTrue();
+    }
+
+    @Test
+    @DisplayName("철회할 수 없는 항목(MEMBER_012)이면 세션을 건드리지 않는다")
+    void withdrawRejectionKeepsSessions() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        when(memberConsentProcessor.withdraw(42L, ConsentType.TERMS_OF_SERVICE)).thenThrow(new MemberException(MemberErrorCode.CONSENT_NOT_WITHDRAWABLE));
+
+        assertThat(failure(() -> facade.withdrawConsent(42L, ConsentType.TERMS_OF_SERVICE, "access-jti", null)))
+            .isEqualTo(MemberErrorCode.CONSENT_NOT_WITHDRAWABLE);
+        verify(memberSessionRevokePort, never()).revokeAllSessions(anyLong(), any(), any());
     }
 
     @Test

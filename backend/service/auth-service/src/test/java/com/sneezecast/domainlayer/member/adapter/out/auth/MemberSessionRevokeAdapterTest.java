@@ -2,6 +2,7 @@ package com.sneezecast.domainlayer.member.adapter.out.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -14,6 +15,7 @@ import com.sneezecast.domainlayer.auth.application.exception.AuthException;
 import com.sneezecast.domainlayer.auth.application.service.processor.AuthSessionProcessor;
 import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
+import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -43,5 +45,17 @@ class MemberSessionRevokeAdapterTest {
                 assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.SESSION_REVOKE_UNAVAILABLE);
                 assertThat(e.getCause()).isInstanceOf(AuthException.class);
             });
+    }
+
+    @Test
+    @DisplayName("모든 기기 로그아웃은 요청 access 의 jti · 만료와 함께 넘기고, 저장소 장애는 MEMBER_009 로 바꾼다")
+    void revokeAllSessionsWithRequestAccess() {
+        Instant expiresAt = Instant.now().plusSeconds(600);
+        adapter.revokeAllSessions(42L, "access-jti", expiresAt);
+        verify(authSessionProcessor).revokeAllSessions(42L, "access-jti", expiresAt);
+
+        doThrow(new AuthException(AuthErrorCode.SESSION_STORE_UNAVAILABLE)).when(authSessionProcessor).revokeAllSessions(anyLong(), any(), any());
+        assertThatThrownBy(() -> adapter.revokeAllSessions(42L, "access-jti", expiresAt))
+            .isInstanceOfSatisfying(MemberException.class, e -> assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.SESSION_REVOKE_UNAVAILABLE));
     }
 }

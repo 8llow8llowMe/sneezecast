@@ -25,10 +25,10 @@ public record MemberMyInfoResponse(
     @Schema(description = "역할 USER · OPERATOR · ADMIN", example = "USER")
     String role,
 
-    @Schema(description = "다시 동의해야 하는 필수 항목(ConsentType 이름). 로그인 · 재발급 응답과 같은 계산이다. 없으면 빈 목록", example = "[]")
+    @Schema(description = "다시 동의해야 하는 필수 항목(TERMS_OF_SERVICE · PRIVACY_POLICY 만). 로그인 · 재발급 응답과 같은 계산이다. 없으면 빈 목록", example = "[]")
     List<String> pendingConsents,
 
-    @Schema(description = "주간 보고를 쓸 수 있는지. 필수 동의가 모두 유효하고 건강정보 동의가 유효해야 true", example = "true")
+    @Schema(description = "주간 보고를 쓸 수 있는지. 재동의 대기가 없고, 건강정보 동의가 유효하고, 미완료 보고 파기가 없어야 true", example = "true")
     boolean reportWritable
 ) {
 
