@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원 · 행정동 · 주간 보고(이번 주)는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자 · 지난 보고 내역은 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원 · 행정동 · 주간 보고(이번 주)는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자 · 지난 보고 내역 · 관심 동네는 **BE 미정**이라 아래 초안은 프론트 제안이다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -205,3 +205,22 @@ GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:writ
 - 목록은 관례대로 `SliceResponse { contents, hasNext }` 다(architecture-guide §8). 보관이 52주라 지난 보고는 많아야 51건이고 한 번에 모두 준다 — 페이지 파라미터를 두지 않고 `hasNext` 는 늘 false 다(프론트는 보지 않는다). 배열(`List`) 예외(행정동 검색 `DistrictWebController` 선례)는 쓰지 않았다 — 자동완성처럼 프론트 계약이 배열로 정해진 것이 아니고, 보관 기간이 늘면 페이지를 나눌 수 있게 둔다.
 - 오류는 `/reports/current` 와 같다: 토큰 없음 `SECURITY_001`, 동의 전 `SECURITY_006`(403). 받는 파라미터가 없어 검증 오류는 없다.
 - 프론트 함수: `features/report/report-history.ts` 의 `listPastReports(source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "지난 보고는 아직 불러올 수 없어요")이다 — 건강정보라 BE 미정이어도 실제 회원에게 예시 이력을 보이지 않는다(conventions.md "데이터 출처" 의 예외). 목은 예시 이력이다.
+
+### 관심 동네 (#198, 프론트 초안)
+
+관심 동네 화면(`/me/interest-regions`)이 가정한 모양이다. 내 동네(`/me/region`, 위 "회원")의 경로 · 권한 · 응답 · 오류 관례를 따른다.
+
+```text
+GET    /api/v1/members/me/interest-regions          → SliceResponse<MemberRegion>   (인증, 고른 순서)
+POST   /api/v1/members/me/interest-regions  { code } → SliceResponse<MemberRegion>   (인증, 목록 끝에 더한 뒤의 목록)
+DELETE /api/v1/members/me/interest-regions/{code}    → SliceResponse<MemberRegion>   (인증, 뺀 뒤의 목록, 없어도 성공)
+```
+
+- `MemberRegion` 은 내 동네와 같은 `{ code, name, sigungu, abolished }` 다. 행정동만 저장한다 — 위치 · 주소를 받지 않는다. 건강정보가 아니라 `report:write` 를 요구하지 않는다(동의하지 않은 회원도 쓴다).
+- 세 요청 모두 바뀐 뒤의 목록을 준다 — 화면이 더하고 뺀 결과를 다시 읽지 않고 그대로 그린다. 목록은 관례대로 `SliceResponse { contents, hasNext }` 다(architecture-guide §8). 상한이 3곳이라 한 번에 모두 주고 `hasNext` 는 늘 false 다(프론트는 보지 않는다). 배열(`List`) 예외는 쓰지 않았다 — 상한이 임시 결정이라 늘어날 수 있고, 지난 보고 내역(위)과 같은 판단이다.
+- **상한 3곳은 임시 결정이다**(`INTEREST_REGION_LIMIT`). 기획서 · 시안에 상한이 없어 시안 예시(`2곳`)보다 하나 많게 두었다. 서버 상한과 같게 맞춘다.
+- `POST` 오류는 `PUT /me/region` 을 따른다: `REGION_001` 없는 코드 · `002` 폐지(400), `004` 행정동 확인 장애(503), 검증 `101` · `102`(400). 새로 둘 것(번호는 백엔드가 정한다): **상한 초과 409 · 이미 고른 동네 409.** 화면은 보내기 전에 둘 다 막지만 다른 탭 · 기기에서 바뀌었을 수 있다. **409 오류 봉투(`dataBody: null`)에는 목록이 없어 프론트는 거절 뒤 `GET` 을 다시 불러** 목록을 맞추고, 고른 동네는 남겨 이유를 보인다.
+- `DELETE` 는 목록에 없는 코드여도 성공이다(이미 지운 동네를 다시 지움 — 화면은 끝난 것으로 본다). 형식이 틀린 코드는 검증 오류(400)다.
+- `MemberRegion` 의 `name` · `sigungu` 는 null 일 수 있다(행정동 서비스가 코드를 모름 — 폐지 · 개편, 내 동네와 같은 규칙). 지금 화면 모델(`District`)은 이름이 늘 있어 연동 때 더한다: 그 줄은 이름 자리에 `없어진 동네`, 시군구 자리에 `행정구역 개편으로 바뀌었어요` 를 보이고 `삭제` 는 그대로 둔다(이름 `없어진 동네 삭제`). 지어낸 이름 · 코드를 보이지 않는다. 결과 목록의 `· 관심 동네` 표시 · 이미 고름 판단은 코드로 한다.
+- 백엔드와 정할 것: 내 동네와 같은 동네를 서버도 막을지(화면은 막는다 — "내 동네는 이미 지켜보고 있어요"), 내 동네를 관심 동네 중 하나로 바꾸면 그 관심 동네를 남길지(지금 화면은 남기고 `내 동네` 로 적는다), 폐지된 관심 동네(`abolished: true` — 이름이 남아 있을 때)를 위 null 처리와 같게 보일지 · 서버가 자동으로 지울지(목에는 폐지 동네가 없어 화면에 표시가 없다).
+- 프론트 함수: `features/region/interest-region-client.ts` 의 `listInterestRegions` · `addInterestRegion` · `removeInterestRegion(source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "관심 동네는 아직 저장할 수 없어요")이다 — 실제 회원이 고른 동네를 저장한 것처럼 보이지 않게 한다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다.
