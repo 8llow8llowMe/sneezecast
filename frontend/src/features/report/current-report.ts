@@ -114,8 +114,11 @@ function load(memberId: string): void {
   )
 }
 
-/** 읽어 둔 값이 지난 주 것이면 다시 읽는다. 읽는 중 · 실패 · 같은 주면 아무 일도 없다 */
-function refreshIfWeekChanged(): void {
+/**
+ * 읽어 둔 값이 지난 주 것이면 다시 읽는다. 읽는 중 · 실패 · 같은 주면 아무 일도 없다.
+ * 화면이 다시 보일 때(아래 리스너)와 주를 보이는 화면이 열릴 때(최근 보고 내역, #194) 부른다
+ */
+export function refreshCurrentReportIfWeekChanged(): void {
   const current = snapshot
   if (current?.report.status !== 'ready' || current.week === kstIsoWeek(new Date())) return
   seq += 1
@@ -124,7 +127,7 @@ function refreshIfWeekChanged(): void {
 }
 
 function onVisibilityChange(): void {
-  if (document.visibilityState === 'visible') refreshIfWeekChanged()
+  if (document.visibilityState === 'visible') refreshCurrentReportIfWeekChanged()
 }
 
 /** 세션에 맞춘다. 보고할 수 있는 회원이 바뀌었으면 다시 읽고, 아니게 되면 지운다 */
@@ -149,12 +152,12 @@ function sync(): void {
  */
 export function startCurrentReport(): () => void {
   const unsubscribe = subscribeSession(sync)
-  window.addEventListener('focus', refreshIfWeekChanged)
+  window.addEventListener('focus', refreshCurrentReportIfWeekChanged)
   document.addEventListener('visibilitychange', onVisibilityChange)
   sync()
   return () => {
     unsubscribe()
-    window.removeEventListener('focus', refreshIfWeekChanged)
+    window.removeEventListener('focus', refreshCurrentReportIfWeekChanged)
     document.removeEventListener('visibilitychange', onVisibilityChange)
   }
 }
