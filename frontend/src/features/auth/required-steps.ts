@@ -18,7 +18,7 @@ import {
   type MockProfile,
 } from './auth-client'
 import { getMemberInfoSnapshot, memberInfoOf, type MemberInfoSnapshot } from './member-info'
-import { MOCK_AUTH_PARAM, MOCK_PROVIDER_PARAM } from './use-mock-auth'
+import { MOCK_AUTH_PARAM, MOCK_PROVIDER_PARAM } from './mock-params'
 
 /* ── 다시 들어온 회원이 먼저 거칠 화면 (Setup-3-reconsent · Setup-1-reselect) ─────────────────────────
  *
