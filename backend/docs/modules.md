@@ -123,7 +123,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 |----------|------|
 | `auth` | 이메일 + 비밀번호 가입·로그인, 카카오 소셜 로그인, 이메일 인증 코드, 비밀번호 재설정, 토큰 발급·재발급·폐기, 세션(기기) 관리 |
 | `member` | 회원 (닉네임·프로필 이미지), 내 정보 수정, 비밀번호 변경, 탈퇴 |
-| `consent` | 민감정보 처리 동의와 철회 이력 (알림 수신 동의는 2단계) |
+| `consent` | (별도 컨텍스트를 두지 않는다 — 동의 · 철회 이력과 원시 보고 파기 요청은 `member` 컨텍스트가 맡는다. 알림 수신 동의는 2단계) |
 | `region` | 회원이 선택한 행정동 (내 동네 저장 · 조회 — 코드 검증과 이름 · 폐지 여부는 surveillance 내부 API 를 Feign 으로 부른다) |
 | `notification` | PWA 푸시 구독, 안내 발행 시 팬아웃 발송, 발송 로그 (2단계) |
 
@@ -140,7 +140,8 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 카카오 | `GET /kakao/authorize?switchAccount=` · `POST /kakao/login` · `POST /kakao/signup` · `POST /kakao/link` |
 | 비밀번호 | `POST /password/reset/send-code` · `POST /password/reset/verify-code` (일회용 재설정 토큰) · `POST /password/reset` · `POST /me/password` (변경) |
 | 세션 | `GET /sessions` · `DELETE /sessions/{sessionId}` · `DELETE /sessions` (현재 기기를 뺀 전부) |
-| 내 정보 | `GET /me` · `PATCH /me` · `POST /me/withdraw` (#59) · 프로필 이미지 업로드 · `DELETE /me/profile-image` (#112) |
+| 내 정보 | `GET /me` · `PATCH /me` · `POST /me/withdraw` (#154) · 프로필 이미지 업로드 · `DELETE /me/profile-image` (#112) |
+| 동의 | `POST /me/consents` (동의 · 재동의) · `DELETE /me/consents/SENSITIVE_HEALTH_INFO` (건강정보 동의 철회) |
 | 내 동네 | `GET /me/region` · `PUT /me/region` |
 
 **저장소**
@@ -176,7 +177,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 세션은 로그인 한 번 = 기기 하나다. 세션 ID 는 로그인 때 만들고 **회전해도 유지**하며, refresh JWT 의 jti 만 매번 바뀐다. JWT 의 `sid` claim 이 세션 ID 다(access · refresh 둘 다).
 - Redis 키: `{prefix}:auth:refreshSession:{memberId}:{sessionId}`(HASH — 현재 · 직전 refresh jti, 회전 시각, 기기 이름, 생성 · 마지막 사용 시각, 최근 access jti · 만료) · `{prefix}:auth:refreshSessions:{memberId}`(ZSET, score = 마지막 사용). TTL 은 refresh 만료(기본 14일, 회전마다 갱신). **refresh 토큰 원문은 저장하지 않는다.** 회원당 기기 상한(`auth.session.max-devices`, 기본 5)을 넘으면 가장 오래 안 쓴 세션부터 밀어낸다.
 - 재발급 회전은 Lua 하나로 원자 처리한다 — 제시한 jti 가 현재 jti 면 회전, **직전 jti 이고 회전 직후(`auth.session.rotation-grace`, 기본 10초)면 여러 탭의 동시 재발급으로 보고 세션을 두고 `AUTH_016`(409)**, 그 밖의 옛 jti 는 **재사용(탈취 의심)으로 보고 그 세션을 폐기**하고 `AUTH_015`. 세션이 없거나 refresh 가 만료면 `AUTH_014`.
-- scope 와 재동의 표시는 로그인 · 재발급마다 동의 이력에서 다시 계산한다. `pendingConsents` = 필수 항목(이용약관 · 개인정보 · 만 19세) 중 현재 문서 버전의 유효 동의가 없는 것(문서 개정 → 재동의 유도, 로그인은 막지 않는다). `report:write` 는 **pendingConsents 가 비어 있고 건강정보 동의가 유효할 때만** 싣는다. "미완료 보고 파기 요청이 없을 것" 조건은 `report_purge_request` 와 함께 #59 에서 더한다.
+- scope 와 재동의 표시는 로그인 · 재발급마다 동의 이력에서 다시 계산한다. `pendingConsents` = 이용약관 · 개인정보 중 현재 문서 버전의 유효 동의가 없는 것(문서 개정 → 재동의 유도, 로그인은 막지 않는다). **만 19세 이상 확인은 버전과 무관하게 유효**하다(사실 확인이라 약관 개정 때 다시 받지 않는다 — 2026-10-02 결정). `report:write` 는 **pendingConsents 가 비어 있고 · 건강정보 동의가 유효하고 · 미완료 보고 파기 요청이 없을 때만** 싣는다(`ReportScopePolicy`). 마지막 조건은 2차 파기가 새 보고를 지우지 않게 하려는 것이라, 파기 실행(#155)이 들어오기 전에는 철회 뒤 다시 동의해도 보고할 수 없다.
 - 재발급은 회원 상태도 다시 본다. ACTIVE 가 아니면 그 회원의 전 세션을 지운다.
 - 로그아웃은 현재 세션(access `sid`)을 지우고 access jti 를 남은 만료 시간만큼 블랙리스트에 올린다. 세션 폐기(`DELETE /sessions/{id}` · `DELETE /sessions`) · 재사용 감지 · 기기 상한 밀어내기는 그 세션에 저장된 **최근 access jti** 를 블랙리스트에 올려 그 기기를 끊는다. 같은 세션에서 그보다 먼저 발급돼 아직 만료되지 않은 access(여러 탭)는 최대 access TTL(15분) 동안 남는다 — 동의 철회와 같은 허용 범위다([architecture-guide.md](architecture-guide.md)). 로그아웃만 Redis 장애를 관용한다(로그를 남기고 200 + 쿠키 삭제 — 쿠키가 지워지면 그 브라우저의 refresh 는 사라진다).
 - 기기 이름은 `User-Agent` 를 "OS · 브라우저"(예: `iPhone · Safari`)로 줄여 저장한다. **UA 원문과 IP 는 저장하지 않는다.**
@@ -211,14 +212,23 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 
 **내 정보 · 비밀번호 변경** (`member` 컨텍스트, 인증 필요)
 
-- `GET /members/me` → `{memberId, email, nickname, provider(EMAIL | KAKAO — DB 값이 null 이면 EMAIL), hasPassword, role, pendingConsents, reportWritable}`. 재동의 · 보고 가능 여부는 토큰과 같은 계산(`MemberConsentProcessor.currentStatus` + auth 의 `ReportScopePolicy` — member 는 `MemberReportScopePort` 로 부른다)이다. 내 동네는 `/me` 에 싣지 않고 `GET /members/me/region`(#60)으로 따로 읽는다 — 이름 · 폐지 여부를 surveillance 에서 읽으므로 `/me` 가 surveillance 장애에 묶이지 않게 한다. 프로필 이미지는 #112 에서 더한다.
+- `GET /members/me` → `{memberId, email, nickname, provider(EMAIL | KAKAO — DB 값이 null 이면 EMAIL), hasPassword, role, pendingConsents, reportWritable}`. 재동의 · 보고 가능 여부(미완료 파기 요청 포함)는 토큰과 같은 계산(`MemberConsentProcessor.currentStatus` + auth 의 `ReportScopePolicy` — member 는 `MemberReportScopePort` 로 부른다)이다. 내 동네는 `/me` 에 싣지 않고 `GET /members/me/region`(#60)으로 따로 읽는다 — 이름 · 폐지 여부를 surveillance 에서 읽으므로 `/me` 가 surveillance 장애에 묶이지 않게 한다. 프로필 이미지는 #112 에서 더한다.
 - `PATCH /members/me` 는 닉네임만 바꾼다(가입과 같은 2~10자). 수정은 엔티티를 조회해 변경 감지로 한다 — 리포지토리의 수정 메서드는 `@Transactional(MANDATORY)` 라 트랜잭션 밖에서 부르면 바로 실패한다.
 - 비밀번호 변경 `{currentPassword, newPassword}`: 비밀번호가 없는(카카오만 쓰는) 계정이 부르면 `MEMBER_007`. 새 비밀번호 규칙은 가입과 같다(현재와 같아도 막지 않는다). **비밀번호 최초 설정 API 는 #61 에서 없앴다** — 카카오 회원은 비밀번호가 필요 없고(사용자 결정), 탈취된 access 로 이메일 로그인 자격을 만드는 경로도 함께 사라진다.
 - 현재 비밀번호 확인은 회원 단위로 횟수를 제한한다(`passwordChangeFail:{memberId}`, 상한 · 잠금은 `auth.login.*` 5회 · 10분). 로그인처럼 **BCrypt 전에 먼저 올리고**, 상한째 틀린 시도부터 `MEMBER_006`(429)이다. 틀리면 `MEMBER_005`.
 - 성공 순서: 현재 비밀번호 확인 → 새 비밀번호 BCrypt(트랜잭션 밖) → **지금 기기(access `sid`)를 뺀 다른 기기 세션 폐기 + access 블랙리스트**(sid 가 없으면 전부) → 저장(커밋) → 같은 범위 2차 폐기(실패해도 로그만 — 재설정과 같은 이유). 1차 폐기가 실패하면 저장하지 않고 `MEMBER_009`(503) — member 컨트롤러에는 auth 의 예외 처리기가 걸리지 않아 auth 의 `AUTH_017` 을 member 코드로 바꿔 낸다.
 - member 요청 검증은 `MemberRequestExceptionHandler`(member 패키지 전용) 가 `MEMBER_1xx` 로 낸다. auth 검증 오류가 MEMBER 코드로 새지 않게 처리기를 나눴다.
-- **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장과 카카오 연결의 provider 변경 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향). `region` 은 다른 컨텍스트와 서로 import 하지 않는다(회원은 JWT 의 `memberId` 로만 안다).
-- 오류 코드: `AUTH_018` 재설정 인증 만료(400) · `AUTH_019` 재설정 IP 상한(429) · 검증 `AUTH_115` · `116`(resetToken), `MEMBER_004` 회원 없음(404) · `005` 현재 비밀번호 불일치(400) · `006` 확인 잠금(429) · `007` 비밀번호 없는 계정(409) · `008` 비운 번호(#61 에서 최초 설정 API 를 없앰 — 재사용 금지) · `009` 세션 저장소 장애(503) · `100` · `198` · `199` 요청 형식, 검증 `MEMBER_101~107`.
+- **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장과 카카오 연결의 provider 변경 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향). `region` 은 다른 컨텍스트와 서로 import 하지 않는다(회원은 JWT 의 `memberId` 로만 안다). 예외 하나: 동의 철회 응답에서 refresh 쿠키를 지우려고 member 웹 계층(`MemberRefreshCookie`)에 auth 와 **같은 값**의 쿠키 이름 · 속성을 둔다 — 응답 헤더라 out 포트로 돌릴 수 없고, auth 상수를 쓰면 의존이 생긴다. 두 값이 같음은 테스트(`MemberRefreshCookieTest`)가 고정한다.
+- 오류 코드: `AUTH_018` 재설정 인증 만료(400) · `AUTH_019` 재설정 IP 상한(429) · 검증 `AUTH_115` · `116`(resetToken), `MEMBER_004` 회원 없음(404) · `005` 현재 비밀번호 불일치(400) · `006` 확인 잠금(429) · `007` 비밀번호 없는 계정(409) · `008` 비운 번호(#61 에서 최초 설정 API 를 없앰 — 재사용 금지) · `009` 세션 저장소 장애(503) · `010` 동의할 수 없는 항목(400) · `011` 동의 문서 버전 불일치(409) · `012` 철회할 수 없는 항목(400) · `100` · `198` · `199` 요청 형식, 검증 `MEMBER_101~110`.
+
+**동의 · 재동의 · 건강정보 동의 철회** (`member` 컨텍스트, 인증 필요 — #59)
+
+- `POST /members/me/consents {type, documentVersion}` — `TERMS_OF_SERVICE` · `PRIVACY_POLICY` · `SENSITIVE_HEALTH_INFO` 만 받는다(만 19세 확인 등은 `MEMBER_010` — 가입 때만 받는다). `documentVersion` 이 서버의 현재 버전(`legal.*-version`)과 다르면 `MEMBER_011`(409 — 프론트 legal 상수가 낡았다). 그 항목이 이미 현재 버전으로 유효하면 **멱등**(새 행 없음), 아니면 새 동의 행을 남긴다(기존 행은 고치지 않는다 — entity-design §1-2).
+- `DELETE /members/me/consents/SENSITIVE_HEALTH_INFO` — 그 밖의 항목은 `MEMBER_012`(약관 · 개인정보는 탈퇴로만 철회). 철회할 동의가 없으면 **멱등 200**(로그아웃하지 않는다). 철회 대상은 **최신 행이 철회되지 않은 것이고 버전은 보지 않는다** — 옛 버전 동의로 쓴 보고도 파기해야 해서다.
+- 철회는 **한 트랜잭션**에서 그 행에 `withdrawn_at` 을 채우고(쓰기 잠금으로 읽어 동시 철회가 파기 요청을 두 번 남기지 않게, 조회 후 변경 감지) `report_purge_request`(reason `HEALTH_CONSENT_WITHDRAWN`)를 만든다 — 파기 요청이 철회와 반드시 함께 남는다. 미완료 파기 요청이 이미 있으면 둘째 요청을 만들지 않는다(파기가 끝나기 전에는 `report:write` 가 없어 새 보고가 생길 수 없다).
+- 커밋 뒤 **모든 기기를 로그아웃**한다 — refresh 세션 전부 폐기 + 그 세션들의 최근 access 와 요청한 access 를 블랙리스트에 올리고, 응답에서 refresh 쿠키를 지운다(프론트 #129 요청, 시안 "모든 기기에서 로그아웃돼요"). 세션 폐기가 실패해도(Redis 장애) 철회 · 파기 요청은 이미 커밋됐으므로 로그만 남기고 200 이다 — 다음 재발급에서 scope 가 다시 계산돼 `report:write` 가 빠지고, 남은 access(최대 15분)로 들어온 보고는 #155 의 2차 파기가 지운다.
+- 두 API 모두 동의 상태 `{pendingConsents, healthInfoAgreed, reportWritable, purgePending}` 를 돌려준다. **동의 뒤 access 의 scope 는 그대로**다(토큰은 발급 때 계산) — `report:write` 를 받으려면 `POST /auth/token/reissue` 로 새 access 를 받는다.
+- 파기 실행(재시도 스케줄러 · surveillance 내부 삭제 API)은 #155, 탈퇴는 #154 다.
 
 **화면 계약** (2026-10-01 결정, 프론트 S13-1~6 · S02-1~4 · S10)
 
@@ -243,6 +253,8 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
   - `LINK_REQUIRED`: 시안 Login-kakao-exists 자리에 **"이 이메일로 가입된 계정이 있어요. 카카오 로그인을 연결할까요?"** 확인(가린 `email` 표시). `연결하고 계속하기` → `POST /kakao/link`(10분 안에, 응답은 로그인 응답) · `다른 카카오 계정으로 계속하기` → `GET /kakao/authorize?switchAccount=true`. 연결하면 비밀번호 로그인도 그대로 된다.
   - 실패는 모두 `/login?error=kakao-fail` 이다 — `AUTH_020`(state, 처음부터) · `021` · `022` · `023`(카카오 이메일 제공 동의 필요) · `024`(카카오 이메일 미인증) · `025` · `026`(시간 지남, 카카오 로그인부터) · `027` · `028`(요청 많음, 잠시 뒤). 탈퇴 · 정지는 `MEMBER_002` · `003`.
   - **iOS 홈 화면(standalone) PWA 는 실기기 확인이 필요하다** — 외부 도메인(kauth.kakao.com)이 앱 안 Safari 시트로 열리면 PWA 와 쿠키 저장소가 달라 state 쿠키가 없을 수 있다(→ `AUTH_020`). 연동 때 iOS Safari · PWA 에서 먼저 확인한다.
+- 동의(#59): 증상 보고 동의(S02-4 · 홈의 동의 시트) · 약관 재동의(S02-3 reconsent)는 모두 `POST /members/me/consents {type, documentVersion}` 이다(`legal.ts` 의 현재 버전). `MEMBER_011`(409)이면 화면의 문서 버전이 낡은 것이다. 응답의 `pendingConsents` · `reportWritable` 로 화면을 고르고, **증상 보고 동의 뒤에는 `POST /auth/token/reissue` 로 새 access 를 받아야 보고(`report:write`)할 수 있다.** 재동의 화면은 이용약관 · 개인정보만 다시 받는다(만 19세 확인은 다시 받지 않는다).
+- 건강정보 동의 철회(S10 확인 대화상자)는 `DELETE /members/me/consents/SENSITIVE_HEALTH_INFO` 이고, 성공하면 **모든 기기가 로그아웃된다**(응답이 refresh 쿠키를 지운다) — 화면은 비회원 홈으로 간다. 응답의 `purgePending: true` 는 보고를 지우는 중이라는 뜻이다(Home-purging 은 다음 단계). 파기 실행(#155)이 들어오기 전에는 다시 동의해도 `reportWritable` 이 false 다.
 
 **내 동네** (`region` 컨텍스트, `/api/v1/members/me/region`)
 
