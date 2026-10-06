@@ -17,6 +17,8 @@ export const ME_REGION_PATH = '/me/region'
 export const ME_NICKNAME_PATH = '/me/nickname'
 /** 최근 보고 내역 (#194, 시안 없음). 건강정보에 동의한 회원만 — 동의하지 않은 회원은 내 정보로 돌려보낸다 */
 export const ME_REPORTS_PATH = '/me/reports'
+/** 관심 동네 (#198, 시안 없음). 내 동네와 따로 지켜볼 행정동을 검색으로 직접 고른다 */
+export const ME_INTEREST_REGIONS_PATH = '/me/interest-regions'
 
 /** 둘러보기 동네 (`?region=<행정동 코드>`). 홈 · 내 정보와 같은 쿼리다 */
 const REGION_PARAM = 'region'

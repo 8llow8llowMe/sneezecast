@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   ME_DEVICES_PATH,
+  ME_INTEREST_REGIONS_PATH,
   ME_NICKNAME_PATH,
   ME_PASSWORD_PATH,
   ME_PATH,
@@ -189,15 +190,22 @@ describe('safeNextPath (오픈 리다이렉트 방지)', () => {
       ME_REGION_PATH,
       ME_NICKNAME_PATH,
       ME_REPORTS_PATH,
+      ME_INTEREST_REGIONS_PATH,
     ])
   })
 
-  it.each(['/', '/me', '/me/devices', '/me/password', '/me/region', '/me/nickname', '/me/reports'])(
-    '%s 는 그대로다',
-    (path) => {
-      expect(safeNextPath(path)).toBe(path)
-    },
-  )
+  it.each([
+    '/',
+    '/me',
+    '/me/devices',
+    '/me/password',
+    '/me/region',
+    '/me/nickname',
+    '/me/reports',
+    '/me/interest-regions',
+  ])('%s 는 그대로다', (path) => {
+    expect(safeNextPath(path)).toBe(path)
+  })
 
   it.each([
     ['다른 오리진(//)', '//evil.example'],
