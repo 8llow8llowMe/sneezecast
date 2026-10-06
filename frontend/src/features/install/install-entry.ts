@@ -1,4 +1,4 @@
-import { MOCK_AUTH_PARAM } from '@/features/auth/use-mock-auth'
+import { MOCK_AUTH_PARAM } from '@/features/auth/mock-params'
 import { MOCK_PUSH_PARAM } from '@/lib/push-support'
 
 /** S12 홈 화면 추가 안내 (docs/design/SCREENS.md) */

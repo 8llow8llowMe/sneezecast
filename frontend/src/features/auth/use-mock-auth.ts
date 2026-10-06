@@ -12,6 +12,7 @@ import {
   subscribeMockSession,
 } from './auth-client'
 import type { LoadStatus, MemberInfoSnapshot } from './member-info'
+import { MOCK_PROVIDER_PARAM } from './mock-params'
 import { useAuth } from './use-auth'
 import { useMemberInfo } from './use-member-info'
 
@@ -21,8 +22,8 @@ import { useMemberInfo } from './use-member-info'
  */
 export { MOCK_AUTH_PARAM, parseMockAuth, useAuth as useMockAuth } from './use-auth'
 
-/** QA 용 목 로그인 방법 덮어쓰기 쿼리 (`?mock-provider=email|kakao`). 내 정보(S10)의 이메일 · 카카오 화면을 고른다. 목데이터 모드에서만 듣는다 */
-export const MOCK_PROVIDER_PARAM = 'mock-provider'
+/** QA 용 목 로그인 방법 덮어쓰기 쿼리. 서버에서도 읽혀 `'use client'` 가 없는 `mock-params.ts` 에 둔다(#206) */
+export { MOCK_PROVIDER_PARAM }
 
 /** 쿼리 값을 로그인 방법으로. 없거나 모르는 값이면 null 이다(무시한다) */
 export function parseMockProvider(value: string | null): MockProfile['provider'] | null {

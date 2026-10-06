@@ -14,6 +14,7 @@ import {
   type MockAuthState,
   subscribeMockSession,
 } from './auth-client'
+import { MOCK_AUTH_PARAM } from './mock-params'
 
 /* ── 회원 · 동의 상태 (실데이터 · 목데이터) ──────────────────────────────────────────────────────
  *
@@ -24,8 +25,8 @@ import {
 
 export type AuthState = MockAuthState
 
-/** QA 용 목 회원 상태 덮어쓰기 쿼리 (`?mock-auth=guest|member|member-no-consent`). 목데이터 모드에서만 듣는다 */
-export const MOCK_AUTH_PARAM = 'mock-auth'
+/** QA 용 목 회원 상태 덮어쓰기 쿼리. 서버에서도 읽혀 `'use client'` 가 없는 `mock-params.ts` 에 둔다(#206) */
+export { MOCK_AUTH_PARAM }
 
 /** 쿼리 값을 목 회원 상태로. 없거나 모르는 값이면 null 이다(무시한다) */
 export function parseMockAuth(value: string | null): MockAuthState | null {

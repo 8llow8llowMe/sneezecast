@@ -1,6 +1,6 @@
 import type { MockAuthState } from '@/features/auth/auth-client'
 import { loginHref } from '@/features/auth/login-return'
-import { MOCK_AUTH_PARAM, MOCK_PROVIDER_PARAM } from '@/features/auth/use-mock-auth'
+import { MOCK_AUTH_PARAM, MOCK_PROVIDER_PARAM } from '@/features/auth/mock-params'
 import { reportEntryFor } from '@/features/home/report-gate'
 import { HOME_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { REPORT_PARAM } from '@/features/report/types'
