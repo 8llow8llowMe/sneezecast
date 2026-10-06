@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 이번 주 보고 제출 · 취소. 메서드 하나가 트랜잭션 하나다 — 동시 제출 재시도가 트랜잭션 밖(WebFacade)에서 새 트랜잭션으로 다시 불러야 해서
+ * 이번 주 보고 제출 · 취소와 보고자 단위 파기. 메서드 하나가 트랜잭션 하나다 — 동시 제출 재시도가 트랜잭션 밖(WebFacade)에서 새 트랜잭션으로 다시 불러야 해서
  * Facade 가 아니라 여기에 건다 ({@code WeeklyReportRepositoryPort} 동시 제출 계약).
  */
 @Component
@@ -55,6 +55,16 @@ public class ReportCommandProcessor {
     @Transactional
     public void cancel(String reporterKey, ReportWeek isoWeek) {
         weeklyReportRepositoryPort.deleteByReporterKeyAndIsoWeek(reporterKey, isoWeek);
+    }
+
+    /**
+     * 한 보고자의 보고를 모든 주에 걸쳐 지운다 (탈퇴 · 건강정보 동의 철회 파기). 지울 행이 없어도 성공이다 — 같은 회원으로 여러 번 불린다.
+     *
+     * @return 지운 행 수 (0 이상)
+     */
+    @Transactional
+    public int purgeAll(String reporterKey) {
+        return weeklyReportRepositoryPort.deleteAllByReporterKey(reporterKey);
     }
 
     private void requireActiveDistrict(String districtCode) {

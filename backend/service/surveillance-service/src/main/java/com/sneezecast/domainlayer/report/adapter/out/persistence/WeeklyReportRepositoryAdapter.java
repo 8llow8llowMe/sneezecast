@@ -78,6 +78,12 @@ public class WeeklyReportRepositoryAdapter implements WeeklyReportRepositoryPort
         return weeklyReportRepository.deleteByReporterKeyAndIsoWeek(reporterKey, isoWeek.value());
     }
 
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int deleteAllByReporterKey(String reporterKey) {
+        return weeklyReportRepository.deleteAllByReporterKey(reporterKey);
+    }
+
     /** MySQL 은 {@code for key 'weekly_report.uk_...'}, H2 는 {@code PUBLIC.UK_... ON ...} 로 싣는다 — 대소문자를 무시하고 본다. */
     private boolean isReporterWeekUniqueViolation(DataIntegrityViolationException exception) {
         String message = exception.getMostSpecificCause().getMessage();

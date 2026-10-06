@@ -246,7 +246,36 @@ class WeeklyReportRepositoryAdapterTest extends SurveillanceH2TestSupport {
             .isInstanceOf(IllegalTransactionStateException.class);
         assertThatThrownBy(() -> adapter.deleteByReporterKeyAndIsoWeek(KEY_A, W40))
             .isInstanceOf(IllegalTransactionStateException.class);
+        assertThatThrownBy(() -> adapter.deleteAllByReporterKey(KEY_A))
+            .isInstanceOf(IllegalTransactionStateException.class);
         assertThat(number(row(KEY_A, W40), "REVISION_COUNT")).isZero();
+    }
+
+    @Test
+    @DisplayName("파기는 그 키의 모든 주 행을 지우고 다른 키 행은 남긴다 — 지운 건수를 주고, 다시 부르면 0 (멱등)")
+    void deleteAllRemovesEveryWeekOfKey() {
+        ReportWeek w01 = ReportWeek.parse("2026-W01");
+        adapter.insert(WeeklyReport.newReport(1L, KEY_A, w01, YEOKSAM_1, Set.of()));
+        adapter.insert(WeeklyReport.newReport(2L, KEY_A, W40, YEOKSAM_1, Set.of(RESPIRATORY)));
+        adapter.insert(WeeklyReport.newReport(3L, KEY_A, W41, GARAK_1, Set.of(ENTERIC)));
+        adapter.insert(WeeklyReport.newReport(4L, KEY_B, W40, YEOKSAM_1, Set.of()));
+        adapter.insert(WeeklyReport.newReport(5L, KEY_B, W41, YEOKSAM_1, Set.of()));
+
+        assertThat(deleteAll(KEY_A)).isEqualTo(3);
+        assertThat(deleteAll(KEY_A)).isZero();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM weekly_report WHERE reporter_key = ?", Integer.class, KEY_A)).isZero();
+        assertThat(adapter.findByReporterKeyAndIsoWeek(KEY_B, W40)).isPresent();
+        assertThat(adapter.findByReporterKeyAndIsoWeek(KEY_B, W41)).isPresent();
+    }
+
+    @Test
+    @DisplayName("행이 하나도 없는 키를 파기해도 실패하지 않고 0 이다")
+    void deleteAllWithoutRowsIsZero() {
+        adapter.insert(WeeklyReport.newReport(1L, KEY_B, W40, YEOKSAM_1, Set.of()));
+
+        assertThat(deleteAll(KEY_A)).isZero();
+        assertThat(adapter.findByReporterKeyAndIsoWeek(KEY_B, W40)).isPresent();
     }
 
     @Test
@@ -281,6 +310,11 @@ class WeeklyReportRepositoryAdapterTest extends SurveillanceH2TestSupport {
 
     private int delete(String reporterKey, ReportWeek isoWeek) {
         Integer deleted = tx.execute(status -> adapter.deleteByReporterKeyAndIsoWeek(reporterKey, isoWeek));
+        return deleted == null ? 0 : deleted;
+    }
+
+    private int deleteAll(String reporterKey) {
+        Integer deleted = tx.execute(status -> adapter.deleteAllByReporterKey(reporterKey));
         return deleted == null ? 0 : deleted;
     }
 

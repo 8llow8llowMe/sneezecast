@@ -17,6 +17,8 @@ public final class ReportValidationMessage {
     public static final String SYMPTOM_GROUPS_REQUIRED = "REPORT_103:증상군 목록을 보내주세요. 증상이 없으면 빈 목록입니다.";
     public static final String SYMPTOM_GROUP_ITEM_REQUIRED = "REPORT_104:증상군 값이 비어 있습니다.";
     public static final String SYMPTOM_GROUPS_DUPLICATED = "REPORT_105:같은 증상군을 두 번 보낼 수 없습니다.";
+    // 내부 파기 API 경로 값. 숫자가 아니거나 long 범위를 넘으면 바인딩 단계의 REPORT_198 이다.
+    public static final String MEMBER_ID_POSITIVE = "REPORT_106:회원 ID 는 양수여야 합니다.";
 
     private ReportValidationMessage() {
     }
