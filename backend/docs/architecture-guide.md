@@ -70,6 +70,7 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 
 - 동기 호출은 Feign + Resilience4j. `adapter/out/client` 뒤에 캡슐화하고 `port/out` 으로만 노출한다. 상세 규칙은 [coding-conventions.md §9](coding-conventions.md#9-서비스-간-호출-feign).
 - 서비스 간 API 는 `/internal/v1/**`. 게이트웨이가 라우팅하지 않으며, 받는 쪽이 호출 대상 리소스를 다시 검증한다.
+- 서비스 간 인증은 아직 없다 — 네트워크 격리에 기댄다. 신뢰 경계는 "서비스 포트 루프백 publish + 게이트웨이 미라우팅"에 더해 **공유 도커 네트워크(`8llow8llowme-net`)의 다른 컨테이너와 같은 호스트의 프로세스**까지다(브리지 IP 로 서비스 포트에 닿는다). 파괴적 내부 API(`DELETE /internal/v1/reporters/{memberId}`)가 생겼으므로 이 전제가 깨지면 서비스 간 토큰을 도입한다.
 
 | 호출 | 경로 | 용도 |
 |------|------|------|
