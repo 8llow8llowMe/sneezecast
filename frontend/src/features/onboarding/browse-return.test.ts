@@ -6,6 +6,7 @@ import {
   ME_PASSWORD_PATH,
   ME_PATH,
   ME_REGION_PATH,
+  ME_REPORTS_PATH,
 } from '@/features/me/me-paths'
 import { OFFICIAL_PATH } from '@/features/official/official-screen'
 import { MAIN_NAV } from '@/lib/nav'
@@ -30,6 +31,7 @@ describe('BROWSE_NEXT_PATHS', () => {
       ME_PASSWORD_PATH,
       ME_REGION_PATH,
       ME_NICKNAME_PATH,
+      ME_REPORTS_PATH,
     ])
   })
 })

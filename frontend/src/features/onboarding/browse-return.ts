@@ -31,6 +31,7 @@ export const BROWSE_NEXT_PATHS: readonly string[] = [
   '/me/password',
   '/me/region',
   '/me/nickname',
+  '/me/reports',
 ]
 
 const REGION_PARAM = 'region'

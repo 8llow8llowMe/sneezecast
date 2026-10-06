@@ -47,6 +47,7 @@ import {
   ME_PASSWORD_PATH,
   ME_PATH,
   ME_REGION_PATH,
+  ME_REPORTS_PATH,
   meSearch,
   regionSearch,
   reportHrefFor,
@@ -106,7 +107,8 @@ function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label
  * 데스크톱 설정 메뉴의 바로가기는 `#id` 링크가 아니라 버튼이다. 같은 문서 `#` 링크는 Next 가 모르는 기록 항목(state 가 null)을
  * 쌓아, 그 뒤 연 대화상자의 닫기(`history.go(-1)`)가 그 항목으로 돌아가며 첫 닫기에 닫히지 않는다(docs/conventions.md).
  *
- * 닉네임(`/me/nickname`) · 로그인한 기기(`/me/devices`) · 비밀번호 변경(`/me/password`) · 보고 동네(`/me/region`) 행은 그 화면으로 간다.
+ * 닉네임(`/me/nickname`) · 로그인한 기기(`/me/devices`) · 비밀번호 변경(`/me/password`) · 보고 동네(`/me/region`) ·
+ * 최근 보고 내역(`/me/reports`) 행은 그 화면으로 간다.
  * 동네(`region`)와 QA 덮어쓰기(`mock-auth` · `mock-provider`)를 주소에 남긴다. 비밀번호를 바꾸고 돌아오면 계정 화면이 내 정보 레이아웃
  * (`MeTrailProvider`)에 남긴 알림을 한 번 꺼내 토스트로 띄운다 — 회원일 때만 띄운다(내 동네 · 닉네임을 바꾸고 와도 같다).
  * 아직 없는 화면(관심 동네 · 알림 설정 · 안내 본문 등)은 홈처럼 "준비하고 있어요" 알림을 띄운다.
@@ -343,7 +345,7 @@ export function MeScreen({
                     <MenuRow
                       title="최근 보고 내역"
                       value="52주 보관"
-                      onClick={() => notReady('최근 보고 내역')}
+                      href={navHref(ME_REPORTS_PATH, accountSearch)}
                     />
                   </SettingsSection>
                 )}
