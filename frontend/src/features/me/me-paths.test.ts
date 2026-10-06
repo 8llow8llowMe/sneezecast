@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { meSearch, reportHrefFor } from './me-paths'
+import { meSearch, notificationsHref, reportHrefFor } from './me-paths'
 
 describe('meSearch', () => {
   it('확인한 동네 코드와 목 덮어쓰기만 남기고 다른 쿼리(confirm · notice 등)는 뺀다', () => {
@@ -16,6 +16,21 @@ describe('meSearch', () => {
     expect(
       meSearch(null, new URLSearchParams('region=unknown'), { notice: 'password-changed' }),
     ).toBe('notice=password-changed')
+  })
+})
+
+describe('notificationsHref', () => {
+  it('동네 · 회원 덮어쓰기 · 알림 덮어쓰기만 남기고 다른 쿼리는 뺀다', () => {
+    const params = new URLSearchParams(
+      'region=raw&mock-auth=member&mock-push=needs-install&confirm=logout&mock=high',
+    )
+    expect(notificationsHref('11440660', params)).toBe(
+      '/me/notifications?region=11440660&mock-auth=member&mock-push=needs-install',
+    )
+  })
+
+  it('남길 쿼리가 없으면 경로만이다', () => {
+    expect(notificationsHref(null, new URLSearchParams('region=unknown'))).toBe('/me/notifications')
   })
 })
 

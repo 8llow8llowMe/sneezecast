@@ -17,6 +17,10 @@ import {
 import { type LoadStatus, retryMemberInfo } from '@/features/auth/member-info'
 import { useMockAuth, useMockProfile, useMockProfileStatus } from '@/features/auth/use-mock-auth'
 import { REPORT_GATE, reportButtonLabel } from '@/features/home/report-gate'
+import {
+  NOTIFICATION_LABELS,
+  NOTIFICATION_TOPICS,
+} from '@/features/notification/notification-topics'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { listInterestRegions } from '@/features/region/interest-region-client'
 import { REPORT_PARAM } from '@/features/report/types'
@@ -51,6 +55,7 @@ import {
   ME_REGION_PATH,
   ME_REPORTS_PATH,
   meSearch,
+  notificationsHref,
   regionSearch,
   reportHrefFor,
 } from './me-paths'
@@ -58,7 +63,7 @@ import { useMeTrail } from './me-trail'
 import { useMemberGate, useRequiredStepsTarget } from './member-gate'
 import { useMemberRegion, useMemberRegionStatus, useShownRegionName } from './member-region'
 import { PushUnavailable } from './push-unavailable'
-import { MenuRow, sectionTitleId, SettingsSection, SwitchRow } from './settings-row'
+import { MenuRow, sectionTitleId, SettingsSection } from './settings-row'
 
 /**
  * 대화상자별 API. 데이터 출처를 넘긴다 — 로그아웃은 실데이터면 세션 저장소, 목이면 목 세션을 비운다. 동의 철회 · 탈퇴는 아직 목이라
@@ -113,7 +118,8 @@ function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label
  * 관심 동네(`/me/interest-regions`) · 최근 보고 내역(`/me/reports`) 행은 그 화면으로 간다.
  * 동네(`region`)와 QA 덮어쓰기(`mock-auth` · `mock-provider`)를 주소에 남긴다. 비밀번호를 바꾸고 돌아오면 계정 화면이 내 정보 레이아웃
  * (`MeTrailProvider`)에 남긴 알림을 한 번 꺼내 토스트로 띄운다 — 회원일 때만 띄운다(내 동네 · 닉네임을 바꾸고 와도 같다).
- * 아직 없는 화면(알림 설정 — 머리줄 알림 · 알림 스위치)은 홈처럼 "준비하고 있어요" 알림을 띄운다.
+ * 머리줄 알림(종)과 알림 섹션의 두 행(`주간 보고 요청` · `검토를 마친 동네 안내`)은 알림 설정(`/me/notifications`, #195)으로 간다 —
+ * 동네 · 회원 덮어쓰기와 알림 덮어쓰기(`?mock-push=`)를 남긴다(`notificationsHref`). 시안의 스위치는 알림 설정 화면으로 옮겼다.
  *
  * **보고 동네 행은 늘 회원의 내 동네**다(#141). 머리줄 동네 이름은 둘러보기 동네(`?region=`)가 있으면 그 동네, 없으면 내 동네이고
  * 누르면 둘러볼 동네 고르기(`/browse/region?next=/me`)로 간다 — 내 동네는 바꾸지 않는다. 내 동네를 모르면 행의 값을 비운다.
@@ -146,9 +152,8 @@ export function MeScreen({
   const submitted = useSubmittedReport() !== null
   const reportLabel = reportButtonLabel(auth, submitted)
   const confirm = useModalParam(CONFIRM_PARAM)
-  // 이 기기에서 알림을 받을 수 없으면(Settings-nopush) 알림 섹션에 안내를 두고 스위치는 눌러도 아무 일이 없다
+  // 이 기기에서 알림을 받을 수 없으면(Settings-nopush) 알림 섹션에 안내를 둔다
   const push = usePushSupport()
-  const pushUnavailable = push === 'needs-install' || push === 'unsupported'
   // 보내는 중인 대화상자. 성공한 뒤 이동할 때까지 그대로 둔다 — 세션이 먼저 바뀌어도 대화상자가 닫히지 않게 한다
   const [pending, setPending] = useState<ConfirmKind | null>(null)
   const [failed, setFailed] = useState<ConfirmKind | null>(null)
@@ -162,6 +167,7 @@ export function MeScreen({
 
   const navSearch = regionSearch(regionCode)
   const accountSearch = meSearch(regionCode, searchParams)
+  const notificationsLink = notificationsHref(regionCode, searchParams)
   const withRegion = (extra: Record<string, string>) =>
     new URLSearchParams({ ...(regionCode ? { region: regionCode } : {}), ...extra }).toString()
 
@@ -190,8 +196,6 @@ export function MeScreen({
     const timer = setTimeout(closeConfirmParam, 0)
     return () => clearTimeout(timer)
   }, [mismatched, closeConfirmParam])
-
-  const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
 
   // 비밀번호 · 내 동네를 바꾸고 왔으면 계정 화면이 내 정보 레이아웃에 남긴 알림을 한 번 꺼내 띄운다.
   // 하이드레이션 첫 그림의 회원 상태(늘 guest)로는 판단하지 않는다. 비회원이면 꺼내서 버리기만 한다
@@ -255,7 +259,7 @@ export function MeScreen({
         regionName={shownRegionName}
         current="me"
         onRegionClick={openBrowseRegion}
-        onNotificationClick={auth === 'guest' ? undefined : () => notReady('알림 설정')}
+        onNotificationClick={auth === 'guest' ? undefined : () => router.push(notificationsLink)}
         onReportClick={() => router.push(reportHref)}
         reportLabel={reportLabel}
         navSearch={navSearch}
@@ -329,17 +333,21 @@ export function MeScreen({
                 </SettingsSection>
 
                 <SettingsSection id="me-notification" title="알림">
-                  <PushUnavailable support={push} regionCode={regionCode} />
-                  <SwitchRow
-                    title="주간 보고 요청"
-                    description="월요일 아침"
-                    onClick={pushUnavailable ? undefined : () => notReady('알림 설정')}
+                  {/* 실데이터는 알림을 켤 수 없어(알림 설정 API 없음) 설치하면 켤 수 있다는 문장 · 링크를 뺀다 — 알림 설정 화면과 같은 기준 */}
+                  <PushUnavailable
+                    support={push}
+                    regionCode={regionCode}
+                    canEnable={source === 'mock'}
                   />
-                  <SwitchRow
-                    title="검토를 마친 동네 안내"
-                    description="운영자가 발행했을 때"
-                    onClick={pushUnavailable ? undefined : () => notReady('알림 설정')}
-                  />
+                  {/* 시안은 이 자리의 스위치지만 켜고 끄기는 알림 설정 화면에서 한다(#195). 행은 같은 이름 · 설명의 링크다 */}
+                  {NOTIFICATION_TOPICS.map((topic) => (
+                    <MenuRow
+                      key={topic}
+                      title={NOTIFICATION_LABELS[topic].title}
+                      description={NOTIFICATION_LABELS[topic].description}
+                      href={notificationsLink}
+                    />
+                  ))}
                 </SettingsSection>
 
                 {member === 'member' && (
