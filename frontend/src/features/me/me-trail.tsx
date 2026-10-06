@@ -21,7 +21,7 @@ type MeTrail = {
 const MeTrailContext = createContext<MeTrail | null>(null)
 
 /**
- * 내 정보(`/me`)와 그 아래 계정 화면(`/me/devices` · `/me/password` · `/me/region` · `/me/nickname`)이 같이 쓰는 이동 · 알림 (`app/me/layout.tsx`).
+ * 내 정보(`/me`)와 그 아래 계정 화면(`/me/devices` · `/me/password` · `/me/region` · `/me/nickname` · `/me/reports`)이 같이 쓰는 이동 · 알림 (`app/me/layout.tsx`).
  *
  * "뒤로" 는 앞 화면을 내 정보(`/me`)로 정해 루트의 앱 안 이동 기록에 묻는다(`useNavTrail`, docs/conventions.md "화면의 뒤로").
  * 기록은 경로만 보고 쿼리는 보지 않는다(내 정보의 확인 대화상자 `?confirm=` 은 같은 경로라 기록에 들지 않는다).
