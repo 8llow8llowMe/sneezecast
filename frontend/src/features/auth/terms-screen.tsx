@@ -37,6 +37,12 @@ import { NO_CHECKS, requiredAgreed, setAll, type TermsChecks } from './terms-che
 type Failure = 'signup' | 'email-taken' | 'login' | 'region' | 'region-invalid' | null
 
 /**
+ * `개인정보 수집·이용` 동의 항목(Setup-3). 내 정보의 `모으는 정보와 보관 기간` 안내(`features/me/info-pages.ts`)가 같은 항목을 쓴다 —
+ * 바꾸면 안내도 함께 고친다(`info-screen.test.tsx` 가 맞춰 본다)
+ */
+export const PRIVACY_CONSENT_DETAIL = '이메일, 닉네임, 행정동'
+
+/**
  * S02-3 가입 동의 (3 / 4). 여기서 회원 가입 요청을 보내고, 이메일 가입이면 로그인한 뒤 내 동네를 저장하고
  * 증상 보고 동의로 간다. 가입 응답에는 토큰이 없어서다(backend/docs/modules.md "화면 계약").
  *
@@ -266,7 +272,7 @@ export function TermsScreen() {
           <ConsentRow
             tag="required"
             title="개인정보 수집·이용"
-            detail="이메일, 닉네임, 행정동"
+            detail={PRIVACY_CONSENT_DETAIL}
             checked={checks.privacy}
             onChange={(privacy) => change({ privacy })}
             onView={notReady}

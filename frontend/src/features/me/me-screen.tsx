@@ -38,6 +38,7 @@ import {
   parseConfirm,
 } from './confirm'
 import { ConfirmDialog } from './confirm-dialog'
+import { INFO_PATHS } from './info-pages'
 import { CONSENT_WITHDRAWN_NOTICE, leaveHomeNotice } from './leave-notice'
 import {
   ME_DEVICES_PATH,
@@ -116,6 +117,9 @@ function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label
  * **실데이터는 프로필(`GET /api/v1/members/me`)과 내 동네(`GET /api/v1/members/me/region`)를 따로 읽는다**(#164). 읽는 동안은
  * 계정 섹션 위에 "내 정보를 불러오고 있어요", 하나라도 읽지 못하면 빨강 상자와 `다시 시도`(실패한 쪽만 다시 읽음)를 두고, 모르는
  * 값(닉네임 · 로그인 방법 · 보고 동네)은 비운다 — 예시 값을 채우지 않는다. 목데이터는 늘 읽은 상태다.
+ *
+ * **안내 행**(`모으는 정보와 보관 기간` · `데이터 출처` · `AI 사용 방식`)은 서비스 안내 화면(#193, `info-screen.tsx`)으로 간다.
+ * 계정 화면 행처럼 동네 · 덮어쓰기 쿼리를 남긴다. 안내 화면은 비회원도 볼 수 있다.
  */
 export function MeScreen({
   regionName,
@@ -348,7 +352,7 @@ export function MeScreen({
                   <MenuRow
                     title="모으는 정보와 보관 기간"
                     value="52주"
-                    onClick={() => notReady('모으는 정보와 보관 기간')}
+                    href={navHref(INFO_PATHS.privacy, accountSearch)}
                   />
                   {member === 'member' ? (
                     <MenuRow
@@ -367,7 +371,7 @@ export function MeScreen({
                   )}
                 </SettingsSection>
 
-                <ServiceSection notReady={notReady} />
+                <ServiceSection search={accountSearch} />
 
                 <SettingsSection label="로그아웃 · 회원 탈퇴">
                   <MenuRow
@@ -450,19 +454,16 @@ function InfoLoadNotice({ status }: { status: LoadStatus }) {
   )
 }
 
-function ServiceSection({ notReady }: { notReady: (screen: string) => void }) {
+/** 서비스 정보 섹션. 행은 안내 화면(#193)으로 간다 — 동네 · 덮어쓰기 쿼리(`search`)를 계정 화면처럼 남긴다 */
+function ServiceSection({ search }: { search: string }) {
   return (
     <SettingsSection id="me-service" title="서비스 정보">
       <MenuRow
         title="데이터 출처"
         value="질병관리청 · SGIS"
-        onClick={() => notReady('데이터 출처')}
+        href={navHref(INFO_PATHS['data-sources'], search)}
       />
-      <MenuRow
-        title="AI 사용 방식"
-        value="안내문 초안만"
-        onClick={() => notReady('AI 사용 방식')}
-      />
+      <MenuRow title="AI 사용 방식" value="안내문 초안만" href={navHref(INFO_PATHS.ai, search)} />
     </SettingsSection>
   )
 }

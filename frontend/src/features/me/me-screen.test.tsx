@@ -379,6 +379,24 @@ describe('MeScreen 메뉴', () => {
     expect(screen.getByRole('link', { name: /^보고 동네/ }).textContent).toBe('보고 동네')
   })
 
+  it.each(['member', 'member-no-consent'])(
+    '%s: 개인정보 · 서비스 정보 안내 행은 동네 · 덮어쓰기를 남긴 채 안내 화면으로 간다 (#193)',
+    (auth) => {
+      search = `region=11440660&mock-auth=${auth}&confirm=unknown`
+      renderMe({ regionCode: '11440660' })
+      const query = `?region=11440660&mock-auth=${auth}`
+      expect(
+        screen.getByRole('link', { name: /^모으는 정보와 보관 기간/ }).getAttribute('href'),
+      ).toBe(`/me/privacy${query}`)
+      expect(screen.getByRole('link', { name: /^데이터 출처/ }).getAttribute('href')).toBe(
+        `/me/data-sources${query}`,
+      )
+      expect(screen.getByRole('link', { name: /^AI 사용 방식/ }).getAttribute('href')).toBe(
+        `/me/ai${query}`,
+      )
+    },
+  )
+
   it('머리줄 동네 이름은 둘러보기 동네가 없으면 내 동네이고, 내 정보로 돌아올 둘러볼 동네 고르기를 연다', async () => {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     await saveRegion({ code: '11680640', name: '역삼1동' }, 'mock')
