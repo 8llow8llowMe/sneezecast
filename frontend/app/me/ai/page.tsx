@@ -1,0 +1,30 @@
+import type { Metadata } from 'next'
+
+import { pickHomeMock } from '@/features/home/mock'
+import { INFO_PAGES } from '@/features/me/info-pages'
+import { InfoScreen } from '@/features/me/info-screen'
+import { districtFromParam } from '@/features/region/region-param'
+import { readServerDataSource } from '@/lib/data-source.server'
+
+export const metadata: Metadata = { title: INFO_PAGES.ai.title }
+
+/**
+ * S10 AI 사용 방식 (#193, 시안 없음). 정적 안내라 **비회원도 본다** — 회원 가드가 없다(`features/me/info-screen.tsx`).
+ * 문구는 `features/me/info-pages.ts` 에 있다. `?region=` · 목 덮어쓰기(`?mock-auth=` · `?mock-provider=`)는 내 정보(`app/me/page.tsx`)와 같다.
+ */
+export default async function MeAiPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const { region } = await searchParams
+  const source = await readServerDataSource()
+  const district = await districtFromParam(region, source)
+  return (
+    <InfoScreen
+      kind="ai"
+      regionName={district?.name ?? pickHomeMock(undefined).regionName}
+      regionCode={district?.code ?? null}
+    />
+  )
+}

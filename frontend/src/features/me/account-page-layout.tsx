@@ -20,17 +20,25 @@ export type AccountPageLayoutProps = {
   /** 뒤로를 꺼진 모양으로 둔다(`aria-disabled`, 포커스는 남는다). 누름은 `onBack` 이 막는다 — 보내는 중 */
   backDisabled?: boolean | undefined
   onRegionClick: () => void
-  onNotificationClick: () => void
+  /** 머리줄 알림(종, 태블릿 · 데스크톱). 없으면 종을 그리지 않는다 — 비회원도 보는 안내 화면의 비회원(내 정보와 같다, #123) */
+  onNotificationClick?: (() => void) | undefined
   onReportClick: () => void
   /** 머리줄 보고 버튼 글자 (태블릿 · 데스크톱). 화면이 `reportButtonLabel` 로 회원 상태 · 보낸 보고에 맞춰 넘긴다 */
   reportLabel: string
+  /**
+   * 데스크톱 돌아가기의 글자(`text`)와 이름(`label`). 기본은 `내 정보` · `내 정보로 돌아가기` 다.
+   * 비회원도 보는 안내 화면은 비회원의 뒤로가 내 정보로 가지 않아 `뒤로` 로 바꾼다
+   */
+  desktopBack?: { text: string; label: string } | undefined
   /** 화면 아래 버튼 영역. 모바일은 아래 고정, 태블릿 · 데스크톱은 본문 바로 아래(위 8) */
   footer?: ReactNode
   children: ReactNode
 }
 
+const ME_BACK = { text: '내 정보', label: '내 정보로 돌아가기' }
+
 /**
- * 내 정보 아래 계정 화면(Settings-devices · Settings-password)의 틀. 폭에 따라 구성이 바뀐다.
+ * 내 정보 아래 계정 화면(Settings-devices · Settings-password)과 서비스 안내 화면(#193, `info-screen.tsx`)의 틀. 폭에 따라 구성이 바뀐다.
  *
  * | 폭 | 구성 |
  * | --- | --- |
@@ -50,6 +58,7 @@ export function AccountPageLayout({
   onNotificationClick,
   onReportClick,
   reportLabel,
+  desktopBack = ME_BACK,
   footer,
   children,
 }: AccountPageLayoutProps) {
@@ -80,7 +89,9 @@ export function AccountPageLayout({
         </h1>
         <span className="hidden grow tablet:block" />
         <span className="hidden tablet:contents">
-          <IconButton label="알림 설정" icon={<BellIcon />} onClick={onNotificationClick} />
+          {onNotificationClick && (
+            <IconButton label="알림 설정" icon={<BellIcon />} onClick={onNotificationClick} />
+          )}
           <Button size="sm" onClick={onReportClick}>
             {reportLabel}
           </Button>
@@ -93,13 +104,13 @@ export function AccountPageLayout({
             <button
               type="button"
               // 머리줄 메뉴 · 탭바의 "내 정보" 링크와 구분한다. 보이는 글자를 이름 앞에 그대로 둔다
-              aria-label="내 정보로 돌아가기"
+              aria-label={desktopBack.label}
               onClick={onBack}
               aria-disabled={backDisabled || undefined}
               className="flex min-h-touch cursor-pointer items-center gap-1 self-start text-body font-semibold text-fg-sub aria-disabled:cursor-not-allowed aria-disabled:opacity-disabled"
             >
               <ChevronLeftIcon className="text-fg" />
-              <span>내 정보</span>
+              <span>{desktopBack.text}</span>
             </button>
             <h1 className="text-status font-bold text-fg">{title}</h1>
           </div>
