@@ -4,6 +4,8 @@ import { MOCK_AUTH_PARAM, MOCK_PROVIDER_PARAM } from '@/features/auth/use-mock-a
 import { reportEntryFor } from '@/features/home/report-gate'
 import { HOME_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { REPORT_PARAM } from '@/features/report/types'
+import { navHref } from '@/lib/nav'
+import { MOCK_PUSH_PARAM } from '@/lib/push-support'
 
 /** 내 정보(S10)와 그 아래 계정 화면 주소 (docs/design/SCREENS.md) */
 export const ME_PATH = '/me'
@@ -19,6 +21,8 @@ export const ME_NICKNAME_PATH = '/me/nickname'
 export const ME_REPORTS_PATH = '/me/reports'
 /** 관심 동네 (#198, 시안 없음). 내 동네와 따로 지켜볼 행정동을 검색으로 직접 고른다 */
 export const ME_INTEREST_REGIONS_PATH = '/me/interest-regions'
+/** 알림 설정 (#195, 시안 없음 — Settings 의 알림 행 모양). 항목별 켜기 · 끄기. 푸시 구독 · 권한 요청은 하지 않는다(2단계) */
+export const ME_NOTIFICATIONS_PATH = '/me/notifications'
 
 /** 둘러보기 동네 (`?region=<행정동 코드>`). 홈 · 내 정보와 같은 쿼리다 */
 const REGION_PARAM = 'region'
@@ -41,6 +45,27 @@ export function meSearch(
   }
   for (const [key, value] of Object.entries(extra)) params.set(key, value)
   return params.toString()
+}
+
+/**
+ * 알림 설정으로 가는 주소. 계정 화면 행처럼 동네 · 회원 덮어쓰기(`meSearch`)를 남기고, 알림 덮어쓰기(`?mock-push=`)도 남긴다 —
+ * 알림을 받을 수 없는 기기를 재현하던 주소에서 들어가도 같은 기기로 보이게 한다(설치 안내 `installSearch` 와 같다).
+ * 덮어쓰기는 실제 푸시 구독을 붙일 때 지운다
+ */
+export function notificationsHref(
+  regionCode: string | null,
+  searchParams: Pick<URLSearchParams, 'get'>,
+): string {
+  return navHref(ME_NOTIFICATIONS_PATH, meSearchWithPush(regionCode, searchParams))
+}
+
+/** `meSearch` 에 알림 덮어쓰기(`?mock-push=`)를 더한 쿼리. 알림 설정으로 갈 때와 거기서 내 정보로 돌아갈 때 쓴다 */
+export function meSearchWithPush(
+  regionCode: string | null,
+  searchParams: Pick<URLSearchParams, 'get'>,
+): string {
+  const push = searchParams.get(MOCK_PUSH_PARAM)
+  return meSearch(regionCode, searchParams, push === null ? {} : { [MOCK_PUSH_PARAM]: push })
 }
 
 /** 탭바 · 데스크톱 메뉴 링크 뒤 쿼리. 홈과 같이 동네만 남긴다 */

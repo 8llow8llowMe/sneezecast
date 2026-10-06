@@ -23,16 +23,16 @@ afterEach(() => {
 describe('PushUnavailable', () => {
   it('지원되거나 아직 모르면 그리지 않는다', () => {
     const { container, rerender } = render(
-      <PushUnavailable support="supported" regionCode={null} />,
+      <PushUnavailable support="supported" regionCode={null} canEnable />,
     )
     expect(container.textContent).toBe('')
-    rerender(<PushUnavailable support={null} regionCode={null} />)
+    rerender(<PushUnavailable support={null} regionCode={null} canEnable />)
     expect(container.textContent).toBe('')
   })
 
   it('홈 화면에 추가해야 하는 iPhone 은 공유 버튼 안내와 설치 안내 링크를 보인다 (Settings-nopush)', () => {
     search = 'region=11440660&mock-auth=member&mock-push=needs-install&confirm=logout'
-    render(<PushUnavailable support="needs-install" regionCode="11440660" />)
+    render(<PushUnavailable support="needs-install" regionCode="11440660" canEnable />)
     const box = screen.getByRole('status')
     expect(box.querySelector('strong')?.textContent).toBe('이 기기에서는 알림을 받을 수 없어요')
     expect(box.textContent).toContain(
@@ -47,7 +47,7 @@ describe('PushUnavailable', () => {
 
   it('iPad 는 브라우저 문구와 앱으로 설치 안내다 (Settings-nopush-T)', () => {
     vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(IPAD_UA)
-    render(<PushUnavailable support="needs-install" regionCode={null} />)
+    render(<PushUnavailable support="needs-install" regionCode={null} canEnable />)
     const box = screen.getByRole('status')
     expect(box.querySelector('strong')?.textContent).toBe('이 브라우저에서는 알림을 받을 수 없어요')
     expect(box.textContent).toContain('앱으로 설치하면 알림을 켤 수 있어요.')
@@ -55,10 +55,20 @@ describe('PushUnavailable', () => {
   })
 
   it('푸시 API 가 없는 브라우저는 설치해도 받지 못해 설치 안내 · 링크 없이 홈 상단 안내만 보인다', () => {
-    render(<PushUnavailable support="unsupported" regionCode={null} />)
+    render(<PushUnavailable support="unsupported" regionCode={null} canEnable />)
     const box = screen.getByRole('status')
     expect(box.querySelector('strong')?.textContent).toBe('이 브라우저에서는 알림을 받을 수 없어요')
     expect(box.textContent).toMatch(/같은 내용은 홈 상단에서 확인할 수 있어요\.$/)
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it('알림을 켤 수 없으면(실데이터) 설치하면 켤 수 있다는 문장 · 링크 없이 홈 상단 안내만 둔다 (#195)', () => {
+    search = 'mock-push=needs-install'
+    render(<PushUnavailable support="needs-install" regionCode={null} canEnable={false} />)
+    const box = screen.getByRole('status')
+    expect(box.querySelector('strong')?.textContent).toBe('이 기기에서는 알림을 받을 수 없어요')
+    expect(box.textContent).toMatch(/같은 내용은 홈 상단에서 확인할 수 있어요\.$/)
+    expect(box.textContent).not.toContain('알림을 켤 수 있어요')
     expect(screen.queryByRole('link')).toBeNull()
   })
 })

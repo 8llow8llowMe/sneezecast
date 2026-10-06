@@ -4,7 +4,7 @@ import { MeTrailProvider } from '@/features/me/me-trail'
 import { MeRequiredStepsGate } from '@/features/me/member-gate'
 
 /**
- * 내 정보(`/me`)와 계정 화면(`/me/devices` · `/me/password` · `/me/region` · `/me/nickname` · `/me/reports` · `/me/interest-regions`), 서비스 안내 화면(`/me/privacy` · `/me/data-sources` · `/me/ai`, #193)을
+ * 내 정보(`/me`)와 계정 화면(`/me/devices` · `/me/password` · `/me/region` · `/me/nickname` · `/me/reports` · `/me/interest-regions` · `/me/notifications`), 서비스 안내 화면(`/me/privacy` · `/me/data-sources` · `/me/ai`, #193)을
  * 묶는다. 계정 화면의 "뒤로" 는 내 정보에서 왔으면 기록을 되돌리고,
  * 주소로 바로 들어왔으면 내 정보로 기록을 바꿔 간다(판단은 루트의 앱 안 이동 기록, `MeTrailProvider` → `useNavTrail`).
  * 계정 화면이 일을 마치고 내 정보에 남기는 알림도 이 레이아웃이 든다.

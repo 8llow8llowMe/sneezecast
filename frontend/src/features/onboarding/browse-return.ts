@@ -1,5 +1,6 @@
 import { carriedParams, NEXT_PARAM } from '@/features/auth/required-steps'
 import { navHref } from '@/lib/nav'
+import { MOCK_PUSH_PARAM } from '@/lib/push-support'
 
 import { BROWSE_REGION_PATH, HOME_PATH } from './paths'
 
@@ -14,8 +15,9 @@ import { BROWSE_REGION_PATH, HOME_PATH } from './paths'
  * - 로그인용 `NEXT_PATHS` 와 섞지 않는다. 그 목록은 가드가 거는 화면이고, 이 목록은 머리줄에 동네 이름이 있는 화면이다.
  * - 동네 안내(`/notice/[region]/[week]`)는 넣지 않는다. 안내는 경로의 동네 것이라 둘러보기 동네를 바꿔 돌아갈 화면이 아니다 —
  *   머리줄은 홈(`/`)을 돌아갈 곳으로 연다.
- * - 함께 넘기는 쿼리는 QA 용 목 덮어쓰기(`mock-auth` · `mock-provider` · `mock-required`)뿐이다(`carriedParams`). 세션을 바꾸는
- *   이동이 아니라 돌아간 화면이 같은 회원으로 보여야 한다. 열린 시트(`report` · `explain` 등)와 목 자료(`mock`)는 버린다.
+ * - 함께 넘기는 쿼리는 QA 용 목 덮어쓰기(`mock-auth` · `mock-provider` · `mock-required`, `carriedParams`)와 알림 덮어쓰기
+ *   (`mock-push`, #195 — 알림 설정 · 홈 상단 안내가 같은 기기로 보이게)뿐이다(`browseCarried`). 세션을 바꾸는
+ *   이동이 아니라 돌아간 화면이 같은 회원 · 기기로 보여야 한다. 열린 시트(`report` · `explain` 등)와 목 자료(`mock`)는 버린다.
  */
 
 /**
@@ -33,6 +35,7 @@ export const BROWSE_NEXT_PATHS: readonly string[] = [
   '/me/nickname',
   '/me/reports',
   '/me/interest-regions',
+  '/me/notifications',
 ]
 
 const REGION_PARAM = 'region'
@@ -51,7 +54,7 @@ export type BrowseReturn = {
 export function browseReturnFrom(searchParams: Pick<URLSearchParams, 'get'>): BrowseReturn | null {
   const next = searchParams.get(NEXT_PARAM)
   if (next === null || !BROWSE_NEXT_PATHS.includes(next)) return null
-  const carried = carriedParams(searchParams)
+  const carried = browseCarried(searchParams)
   carried.delete(REGION_PARAM)
   return { next, region: searchParams.get(REGION_PARAM) || null, carried: carried.toString() }
 }
@@ -67,10 +70,18 @@ export function browseRegionHref(
 ): string {
   const query = new URLSearchParams({ [NEXT_PARAM]: next })
   if (regionCode) query.set(REGION_PARAM, regionCode)
-  carriedParams(searchParams).forEach((value, key) => {
+  browseCarried(searchParams).forEach((value, key) => {
     if (key !== REGION_PARAM) query.set(key, value)
   })
   return navHref(BROWSE_REGION_PATH, query.toString())
+}
+
+/** 동네 고르기를 오가며 남기는 덮어쓰기. 회원 덮어쓰기(`carriedParams`)에 알림 덮어쓰기(`mock-push`)를 더한다 */
+function browseCarried(searchParams: Pick<URLSearchParams, 'get'>): URLSearchParams {
+  const carried = carriedParams(searchParams)
+  const push = searchParams.get(MOCK_PUSH_PARAM)
+  if (push !== null) carried.set(MOCK_PUSH_PARAM, push)
+  return carried
 }
 
 /** 돌아갈 주소. `regionCode` 를 둘러보기 동네로 붙이고(없으면 빼고) 덮어쓰기를 남긴다 */

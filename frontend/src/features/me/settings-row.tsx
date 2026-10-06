@@ -3,6 +3,8 @@
 import { type ReactNode, useId } from 'react'
 import Link from 'next/link'
 
+import clsx from 'clsx'
+
 import { ChevronRightIcon } from '@/components/icons'
 import { ListRow } from '@/components/list-row'
 
@@ -119,24 +121,34 @@ export function MenuRow({
 }
 
 /**
- * 알림 켜기 행 (Settings 시안의 스위치, 높이 64).
+ * 알림 켜기 행 (Settings 시안의 스위치, 높이 64). 알림 설정(`/me/notifications`, #195)이 쓴다.
  *
- * **PWA 푸시는 2단계 기능이라 아직 구독하지 않는다.** 시안은 켜진 모양이지만 실제로 받지 않는 알림을 켜진 것처럼 보이지 않게
- * 꺼진 모양(`aria-checked=false` · `aria-disabled`, Settings-nopush 의 회색)으로 그리고, 누르면 `onClick` 으로 준비 중을 알린다.
- * 이 기기에서 알림을 받을 수 없으면(Settings-nopush) `onClick` 을 넘기지 않는다 — 눌러도 아무 일이 없다.
- * 설명(월요일 아침 등)은 `aria-describedby` 로 스위치에 잇는다.
+ * | 상태 | 모양 |
+ * | --- | --- |
+ * | 켜짐 | 네이비 바탕 · 손잡이 오른쪽 (Settings) |
+ * | 꺼짐 | 회색 바탕 · 손잡이 왼쪽 |
+ * | 누를 수 없음(`onToggle` 없음 · `disabled`) | 지금 모양 그대로 흐리게(`aria-disabled`, Settings-nopush 의 회색). 포커스는 지킨다 |
+ *
+ * 누를 수 없는 스위치는 눌러도 아무 일이 없다. 설명(월요일 아침 등)은 `aria-describedby` 로 스위치에 잇는다.
+ * **PWA 푸시 구독은 하지 않는다**(2단계) — 켜고 끄는 것은 부르는 쪽(`onToggle`)이 알림 설정 값만 바꾼다.
  */
 export function SwitchRow({
   title,
   description,
-  onClick,
+  checked = false,
+  disabled = false,
+  onToggle,
 }: {
   title: string
   description: string
-  /** 누르면 부른다. 없으면 눌러도 아무 일이 없다(알림 미지원) */
-  onClick?: (() => void) | undefined
+  checked?: boolean
+  /** 보내는 중처럼 잠시 누를 수 없을 때 */
+  disabled?: boolean
+  /** 누르면 부른다. 없으면 누를 수 없는 스위치다(알림 미지원 · 실데이터) */
+  onToggle?: (() => void) | undefined
 }) {
   const descriptionId = useId()
+  const inert = disabled || onToggle === undefined
   return (
     <div className="flex min-h-16 items-center justify-between gap-3 border-b border-divider">
       <span className="flex flex-col gap-0.5">
@@ -148,14 +160,24 @@ export function SwitchRow({
       <button
         type="button"
         role="switch"
-        aria-checked={false}
-        aria-disabled="true"
+        aria-checked={checked}
+        aria-disabled={inert || undefined}
         aria-label={title}
         aria-describedby={descriptionId}
-        onClick={onClick}
-        className="relative h-7 w-12 shrink-0 cursor-not-allowed rounded-chip bg-inactive-bar opacity-disabled"
+        onClick={() => {
+          if (!inert) onToggle()
+        }}
+        className={clsx(
+          'relative h-7 w-12 shrink-0 cursor-pointer rounded-chip aria-disabled:cursor-not-allowed aria-disabled:opacity-disabled',
+          checked ? 'bg-brand' : 'bg-inactive-bar',
+        )}
       >
-        <span className="absolute top-0.5 left-0.5 size-6 rounded-chip bg-bg" />
+        <span
+          className={clsx(
+            'absolute top-0.5 size-6 rounded-chip bg-bg',
+            checked ? 'left-5.5' : 'left-0.5',
+          )}
+        />
       </button>
     </div>
   )

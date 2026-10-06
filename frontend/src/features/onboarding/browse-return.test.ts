@@ -4,6 +4,7 @@ import {
   ME_DEVICES_PATH,
   ME_INTEREST_REGIONS_PATH,
   ME_NICKNAME_PATH,
+  ME_NOTIFICATIONS_PATH,
   ME_PASSWORD_PATH,
   ME_PATH,
   ME_REGION_PATH,
@@ -34,6 +35,7 @@ describe('BROWSE_NEXT_PATHS', () => {
       ME_NICKNAME_PATH,
       ME_REPORTS_PATH,
       ME_INTEREST_REGIONS_PATH,
+      ME_NOTIFICATIONS_PATH,
     ])
   })
 })
@@ -47,6 +49,13 @@ describe('browseReturnFrom (오픈 리다이렉트 방지)', () => {
         ),
       ),
     ).toEqual({ next: '/map', region: '11440660', carried: 'mock-auth=member&mock-provider=kakao' })
+  })
+
+  it('알림 덮어쓰기(mock-push)도 남긴다 — 알림 설정으로 돌아가도 같은 기기로 보인다 (#195)', () => {
+    expect(
+      browseReturnFrom(params('next=/me/notifications&mock-auth=member&mock-push=supported'))
+        ?.carried,
+    ).toBe('mock-auth=member&mock-push=supported')
   })
 
   it.each([
@@ -76,6 +85,13 @@ describe('browseRegionHref', () => {
     expect(browseRegionHref('/me', '11440660', params('mock-required=region'))).toBe(
       '/browse/region?next=%2Fme&region=11440660&mock-required=region',
     )
+    expect(
+      browseRegionHref(
+        '/me/notifications',
+        null,
+        params('mock-auth=member&mock-push=needs-install'),
+      ),
+    ).toBe('/browse/region?next=%2Fme%2Fnotifications&mock-auth=member&mock-push=needs-install')
   })
 })
 

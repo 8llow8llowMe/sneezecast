@@ -20,7 +20,7 @@ import { useNavTrail } from '@/lib/use-nav-trail'
 import { isInfoPath } from './info-pages'
 
 /**
- * 회원만 쓰는 화면(내 정보 · 로그인한 기기 · 비밀번호 · 내 동네 · 닉네임 · 최근 보고 내역 · 관심 동네)의 가드. 서비스 안내 화면(`info-screen.tsx`)은 비회원도 봐서 걸지 않는다. 회원이면 회원 상태를, 아니면(또는 아직 모르면) null 을 돌려준다.
+ * 회원만 쓰는 화면(내 정보 · 로그인한 기기 · 비밀번호 · 내 동네 · 닉네임 · 최근 보고 내역 · 관심 동네 · 알림 설정)의 가드. 서비스 안내 화면(`info-screen.tsx`)은 비회원도 봐서 걸지 않는다. 회원이면 회원 상태를, 아니면(또는 아직 모르면) null 을 돌려준다.
  * null 이면 화면은 본문을 그리지 않는다.
  *
  * **회원 상태가 정해진 뒤에만 판단한다**(`useAuthSettled` — 하이드레이션을 마쳤고, 실데이터면 세션 복원도 마침). 서버와 하이드레이션
@@ -34,7 +34,7 @@ import { isInfoPath } from './info-pages'
  *   (`features/auth/login-return.ts`). 목록 밖이면 `next` 를 싣지 않는다(홈). QA 덮어쓰기(`?mock-auth=` 등)는 붙이지 않는다 —
  *   `?mock-auth=guest` 를 넘기면 돌아와 다시 튕긴다. 로그인 만료면 만료 주소(`/login?reason=expired`)에 같은 돌아갈 곳을 붙인다 —
  *   만료 감시(`session-expiry-watcher.tsx`)가 지금 경로로 만드는 주소와 같아 어느 쪽이 나중에 불려도 같은 곳에 닿는다.
- *   그래서 생략할 수 없다(내 정보 · 로그인한 기기 · 비밀번호 · 내 동네 · 닉네임 · 최근 보고 내역 · 관심 동네 모두 넘긴다, #140)
+ *   그래서 생략할 수 없다(내 정보 · 로그인한 기기 · 비밀번호 · 내 동네 · 닉네임 · 최근 보고 내역 · 관심 동네 · 알림 설정 모두 넘긴다, #140)
  * - `paused`: 이 화면이 스스로 비회원으로 바꾸는 중(로그아웃 · 탈퇴 성공 뒤 홈으로 가는 중)이면 true 로 둔다. 세션이 먼저 비회원이
  *   되어도 로그인으로 보내지 않는다 — 보내면 화면의 홈 이동과 겹쳐 로그인에 닿는다
  */
@@ -105,7 +105,7 @@ export function useRequiredStepsGate(nextPath: string, enabled = true): string |
 }
 
 /**
- * 내 정보 레이아웃(`app/me/layout.tsx`)에 두는 가드. 내 정보와 계정 화면(`/me` · `/me/devices` · `/me/password` · `/me/region` · `/me/nickname` · `/me/reports` · `/me/interest-regions`)에서
+ * 내 정보 레이아웃(`app/me/layout.tsx`)에 두는 가드. 내 정보와 계정 화면(`/me` · `/me/devices` · `/me/password` · `/me/region` · `/me/nickname` · `/me/reports` · `/me/interest-regions` · `/me/notifications`)에서
  * 조건 화면으로 보내고, 마치면 지금 경로로 돌아온다(허용 목록 `NEXT_PATHS` 밖이면 홈).
  * 화면 쪽 주소 정리(내 정보의 `?confirm=`)는 같은 판단(`useRequiredStepsTarget`)으로 보낼 곳이 있는지 본다.
  *

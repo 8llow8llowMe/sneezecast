@@ -338,14 +338,15 @@ describe('MeScreen 메뉴', () => {
     expect(screen.getByRole('button', { name: '이번 주 건강 보고하기' })).toBeDefined()
   })
 
-  it('아직 없는 화면은 준비 중 알림을 띄운다', async () => {
-    search = 'mock-auth=member'
-    renderMe()
+  it('머리줄 알림은 동네 · 덮어쓰기를 남긴 채 알림 설정으로 간다', async () => {
+    search = 'region=11440660&mock-auth=member&mock-push=supported&confirm=unknown'
+    renderMe({ regionCode: '11440660' })
 
     await userEvent.setup().click(screen.getByRole('button', { name: '알림 설정' }))
-    expect(
-      screen.getByText('알림 설정 화면은 준비하고 있어요').closest('[role="status"]'),
-    ).not.toBeNull()
+    expect(router.push).toHaveBeenCalledWith(
+      '/me/notifications?region=11440660&mock-auth=member&mock-push=supported',
+    )
+    expect(screen.queryByText(/준비하고 있어요/)).toBeNull()
   })
 
   it('닉네임 · 로그인한 기기 · 비밀번호 · 관심 동네 · 최근 보고 내역 행은 동네 · 덮어쓰기를 남긴 채 계정 화면으로 간다 (다른 쿼리는 뺀다)', async () => {
@@ -444,24 +445,27 @@ describe('MeScreen 메뉴', () => {
     expect(trail?.takeNotice()).toBeNull()
   })
 
-  it('알림 스위치는 구독하지 않는다 — 꺼진 채로 준비 중을 알린다', async () => {
+  it('알림 섹션은 스위치 대신 두 행(이름 · 설명)이 알림 설정으로 간다 — 내 정보에서는 구독도 켜기도 하지 않는다', () => {
     // jsdom 은 푸시 API 가 없어 미지원으로 보인다. 지원되는 기기를 덮어쓰기로 흉내 낸다
-    search = 'mock-auth=member&mock-push=supported'
-    renderMe()
-    expect(screen.queryByText(/알림을 받을 수 없어요/)).toBeNull()
+    search = 'region=11440660&mock-auth=member&mock-push=supported'
+    renderMe({ regionCode: '11440660' })
+    const section = notificationSection()
+    expect(within(section).queryByText(/알림을 받을 수 없어요/)).toBeNull()
+    expect(within(section).queryByRole('switch')).toBeNull()
 
-    const weekly = screen.getByRole('switch', { name: '주간 보고 요청' })
-    expect(weekly.getAttribute('aria-checked')).toBe('false')
-    expect(weekly.getAttribute('aria-disabled')).toBe('true')
-    expect(
-      document.getElementById(weekly.getAttribute('aria-describedby') ?? '')?.textContent,
-    ).toBe('월요일 아침')
-    await userEvent.setup().click(weekly)
-    expect(weekly.getAttribute('aria-checked')).toBe('false')
-    expect(screen.getByText('알림 설정 화면은 준비하고 있어요')).toBeDefined()
+    const links = within(section).getAllByRole('link')
+    expect(links.map((link) => link.textContent)).toEqual([
+      '주간 보고 요청월요일 아침',
+      '검토를 마친 동네 안내운영자가 발행했을 때',
+    ])
+    for (const link of links) {
+      expect(link.getAttribute('href')).toBe(
+        '/me/notifications?region=11440660&mock-auth=member&mock-push=supported',
+      )
+    }
   })
 
-  it('알림을 받을 수 없는 기기(Settings-nopush)는 알림 섹션에 안내를 두고, 스위치는 눌러도 아무 일이 없다', async () => {
+  it('알림을 받을 수 없는 기기(Settings-nopush)는 알림 섹션에 안내를 두고, 행은 그대로 알림 설정으로 간다', () => {
     search = 'mock-auth=member&mock-push=needs-install&region=11440660'
     renderMe({ regionCode: '11440660' })
 
@@ -472,11 +476,11 @@ describe('MeScreen 메뉴', () => {
         .getByRole('link', { name: '홈 화면에 추가하는 방법 보기' })
         .getAttribute('href'),
     ).toBe('/install?region=11440660&mock-auth=member&mock-push=needs-install')
-
-    const weekly = within(section).getByRole('switch', { name: '주간 보고 요청' })
-    await userEvent.setup().click(weekly)
-    expect(weekly.getAttribute('aria-checked')).toBe('false')
-    expect(screen.queryByText('알림 설정 화면은 준비하고 있어요')).toBeNull()
+    expect(
+      within(section)
+        .getByRole('link', { name: /^주간 보고 요청/ })
+        .getAttribute('href'),
+    ).toBe('/me/notifications?region=11440660&mock-auth=member&mock-push=needs-install')
   })
 
   it('푸시 API 가 없는 브라우저는 설치 안내 링크 없이 홈 상단 안내만 둔다', () => {
@@ -484,7 +488,7 @@ describe('MeScreen 메뉴', () => {
     renderMe()
     const section = notificationSection()
     expect(within(section).getByText('이 브라우저에서는 알림을 받을 수 없어요')).toBeDefined()
-    expect(within(section).queryByRole('link')).toBeNull()
+    expect(within(section).queryByRole('link', { name: '홈 화면에 추가하는 방법 보기' })).toBeNull()
   })
 
   it('로그아웃 · 동의 철회 · 탈퇴 행은 다른 쿼리를 남긴 채 ?confirm= 을 기록에 쌓는다', async () => {
@@ -848,6 +852,22 @@ describe('MeScreen 실데이터 (회원 API, #164)', () => {
     // 관심 동네는 API 가 없어(BE 미정) 요청하지 않고 수를 비운다 — 목 예시 수(2곳)를 보이지 않는다
     expect(screen.getByRole('link', { name: /^관심 동네/ }).textContent).toBe('관심 동네')
     expect(server.requests().filter((request) => request.includes('interest'))).toEqual([])
+  })
+
+  it('알림을 받을 수 없는 기기의 미지원 상자는 알림 설정과 같게 설치 문장 · 링크 없이 홈 상단 안내만 둔다 (#195)', async () => {
+    search = 'mock-push=needs-install'
+    holdRequests()
+    act(() => setSession(memberToken()))
+    renderMe()
+    await flush()
+
+    const box = within(notificationSection()).getByText('이 기기에서는 알림을 받을 수 없어요')
+      .parentElement as HTMLElement
+    expect(box.textContent).toMatch(/같은 내용은 홈 상단에서 확인할 수 있어요\.$/)
+    expect(box.textContent).not.toContain('알림을 켤 수 있어요')
+    expect(
+      within(notificationSection()).queryByRole('link', { name: '홈 화면에 추가하는 방법 보기' }),
+    ).toBeNull()
   })
 
   it('내 동네만 읽지 못해도 빨강 상자로 알리고, 다시 시도하면 내 동네만 다시 읽는다', async () => {

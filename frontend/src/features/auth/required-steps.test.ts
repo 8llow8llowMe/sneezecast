@@ -4,6 +4,7 @@ import {
   ME_DEVICES_PATH,
   ME_INTEREST_REGIONS_PATH,
   ME_NICKNAME_PATH,
+  ME_NOTIFICATIONS_PATH,
   ME_PASSWORD_PATH,
   ME_PATH,
   ME_REGION_PATH,
@@ -191,6 +192,7 @@ describe('safeNextPath (오픈 리다이렉트 방지)', () => {
       ME_NICKNAME_PATH,
       ME_REPORTS_PATH,
       ME_INTEREST_REGIONS_PATH,
+      ME_NOTIFICATIONS_PATH,
     ])
   })
 
@@ -203,6 +205,7 @@ describe('safeNextPath (오픈 리다이렉트 방지)', () => {
     '/me/nickname',
     '/me/reports',
     '/me/interest-regions',
+    '/me/notifications',
   ])('%s 는 그대로다', (path) => {
     expect(safeNextPath(path)).toBe(path)
   })
