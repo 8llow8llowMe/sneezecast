@@ -55,6 +55,19 @@ export function useSubmittedReport(): SubmittedReport | null {
 }
 
 /**
+ * 보낸 보고(`useSubmittedReport`)가 어느 주 것인지 (`2026-W41`, KST). 실데이터는 서버가 정한 주(응답 `isoWeek`)이고,
+ * 보낸 보고가 없거나 목데이터면 null 이다(목은 서버가 없어 화면이 지금 주로 본다). 서버 그림 · 하이드레이션 첫 그림은 null 이다
+ */
+export function useSubmittedReportWeek(): string | null {
+  const source = useDataSource()
+  const current = useCurrentReport()
+  if (source !== 'api' || current?.report.status !== 'ready' || current.report.value === null) {
+    return null
+  }
+  return current.week
+}
+
+/**
  * 이번 주 보고를 읽었는지. 목데이터 · 비회원 · 보고할 수 없는 회원은 늘 `ready` 다(읽을 것이 없다).
  * 실데이터의 보고할 수 있는 회원은 저장소 요청의 상태다(`retryCurrentReport()` 로 다시 읽는다)
  */
