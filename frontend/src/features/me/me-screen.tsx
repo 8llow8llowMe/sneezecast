@@ -18,6 +18,7 @@ import { type LoadStatus, retryMemberInfo } from '@/features/auth/member-info'
 import { useMockAuth, useMockProfile, useMockProfileStatus } from '@/features/auth/use-mock-auth'
 import { REPORT_GATE, reportButtonLabel } from '@/features/home/report-gate'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
+import { listInterestRegions } from '@/features/region/interest-region-client'
 import { REPORT_PARAM } from '@/features/report/types'
 import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import type { DataSource } from '@/lib/data-source'
@@ -42,6 +43,7 @@ import { INFO_PATHS } from './info-pages'
 import { CONSENT_WITHDRAWN_NOTICE, leaveHomeNotice } from './leave-notice'
 import {
   ME_DEVICES_PATH,
+  ME_INTEREST_REGIONS_PATH,
   ME_NICKNAME_PATH,
   ME_NOTICES,
   ME_PASSWORD_PATH,
@@ -108,10 +110,10 @@ function sectionsFor(auth: Exclude<MockAuthState, 'guest'>): { id: string; label
  * 쌓아, 그 뒤 연 대화상자의 닫기(`history.go(-1)`)가 그 항목으로 돌아가며 첫 닫기에 닫히지 않는다(docs/conventions.md).
  *
  * 닉네임(`/me/nickname`) · 로그인한 기기(`/me/devices`) · 비밀번호 변경(`/me/password`) · 보고 동네(`/me/region`) ·
- * 최근 보고 내역(`/me/reports`) 행은 그 화면으로 간다.
+ * 관심 동네(`/me/interest-regions`) · 최근 보고 내역(`/me/reports`) 행은 그 화면으로 간다.
  * 동네(`region`)와 QA 덮어쓰기(`mock-auth` · `mock-provider`)를 주소에 남긴다. 비밀번호를 바꾸고 돌아오면 계정 화면이 내 정보 레이아웃
  * (`MeTrailProvider`)에 남긴 알림을 한 번 꺼내 토스트로 띄운다 — 회원일 때만 띄운다(내 동네 · 닉네임을 바꾸고 와도 같다).
- * 아직 없는 화면(관심 동네 · 알림 설정 · 안내 본문 등)은 홈처럼 "준비하고 있어요" 알림을 띄운다.
+ * 아직 없는 화면(알림 설정 — 머리줄 알림 · 알림 스위치)은 홈처럼 "준비하고 있어요" 알림을 띄운다.
  *
  * **보고 동네 행은 늘 회원의 내 동네**다(#141). 머리줄 동네 이름은 둘러보기 동네(`?region=`)가 있으면 그 동네, 없으면 내 동네이고
  * 누르면 둘러볼 동네 고르기(`/browse/region?next=/me`)로 간다 — 내 동네는 바꾸지 않는다. 내 동네를 모르면 행의 값을 비운다.
@@ -153,6 +155,7 @@ export function MeScreen({
   // 비회원이면 로그인으로 보낸다(돌아올 곳 /me). 보내는 중(로그아웃 · 탈퇴 · 동의 철회 성공 뒤 홈으로 가는 중)에는 멈춘다
   const member = useMemberGate({ next: ME_PATH, paused: pending !== null })
   const memberRegion = useMemberRegion()
+  const interestCount = useInterestRegionCount(member !== null, source)
   const infoLoad = combineLoad(useMockProfileStatus(), useMemberRegionStatus())
   const shownRegionName = useShownRegionName(regionName, regionCode)
   const openBrowseRegion = useBrowseRegion(ME_PATH, regionCode)
@@ -317,7 +320,12 @@ export function MeScreen({
                     value={memberRegion?.name}
                     href={navHref(ME_REGION_PATH, accountSearch)}
                   />
-                  <MenuRow title="관심 동네" onClick={() => notReady('관심 동네')} />
+                  {/* 값은 목에서만 보인다 — 실데이터는 관심 동네 API 가 없어(BE 미정) 지어낸 수를 두지 않고 비운다 */}
+                  <MenuRow
+                    title="관심 동네"
+                    value={interestCount === null ? undefined : `${interestCount}곳`}
+                    href={navHref(ME_INTEREST_REGIONS_PATH, accountSearch)}
+                  />
                 </SettingsSection>
 
                 <SettingsSection id="me-notification" title="알림">
@@ -418,6 +426,26 @@ export function MeScreen({
       />
     </div>
   )
+}
+
+/**
+ * 관심 동네 수(`관심 동네` 행의 값). 회원으로 판단된 뒤 읽는다. 실데이터 · 읽기 전이면 null 이다 — 관심 동네 API 가 아직 없어
+ * 실데이터는 요청하지 않는다(`interest-region-client.ts`)
+ */
+function useInterestRegionCount(member: boolean, source: DataSource): number | null {
+  const [count, setCount] = useState<{ source: DataSource; value: number } | null>(null)
+  useEffect(() => {
+    if (!member) return
+    let live = true
+    void listInterestRegions(source).then((result) => {
+      if (live && result.status === 'ready') setCount({ source, value: result.regions.length })
+    })
+    return () => {
+      live = false
+    }
+  }, [member, source])
+  // 출처를 바꾸면 앞 출처의 수를 보이지 않는다
+  return member && count?.source === source ? count.value : null
 }
 
 /** 프로필 · 내 동네 읽기를 하나로. 하나라도 읽지 못했으면 `failed`, 읽는 중이 있으면 `loading` 이다 */

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react'
 
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -342,13 +342,13 @@ describe('MeScreen 메뉴', () => {
     search = 'mock-auth=member'
     renderMe()
 
-    await userEvent.setup().click(screen.getByRole('button', { name: /^관심 동네/ }))
+    await userEvent.setup().click(screen.getByRole('button', { name: '알림 설정' }))
     expect(
-      screen.getByText('관심 동네 화면은 준비하고 있어요').closest('[role="status"]'),
+      screen.getByText('알림 설정 화면은 준비하고 있어요').closest('[role="status"]'),
     ).not.toBeNull()
   })
 
-  it('닉네임 · 로그인한 기기 · 비밀번호 · 최근 보고 내역 행은 동네 · 덮어쓰기를 남긴 채 계정 화면으로 간다 (다른 쿼리는 뺀다)', () => {
+  it('닉네임 · 로그인한 기기 · 비밀번호 · 관심 동네 · 최근 보고 내역 행은 동네 · 덮어쓰기를 남긴 채 계정 화면으로 간다 (다른 쿼리는 뺀다)', async () => {
     search = 'region=11440660&mock-auth=member&confirm=unknown'
     renderMe({ regionCode: '11440660' })
     expect(screen.getByRole('link', { name: /^닉네임/ }).getAttribute('href')).toBe(
@@ -362,6 +362,12 @@ describe('MeScreen 메뉴', () => {
     )
     expect(screen.getByRole('link', { name: /^최근 보고 내역/ }).getAttribute('href')).toBe(
       '/me/reports?region=11440660&mock-auth=member',
+    )
+    // 관심 동네 수는 목 목록을 읽은 뒤 보인다(시안의 `2곳` 과 같은 예시)
+    const interestRow = screen.getByRole('link', { name: /^관심 동네/ })
+    await waitFor(() => expect(interestRow.textContent).toBe('관심 동네2곳'))
+    expect(interestRow.getAttribute('href')).toBe(
+      '/me/interest-regions?region=11440660&mock-auth=member',
     )
   })
 
@@ -839,6 +845,9 @@ describe('MeScreen 실데이터 (회원 API, #164)', () => {
     expect(section('me-account')).toContain('재채기탐정')
     expect(section('me-account')).toContain('카카오 · kakao@example.com')
     expect(section('me-region')).toContain('역삼1동')
+    // 관심 동네는 API 가 없어(BE 미정) 요청하지 않고 수를 비운다 — 목 예시 수(2곳)를 보이지 않는다
+    expect(screen.getByRole('link', { name: /^관심 동네/ }).textContent).toBe('관심 동네')
+    expect(server.requests().filter((request) => request.includes('interest'))).toEqual([])
   })
 
   it('내 동네만 읽지 못해도 빨강 상자로 알리고, 다시 시도하면 내 동네만 다시 읽는다', async () => {

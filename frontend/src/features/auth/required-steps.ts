@@ -134,6 +134,7 @@ export const NEXT_PATHS: readonly string[] = [
   '/me/region',
   '/me/nickname',
   '/me/reports',
+  '/me/interest-regions',
 ]
 
 /** `?next=` 값을 돌아갈 경로로. 없거나 목록 밖이면 홈이다 */

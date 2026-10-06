@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ME_DEVICES_PATH,
+  ME_INTEREST_REGIONS_PATH,
   ME_NICKNAME_PATH,
   ME_PASSWORD_PATH,
   ME_PATH,
@@ -32,6 +33,7 @@ describe('BROWSE_NEXT_PATHS', () => {
       ME_REGION_PATH,
       ME_NICKNAME_PATH,
       ME_REPORTS_PATH,
+      ME_INTEREST_REGIONS_PATH,
     ])
   })
 })
