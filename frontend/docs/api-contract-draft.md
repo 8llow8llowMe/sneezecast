@@ -224,3 +224,19 @@ DELETE /api/v1/members/me/interest-regions/{code}    → SliceResponse<MemberReg
 - `MemberRegion` 의 `name` · `sigungu` 는 null 일 수 있다(행정동 서비스가 코드를 모름 — 폐지 · 개편, 내 동네와 같은 규칙). 지금 화면 모델(`District`)은 이름이 늘 있어 연동 때 더한다: 그 줄은 이름 자리에 `없어진 동네`, 시군구 자리에 `행정구역 개편으로 바뀌었어요` 를 보이고 `삭제` 는 그대로 둔다(이름 `없어진 동네 삭제`). 지어낸 이름 · 코드를 보이지 않는다. 결과 목록의 `· 관심 동네` 표시 · 이미 고름 판단은 코드로 한다.
 - 백엔드와 정할 것: 내 동네와 같은 동네를 서버도 막을지(화면은 막는다 — "내 동네는 이미 지켜보고 있어요"), 내 동네를 관심 동네 중 하나로 바꾸면 그 관심 동네를 남길지(지금 화면은 남기고 `내 동네` 로 적는다), 폐지된 관심 동네(`abolished: true` — 이름이 남아 있을 때)를 위 null 처리와 같게 보일지 · 서버가 자동으로 지울지(목에는 폐지 동네가 없어 화면에 표시가 없다).
 - 프론트 함수: `features/region/interest-region-client.ts` 의 `listInterestRegions` · `addInterestRegion` · `removeInterestRegion(source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "관심 동네는 아직 저장할 수 없어요")이다 — 실제 회원이 고른 동네를 저장한 것처럼 보이지 않게 한다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다.
+
+### 알림 설정 (#195, 프론트 초안)
+
+알림 설정 화면(`/me/notifications`)이 가정한 모양이다. 회원(`/api/v1/members/me`, 위 "회원")의 경로 · 권한 관례를 따른다. **알림을 받을지 고른 값(설정)과 실제로 보낼 곳(푸시 구독)은 따로다** — 설정은 이번 단계, 구독은 2단계다.
+
+```text
+GET   /api/v1/members/me/notification-settings                            → NotificationSettings   (인증)
+PATCH /api/v1/members/me/notification-settings  { weeklyReport?, regionNotice? } → NotificationSettings   (인증, 보낸 항목만 바꾼 뒤의 설정 전부)
+```
+
+- `NotificationSettings` = `{ weeklyReport: boolean, regionNotice: boolean }`. 항목은 시안(Settings) 알림 섹션의 둘이다 — `weeklyReport` 주간 보고 요청(월요일 아침), `regionNotice` 검토를 마친 동네 안내(운영자가 발행했을 때). 건강정보가 아니라 `report:write` 를 요구하지 않는다(동의하지 않은 회원도 쓴다).
+- **처음 값은 모두 false 다** — 알림은 동의한 사용자에게만 보낸다(루트 `CLAUDE.md`). 켠 시각 · 끈 시각을 동의 이력으로 남길지는 백엔드가 정한다.
+- `PATCH` 는 보낸 항목만 바꾼다(`PUT` 으로 전부를 바꾸면 다른 탭 · 기기에서 바꾼 다른 항목을 덮는다). 빈 바디 · 모르는 항목 · boolean 이 아닌 값은 검증 `MEMBER_1xx`(400, 번호는 백엔드가 정한다)다. 응답은 바뀐 뒤의 설정 전부라 화면이 다시 읽지 않고 그린다.
+- 백엔드와 정할 것: `regionNotice` 가 내 동네만인지 관심 동네(위 "관심 동네")도 포함하는지(기획 확인 후보 — SCREENS.md "홈 화면 추가 · 알림 미지원"), 탈퇴 · 동의 철회 때 설정을 지울지, 검증 오류 번호(위 `MEMBER_1xx`).
+- **2단계 — 푸시 구독(이번 범위 아님)**: 사용자가 스위치를 켤 때 서비스 워커 등록 → 알림 권한 요청 → `pushManager.subscribe` 를 거쳐 구독을 등록한다. 가정한 모양은 `POST /api/v1/members/me/push-subscriptions { endpoint, keys: { p256dh, auth } }`(기기마다 하나) · `DELETE /api/v1/members/me/push-subscriptions?endpoint=`. 서버는 **설정이 켜졌고 구독이 있는 회원에게만** 보낸다. 구독이 없거나 받을 수 없는 기기(iOS 홈 화면 추가 전 등)는 서비스 안에서 같은 내용을 본다(홈의 동네 안내 · "알림 대신 여기서 알려드려요"). VAPID 공개 키 전달 · 만료된 구독(410) 정리 · 로그아웃한 기기의 구독 삭제를 함께 정한다.
+- 프론트 함수: `features/notification/notification-settings-client.ts` 의 `getNotificationSettings` · `updateNotificationSetting(topic, enabled, source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 스위치를 꺼진 모양으로 두고 "알림은 아직 준비하고 있어요")이다 — 켠 모양을 보이면 알림이 오는 줄 알고, 저장하지 않은 설정이 사라진다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 설정이고 목 세션이 비회원이 되면 지운다.
