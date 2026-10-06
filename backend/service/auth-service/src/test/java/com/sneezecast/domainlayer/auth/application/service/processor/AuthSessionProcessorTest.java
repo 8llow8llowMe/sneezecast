@@ -136,6 +136,42 @@ class AuthSessionProcessorTest {
     }
 
     @Test
+    @DisplayName("모든 기기 로그아웃은 회원의 모든 세션을 지우고, 지운 세션들의 access 와 요청 access 를 남은 시간만큼 폐기한다")
+    void revokeAllSessionsWithRequestAccess() {
+        Instant sessionExpiresAt = Instant.now().plusSeconds(300);
+        when(store.deleteAllExcept(MEMBER_ID, null)).thenReturn(List.of(new SessionAccessToken("a", sessionExpiresAt)));
+
+        processor.revokeAllSessions(MEMBER_ID, "request-jti", Instant.now().plus(Duration.ofMinutes(10)));
+
+        verify(store).deleteAllExcept(MEMBER_ID, null);
+        assertRevoked("a", Duration.ofSeconds(300));
+        assertRevoked("request-jti", Duration.ofMinutes(10));
+    }
+
+    @Test
+    @DisplayName("요청 access 가 지운 세션의 마지막 access 와 같으면 한 번만 폐기하고, 만료 시각을 모르면 access 수명 전체로 폐기한다")
+    void revokeAllSessionsRequestAccessEdgeCases() {
+        Instant expiresAt = Instant.now().plusSeconds(300);
+        when(store.deleteAllExcept(MEMBER_ID, null)).thenReturn(List.of(new SessionAccessToken("request-jti", expiresAt)));
+        processor.revokeAllSessions(MEMBER_ID, "request-jti", expiresAt);
+        verify(blacklist, times(1)).revoke(eq("request-jti"), any());
+
+        when(store.deleteAllExcept(MEMBER_ID, null)).thenReturn(List.of());
+        processor.revokeAllSessions(MEMBER_ID, "other-jti", null);
+        assertRevoked("other-jti", Duration.ofMinutes(15));
+    }
+
+    @Test
+    @DisplayName("모든 기기 로그아웃의 세션 삭제 장애는 AUTH_017 로 올린다 — 요청 access 도 올리지 않는다")
+    void revokeAllSessionsStoreFailure() {
+        when(store.deleteAllExcept(MEMBER_ID, null)).thenThrow(new AuthException(AuthErrorCode.SESSION_STORE_UNAVAILABLE));
+
+        assertThatThrownBy(() -> processor.revokeAllSessions(MEMBER_ID, "request-jti", Instant.now().plusSeconds(60)))
+            .isInstanceOfSatisfying(AuthException.class, e -> assertThat(e.getErrorCode()).isEqualTo(AuthErrorCode.SESSION_STORE_UNAVAILABLE));
+        verifyNoInteractions(blacklist);
+    }
+
+    @Test
     @DisplayName("현재 세션을 모르는 토큰으로 다른 기기 모두 로그아웃을 하면 AUTH_014 — 무엇을 남길지 정할 수 없다")
     void revokeOtherSessionsRequiresCurrentSession() {
         assertThatThrownBy(() -> processor.revokeOtherSessions(MEMBER_ID, null))

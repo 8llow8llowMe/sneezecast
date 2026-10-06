@@ -11,6 +11,7 @@ import static org.mockito.Mockito.doThrow;
 import com.sneezecast.domainlayer.auth.application.command.AuthGeneralSignupCommand;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.MemberConsentRepositoryAdapter;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.MemberRepositoryAdapter;
+import com.sneezecast.domainlayer.member.adapter.out.persistence.ReportPurgeRequestRepositoryAdapter;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.entity.MemberConsentEntity;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.repository.MemberConsentRepository;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.repository.MemberRepository;
@@ -18,7 +19,9 @@ import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.mapper.MemberConsentMapperImpl;
 import com.sneezecast.domainlayer.member.application.mapper.MemberMapperImpl;
+import com.sneezecast.domainlayer.member.application.mapper.ReportPurgeRequestMapperImpl;
 import com.sneezecast.domainlayer.member.application.service.processor.MemberConsentProcessor;
+import com.sneezecast.domainlayer.member.application.service.processor.ReportPurgeRequestProcessor;
 import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
 import com.sneezecast.global.properties.LegalDocumentProperties;
 import com.sneezecast.persistence.config.JpaAuditConfig;
@@ -48,6 +51,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Import({
     JpaAuditConfig.class, GeneralSignupProcessor.class, MemberConsentProcessor.class,
     MemberRepositoryAdapter.class, MemberConsentRepositoryAdapter.class, MemberMapperImpl.class, MemberConsentMapperImpl.class,
+    ReportPurgeRequestProcessor.class, ReportPurgeRequestRepositoryAdapter.class, ReportPurgeRequestMapperImpl.class,
     GeneralSignupTransactionTest.Beans.class
 })
 class GeneralSignupTransactionTest {

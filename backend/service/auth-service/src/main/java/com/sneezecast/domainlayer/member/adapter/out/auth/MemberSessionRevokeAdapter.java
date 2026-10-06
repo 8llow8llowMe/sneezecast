@@ -5,6 +5,7 @@ import com.sneezecast.domainlayer.auth.application.service.processor.AuthSession
 import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.port.out.MemberSessionRevokePort;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +29,15 @@ public class MemberSessionRevokeAdapter implements MemberSessionRevokePort {
             } else {
                 authSessionProcessor.revokeOtherSessions(memberId, keepSessionId);
             }
+        } catch (AuthException exception) {
+            throw new MemberException(MemberErrorCode.SESSION_REVOKE_UNAVAILABLE, exception);
+        }
+    }
+
+    @Override
+    public void revokeAllSessions(long memberId, String accessTokenId, Instant accessExpiresAt) {
+        try {
+            authSessionProcessor.revokeAllSessions(memberId, accessTokenId, accessExpiresAt);
         } catch (AuthException exception) {
             throw new MemberException(MemberErrorCode.SESSION_REVOKE_UNAVAILABLE, exception);
         }

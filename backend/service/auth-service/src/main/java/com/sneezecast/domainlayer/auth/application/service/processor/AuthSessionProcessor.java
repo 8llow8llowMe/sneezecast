@@ -93,6 +93,24 @@ public class AuthSessionProcessor {
         revokeAll(refreshSessionStorePort.deleteAllExcept(memberId, null));
     }
 
+    /**
+     * 회원의 모든 세션을 폐기하고 <b>요청한 access 도</b> 끊는다 (건강정보 동의 철회 — 모든 기기 로그아웃). 세션에 남은 건 마지막 access 뿐이라, 같은
+     * 세션의 다른 탭이 그 뒤에 재발급했다면 요청 토큰이 목록에 없다 — 로그아웃처럼 따로 올린다.
+     *
+     * @param accessTokenId   요청 access 의 jti. 비었으면 세션 폐기만 한다
+     * @param accessExpiresAt 요청 access 의 만료 시각. null 이면 access 수명 전체만큼 폐기한다
+     * @throws AuthException 세션 저장소 장애면 {@code SESSION_STORE_UNAVAILABLE}
+     */
+    public void revokeAllSessions(long memberId, String accessTokenId, Instant accessExpiresAt) {
+        List<SessionAccessToken> revoked = refreshSessionStorePort.deleteAllExcept(memberId, null);
+        revokeAll(revoked);
+        if (accessTokenId == null || accessTokenId.isBlank() || revoked.stream().anyMatch(token -> token.tokenId().equals(accessTokenId))) {
+            return;
+        }
+        Instant now = Instant.now();
+        revoke(new SessionAccessToken(accessTokenId, accessExpiresAt != null ? accessExpiresAt : now.plus(jwtAuthProperties.accessExpiration())), now);
+    }
+
     /** 폐기한 세션들의 마지막 access token 을 블랙리스트에 올린다. */
     void revokeAll(List<SessionAccessToken> accessTokens) {
         Instant now = Instant.now();

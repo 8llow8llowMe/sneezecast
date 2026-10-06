@@ -29,6 +29,14 @@ public enum MemberErrorCode {
     // 다른 기기 세션을 끊지 못했다(세션 저장소 장애). 비밀번호는 바꾸지 않았으니 다시 시도하면 된다.
     SESSION_REVOKE_UNAVAILABLE("MEMBER_009", "일시적으로 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE),
 
+    // 동의 · 철회
+    // 만 19세 이상은 가입 때 한 번 받는 사실 확인이라 이 API 로 다시 받지 않는다(약관을 개정해도 다시 묻지 않는다).
+    CONSENT_NOT_AGREEABLE("MEMBER_010", "이 API 로 동의할 수 없는 항목입니다.", HttpStatus.BAD_REQUEST),
+    // 보낸 문서 버전이 서버의 현재 legal.*-version 과 다르다 — 화면의 legal 상수가 낡았다. 옛 문서에 동의한 이력을 남기지 않는다.
+    CONSENT_VERSION_MISMATCH("MEMBER_011", "동의한 문서가 현재 버전이 아닙니다. 화면을 새로 고친 뒤 다시 시도해주세요.", HttpStatus.CONFLICT),
+    // 철회할 수 있는 항목은 건강정보 동의뿐이다. 이용약관 · 개인정보는 탈퇴로만 끝나고, 만 19세 확인은 철회 개념이 없다.
+    CONSENT_NOT_WITHDRAWABLE("MEMBER_012", "철회할 수 없는 항목입니다.", HttpStatus.BAD_REQUEST),
+
     // 요청 검증 대역 — 필드별 코드(MEMBER_101~)는 MemberValidationMessage 에 있다.
     INVALID_REQUEST("MEMBER_100", "요청 값이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
     // 프레임워크 2종은 대역 끝에 둔다 — 필드별 코드가 늘어도 번호가 끼어들지 않는다.

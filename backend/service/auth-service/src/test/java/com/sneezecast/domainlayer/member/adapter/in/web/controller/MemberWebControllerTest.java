@@ -1,24 +1,33 @@
 package com.sneezecast.domainlayer.member.adapter.in.web.controller;
 
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberConsentStatusResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.exception.MemberExceptionHandler;
 import com.sneezecast.domainlayer.member.adapter.in.web.exception.MemberRequestExceptionHandler;
 import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
+import com.sneezecast.domainlayer.member.application.port.in.MemberConsentWithdrawResult;
 import com.sneezecast.domainlayer.member.application.port.in.MemberWebUseCase;
+import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
 import com.sneezecast.security.common.dto.MemberLoginActive;
 import com.sneezecast.security.common.enums.SecurityRole;
 import com.sneezecast.security.common.jwt.JwtAuthentication;
@@ -27,6 +36,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
@@ -178,6 +188,100 @@ class MemberWebControllerTest {
         sendJson(post("/api/v1/members/me/password/setup"), "{\"newPassword\":\"Sneeze2026!\"}")
             .andExpect(status().isNotFound());
         verifyNoInteractions(memberWebUseCase);
+    }
+
+    @Test
+    @DisplayName("동의는 주체의 회원 ID · 항목 · 문서 버전을 넘기고 동의 뒤 상태를 싣는다 — 쿠키는 건드리지 않는다")
+    void agreeConsent() throws Exception {
+        when(memberWebUseCase.agreeConsent(42L, ConsentType.SENSITIVE_HEALTH_INFO, "2026-10-01")).thenReturn(consentStatus(true, true, false));
+
+        sendJson(post("/api/v1/members/me/consents"), "{\"type\":\"SENSITIVE_HEALTH_INFO\",\"documentVersion\":\"2026-10-01\"}")
+            .andExpect(status().isOk())
+            .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE))
+            .andExpect(jsonPath("$.dataBody.pendingConsents.length()").value(0))
+            .andExpect(jsonPath("$.dataBody.healthInfoAgreed").value(true))
+            .andExpect(jsonPath("$.dataBody.reportWritable").value(true))
+            .andExpect(jsonPath("$.dataBody.purgePending").value(false));
+    }
+
+    @Test
+    @DisplayName("동의 검증 — 항목 누락 MEMBER_108, 문서 버전 누락 · 공백 MEMBER_109 · 20자 초과 MEMBER_110, 모르는 항목 값 · 깨진 JSON MEMBER_100")
+    void agreeConsentValidation() throws Exception {
+        String path = "/api/v1/members/me/consents";
+        sendJson(post(path), "{\"documentVersion\":\"2026-10-01\"}")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_108"));
+        sendJson(post(path), "{\"type\":\"TERMS_OF_SERVICE\"}")
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_109"));
+        sendJson(post(path), "{\"type\":\"TERMS_OF_SERVICE\",\"documentVersion\":\"  \"}")
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_109"));
+        sendJson(post(path), "{\"type\":\"TERMS_OF_SERVICE\",\"documentVersion\":\"" + "v".repeat(21) + "\"}")
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_110"))
+            .andExpect(jsonPath("$.dataHeader.fieldErrors[0].field").value("documentVersion"));
+        sendJson(post(path), "{\"type\":\"PUSH_NOTIFICATION\",\"documentVersion\":\"2026-10-01\"}")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_100"))
+            .andExpect(jsonPath("$.dataHeader.fieldErrors[0].field").value("type"));
+        sendJson(post(path), "{\"type\":")
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_100"));
+        verifyNoInteractions(memberWebUseCase);
+    }
+
+    @Test
+    @DisplayName("동의 실패는 MEMBER 봉투다 — 받지 않는 항목 400 MEMBER_010 · 문서 버전 불일치 409 MEMBER_011")
+    void agreeConsentFailuresAreEnveloped() throws Exception {
+        for (MemberErrorCode code : List.of(MemberErrorCode.CONSENT_NOT_AGREEABLE, MemberErrorCode.CONSENT_VERSION_MISMATCH)) {
+            doThrow(new MemberException(code)).when(memberWebUseCase).agreeConsent(anyLong(), any(), any());
+            sendJson(post("/api/v1/members/me/consents"), "{\"type\":\"AGE_OVER_19\",\"documentVersion\":\"2026-10-01\"}")
+                .andExpect(status().is(code.getHttpStatus().value()))
+                .andExpect(jsonPath("$.dataHeader.resultCode").value(code.getCode()));
+        }
+    }
+
+    @Test
+    @DisplayName("철회하면 주체의 access jti 를 넘기고, 로그아웃했으면 refresh 쿠키를 지운다(auth 와 같은 이름 · Path · 속성, Max-Age=0)")
+    void withdrawConsentClearsRefreshCookie() throws Exception {
+        when(memberWebUseCase.withdrawConsent(42L, ConsentType.SENSITIVE_HEALTH_INFO, "access-jti", null))
+            .thenReturn(new MemberConsentWithdrawResult(consentStatus(false, false, true), true));
+
+        mockMvc.perform(delete("/api/v1/members/me/consents/SENSITIVE_HEALTH_INFO"))
+            .andExpect(status().isOk())
+            .andExpect(header().string(HttpHeaders.SET_COOKIE, allOf(startsWith("refreshToken=;"), containsString("Max-Age=0"),
+                containsString("Path=/api/v1/auth"), containsString("HttpOnly"), containsString("Secure"), containsString("SameSite=Strict"))))
+            .andExpect(jsonPath("$.dataBody.healthInfoAgreed").value(false))
+            .andExpect(jsonPath("$.dataBody.reportWritable").value(false))
+            .andExpect(jsonPath("$.dataBody.purgePending").value(true));
+    }
+
+    @Test
+    @DisplayName("철회할 동의가 없어 아무것도 하지 않았으면(멱등) 200 이고 쿠키를 지우지 않는다")
+    void idempotentWithdrawKeepsCookie() throws Exception {
+        when(memberWebUseCase.withdrawConsent(42L, ConsentType.SENSITIVE_HEALTH_INFO, "access-jti", null))
+            .thenReturn(new MemberConsentWithdrawResult(consentStatus(false, false, false), false));
+
+        mockMvc.perform(delete("/api/v1/members/me/consents/SENSITIVE_HEALTH_INFO"))
+            .andExpect(status().isOk())
+            .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+    }
+
+    @Test
+    @DisplayName("철회 경로 — 철회할 수 없는 항목은 400 MEMBER_012, 모르는 항목 값은 400 MEMBER_198 이다")
+    void withdrawConsentErrors() throws Exception {
+        when(memberWebUseCase.withdrawConsent(anyLong(), eq(ConsentType.TERMS_OF_SERVICE), any(), any()))
+            .thenThrow(new MemberException(MemberErrorCode.CONSENT_NOT_WITHDRAWABLE));
+        mockMvc.perform(delete("/api/v1/members/me/consents/TERMS_OF_SERVICE"))
+            .andExpect(status().isBadRequest())
+            .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE))
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_012"));
+
+        mockMvc.perform(delete("/api/v1/members/me/consents/HEALTH"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_198"));
+    }
+
+    private static MemberConsentStatusResponse consentStatus(boolean healthInfoAgreed, boolean reportWritable, boolean purgePending) {
+        return MemberConsentStatusResponse.builder().pendingConsents(List.of()).healthInfoAgreed(healthInfoAgreed).reportWritable(reportWritable)
+            .purgePending(purgePending).build();
     }
 
     private static MemberMyInfoResponse myInfo(String nickname) {

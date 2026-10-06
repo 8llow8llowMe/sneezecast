@@ -77,4 +77,9 @@ public class MemberConsentEntity extends BaseEntity implements Persistable<Long>
     public boolean isNew() {
         return getCreatedAt() == null;
     }
+
+    /** 조회한 엔티티에 철회 시각을 채운다 — 트랜잭션 안에서 변경 감지로 UPDATE 된다. 동의 내용(버전 · 동의 시각)은 고치지 않는다. */
+    public void withdraw(LocalDateTime withdrawnAt) {
+        this.withdrawnAt = withdrawnAt;
+    }
 }

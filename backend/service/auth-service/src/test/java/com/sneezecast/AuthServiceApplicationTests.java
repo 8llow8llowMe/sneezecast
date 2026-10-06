@@ -281,12 +281,15 @@ class AuthServiceApplicationTests {
     @CsvSource(delimiter = '|', value = {
         "GET | /api/v1/members/me | ",
         "PATCH | /api/v1/members/me | {\"nickname\":\"재채기탐정\"}",
-        "POST | /api/v1/members/me/password | {\"currentPassword\":\"P@ssw0rd!\",\"newPassword\":\"Sneeze2026!\"}"})
-    @DisplayName("내 정보 · 비밀번호 변경 API 는 토큰이 없으면 401 SECURITY_001 봉투다 — @PreAuthorize 가 실제로 걸려 있다")
+        "POST | /api/v1/members/me/password | {\"currentPassword\":\"P@ssw0rd!\",\"newPassword\":\"Sneeze2026!\"}",
+        "POST | /api/v1/members/me/consents | {\"type\":\"SENSITIVE_HEALTH_INFO\",\"documentVersion\":\"2026-10-01\"}",
+        "DELETE | /api/v1/members/me/consents/SENSITIVE_HEALTH_INFO | "})
+    @DisplayName("내 정보 · 비밀번호 변경 · 동의 · 철회 API 는 토큰이 없으면 401 SECURITY_001 봉투다 — @PreAuthorize 가 실제로 걸려 있다")
     void memberApisRequireAuthentication(String method, String path, String body) throws Exception {
         MockHttpServletRequestBuilder request = switch (method) {
             case "POST" -> post(path);
             case "PATCH" -> patch(path);
+            case "DELETE" -> delete(path);
             default -> get(path);
         };
         if (body != null) {
