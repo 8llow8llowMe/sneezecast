@@ -17,8 +17,10 @@ import { HOME_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { isSessionExpiring } from '@/lib/session-expiry'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
+import { isInfoPath } from './info-pages'
+
 /**
- * 회원만 쓰는 화면(내 정보 · 로그인한 기기 · 비밀번호 · 내 동네 · 닉네임)의 가드. 회원이면 회원 상태를, 아니면(또는 아직 모르면) null 을 돌려준다.
+ * 회원만 쓰는 화면(내 정보 · 로그인한 기기 · 비밀번호 · 내 동네 · 닉네임)의 가드. 서비스 안내 화면(`info-screen.tsx`)은 비회원도 봐서 걸지 않는다. 회원이면 회원 상태를, 아니면(또는 아직 모르면) null 을 돌려준다.
  * null 이면 화면은 본문을 그리지 않는다.
  *
  * **회원 상태가 정해진 뒤에만 판단한다**(`useAuthSettled` — 하이드레이션을 마쳤고, 실데이터면 세션 복원도 마침). 서버와 하이드레이션
@@ -88,10 +90,12 @@ export function useRequiredStepsTarget(nextPath: string): string | null {
  *
  * 보낼 곳을 돌려준다. **보낼 곳이 있으면 같은 그림에서 원시 history 로 주소를 정리하지 않는다** — 정리가 이 이동을 버리게 한다.
  * 조건이 있는 동안에도 화면은 그대로 그린다(첫 그림은 늘 비회원이라 숨겨도 깜빡인다).
+ * `enabled` 가 false 면 보내지 않고 null 이다(내 정보 아래 서비스 안내 화면 — `MeRequiredStepsGate`).
  */
-export function useRequiredStepsGate(nextPath: string): string | null {
+export function useRequiredStepsGate(nextPath: string, enabled = true): string | null {
   const { replace } = useNavTrail()
-  const target = useRequiredStepsTarget(nextPath)
+  const found = useRequiredStepsTarget(nextPath)
+  const target = enabled ? found : null
 
   useEffect(() => {
     if (target) replace(target)
@@ -101,10 +105,15 @@ export function useRequiredStepsGate(nextPath: string): string | null {
 }
 
 /**
- * 내 정보 레이아웃(`app/me/layout.tsx`)에 두는 가드. 지금 경로(`/me` · `/me/devices` · `/me/password` · `/me/region` · `/me/nickname`)로 돌아온다.
- * 화면 쪽 주소 정리(내 정보의 `?confirm=`)는 같은 판단(`useRequiredStepsTarget`)으로 보낼 곳이 있는지 본다
+ * 내 정보 레이아웃(`app/me/layout.tsx`)에 두는 가드. 내 정보와 계정 화면(`/me` · `/me/devices` · `/me/password` · `/me/region` · `/me/nickname`)에서
+ * 조건 화면으로 보내고, 마치면 지금 경로로 돌아온다(허용 목록 `NEXT_PATHS` 밖이면 홈).
+ * 화면 쪽 주소 정리(내 정보의 `?confirm=`)는 같은 판단(`useRequiredStepsTarget`)으로 보낼 곳이 있는지 본다.
+ *
+ * **서비스 안내 화면(`/me/privacy` · `/me/data-sources` · `/me/ai`, `isInfoPath`)에서는 보내지 않는다**(#193). 계정을 쓰는 화면이 아니라
+ * 비회원도 보는 정적 안내다. 약관 재동의를 앞둔 회원이 모으는 정보 · 보관 기간을 읽고 판단할 수 있어야 한다
  */
 export function MeRequiredStepsGate(): null {
-  useRequiredStepsGate(usePathname())
+  const pathname = usePathname()
+  useRequiredStepsGate(pathname, !isInfoPath(pathname))
   return null
 }

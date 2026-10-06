@@ -122,6 +122,25 @@ describe('MeRequiredStepsGate', () => {
       '/setup/region?reselect=1&mock-auth=member&mock-required=region',
     )
   })
+
+  it.each(['/me/privacy', '/me/data-sources', '/me/ai'])(
+    '서비스 안내 화면(%s)에서는 조건이 남은 회원도 보내지 않는다 (#193)',
+    async (path) => {
+      pathname = path
+      search = 'mock-auth=member&mock-required=terms,region'
+      render(<MeRequiredStepsGate />)
+      await act(async () => {})
+      expect(router.replace).not.toHaveBeenCalled()
+    },
+  )
+
+  it('목 세션으로 약관 개정이 남은 회원도 서비스 안내 화면에서는 보내지 않는다', async () => {
+    await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
+    pathname = '/me/privacy'
+    render(<MeRequiredStepsGate />)
+    await act(async () => {})
+    expect(router.replace).not.toHaveBeenCalled()
+  })
 })
 
 /** 회원만 쓰는 계정 화면(로그인한 기기 · 비밀번호)처럼 가드를 쓰는 화면 */
