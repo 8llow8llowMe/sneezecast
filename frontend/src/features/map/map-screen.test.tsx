@@ -220,10 +220,15 @@ describe('MapScreen', () => {
     expect(geolocation).not.toHaveBeenCalled()
   })
 
-  it('회원은 알림(종)이 있고, 준비 중인 동작은 알림으로 알린다', async () => {
-    search = 'mock-auth=member'
+  it('회원은 알림(종)이 있고 알림 설정으로 간다. 준비 중인 동작은 알림으로 알린다', async () => {
+    search = 'mock-auth=member&mock-push=supported&confirm=unknown'
     const user = userEvent.setup()
     render(<MapScreen map={pickMapMock('example', null)} />)
+
+    await user.click(screen.getByRole('button', { name: '알림 설정' }))
+    expect(router.push).toHaveBeenCalledWith(
+      '/me/notifications?mock-auth=member&mock-push=supported',
+    )
 
     await user.click(screen.getByRole('button', { name: '행정동 이름으로 찾기' }))
     expect(screen.getByRole('status').textContent).toContain('행정동 찾기는 준비하고 있어요')

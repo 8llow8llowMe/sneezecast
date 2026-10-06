@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AppHeader } from '@/components/app-header'
 import { TabBar } from '@/components/tab-bar'
@@ -14,7 +14,7 @@ import { reportButtonLabel } from '@/features/home/report-gate'
 import { useExplainParam } from '@/features/home/use-explain-param'
 import { CONFIRM_PARAM } from '@/features/me/confirm'
 import { ConfirmModal } from '@/features/me/confirm-dialog'
-import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
+import { notificationsHref, regionSearch, reportHrefFor } from '@/features/me/me-paths'
 import { useMemberRegion, useShownRegionName } from '@/features/me/member-region'
 import { HOME_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
@@ -71,6 +71,7 @@ export function MapScreen({
   regionCode?: string | null
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const auth = useMockAuth()
   const guest = auth === 'guest'
   const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
@@ -179,7 +180,7 @@ export function MapScreen({
           current="map"
           onRegionClick={openBrowseRegion}
           onNotificationClick={
-            guest ? undefined : () => notReady('알림 설정 화면은 준비하고 있어요')
+            guest ? undefined : () => router.push(notificationsHref(regionCode, searchParams))
           }
           onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
           reportLabel={reportLabel}

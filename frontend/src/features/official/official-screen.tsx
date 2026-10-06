@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AppHeader } from '@/components/app-header'
 import { Badge } from '@/components/badge'
@@ -8,10 +8,9 @@ import { Button } from '@/components/button'
 import { IconButton } from '@/components/icon-button'
 import { BellIcon, ChevronLeftIcon } from '@/components/icons'
 import { TabBar } from '@/components/tab-bar'
-import { ToastRegion, useToast } from '@/components/toast'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { reportButtonLabel } from '@/features/home/report-gate'
-import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
+import { notificationsHref, regionSearch, reportHrefFor } from '@/features/me/me-paths'
 import { useShownRegionName } from '@/features/me/member-region'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
@@ -55,19 +54,19 @@ export function OfficialScreen({
   regionCode?: string | null
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const navTrail = useNavTrail()
   const auth = useMockAuth()
-  const { toast, show, dismiss } = useToast()
   const navSearch = regionSearch(regionCode)
   const shownRegionName = useShownRegionName(regionName, regionCode)
   const openBrowseRegion = useBrowseRegion(OFFICIAL_PATH, regionCode)
   const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
 
-  const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
   const openReport = () => router.push(reportHrefFor(auth, regionCode))
   const goBack = () => navTrail.goBack(navHref(HOME_PATH, navSearch))
   // 알림(종)은 회원에게만 그린다 — 데스크톱 머리줄(AppHeader)과 모바일 · 태블릿 머리줄이 같은 규칙이다 (#123)
-  const notify = auth === 'guest' ? undefined : () => notReady('알림 설정')
+  const notify =
+    auth === 'guest' ? undefined : () => router.push(notificationsHref(regionCode, searchParams))
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -163,12 +162,6 @@ export function OfficialScreen({
       <div className="sticky bottom-0 hidden tablet:block">
         <TabBar current="home" navSearch={navSearch} />
       </div>
-
-      <ToastRegion
-        toast={toast}
-        onAction={dismiss}
-        className="fixed inset-x-0 bottom-8 px-page-mobile tablet:bottom-20 tablet:mx-auto tablet:w-dialog-tablet tablet:px-0 desktop:bottom-8"
-      />
     </div>
   )
 }

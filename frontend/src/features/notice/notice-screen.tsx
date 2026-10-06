@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AppHeader } from '@/components/app-header'
 import { Badge } from '@/components/badge'
@@ -16,7 +16,7 @@ import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { reportButtonLabel } from '@/features/home/report-gate'
 import { GROUP_LABEL, scaleMax, TREND_LABEL, TREND_TEXT_CLASS } from '@/features/home/symptom'
 import { TrendBars } from '@/features/home/symptom-trends'
-import { regionSearch, reportHrefFor } from '@/features/me/me-paths'
+import { notificationsHref, regionSearch, reportHrefFor } from '@/features/me/me-paths'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { useSubmittedReport } from '@/features/report/use-submitted-report'
@@ -80,6 +80,7 @@ export function NoticeScreen({
   regionCode?: string | null
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const navTrail = useNavTrail()
   const auth = useMockAuth()
   const { toast, show, dismiss } = useToast()
@@ -89,10 +90,11 @@ export function NoticeScreen({
   const goBack = () => navTrail.goBack(navHref(HOME_PATH, navSearch))
   // 머리줄 동네 이름은 둘러볼 동네 고르기로 간다. 안내는 경로의 동네 것이라 고른 뒤에는 홈으로 돌아온다(#141)
   const openBrowseRegion = useBrowseRegion(HOME_PATH, regionCode)
-  // 알림 설정 · 문 연 곳 찾기 화면이 생기면 각각 연결한다
+  // 문 연 곳 찾기 화면이 생기면 연결한다
   const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
   // 알림(종)은 회원에게만 그린다 — 데스크톱 머리줄(AppHeader)과 모바일 · 태블릿 머리줄이 같은 규칙이다 (#123)
-  const notify = auth === 'guest' ? undefined : () => notReady('알림 설정')
+  const notify =
+    auth === 'guest' ? undefined : () => router.push(notificationsHref(regionCode, searchParams))
   const openReport = () => router.push(reportHrefFor(auth, regionCode))
   const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
   const findOpenClinics = () => notReady('야간·휴일 문 연 곳 찾기')

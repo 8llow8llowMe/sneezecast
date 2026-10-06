@@ -37,6 +37,7 @@ import {
   ME_INTEREST_REGIONS_PATH,
   ME_PATH,
   meSearch,
+  notificationsHref,
   regionSearch,
   reportHrefFor,
 } from './me-paths'
@@ -175,7 +176,6 @@ function InterestRegions({
     }
   }
 
-  const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
   const canAdd = load?.status === 'ready' && !full
 
   return (
@@ -185,7 +185,7 @@ function InterestRegions({
       navSearch={regionSearch(regionCode)}
       onBack={() => goBack(backHref)}
       onRegionClick={openBrowseRegion}
-      onNotificationClick={() => notReady('알림 설정')}
+      onNotificationClick={() => router.push(notificationsHref(regionCode, searchParams))}
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
       reportLabel={reportLabel}
       footer={

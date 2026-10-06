@@ -7,7 +7,6 @@ import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
 import { ErrorState } from '@/components/error-state'
 import { TextField } from '@/components/text-field'
-import { ToastRegion, useToast } from '@/components/toast'
 import {
   changePassword,
   type ChangePasswordResult,
@@ -27,7 +26,14 @@ import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
 import { useDataSource } from '@/lib/use-data-source'
 
 import { AccountPageLayout } from './account-page-layout'
-import { ME_PASSWORD_PATH, ME_PATH, meSearch, regionSearch, reportHrefFor } from './me-paths'
+import {
+  ME_PASSWORD_PATH,
+  ME_PATH,
+  meSearch,
+  notificationsHref,
+  regionSearch,
+  reportHrefFor,
+} from './me-paths'
 import { useMeTrail } from './me-trail'
 import { useMemberGate } from './member-gate'
 import { useShownRegionName } from './member-region'
@@ -99,7 +105,6 @@ function PasswordForm({
   const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
   const active = useActiveRef()
   const source = useDataSource()
-  const { toast, show, dismiss } = useToast()
   const formId = useId()
   const currentRef = useRef<HTMLInputElement>(null)
   const [current, setCurrent] = useState('')
@@ -170,8 +175,6 @@ function PasswordForm({
     goBack(navHref(ME_PATH, meSearch(regionCode, searchParams)))
   }
 
-  const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
-
   return (
     <AccountPageLayout
       title="비밀번호 변경"
@@ -182,7 +185,7 @@ function PasswordForm({
       }}
       backDisabled={busy}
       onRegionClick={openBrowseRegion}
-      onNotificationClick={() => notReady('알림 설정')}
+      onNotificationClick={() => router.push(notificationsHref(regionCode, searchParams))}
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
       reportLabel={reportLabel}
       footer={
@@ -263,12 +266,6 @@ function PasswordForm({
           <AlertBox tone="danger">비밀번호를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.</AlertBox>
         )}
       </form>
-
-      <ToastRegion
-        toast={toast}
-        onAction={dismiss}
-        className="fixed inset-x-0 bottom-36 px-page-mobile tablet:bottom-20 tablet:mx-auto tablet:w-dialog-tablet tablet:px-0 desktop:bottom-8"
-      />
     </AccountPageLayout>
   )
 }

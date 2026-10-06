@@ -83,14 +83,14 @@ describe('HomeScreen', () => {
     officialLinks.forEach((link) => expect(link.textContent).toContain('공식'))
   })
 
-  it('아직 없는 화면으로 가는 버튼은 준비 중 알림을 띄운다', async () => {
-    search = 'mock-auth=member'
-    render(<HomeScreen week={HOME_MOCKS.normal} />)
+  it('머리줄 알림(종)은 동네 · 덮어쓰기를 남긴 채 알림 설정으로 간다', async () => {
+    search = 'region=11440660&mock-auth=member&mock-push=supported&confirm=unknown'
+    render(<HomeScreen week={HOME_MOCKS.normal} regionCode="11440660" />)
 
     await userEvent.setup().click(screen.getByRole('button', { name: '알림 설정' }))
-    expect(
-      screen.getByText('알림 설정 화면은 준비하고 있어요').closest('[role="status"]'),
-    ).not.toBeNull()
+    expect(router.push).toHaveBeenCalledWith(
+      '/me/notifications?region=11440660&mock-auth=member&mock-push=supported',
+    )
   })
 
   it.each([

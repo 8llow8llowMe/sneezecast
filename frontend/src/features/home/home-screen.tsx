@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AlertBox } from '@/components/alert-box'
 import { AppHeader } from '@/components/app-header'
@@ -12,6 +13,7 @@ import { ToastRegion, useToast } from '@/components/toast'
 import { useAuthSettled } from '@/features/auth/use-auth'
 import { MOCK_AUTH_PARAM, useMockAuth } from '@/features/auth/use-mock-auth'
 import { takeHomeNotice } from '@/features/me/leave-notice'
+import { notificationsHref } from '@/features/me/me-paths'
 import { useRequiredStepsGate } from '@/features/me/member-gate'
 import { useMemberRegion } from '@/features/me/member-region'
 import { HOME_PATH } from '@/features/onboarding/paths'
@@ -96,6 +98,8 @@ export function HomeScreen({
    */
   receivedAt?: string | null
 }) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast, show, dismiss } = useToast()
   const online = useOnline()
   const memberRegion = useMemberRegion()
@@ -185,9 +189,6 @@ export function HomeScreen({
     if (notice) show({ message: notice })
   }, [show])
 
-  // 알림 설정(S10) 화면이 생기면 연결한다
-  const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
-
   return (
     <div className="flex min-h-dvh flex-col">
       <h1 className="sr-only">{week.regionName} 이번 주 우리 동네 건강</h1>
@@ -196,7 +197,9 @@ export function HomeScreen({
         regionName={week.regionName}
         current="home"
         onRegionClick={openBrowseRegion}
-        onNotificationClick={guest ? undefined : () => notReady('알림 설정')}
+        onNotificationClick={
+          guest ? undefined : () => router.push(notificationsHref(regionCode, searchParams))
+        }
         onReportClick={openReport}
         reportLabel={reportLabel}
         navSearch={navSearch}

@@ -92,6 +92,18 @@ afterEach(() => {
 })
 
 describe('DevicesScreen 목록', () => {
+  it('머리줄 알림(종)은 동네 · 덮어쓰기를 남긴 채 알림 설정으로 간다', async () => {
+    search =
+      'region=11440660&mock-auth=member&mock-provider=email&mock-push=supported&confirm=unknown'
+    renderDevices({ regionCode: '11440660' })
+
+    const [bell] = await screen.findAllByRole('button', { name: '알림 설정' })
+    await userEvent.setup().click(bell as HTMLElement)
+    expect(router.push).toHaveBeenCalledWith(
+      '/me/notifications?region=11440660&mock-auth=member&mock-provider=email&mock-push=supported',
+    )
+  })
+
   it('불러오는 동안 안내를 보이고, 받으면 이 기기를 맨 위에 다른 기기를 최근 순서로 그린다', async () => {
     renderDevices()
 

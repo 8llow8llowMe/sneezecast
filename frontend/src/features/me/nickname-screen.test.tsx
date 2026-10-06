@@ -94,6 +94,18 @@ afterEach(() => {
 })
 
 describe('NicknameScreen 닉네임 바꾸기', () => {
+  it('머리줄 알림(종)은 동네 · 덮어쓰기를 남긴 채 알림 설정으로 간다', async () => {
+    search =
+      'region=11440660&mock-auth=member&mock-provider=email&mock-push=supported&confirm=unknown'
+    renderNickname('11440660')
+
+    const [bell] = await screen.findAllByRole('button', { name: '알림 설정' })
+    await userEvent.setup().click(bell as HTMLElement)
+    expect(router.push).toHaveBeenCalledWith(
+      '/me/notifications?region=11440660&mock-auth=member&mock-provider=email&mock-push=supported',
+    )
+  })
+
   it('제목 · 지금 닉네임을 채운 칸 · 가입과 같은 도움말 · 글자 수를 보이고, 바꾸기 전에는 버튼이 꺼져 있다', () => {
     renderNickname()
 
