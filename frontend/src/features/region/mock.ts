@@ -25,6 +25,16 @@ export const DISTRICT_MOCKS: readonly District[] = [
 ]
 
 /**
+ * 목 회원의 관심 동네 예시 (`interest-region-client.ts`). 시안(Settings)의 `2곳` 에 맞춰 둘이고, 상한 재현(`full`)은 셋째를 더한다.
+ * **예시 값이다** — 검색 목록(`DISTRICT_MOCKS`)에 있는 동네라 지우고 다시 더할 수 있다.
+ */
+export const INTEREST_REGION_EXAMPLES: readonly District[] = [
+  { code: '11440690', name: '망원1동', sigungu: '서울특별시 마포구' },
+  { code: '11110540', name: '삼청동', sigungu: '서울특별시 종로구' },
+  { code: '26350525', name: '우동', sigungu: '부산광역시 해운대구' },
+]
+
+/**
  * 행정구역 개편으로 폐지된 동네 (Setup-1-reselect 시안의 `○○1동`). **시안 예시 값이다** — 이름 · 시군구를 시안 그대로 두고
  * 코드는 실제 행정동과 겹치지 않게 지어낸 8자리다. 목 회원의 폐지된 동네 · `?mock-required=region` 덮어쓰기가 쓴다.
  * 검색(`DISTRICT_MOCKS`)에는 넣지 않는다 — 폐지된 동은 고를 수 없다.
