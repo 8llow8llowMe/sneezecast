@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
-import { ToastRegion, useToast } from '@/components/toast'
 import {
   type MemberRegion,
   type MockAuthState,
@@ -30,7 +29,14 @@ import { useActiveRef } from '@/lib/use-active-ref'
 import { useDataSource } from '@/lib/use-data-source'
 
 import { AccountPageLayout } from './account-page-layout'
-import { ME_PATH, ME_REGION_PATH, meSearch, regionSearch, reportHrefFor } from './me-paths'
+import {
+  ME_PATH,
+  ME_REGION_PATH,
+  meSearch,
+  notificationsHref,
+  regionSearch,
+  reportHrefFor,
+} from './me-paths'
 import { useMeTrail } from './me-trail'
 import { useMemberGate } from './member-gate'
 import { useMemberRegion, useMemberRegionStatus, useShownRegionName } from './member-region'
@@ -100,7 +106,6 @@ function MyRegionForm({
   const { goBack, leaveNotice } = useMeTrail()
   const active = useActiveRef()
   const source = useDataSource()
-  const { toast, show, dismiss } = useToast()
   const openBrowseRegion = useBrowseRegion(ME_REGION_PATH, regionCode)
   const shownRegionName = useShownRegionName(regionName, regionCode)
   const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
@@ -150,8 +155,6 @@ function MyRegionForm({
     goBack(backHref)
   }
 
-  const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
-
   return (
     <AccountPageLayout
       title="내 동네 바꾸기"
@@ -162,7 +165,7 @@ function MyRegionForm({
       }}
       backDisabled={busy}
       onRegionClick={openBrowseRegion}
-      onNotificationClick={() => notReady('알림 설정')}
+      onNotificationClick={() => router.push(notificationsHref(regionCode, searchParams))}
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
       reportLabel={reportLabel}
       footer={
@@ -227,12 +230,6 @@ function MyRegionForm({
       {status === 'invalid' && (
         <AlertBox tone="danger">이 동네는 고를 수 없어요. 다른 동네를 골라 주세요.</AlertBox>
       )}
-
-      <ToastRegion
-        toast={toast}
-        onAction={dismiss}
-        className="fixed inset-x-0 bottom-36 px-page-mobile tablet:bottom-20 tablet:mx-auto tablet:w-dialog-tablet tablet:px-0 desktop:bottom-8"
-      />
     </AccountPageLayout>
   )
 }

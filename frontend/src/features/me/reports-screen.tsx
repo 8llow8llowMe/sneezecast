@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
-import { ToastRegion, useToast } from '@/components/toast'
 import { reportButtonLabel } from '@/features/home/report-gate'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import {
@@ -29,7 +28,14 @@ import { navHref } from '@/lib/nav'
 import { useDataSource } from '@/lib/use-data-source'
 
 import { AccountPageLayout } from './account-page-layout'
-import { ME_PATH, ME_REPORTS_PATH, meSearch, regionSearch, reportHrefFor } from './me-paths'
+import {
+  ME_PATH,
+  ME_REPORTS_PATH,
+  meSearch,
+  notificationsHref,
+  regionSearch,
+  reportHrefFor,
+} from './me-paths'
 import { useMeTrail } from './me-trail'
 import { useMemberGate } from './member-gate'
 import { useShownRegionName } from './member-region'
@@ -84,7 +90,6 @@ function Reports({
   const searchParams = useSearchParams()
   const { goBack } = useMeTrail()
   const source = useDataSource()
-  const { toast, show, dismiss } = useToast()
   const openBrowseRegion = useBrowseRegion(ME_REPORTS_PATH, regionCode)
   const shownRegionName = useShownRegionName(regionName, regionCode)
   const submitted = useSubmittedReport()
@@ -111,7 +116,6 @@ function Reports({
       : []),
   ]
   const empty = currentStatus === 'ready' && reports.length === 0
-  const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
 
   return (
     <AccountPageLayout
@@ -120,7 +124,7 @@ function Reports({
       navSearch={regionSearch(regionCode)}
       onBack={() => goBack(backHref)}
       onRegionClick={openBrowseRegion}
-      onNotificationClick={() => notReady('알림 설정')}
+      onNotificationClick={() => router.push(notificationsHref(regionCode, searchParams))}
       onReportClick={() => router.push(reportHrefFor('member', regionCode))}
       reportLabel={reportButtonLabel('member', submitted !== null)}
     >
@@ -188,12 +192,6 @@ function Reports({
           지난 보고는 아직 불러올 수 없어요. 지금은 이번 주 보고만 보여요.
         </AlertBox>
       )}
-
-      <ToastRegion
-        toast={toast}
-        onAction={dismiss}
-        className="fixed inset-x-0 bottom-8 px-page-mobile tablet:bottom-20 tablet:mx-auto tablet:w-dialog-tablet tablet:px-0 desktop:bottom-8"
-      />
     </AccountPageLayout>
   )
 }

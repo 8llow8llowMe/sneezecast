@@ -2,7 +2,6 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 
-import { ToastRegion, useToast } from '@/components/toast'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { reportButtonLabel } from '@/features/home/report-gate'
 import { HOME_PATH } from '@/features/onboarding/paths'
@@ -13,7 +12,7 @@ import { useNavTrail } from '@/lib/use-nav-trail'
 
 import { AccountPageLayout } from './account-page-layout'
 import { INFO_PAGES, type InfoPageKind, type InfoSection } from './info-pages'
-import { ME_PATH, meSearch, regionSearch, reportHrefFor } from './me-paths'
+import { ME_PATH, meSearch, notificationsHref, regionSearch, reportHrefFor } from './me-paths'
 import { useShownRegionName } from './member-region'
 
 /** 비회원의 데스크톱 돌아가기. 비회원의 뒤로는 내 정보로 가지 않는다(내 정보는 비회원을 로그인으로 보낸다) */
@@ -48,7 +47,6 @@ export function InfoScreen({
   const router = useRouter()
   const searchParams = useSearchParams()
   const { goBack } = useNavTrail()
-  const { toast, show, dismiss } = useToast()
   const auth = useMockAuth()
   const guest = auth === 'guest'
   const reportLabel = reportButtonLabel(auth, useSubmittedReport() !== null)
@@ -68,7 +66,7 @@ export function InfoScreen({
       desktopBack={guest ? GUEST_BACK : undefined}
       onRegionClick={openBrowseRegion}
       onNotificationClick={
-        guest ? undefined : () => show({ message: '알림 설정 화면은 준비하고 있어요' })
+        guest ? undefined : () => router.push(notificationsHref(regionCode, searchParams))
       }
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
       reportLabel={reportLabel}
@@ -79,12 +77,6 @@ export function InfoScreen({
           <InfoSectionBlock key={section.title} section={section} />
         ))}
       </div>
-
-      <ToastRegion
-        toast={toast}
-        onAction={dismiss}
-        className="fixed inset-x-0 bottom-8 px-page-mobile tablet:bottom-20 tablet:mx-auto tablet:w-dialog-tablet tablet:px-0 desktop:bottom-8"
-      />
     </AccountPageLayout>
   )
 }

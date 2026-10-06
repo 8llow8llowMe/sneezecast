@@ -22,7 +22,14 @@ import { useActiveRef } from '@/lib/use-active-ref'
 import { useDataSource } from '@/lib/use-data-source'
 
 import { AccountPageLayout } from './account-page-layout'
-import { ME_DEVICES_PATH, ME_PATH, meSearch, regionSearch, reportHrefFor } from './me-paths'
+import {
+  ME_DEVICES_PATH,
+  ME_PATH,
+  meSearch,
+  notificationsHref,
+  regionSearch,
+  reportHrefFor,
+} from './me-paths'
 import { useMeTrail } from './me-trail'
 import { useMemberGate } from './member-gate'
 import { useShownRegionName } from './member-region'
@@ -150,7 +157,6 @@ function Devices({
   }
 
   const backHref = navHref(ME_PATH, meSearch(regionCode, searchParams))
-  const notReady = (screen: string) => show({ message: `${screen} 화면은 준비하고 있어요` })
   const others = load.status === 'ready' ? load.sessions.filter((session) => !session.current) : []
 
   return (
@@ -160,7 +166,7 @@ function Devices({
       navSearch={regionSearch(regionCode)}
       onBack={() => goBack(backHref)}
       onRegionClick={openBrowseRegion}
-      onNotificationClick={() => notReady('알림 설정')}
+      onNotificationClick={() => router.push(notificationsHref(regionCode, searchParams))}
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
       reportLabel={reportLabel}
       footer={

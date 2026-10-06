@@ -80,6 +80,18 @@ afterEach(() => {
 })
 
 describe('MyRegionScreen 내 동네 바꾸기', () => {
+  it('머리줄 알림(종)은 동네 · 덮어쓰기를 남긴 채 알림 설정으로 간다', async () => {
+    search =
+      'region=11440660&mock-auth=member&mock-provider=email&mock-push=supported&confirm=unknown'
+    render(regionScreen('11440660'))
+
+    const [bell] = await screen.findAllByRole('button', { name: '알림 설정' })
+    await userEvent.setup().click(bell as HTMLElement)
+    expect(router.push).toHaveBeenCalledWith(
+      '/me/notifications?region=11440660&mock-auth=member&mock-provider=email&mock-push=supported',
+    )
+  })
+
   it('제목 · 위치 정보를 쓰지 않는다는 안내 · 지금 내 동네를 보이고, 고르기 전에는 버튼이 꺼져 있다', () => {
     const geolocation = vi.fn()
     Object.defineProperty(window.navigator, 'geolocation', {

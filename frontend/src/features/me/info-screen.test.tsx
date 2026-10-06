@@ -117,13 +117,15 @@ describe('InfoScreen 안내 화면 틀', () => {
     expect(router.push).not.toHaveBeenCalled()
   })
 
-  it('회원: 알림(종)이 있고 준비 중을 알린다. 주소로 바로 들어왔으면 뒤로가 동네 · 덮어쓰기를 남긴 내 정보로 간다', async () => {
+  it('회원: 알림(종)이 있고 알림 설정으로 간다. 주소로 바로 들어왔으면 뒤로가 동네 · 덮어쓰기를 남긴 내 정보로 간다', async () => {
     search = 'region=11440660&mock-auth=member&mock-provider=email&other=1'
     renderInfo('data-sources', '11440660')
     const user = userEvent.setup()
 
     await user.click(screen.getAllByRole('button', { name: '알림 설정' })[0] as HTMLElement)
-    expect(screen.getByText('알림 설정 화면은 준비하고 있어요')).toBeDefined()
+    expect(router.push).toHaveBeenCalledWith(
+      '/me/notifications?region=11440660&mock-auth=member&mock-provider=email',
+    )
 
     await user.click(screen.getByRole('button', { name: '뒤로' }))
     expect(router.replace).toHaveBeenCalledWith(

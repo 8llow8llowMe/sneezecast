@@ -362,4 +362,15 @@ describe('NoticeScreen — 이동', () => {
     render(<NoticeScreen data={data('published')} />)
     expect(screen.queryAllByRole('button', { name: '알림 설정' })).toHaveLength(count)
   })
+
+  it('알림(종)은 동네 · 덮어쓰기를 남긴 채 알림 설정으로 간다', async () => {
+    search = 'mock-auth=member&mock-push=supported&confirm=unknown'
+    render(<NoticeScreen data={data('published')} />)
+
+    const [bell] = screen.getAllByRole('button', { name: '알림 설정' })
+    await userEvent.setup().click(bell as HTMLElement)
+    expect(router.push).toHaveBeenLastCalledWith(
+      '/me/notifications?mock-auth=member&mock-push=supported',
+    )
+  })
 })

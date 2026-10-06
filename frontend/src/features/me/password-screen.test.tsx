@@ -105,6 +105,18 @@ afterEach(() => {
 })
 
 describe('PasswordScreen 이메일 회원 — 비밀번호 변경', () => {
+  it('머리줄 알림(종)은 동네 · 덮어쓰기를 남긴 채 알림 설정으로 간다', async () => {
+    search =
+      'region=11440660&mock-auth=member&mock-provider=email&mock-push=supported&confirm=unknown'
+    renderPassword({ regionCode: '11440660' })
+
+    const [bell] = await screen.findAllByRole('button', { name: '알림 설정' })
+    await userEvent.setup().click(bell as HTMLElement)
+    expect(router.push).toHaveBeenCalledWith(
+      '/me/notifications?region=11440660&mock-auth=member&mock-provider=email&mock-push=supported',
+    )
+  })
+
   it('현재 · 새 · 확인 세 칸과 규칙 도움말, 비밀번호를 잊었어요를 보인다', () => {
     renderPassword()
 

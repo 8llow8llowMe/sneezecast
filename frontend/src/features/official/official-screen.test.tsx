@@ -231,8 +231,8 @@ describe('OfficialScreen 이동', () => {
     await cancelReport('mock')
   })
 
-  it('알림 설정은 준비 중 알림을 띄운다', async () => {
-    search = 'mock-auth=member-no-consent'
+  it('알림(종)은 동네 · 덮어쓰기를 남긴 채 알림 설정으로 간다', async () => {
+    search = 'mock-auth=member-no-consent&mock-push=supported&confirm=unknown'
     renderOfficial(OFFICIAL_MOCKS.published)
 
     // 태블릿 머리줄 · 데스크톱 머리줄에 하나씩 있다
@@ -240,7 +240,10 @@ describe('OfficialScreen 이동', () => {
 
     const [bell] = screen.getAllByRole('button', { name: '알림 설정' })
     await userEvent.setup().click(bell as HTMLElement)
-    expect(screen.getByRole('status').textContent).toContain('알림 설정 화면은 준비하고 있어요')
+    expect(router.push).toHaveBeenCalledWith(
+      '/me/notifications?mock-auth=member-no-consent&mock-push=supported',
+    )
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('비회원에게는 어느 머리줄에도 알림(종)을 그리지 않는다', () => {
