@@ -50,7 +50,9 @@ const SET_MINE_INVALID = '이 동네는 내 동네로 설정할 수 없어요. �
  * - 처음에는 처음 고른 동네(내 동네 · 둘러보기 동네)를 접어서 보인다. 다른 동네를 고르면 펼친다(Map-expanded).
  * - 동네는 사용자가 고른다 — 위치 권한을 묻지 않는다. 공식 정보(질병관리청)는 이 화면에 섞지 않는다.
  * - 둘러보기 동네(`regionCode`)는 탭바 · 메뉴 · 보고 진입 · 동네 안내 링크에 남긴다(다른 화면과 같다).
- * - 머리줄 동네 이름은 둘러볼 동네 고르기(`/browse/region?next=/map`)로 가고, 고르면 `/map?region=<새 코드>` 로 돌아온다(#141).
+ * - 머리줄 동네 이름과 지도 위 `행정동 이름으로 찾기`(#204)는 같은 둘러볼 동네 고르기(`/browse/region?next=/map`)로 가고,
+ *   고르면 `/map?region=<새 코드>` 로 기록을 바꿔 돌아온다(#141). 둘 다 둘러보기 동네만 바꾸고 내 동네는 그대로다(회원 · 비회원 같다).
+ *   모바일은 머리줄이 없어 찾기가 동네를 옮기는 유일한 길이다. 찾은 동네가 지도 자료에 어떻게 실리는지는 `app/map/page.tsx` 다.
  *   보이는 이름은 다른 화면과 같은 `useShownRegionName`(둘러보기 동네 → 회원의 내 동네 → 목 예시)이다.
  *   지도의 처음 고른 동네는 둘러보기 동네 · 목 예시 동네다(회원의 내 동네로 두는 것은 집계 API 연동 뒤 — 지도 자료를 서버가 만든다).
  * - **내 동네**(`(내 동네)` 표시 · `내 동네로 설정` 이 없는 동네): 회원은 프로필의 내 동네(`useMemberRegion`), 비회원은 처음 고른 동네다.
@@ -60,7 +62,6 @@ const SET_MINE_INVALID = '이 동네는 내 동네로 설정할 수 없어요. �
  *   두 버튼 · 닫기를 막고, 실패하면 대화상자 안 빨강 상자로 알린다(뒤로 가기로 이미 닫았으면 알림) — 내 정보의 확인 대화상자와 같다.
  *   서버가 그 동네를 받지 않으면(`invalid` — 없는 코드 · 폐지) 같은 자리에 "설정할 수 없어요" 로 알린다.
  *   주소로 바로 들어온 값은 회원이 내 동네가 아닌 동네를 골랐을 때만 연다(아니면 열지 않고 두기만 한다 — 판단 기준 `?explain=` 과 같다).
- * - 알림 설정 · 행정동 찾기는 아직 "준비하고 있어요" 알림이다.
  */
 export function MapScreen({
   map,
@@ -118,7 +119,6 @@ export function MapScreen({
     nameRef.current?.focus({ preventScroll: true })
   })
 
-  const notReady = (message: string) => show({ message })
   const select = (code: string) => {
     setSelectedCode(code)
     setExpanded(true)
@@ -195,7 +195,7 @@ export function MapScreen({
           mineCode={mineCode}
           selectedCode={selected?.code ?? null}
           onSelect={select}
-          onSearch={() => notReady('행정동 찾기는 준비하고 있어요')}
+          onSearch={openBrowseRegion}
         />
 
         {selected && (

@@ -31,7 +31,7 @@ export function MapView({
   mineCode: string | null
   selectedCode: string | null
   onSelect: (code: string) => void
-  /** 행정동 이름으로 찾기. 지도와 함께 붙인다 — 지금은 준비 중 알림 */
+  /** 행정동 이름으로 찾기. 둘러볼 동네 고르기(행정동 검색)를 연다(`MapScreen`, #204) */
   onSearch: () => void
 }) {
   return (

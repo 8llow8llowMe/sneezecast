@@ -220,7 +220,7 @@ describe('MapScreen', () => {
     expect(geolocation).not.toHaveBeenCalled()
   })
 
-  it('회원은 알림(종)이 있고 알림 설정으로 간다. 준비 중인 동작은 알림으로 알린다', async () => {
+  it('회원은 알림(종)이 있고 알림 설정으로 간다', async () => {
     search = 'mock-auth=member&mock-push=supported&confirm=unknown'
     const user = userEvent.setup()
     render(<MapScreen map={pickMapMock('example', null)} />)
@@ -229,10 +229,6 @@ describe('MapScreen', () => {
     expect(router.push).toHaveBeenCalledWith(
       '/me/notifications?mock-auth=member&mock-push=supported',
     )
-
-    await user.click(screen.getByRole('button', { name: '행정동 이름으로 찾기' }))
-    expect(screen.getByRole('status').textContent).toContain('행정동 찾기는 준비하고 있어요')
-    expect(screen.getByRole('button', { name: '알림 설정' })).toBeTruthy()
   })
 
   it('머리줄 동네 이름은 지도로 돌아올 둘러볼 동네 고르기를 연다 (동네 · 덮어쓰기를 남기고 목 자료는 뺀다)', async () => {
@@ -249,6 +245,96 @@ describe('MapScreen', () => {
 
 const YEOKSAM1 = { code: '11680640', name: '역삼1동' }
 const EXAMPLE = NOTICE_EXAMPLE_DISTRICT
+
+const searchButton = () => screen.getByRole('button', { name: '행정동 이름으로 찾기' })
+
+describe('MapScreen 행정동 이름으로 찾기', () => {
+  beforeEach(() => {
+    search = ''
+    resetMockSession()
+    vi.clearAllMocks()
+    window.history.replaceState(null, '', '/map')
+  })
+
+  it('누르면 지도로 돌아올 둘러볼 동네 고르기(행정동 검색)를 연다 — 준비 중 알림이 아니다', async () => {
+    render(<MapScreen map={pickMapMock('example', null)} />)
+
+    await userEvent.setup().click(searchButton())
+    expect(router.push).toHaveBeenCalledWith('/browse/region?next=%2Fmap')
+    expect(screen.getByRole('status').textContent).toBe('')
+  })
+
+  it('둘러보기 동네 · 덮어쓰기는 남기고 목 자료 · 열린 시트는 뺀다 — 머리줄 동네 이름과 같은 곳이다', async () => {
+    search = 'mock=example&mock-auth=member&mock-push=supported&report=start'
+    const mangwon1 = DISTRICT_MOCKS.find((district) => district.code === MANGWON1) ?? null
+    const user = userEvent.setup()
+    render(<MapScreen map={pickMapMock('example', mangwon1)} regionCode={MANGWON1} />)
+
+    await user.click(searchButton())
+    const expected = `/browse/region?next=%2Fmap&region=${MANGWON1}&mock-auth=member&mock-push=supported`
+    expect(router.push).toHaveBeenLastCalledWith(expected)
+
+    await user.click(screen.getByRole('button', { name: '동네 바꾸기, 현재 망원1동' }))
+    expect(router.push).toHaveBeenLastCalledWith(expected)
+  })
+
+  it('회원이 찾아도 내 동네는 그대로다 — 저장하지 않고 이동만 한다', async () => {
+    await loginAsMember()
+    render(<MapScreen map={pickMapMock('example', null)} />)
+
+    await userEvent.setup().click(searchButton())
+    expect(router.push).toHaveBeenCalledWith('/browse/region?next=%2Fmap')
+    expect(saveRegion).not.toHaveBeenCalled()
+    expect(getMockProfile()?.region).toEqual(YEOKSAM1)
+  })
+
+  it('찾아서 고른 동네가 지도 목 자료에 없으면 처음 고른 동네로 더해 자료 부족으로 보인다 — 수치 · 상태색이 없다', async () => {
+    // 동네 고르기에서 돌아온 지도: `?mock=` 가 버려져 기본값이고, 역삼1동은 지도 목 자료(○○동 · 마포구 네 동)에 없다
+    const yeoksam1 = DISTRICT_MOCKS.find((district) => district.code === YEOKSAM1.code) ?? null
+    const user = userEvent.setup()
+    render(<MapScreen map={pickMapMock(undefined, yeoksam1)} regionCode={YEOKSAM1.code} />)
+
+    expect(screen.getByRole('button', { name: '동네 바꾸기, 현재 역삼1동' })).toBeTruthy()
+    // 비회원의 내 동네는 처음 고른 동네(둘러보기 동네)다
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('역삼1동 (내 동네)')
+    const row = districtButton(/역삼1동/)
+    expect(row.getAttribute('aria-pressed')).toBe('true')
+    expect(row.textContent).toContain('자료 부족')
+    expect(row.querySelector('[aria-hidden="true"]')?.classList.contains('bg-muted-bar')).toBe(true)
+
+    await user.click(handle())
+    const panel = screen.getByRole('region', { name: '역삼1동 (내 동네)' })
+    expect(within(panel).getByText('자료 부족', { selector: 'h2 + span' })).toBeTruthy()
+    expect(panel.textContent).not.toMatch(/\d+%/)
+    expect(within(panel).getByRole('progressbar')).toBeTruthy()
+    expect(within(panel).queryByRole('button', { name: '왜 이렇게 보나요?' })).toBeNull()
+  })
+
+  it('회원이 찾아서 고른 동네는 내 동네가 아니면 내 동네로 설정 버튼이 있다', async () => {
+    const seogyo = DISTRICT_MOCKS.find((district) => district.code === SEOGYO) ?? null
+    await loginAsMember(seogyo)
+    const yeoksam1 = DISTRICT_MOCKS.find((district) => district.code === YEOKSAM1.code) ?? null
+    const user = userEvent.setup()
+    render(<MapScreen map={pickMapMock(undefined, yeoksam1)} regionCode={YEOKSAM1.code} />)
+
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('역삼1동')
+    await user.click(handle())
+    expect(setMineButton()).toBeTruthy()
+    expect(getMockProfile()?.region).toEqual({ code: SEOGYO, name: '서교동' })
+  })
+
+  it('이번 주 동네 자료가 하나도 없으면 찾은 동네도 자료 없음 안내만 보인다', () => {
+    const yeoksam1 = DISTRICT_MOCKS.find((district) => district.code === YEOKSAM1.code) ?? null
+    render(<MapScreen map={pickMapMock('empty', yeoksam1)} regionCode={YEOKSAM1.code} />)
+
+    expect(screen.getByRole('button', { name: '동네 바꾸기, 현재 역삼1동' })).toBeTruthy()
+    expect(screen.getByText(/이번 주 동네별 자료가 아직 없어요/)).toBeTruthy()
+    expect(screen.queryByRole('list', { name: '동네 목록' })).toBeNull()
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+    // 다른 동네를 찾아볼 수 있게 찾기는 남긴다
+    expect(searchButton()).toBeTruthy()
+  })
+})
 
 function deferred() {
   let resolve: () => void = () => {}
