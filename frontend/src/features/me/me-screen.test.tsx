@@ -134,9 +134,9 @@ describe('MeScreen 회원 상태별 화면', () => {
       '/me/devices',
     )
     expect(screen.getByRole('heading', { level: 2, name: '내 보고' })).toBeDefined()
-    expect(screen.getByRole('button', { name: /^최근 보고 내역/ }).textContent).toContain(
-      '52주 보관',
-    )
+    const reportsRow = screen.getByRole('link', { name: /^최근 보고 내역/ })
+    expect(reportsRow.textContent).toBe('최근 보고 내역52주 보관')
+    expect(reportsRow.getAttribute('href')).toBe('/me/reports')
     expect(screen.getByText('건강정보 동의 철회').classList).toContain('text-danger')
     expect(screen.getByRole('button', { name: '로그아웃' })).toBeDefined()
     expect(screen.getByText('회원 탈퇴').classList).toContain('text-fg-muted')
@@ -348,7 +348,7 @@ describe('MeScreen 메뉴', () => {
     ).not.toBeNull()
   })
 
-  it('닉네임 · 로그인한 기기 · 비밀번호 행은 동네 · 덮어쓰기를 남긴 채 계정 화면으로 간다 (다른 쿼리는 뺀다)', () => {
+  it('닉네임 · 로그인한 기기 · 비밀번호 · 최근 보고 내역 행은 동네 · 덮어쓰기를 남긴 채 계정 화면으로 간다 (다른 쿼리는 뺀다)', () => {
     search = 'region=11440660&mock-auth=member&confirm=unknown'
     renderMe({ regionCode: '11440660' })
     expect(screen.getByRole('link', { name: /^닉네임/ }).getAttribute('href')).toBe(
@@ -359,6 +359,9 @@ describe('MeScreen 메뉴', () => {
     )
     expect(screen.getByRole('link', { name: '비밀번호 변경' }).getAttribute('href')).toBe(
       '/me/password?region=11440660&mock-auth=member',
+    )
+    expect(screen.getByRole('link', { name: /^최근 보고 내역/ }).getAttribute('href')).toBe(
+      '/me/reports?region=11440660&mock-auth=member',
     )
   })
 

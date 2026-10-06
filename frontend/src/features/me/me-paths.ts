@@ -15,6 +15,8 @@ export const ME_PASSWORD_PATH = '/me/password'
 export const ME_REGION_PATH = '/me/region'
 /** 닉네임 바꾸기 (#192, 시안 없음). 가입과 같은 2~10자 규칙 */
 export const ME_NICKNAME_PATH = '/me/nickname'
+/** 최근 보고 내역 (#194, 시안 없음). 건강정보에 동의한 회원만 — 동의하지 않은 회원은 내 정보로 돌려보낸다 */
+export const ME_REPORTS_PATH = '/me/reports'
 
 /** 둘러보기 동네 (`?region=<행정동 코드>`). 홈 · 내 정보와 같은 쿼리다 */
 const REGION_PARAM = 'region'

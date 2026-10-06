@@ -6,6 +6,7 @@ import {
   ME_PASSWORD_PATH,
   ME_PATH,
   ME_REGION_PATH,
+  ME_REPORTS_PATH,
 } from '@/features/me/me-paths'
 import type { SessionSnapshot } from '@/lib/session/session-store'
 
@@ -187,10 +188,11 @@ describe('safeNextPath (오픈 리다이렉트 방지)', () => {
       ME_PASSWORD_PATH,
       ME_REGION_PATH,
       ME_NICKNAME_PATH,
+      ME_REPORTS_PATH,
     ])
   })
 
-  it.each(['/', '/me', '/me/devices', '/me/password', '/me/region', '/me/nickname'])(
+  it.each(['/', '/me', '/me/devices', '/me/password', '/me/region', '/me/nickname', '/me/reports'])(
     '%s 는 그대로다',
     (path) => {
       expect(safeNextPath(path)).toBe(path)
