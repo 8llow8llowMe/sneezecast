@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원 · 행정동 · 주간 보고는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자는 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원 · 행정동 · 주간 보고(이번 주)는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자 · 지난 보고 내역은 **BE 미정**이라 아래 초안은 프론트 제안이다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -191,3 +191,17 @@ POST /api/admin/candidates/{id}/publish|hold|correct|withdraw
 
 - `insufficient` 응답에는 `symptomRate` · `baselineRate` 가 없다. 프론트는 이 값이 없을 때 수치·상태색을 그리지 않는다.
 - 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 홈 주간 집계 · 공식 정보 · 운영자는 목 데이터다(보고는 위 "주간 보고" 로 확정).
+
+### 지난 보고 내역 (#194, 프론트 초안)
+
+최근 보고 내역 화면(`/me/reports`)이 가정한 모양이다. 백엔드 주간 보고(`/api/v1/reports/current`)의 경로 · 권한 · 응답 관례를 따른다.
+
+```text
+GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:write, 이번 주를 뺀 지난 보고, 최근 주부터)
+```
+
+- `contents` 의 `WeeklyReport` 는 위 "주간 보고" 와 같은 모양(`isoWeek` · `districtCode` · `symptomGroups` · `reportedAt` · `updatedAt`)이다. 회원 ID · 보고 ID 를 싣지 않는다. 보고하지 않은 주는 없다.
+- **이번 주는 빼고 준다 — 서버가 정한 주(KST) 기준이다.** 이번 주 보고는 `/reports/current` 가 정본이라 화면은 그 저장소 값으로 그린다(보내기 · 고치기 직후와 어긋나지 않게, 주 경계에서 두 응답이 다른 주를 이번 주로 보지 않게).
+- 목록은 관례대로 `SliceResponse { contents, hasNext }` 다(architecture-guide §8). 보관이 52주라 지난 보고는 많아야 51건이고 한 번에 모두 준다 — 페이지 파라미터를 두지 않고 `hasNext` 는 늘 false 다(프론트는 보지 않는다). 배열(`List`) 예외(행정동 검색 `DistrictWebController` 선례)는 쓰지 않았다 — 자동완성처럼 프론트 계약이 배열로 정해진 것이 아니고, 보관 기간이 늘면 페이지를 나눌 수 있게 둔다.
+- 오류는 `/reports/current` 와 같다: 토큰 없음 `SECURITY_001`, 동의 전 `SECURITY_006`(403). 받는 파라미터가 없어 검증 오류는 없다.
+- 프론트 함수: `features/report/report-history.ts` 의 `listPastReports(source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "지난 보고는 아직 불러올 수 없어요")이다 — 건강정보라 BE 미정이어도 실제 회원에게 예시 이력을 보이지 않는다(conventions.md "데이터 출처" 의 예외). 목은 예시 이력이다.
