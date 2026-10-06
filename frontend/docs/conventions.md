@@ -54,6 +54,8 @@ frontend/
 
 타입만 쓰면 `import type` 을 쓴다 (`consistent-type-imports`).
 
+**`'use client'` 가 없는 모듈은 `'use client'` 모듈에서 컴포넌트가 아닌 값(상수 · 함수)을 가져오지 않는다.** 서버 페이지에서 그 값은 실제 값이 아니라 클라이언트 참조가 된다 — 쿼리 이름 상수를 가져오면 `searchParams.get()` 이 늘 null 이다(#206, 둘러볼 동네 고르기에서 돌아오면 `mock-auth` · `mock-provider` 가 빠졌다). 서버 · 클라이언트가 같이 쓰는 값은 `'use client'` 가 없는 모듈에 두고 훅 모듈은 다시 내보내기만 한다(예: `features/auth/mock-params.ts`). vitest 에는 이 경계가 없어 `src/client-boundary.test.ts` 가 import 를 훑어 막는다.
+
 ## 스타일
 
 - **토큰만 쓴다.** `globals.css` 가 Tailwind 기본 색·그림자·글자 크기·모서리·경계를 지웠기 때문에 `bg-blue-500`, `shadow-md`, `text-sm` 은 만들어지지 않는다.
