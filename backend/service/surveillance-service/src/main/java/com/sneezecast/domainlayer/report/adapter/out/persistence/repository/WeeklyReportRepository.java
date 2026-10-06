@@ -42,4 +42,14 @@ public interface WeeklyReportRepository extends JpaRepository<WeeklyReportEntity
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from WeeklyReportEntity w where w.reporterKey = :reporterKey and w.isoWeek = :isoWeek")
     int deleteByReporterKeyAndIsoWeek(String reporterKey, String isoWeek);
+
+    /**
+     * 한 보고자의 모든 주 보고를 지운다 (탈퇴 · 건강정보 동의 철회 파기). 조건이 {@code uk_weekly_report_reporter_key_iso_week} 의 선두 컬럼
+     * ({@code reporter_key}) 하나라 별도 인덱스 없이 그 UK 를 탄다. 행을 읽어 오지 않고 한 번에 지운다.
+     *
+     * @return 지운 행 수 (0 이상)
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("delete from WeeklyReportEntity w where w.reporterKey = :reporterKey")
+    int deleteAllByReporterKey(String reporterKey);
 }

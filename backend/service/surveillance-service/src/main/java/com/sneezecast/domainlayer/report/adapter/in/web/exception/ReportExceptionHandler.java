@@ -17,7 +17,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 /**
  * report 컨텍스트 전용 advice. 범위가 컨텍스트 패키지라 district advice 와 겹치지 않는다 — 순서는 auth 의 컨텍스트별 advice 와 같이 0 으로 맞춘다
- * (coding-conventions §6-1).
+ * (coding-conventions §6-1). 공개 보고 API 와 내부 파기 API({@code adapter/in/internal})가 함께 쓴다.
  *
  * <p>인가 실패(401 · 403)는 여기서 받지 않는다. {@code @PreAuthorize} 거부는 보안 필터의 오류 writer 가 {@code SECURITY_00x} 봉투로 쓴다.
  */
@@ -54,7 +54,7 @@ public class ReportExceptionHandler {
         return ValidationErrorSupport.toResponse(exception, ReportErrorCode.INVALID_REQUEST.getCode());
     }
 
-    /** 지금 보고 API 에는 파라미터가 없지만, 봉투 없는 Spring 기본 400 이 나갈 틈을 남기지 않는다. */
+    /** 내부 파기 API 의 회원 ID 가 숫자가 아니거나 long 범위를 넘으면 REPORT_198 — 봉투 없는 Spring 기본 400 이 나갈 틈을 남기지 않는다. */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<Response<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
         return ValidationErrorSupport.toResponse(exception, ReportErrorCode.PARAMETER_TYPE_INVALID.getCode());

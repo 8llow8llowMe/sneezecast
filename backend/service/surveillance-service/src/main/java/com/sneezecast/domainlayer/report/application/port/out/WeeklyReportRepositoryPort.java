@@ -51,4 +51,12 @@ public interface WeeklyReportRepositoryPort {
      * @return 지운 행 수 (0 또는 1)
      */
     int deleteByReporterKeyAndIsoWeek(String reporterKey, ReportWeek isoWeek);
+
+    /**
+     * 한 보고자의 보고를 <b>모든 주에 걸쳐</b> 지운다 (탈퇴 · 건강정보 동의 철회 파기, entity-design §1-5). 지울 행이 없어도 실패하지 않는다 —
+     * auth 가 완료될 때까지 같은 회원으로 여러 번 부른다. <b>호출자 트랜잭션이 있어야 한다.</b>
+     *
+     * @return 지운 행 수 (0 이상)
+     */
+    int deleteAllByReporterKey(String reporterKey);
 }
