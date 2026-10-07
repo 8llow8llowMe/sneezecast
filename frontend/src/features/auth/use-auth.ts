@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react'
 import { useSearchParams } from 'next/navigation'
 
-import type { SessionSnapshot } from '@/lib/session/session-store'
+import type { SessionRole, SessionSnapshot } from '@/lib/session/session-store'
 import { useSession } from '@/lib/session/use-session'
 import { useDataSource } from '@/lib/use-data-source'
 import { useHydrated } from '@/lib/use-hydrated'
@@ -14,7 +14,7 @@ import {
   type MockAuthState,
   subscribeMockSession,
 } from './auth-client'
-import { MOCK_AUTH_PARAM } from './mock-params'
+import { MOCK_AUTH_PARAM, MOCK_ROLE_PARAM } from './mock-params'
 
 /* ── 회원 · 동의 상태 (실데이터 · 목데이터) ──────────────────────────────────────────────────────
  *
@@ -70,4 +70,29 @@ export function useAuthSettled(): boolean {
   const source = useDataSource()
   const { status } = useSession()
   return hydrated && (source === 'mock' || status === 'member' || status === 'guest')
+}
+
+const MOCK_ROLES: readonly SessionRole[] = ['USER', 'OPERATOR', 'ADMIN']
+
+/** 쿼리 값(`user` · `operator` · `admin`)을 역할로. 없거나 모르는 값이면 null 이다(무시한다) */
+export function parseMockRole(value: string | null): SessionRole | null {
+  return MOCK_ROLES.find((role) => role.toLowerCase() === value) ?? null
+}
+
+/**
+ * 지금 회원의 역할(#219, 운영자 화면 가드). 비회원(복원 중 포함)이면 null 이다.
+ *
+ * - 실데이터: 세션 저장소의 회원 요약(`role` — 로그인 · 재발급 응답). 서버가 운영자 API 마다 다시 확인하므로 화면 가드는 길 안내일 뿐이다
+ * - 목데이터: ① 주소 `?mock-role=` ② 일반 회원 `USER`. 목 세션에는 역할이 없다(목 로그인은 모두 일반 회원)
+ *
+ * **`?mock-role=` 은 목데이터 모드에서만 듣는다** — 실데이터에서 들으면 주소만으로 운영자 화면이 열린다(`useAuth` 의 덮어쓰기와 같다).
+ */
+export function useSessionRole(): SessionRole | null {
+  const source = useDataSource()
+  const session = useSession()
+  const auth = useAuth()
+  const override = parseMockRole(useSearchParams().get(MOCK_ROLE_PARAM))
+  if (source === 'api') return session.status === 'member' ? session.summary.role : null
+  if (auth === 'guest') return null
+  return override ?? 'USER'
 }

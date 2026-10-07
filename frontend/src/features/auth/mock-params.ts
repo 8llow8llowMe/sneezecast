@@ -10,3 +10,10 @@ export const MOCK_AUTH_PARAM = 'mock-auth'
 
 /** QA 용 목 로그인 방법 덮어쓰기 쿼리 (`?mock-provider=email|kakao`). 내 정보(S10)의 이메일 · 카카오 화면을 고른다. 목데이터 모드에서만 듣는다 */
 export const MOCK_PROVIDER_PARAM = 'mock-provider'
+
+/**
+ * QA 용 목 역할 덮어쓰기 쿼리 (`?mock-role=user|operator|admin`, #219). 목 회원의 역할을 고른다(기본은 일반 회원 `USER`).
+ * 운영자 화면(`/admin/*`)을 목데이터로 볼 때 쓴다 — 회원 상태는 따로 `?mock-auth=member` 로 고른다.
+ * **목데이터 모드에서만 듣는다** — 실데이터에서 들으면 주소만으로 운영자 화면이 열린다
+ */
+export const MOCK_ROLE_PARAM = 'mock-role'
