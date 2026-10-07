@@ -1,4 +1,5 @@
-import { HOME_PATH } from '@/features/onboarding/paths'
+import { HOME_PATH, PRESET_REGION_PARAM } from '@/features/onboarding/paths'
+import { navHref } from '@/lib/nav'
 
 import { afterLoginHref, loginHref, type LoginReturn, NO_LOGIN_RETURN } from './login-return'
 import { safeNextPath } from './required-steps'
@@ -152,6 +153,17 @@ export function takeLoginReturn(now: number = Date.now()): LoginReturn {
  */
 export function withSavedLoginReturn(path: string): string {
   return loginHref(path, peekLoginReturn())
+}
+
+/**
+ * 가입 동네 고르기(S02-1)로 갈 주소에 들고 있던 둘러보기 동네를 처음 선택으로 싣는다(#227, `?region=`, 지우지 않는다).
+ * 이메일 가입(S13-4 → S02-1) · 카카오 콜백(가입 필요) · 목 카카오 시작이 쓴다. 동네가 없으면(저장소를 못 써 카카오 왕복에서 잃음 포함)
+ * 주소를 그대로 둔다 — S02-1 은 지금처럼 빈 선택으로 시작한다. 코드는 모양만 확인된 값이라 서버 페이지가 행정동으로 다시 확인한다
+ */
+export function withSavedRegion(path: string): string {
+  const { region } = peekLoginReturn()
+  if (!region) return path
+  return navHref(path, new URLSearchParams({ [PRESET_REGION_PARAM]: region }).toString())
 }
 
 /**

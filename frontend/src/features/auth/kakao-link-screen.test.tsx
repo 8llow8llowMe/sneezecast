@@ -237,7 +237,10 @@ describe('KakaoLinkScreen', () => {
       saveLoginReturn(ME)
       renderLink()
       await userEvent.setup().click(switchButton())
-      await waitFor(() => expect(router.push).toHaveBeenCalledWith('/setup/region?from=kakao'))
+      // 목은 곧바로 가입 동네 고르기다 — 둔 둘러보기 동네를 처음 선택으로 싣는다(#227)
+      await waitFor(() =>
+        expect(router.push).toHaveBeenCalledWith('/setup/region?from=kakao&region=11440660'),
+      )
       expect(peekLoginReturn()).toEqual(ME)
     })
   })

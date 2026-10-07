@@ -354,7 +354,10 @@ describe('LoginScreen', () => {
     it('카카오로 계속하기(목)도 같은 문서 안에서 들고 간다', async () => {
       renderLogin(null, EMPTY_SIGNUP, { next: '/', region: '11680640', intent: 'report' })
       await userEvent.setup().click(screen.getByRole('button', { name: '카카오로 계속하기' }))
-      await waitFor(() => expect(router.push).toHaveBeenCalledWith('/setup/region?from=kakao'))
+      // 둘러보던 동네는 가입 동네 고르기의 처음 선택으로도 싣는다(#227)
+      await waitFor(() =>
+        expect(router.push).toHaveBeenCalledWith('/setup/region?from=kakao&region=11680640'),
+      )
       expect(peekLoginReturn()).toEqual({ next: '/', region: '11680640', intent: 'report' })
     })
 

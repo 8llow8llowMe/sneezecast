@@ -56,6 +56,12 @@ export const FROM_PARAM = 'from'
 export const FROM_KAKAO = 'kakao'
 export const SETUP_REGION_FROM_KAKAO_PATH = `${SETUP_REGION_PATH}?${FROM_PARAM}=${FROM_KAKAO}`
 /**
+ * 가입 동네 고르기(S02-1)의 처음 선택으로 넘기는 둘러보기 동네 코드(#227). 가입 · 카카오로 떠나기 전에 둔 돌아갈 곳의 동네를
+ * S02-1 로 가는 곳(이메일 가입 S13-4 · 카카오 콜백 · 목 카카오 시작)이 붙인다(`login-return-store.ts` 의 `withSavedRegion`).
+ * 서버 페이지가 행정동으로 확인해 아는 동네일 때만 넘기고, 화면은 이 흐름에서 처음 닿았을 때 한 번만 채운다
+ */
+export const PRESET_REGION_PARAM = 'region'
+/**
  * 폐지된 동네 다시 고르기 (Setup-1-reselect). 동네 선택과 같은 주소에 `?reselect=1` 을 붙인다.
  * 홈 · 내 정보에 들어온 회원의 동네가 행정구역 개편으로 없어졌으면 보낸다(`features/auth/required-steps.ts`)
  */

@@ -11,7 +11,7 @@ import { useActiveRef } from '@/lib/use-active-ref'
 
 import { kakaoLogin, type KakaoLoginResult } from './kakao-client'
 import { kakaoFailPath } from './login-notice'
-import { afterKakaoLoginPath, withSavedLoginReturn } from './login-return-store'
+import { afterKakaoLoginPath, withSavedLoginReturn, withSavedRegion } from './login-return-store'
 
 /**
  * 콜백 값이 든 부분. proxy 가 카카오가 붙인 쿼리를 fragment 로 옮겨 303 으로 다시 열게 하므로(`kakao-callback-redirect.ts`, #176)
@@ -40,7 +40,8 @@ function targetOf(result: KakaoLoginResult): string {
     case 'logged-in':
       return afterKakaoLoginPath()
     case 'signup-required':
-      return SETUP_REGION_FROM_KAKAO_PATH
+      // 둘러보던 동네를 S02-1 의 처음 선택으로 싣는다(#227)
+      return withSavedRegion(SETUP_REGION_FROM_KAKAO_PATH)
     case 'link-required':
       return KAKAO_LINK_PATH
     case 'failed':
@@ -60,7 +61,7 @@ function targetOf(result: KakaoLoginResult): string {
  *    새로고침은 주소에서 이미 지운 뒤라 값이 없어 실패로 끝난다(code 를 다시 쓰지 않는다)
  * 3. 결과로 기록을 바꿔 간다(이 주소가 기록에 남지 않게): 로그인됨 → 카카오로 떠나기 전에 둔 돌아갈 곳(`afterKakaoLoginPath` — 읽고 지운다,
  *    없으면 홈, #140) · 가입 필요 → 동네 선택 `?from=kakao`(S02-1 → S02-3, S02-1 이 가입 종류를 카카오로 둔다 — 돌아갈 곳은 가입 마무리까지
- *    그대로 둔다) · 연결 필요 → 계정 연결 확인(가린 이메일은 첫 진입 Provider 메모리로만 넘긴다) · 실패 · 취소 · 값 없음 →
+ *    그대로 두고, 그 둘러보기 동네를 `&region=` 으로 실어 처음 선택으로 보인다 — `withSavedRegion`, #227) · 연결 필요 → 계정 연결 확인(가린 이메일은 첫 진입 Provider 메모리로만 넘긴다) · 실패 · 취소 · 값 없음 →
  *    `/login?error=kakao-fail`(사유가 있으면 `&kakao=`, 둔 돌아갈 곳을 쿼리로 다시 싣는다 — `withSavedLoginReturn`)
  *
  * **실데이터면 새로고침 복원(`restoreSession`)이 끝난 뒤에 보낸다.** 콜백은 문서를 새로 연 직후라 세션 힌트가 있으면

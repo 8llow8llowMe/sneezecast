@@ -10,6 +10,7 @@ import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
 import { SETUP_REGION_PATH, SIGNUP_CODE_PATH, SIGNUP_EMAIL_PATH } from '@/features/onboarding/paths'
 import { useClearOnPageFreeze } from '@/lib/use-clear-on-page-freeze'
 
+import { withSavedRegion } from './login-return-store'
 import {
   confirmProblem,
   NICKNAME_HINT,
@@ -28,7 +29,7 @@ import {
  * 오류가 남아 있으면 "다음" 이 꺼진다(`aria-disabled` — 포커스를 지킨다).
  * 닉네임 글자 수는 늘 보이고 10자를 넘으면 빨갛다.
  *
- * 값은 Provider 메모리에만 두고 동네 선택으로 간다. 비밀번호는 가입 요청(S02-3)과 이어지는 로그인에 쓰고 버린다.
+ * 값은 Provider 메모리에만 두고 동네 선택으로 간다(가입을 떠나기 전에 둔 둘러보기 동네가 있으면 처음 선택으로 싣는다 — #227). 비밀번호는 가입 요청(S02-3)과 이어지는 로그인에 쓰고 버린다.
  * 비밀번호 칸은 20자로 자르지 않는다(`maxLength` 없음) — 붙여 넣은 값이 조용히 잘리면 다른 비밀번호로 가입된다.
  * 넘으면 규칙 오류로 알린다. 도움말 · 오류 문구는 시안에 상한 · 공백 규칙을 더했다(백엔드 #56 규칙).
  * 인증 시간이 지나 이메일 단계부터 다시 오면 닉네임은 남아 있고 비밀번호는 다시 쓴다.
@@ -74,7 +75,8 @@ export function SignupAccountScreen() {
     setChecked(true)
     if (hasProblem) return
     updateSignup({ password, nickname: nickname.trim() })
-    router.push(SETUP_REGION_PATH)
+    // 가입을 떠나기 전에 둔 둘러보기 동네를 S02-1 의 처음 선택으로 싣는다(#227)
+    router.push(withSavedRegion(SETUP_REGION_PATH))
   }
 
   return (

@@ -113,6 +113,13 @@ type OnboardingState = {
   district: District | null
   /** 고른 동네. 검색어를 바꾸면 null 로 지운다 */
   setDistrict: (district: District | null) => void
+  /**
+   * 가입 동네 고르기(S02-1)가 넘겨받은 둘러보기 동네(`?region=`, #227)를 이미 처음 선택으로 다뤘는지. **한 번만 채운다** —
+   * 채운 선택을 지우고 뒤로 갔다 다시 와도 다시 채우지 않는다. 그때 이미 고른 동네가 있었으면 채우지 않고 다룬 것으로 둔다.
+   * 메모리에만 두어 새로고침 · 카카오 왕복(문서를 새로 엶)이면 다시 거짓이다
+   */
+  regionPresetUsed: boolean
+  markRegionPresetUsed: () => void
   adultConfirmed: boolean
   setAdultConfirmed: (confirmed: boolean) => void
   signup: SignupDraft
@@ -166,7 +173,10 @@ export function OnboardingProvider({
   initialKakaoLinkEmail = null,
 }: {
   children: ReactNode
-  /** 처음 고른 동네. 테스트에서 다음 단계부터 그릴 때 쓴다 — 화면은 늘 비워 시작한다 */
+  /**
+   * 처음 고른 동네. 테스트에서 다음 단계부터 그릴 때 쓴다 — 화면은 늘 비워 시작한다
+   * (둘러보던 동네를 넘겨받는 것은 레이아웃이 아니라 S02-1 페이지가 한다 — `RegionScreen` 의 `preset`)
+   */
   initialDistrict?: District | null
   /** 처음 가입 값. 테스트에서 다음 단계부터 그릴 때 쓴다 */
   initialSignup?: SignupDraft
@@ -180,6 +190,8 @@ export function OnboardingProvider({
 }) {
   const { replace, goBack: goBackInTrail } = useNavTrail()
   const [district, setDistrict] = useState<District | null>(initialDistrict)
+  const [regionPresetUsed, setRegionPresetUsed] = useState(false)
+  const markRegionPresetUsed = useCallback(() => setRegionPresetUsed(true), [])
   const [adultConfirmed, setAdultConfirmed] = useState(initialAdultConfirmed)
   const [notificationOptIn, setNotificationOptIn] = useState(false)
   const [kakaoLinkEmail, setKakaoLinkEmail] = useState<string | null>(initialKakaoLinkEmail)
@@ -245,6 +257,8 @@ export function OnboardingProvider({
     () => ({
       district,
       setDistrict,
+      regionPresetUsed,
+      markRegionPresetUsed,
       adultConfirmed,
       setAdultConfirmed,
       signup,
@@ -264,6 +278,8 @@ export function OnboardingProvider({
     }),
     [
       district,
+      regionPresetUsed,
+      markRegionPresetUsed,
       adultConfirmed,
       signup,
       updateSignup,

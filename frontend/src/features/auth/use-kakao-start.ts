@@ -9,7 +9,7 @@ import { useDataSource } from '@/lib/use-data-source'
 
 import { startKakaoLogin } from './kakao-client'
 import type { LoginReturn } from './login-return'
-import { saveLoginReturn } from './login-return-store'
+import { saveLoginReturn, withSavedRegion } from './login-return-store'
 
 /** 카카오 로그인을 시작하지 못한 까닭. 화면이 알림 모양(토스트 · 상자)을 고른다 */
 export type KakaoStartFailure = 'limited' | 'failed'
@@ -69,7 +69,8 @@ export function useKakaoStart(): {
         if (result.status === 'redirect') {
           saveLoginReturn(loginReturn)
           if (result.external) assignLocation(result.href)
-          else router.push(result.href)
+          // 목은 카카오를 다녀오지 않고 곧바로 가입 동네 고르기(S02-1)다 — 콜백처럼 둘러보던 동네를 처음 선택으로 싣는다(#227)
+          else router.push(withSavedRegion(result.href))
           return null
         }
         failure = 'limited'
