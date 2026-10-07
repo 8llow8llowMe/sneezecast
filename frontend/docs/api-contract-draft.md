@@ -190,7 +190,7 @@ GET  /api/regions/{admCd}/weekly?week=     → { status: normal|slight|high|insu
                                                 participants, publicThreshold,
                                                 symptomRate?, baselineRate?,   // insufficient면 없음
                                                 groups: [{ key, trend, series: number[] }] }
-GET  /api/notices/{admCd}?week=            → 발행된 안내 | null (정정·철회 이력 포함)
+GET  /api/notices/{admCd}?week=            → 발행된 안내 | null (정정 이력 · 철회 표시 포함) — 아래 "동네 안내 (#215)"
 GET  /api/official/latest                  → 질병관리청 단계·기준 주·요약·원문 링크
 GET  /api/v1/admin/review-candidates?week=  → 후보 목록 (운영자) — 아래 "운영자 검토 (#219)"
 GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — 아래 "발행 이력 (#220)"
@@ -199,6 +199,22 @@ GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — �
 
 - `insufficient` 응답에는 `symptomRate` · `baselineRate` 가 없다. 프론트는 이 값이 없을 때 수치·상태색을 그리지 않는다.
 - 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 홈 주간 집계 · 공식 정보는 목 데이터다(보고는 위 "주간 보고" 로 확정). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
+
+### 동네 안내 (#215, 프론트 초안)
+
+동네 안내(S07 `/notice/[region]/[week]`)가 가정한 모양이다. **백엔드는 #215 에서 만든다**(백엔드 제안 경로는 `GET /api/v1/advisories?districtCode=&week=`). 화면 동작은 [SCREENS.md](design/SCREENS.md) "동네 안내" 다. 비회원도 부른다.
+
+- 화면 모델 `RegionNoticeBody`(`features/notice/types.ts`) — 셋 중 하나다.
+  - 발행 중인 안내: `{ notice: { title, publishedOn, items, source, corrections: [{ correctedOn, reason }] }, retraction: null, stats: 인용 집계(cited_*, 수치가 있는 주) }`
+  - 철회된 안내(#225): `{ notice: null, retraction: { retractedOn, reason? }, stats: 그 주 집계 }` — 철회된 안내의 제목 · 본문 · 할 일 · 인용 수치는 **싣지 않는다**(화면이 내린 안내를 다시 퍼뜨리지 않게, 타입에도 자리가 없다). `retractedOn` 은 `retracted_at` 의 한국 날짜 `YYYY-MM-DD`(정정일과 같은 모양). `reason` 은 없으면 빼고 보낸다 — 화면이 사유 줄을 뺀다.
+  - 안내 없음: `{ notice: null, retraction: null, stats: 그 주 집계 }`
+  - 그 주 집계는 위 `weekly` 와 같은 모양이다(`insufficient` 면 참여 · 공개 기준만).
+- 정할 것:
+  - **철회된 안내를 응답에 남길지** — 공개 API 가 PUBLISHED 만 읽으면 철회가 안내 없음으로 보이고, 운영자 철회 대화상자의 "사용자 화면에는 '철회된 안내예요'가 남아요" 와 어긋난다. 남긴다면 RETRACTED 중 정정으로 내려간 안내(정정 발행이 잇는 이전 안내)는 철회 표시가 아니라 새 안내의 `corrections` 로 보인다.
+  - **철회 사유를 공개할지** — 사유는 운영자 메모(advisory_history `memo`)이고 #215 는 메모를 공개 응답에 싣지 않는다고 적었다. 공개하면 운영자 입력란에 "사용자 화면에 보여요" 를 알려야 한다. 공개하지 않으면 `reason` 을 빼고 철회일만 보낸다(지금 목과 같음).
+  - 같은 동네 · 주에 철회 뒤 새 안내가 발행되면 새 안내만 준다(화면은 발행된 안내가 있으면 철회 표시를 받지 않는다). 한 동네 · 한 주에 안내가 여럿일 때 규칙과 함께 정한다.
+- 안내를 요약해 보이는 곳(홈 주간 데이터의 `notice` — 홈 안내 섹션 · 지도 `이 동네 안내 보기`)은 **발행 중인 안내만** 받는다. 철회된 안내는 `null` 이다(`features/home/types.ts` 의 `PublishedNotice`).
+- 프론트 함수: `features/notice/notice-client.ts` 의 `getRegionNotice`. 안내 내용은 **출처와 무관하게 목**이다(동네만 출처에 따라 행정동 API 로 확인). 목 재현 `?mock=published|corrected|retracted|none|insufficient`.
 
 ### 지난 보고 내역 (#194, 프론트 초안)
 
