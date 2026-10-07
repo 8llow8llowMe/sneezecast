@@ -18,6 +18,15 @@ export const NOTICE_EXAMPLE_DISTRICT: District = {
   sigungu: '○○시 ○○구',
 }
 
+/**
+ * 안내 예시 동네 모두. `○○동` 에 더해 운영자 화면 목(`features/admin/mock.ts`)의 예시 동네 ○○1동~○○5동을 안다 — 발행 이력(A03, #220)의
+ * `사용자 화면에서 보기` 가 이 동네들의 안내를 연다. 안내 내용은 동네와 무관하게 같은 목(`?mock=`)이다. 지어낸 코드라 실데이터에서는 없는 동네다
+ */
+export const NOTICE_EXAMPLE_DISTRICTS: readonly District[] = [
+  NOTICE_EXAMPLE_DISTRICT,
+  ...[1, 2, 3, 4, 5].map((n) => ({ code: `9999010${n}`, name: `○○${n}동`, sigungu: '○○시 ○○구' })),
+]
+
 /** 시안의 기준 주 (11월 17일~23일 = 2025년 ISO 47주) */
 export const NOTICE_EXAMPLE_WEEK = '2025-W47'
 
