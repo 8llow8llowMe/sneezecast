@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
+
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -54,6 +56,83 @@ describe('Modal', () => {
     // 바깥(::backdrop) 누르기는 dialog 자신이 클릭 대상이 된다
     fireEvent.click(dialog)
     expect(onClose).toHaveBeenCalledTimes(3)
+  })
+
+  describe('브라우저가 cancel 없이 닫을 때 (Esc 거듭 누르기 — #223)', () => {
+    // 브라우저가 cancel 을 막지 못하게 하고 바로 닫는 경우다. jsdom 스텁의 close() 가 같은 close 이벤트를 보낸다
+    function forceClose(dialog: HTMLDialogElement) {
+      act(() => {
+        dialog.close()
+      })
+    }
+
+    it('부모가 닫기를 받으면 onClose 로 알리고 닫힌 채 둔다', () => {
+      function Parent() {
+        const [open, setOpen] = useState(true)
+        return (
+          <Modal open={open} onClose={() => setOpen(false)} title="제목">
+            <p>내용</p>
+          </Modal>
+        )
+      }
+      const { container } = render(<Parent />)
+      const dialog = container.querySelector('dialog')
+      if (!dialog) throw new Error('dialog 가 없다')
+
+      forceClose(dialog)
+      expect(dialog.open).toBe(false)
+
+      // 부모 상태가 닫힘이 됐으므로 다시 열 수도 있다(어긋난 채 남지 않음)
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    it('부모가 닫기를 받지 않으면(처리 중) 다시 연다', () => {
+      const { dialog, onClose } = renderModal()
+
+      forceClose(dialog)
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(dialog.open).toBe(true)
+
+      // 거듭 닫혀도 같다
+      forceClose(dialog)
+      expect(onClose).toHaveBeenCalledTimes(2)
+      expect(dialog.open).toBe(true)
+    })
+
+    it('부모가 open 을 false 로 바꿔 닫을 때는 onClose 를 부르지 않는다', () => {
+      const { dialog, rerender, onClose } = renderModal()
+
+      rerender(
+        <Modal open={false} onClose={onClose} title="제목">
+          <p>내용</p>
+        </Modal>,
+      )
+      expect(dialog.open).toBe(false)
+      expect(onClose).not.toHaveBeenCalled()
+    })
+
+    it('강제로 닫힌 뒤 부모가 다시 열면 열린다', () => {
+      function Parent() {
+        const [open, setOpen] = useState(true)
+        return (
+          <>
+            <button type="button" onClick={() => setOpen(true)}>
+              열기
+            </button>
+            <Modal open={open} onClose={() => setOpen(false)} title="제목">
+              <p>내용</p>
+            </Modal>
+          </>
+        )
+      }
+      const { container } = render(<Parent />)
+      const dialog = container.querySelector('dialog')
+      if (!dialog) throw new Error('dialog 가 없다')
+
+      forceClose(dialog)
+      fireEvent.click(screen.getByRole('button', { name: '열기' }))
+      expect(dialog.open).toBe(true)
+    })
   })
 
   it('안쪽 내용을 누르면 닫지 않는다', async () => {

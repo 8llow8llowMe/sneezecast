@@ -7,6 +7,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
 } from 'react'
 
 import clsx from 'clsx'
@@ -76,6 +77,7 @@ const LAYOUT = {
  *
  * 네이티브 `<dialog>` 의 `showModal()` 을 쓴다. 포커스 가두기 · 뒤 화면 비활성 · Esc 처리를 브라우저가
  * 맡으므로 직접 구현하지 않는다. 열린 동안 뒤 화면 스크롤은 globals.css 가 막는다.
+ * 열림 상태는 부모가 갖는다 — 브라우저가 스스로 닫아도(`close`) 부모 상태로 되돌린다(`handleClose`).
  *
  * 시안: Report-start(시트) · Report-start-T(520) · Report-start-D(480) · Report-symptom(머리줄) · Explain(시트에서만 머리줄 없음) · Report-done(모바일 전체 화면)
  */
@@ -95,17 +97,34 @@ export function Modal({
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
+  // 브라우저가 강제로 닫을 때마다 올린다. open 이 그대로여도 아래 effect 가 다시 돌아 dialog 를 연다
+  const [forcedCloses, setForcedCloses] = useState(0)
+
   useEffect(() => {
     const dialog = ref.current
     if (!dialog) return
     if (open && !dialog.open) dialog.showModal()
     if (!open && dialog.open) dialog.close()
-  }, [open])
+  }, [open, forcedCloses])
 
   // Esc 는 브라우저가 dialog 를 바로 닫는다. 그러면 부모 상태(open)와 어긋나므로 막고 부모에게 맡긴다
   function handleCancel(event: SyntheticEvent<HTMLDialogElement>) {
     event.preventDefault()
     onClose()
+  }
+
+  /**
+   * 브라우저가 cancel 을 막지 못하게 하고 바로 닫는 경우(#223)를 부모 상태에 맞춘다. Chrome 의 CloseWatcher 는
+   * 사용자 활성화 없이 Esc 를 거듭 누르면 cancel 을 막을 수 없게 하거나 보내지 않고 close 한다.
+   *
+   * - 부모가 닫은 것(open=false → 위 effect 의 `close()`)이면 open 이 이미 false 라 할 일이 없다 — onClose 를 두 번 부르지 않는다
+   * - 아직 열림이면 onClose 로 알린다. 부모가 받아 open 을 false 로 바꾸면 그대로 닫힌 채다.
+   *   받지 않으면(처리 중이라 닫기를 막는 대화상자) open 이 그대로라 effect 가 dialog 를 다시 연다
+   */
+  function handleClose() {
+    if (!open) return
+    onClose()
+    setForcedCloses((count) => count + 1)
   }
 
   // 안쪽 상자가 dialog 를 꽉 채우고 dialog 자체에는 여백이 없다.
@@ -120,6 +139,7 @@ export function Modal({
       ref={ref}
       aria-labelledby={titleId}
       onCancel={handleCancel}
+      onClose={handleClose}
       onClick={handleClick}
       className={clsx(
         'overflow-y-auto overscroll-contain bg-bg p-0 text-fg backdrop:bg-dim',
