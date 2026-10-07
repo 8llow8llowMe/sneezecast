@@ -720,7 +720,7 @@ describe('HomeScreen 둘러보기 동네 · 내 동네 (#141)', () => {
   async function signInWithRegion() {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
     await saveRegion(YEOKSAM1, 'mock')
-    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'), 'mock')
   }
 
   it('머리줄 동네 이름은 홈으로 돌아올 둘러볼 동네 고르기를 연다 (비회원도 같다)', async () => {

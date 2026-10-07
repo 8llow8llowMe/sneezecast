@@ -18,7 +18,7 @@ import { useDataSource } from '@/lib/use-data-source'
 
 import { agreeTermsReconsent, logout } from './auth-client'
 import { LEGAL_TEXT_NOT_READY } from './consent-row'
-import { consentFor, TERMS_REVISION } from './legal'
+import { TERMS_REVISION } from './legal'
 import {
   carriedParams,
   NEXT_PARAM,
@@ -37,10 +37,12 @@ import { useMockAuth } from './use-mock-auth'
  *
  * - 시행일 · 바뀐 내용은 `legal.ts` 의 `TERMS_REVISION`(지금은 시안 예시 문구)이다. 단계 표시는 없다
  * - `전문 보기` 는 약관 본문이 아직 없어 "약관 본문을 준비하고 있어요" 알림을 띄운다(가입 동의와 같다)
- * - 체크해야 `동의하고 계속하기` 가 켜진다(`aria-disabled`, 포커스는 남는다). 지금 이용약관 버전으로 동의를 보낸다
- * - 성공하면 목 프로필이 먼저 바뀌고(화면과 무관), 화면이 떠 있으면 남은 조건(동네 다시 고르기)이나 `?next=` 로 기록을 바꿔 간다.
- *   보고하려던 로그인(`?intent=report`)이면 남은 조건 화면에 그 표시를 잇고, 남은 조건이 없으면 같은 동네 홈의 보고 진입으로 간다(#140, `targetAfter`).
- *   실패하면 빨강 상자로 알리고 다시 누를 수 있다
+ * - 체크해야 `동의하고 계속하기` 가 켜진다(`aria-disabled`, 포커스는 남는다). 다시 동의할 항목을 지금 버전으로 보낸다
+ *   (`agreeTermsReconsent` — 실데이터는 세션 요약의 `pendingConsents` 중 이용약관 · 개인정보 처리방침, 목은 이용약관)
+ * - 성공하면 세션(목 프로필 · 재발급한 세션 요약)이 먼저 바뀌고(화면과 무관), 화면이 떠 있으면 남은 조건(동네 다시 고르기)이나 `?next=` 로
+ *   기록을 바꿔 간다. 보고하려던 로그인(`?intent=report`)이면 남은 조건 화면에 그 표시를 잇고, 남은 조건이 없으면 같은 동네 홈의 보고
+ *   진입으로 간다(#140, `targetAfter`). 실패하면 빨강 상자로 알리고 다시 누를 수 있다. 약관 버전이 낡았으면(`outdated` — 이 배포의
+ *   `legal.ts` 상수를 서버가 받지 않음) 다시 눌러도 같아 새로고침을 안내한다
  * - 뒤로 버튼은 없다(시안에도 없음). 나가는 길은 아래 보조 버튼 `동의하지 않고 로그아웃` 하나다 — **시안에 없는 기본안이고 기획 확인이
  *   필요하다**(docs/design/SCREENS.md). 로그아웃(`logout`)에 성공하면 목 세션이 먼저 비회원이 되고(화면과 무관), 화면이 떠 있으면
  *   동네(`region`)만 남긴 홈으로 기록을 바꿔 간다. 목 덮어쓰기는 버린다 — 남기면 비회원 홈이 다시 회원으로 보인다
@@ -62,7 +64,7 @@ export function TermsReconsentScreen() {
   const [checked, setChecked] = useState(false)
   // 보내는 중인 동작 · 실패한 동작. 이동할 때까지 보내는 중으로 둔다(조건 · 세션이 먼저 바뀌어도 여기서 한 번 더 보내지 않게)
   const [pending, setPending] = useState<'agree' | 'logout' | null>(null)
-  const [failed, setFailed] = useState<'agree' | 'logout' | null>(null)
+  const [failed, setFailed] = useState<'agree' | 'outdated' | 'logout' | null>(null)
 
   const showing = settled && steps[0] === 'terms'
   const next = safeNextPath(searchParams.get(NEXT_PARAM))
@@ -86,18 +88,21 @@ export function TermsReconsentScreen() {
     if (blocked) return
     setPending('agree')
     setFailed(null)
+    let problem: 'agree' | 'outdated' = 'agree'
     try {
-      await agreeTermsReconsent(consentFor('TERMS_OF_SERVICE'))
-    } catch {
-      if (active.current) {
-        setFailed('agree')
-        setPending(null)
+      const result = await agreeTermsReconsent(source)
+      if (!active.current) return
+      if (result.status === 'ok') {
+        // 서버(목은 목 프로필)에는 이미 동의가 남았고 세션 요약도 다시 받았다. 이동만 화면이 떠 있을 때 한다
+        replace(targetAfter('terms', auth, searchParams, source))
+        return
       }
-      return
+      problem = result.status
+    } catch {
+      if (!active.current) return
     }
-    // 목 프로필(연동 때는 서버)에는 이미 동의가 남았다. 이동만 화면이 떠 있을 때 한다
-    if (!active.current) return
-    replace(targetAfter('terms', auth, searchParams, source))
+    setFailed(problem)
+    setPending(null)
   }
 
   async function leave() {
@@ -193,6 +198,11 @@ export function TermsReconsentScreen() {
         {failed === 'agree' && (
           <AlertBox tone="danger">
             약관 동의를 보내지 못했어요. 잠시 뒤 다시 시도해 주세요.
+          </AlertBox>
+        )}
+        {failed === 'outdated' && (
+          <AlertBox tone="danger">
+            약관 동의를 보내지 못했어요. 약관이 바뀌었으니 새로고침해 주세요.
           </AlertBox>
         )}
         {failed === 'logout' && (

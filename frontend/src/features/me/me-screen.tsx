@@ -66,8 +66,8 @@ import { PushUnavailable } from './push-unavailable'
 import { MenuRow, sectionTitleId, SettingsSection } from './settings-row'
 
 /**
- * 대화상자별 API. 데이터 출처를 넘긴다 — 로그아웃은 실데이터면 세션 저장소, 목이면 목 세션을 비운다. 동의 철회 · 탈퇴는 아직 목이라
- * 출처를 쓰지 않는다. 성공하면 `auth-client` 가 세션을 바꾼다(로그아웃 · 탈퇴 · 동의 철회 → guest)
+ * 대화상자별 API. 데이터 출처를 넘긴다 — 로그아웃 · 동의 철회(#168)는 실데이터면 세션 저장소, 목이면 목 세션을 비운다. 탈퇴는 아직
+ * 목이라(#169) 출처를 쓰지 않는다. 성공하면 `auth-client` 가 세션을 바꾼다(로그아웃 · 탈퇴 · 동의 철회 → guest)
  */
 const CONFIRM_ACTIONS: Record<ConfirmKind, (source: DataSource) => Promise<void>> = {
   logout,

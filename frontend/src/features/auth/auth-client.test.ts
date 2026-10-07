@@ -7,6 +7,7 @@ import {
   broadcastMemberRegionChanged,
   clearSession,
   getSessionSnapshot,
+  refreshSession,
   setSession,
 } from '@/lib/session/session-store'
 import { clearSessionExpiring, isSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
@@ -55,6 +56,7 @@ vi.mock('@/lib/session/session-store', () => ({
   setSession: vi.fn(),
   clearSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
+  refreshSession: vi.fn(),
 }))
 vi.mock('./member-info', async (importOriginal) => ({
   // 회원 상태 오류 판정은 실제 함수를 쓴다(저장소와 같은 코드 목록)
@@ -70,6 +72,7 @@ beforeEach(() => {
   vi.mocked(setSession).mockReset()
   vi.mocked(clearSession).mockReset()
   vi.mocked(getSessionSnapshot).mockReset()
+  vi.mocked(refreshSession).mockReset()
   vi.mocked(setMemberRegion).mockReset()
   vi.mocked(setMemberInfo).mockReset()
   vi.mocked(broadcastMemberRegionChanged).mockReset()
@@ -255,7 +258,11 @@ describe('signup · saveRegion · agreeHealthConsent (목)', () => {
 
   it('내 동네 저장 · 건강정보 동의는 성공한다', async () => {
     await expect(saveRegion(YEOKSAM1, 'mock')).resolves.toEqual({ status: 'ok' })
-    await expect(agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))).resolves.toBeUndefined()
+    await expect(agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'), 'mock')).resolves.toEqual({
+      status: 'ok',
+      reportWritable: true,
+      purgePending: false,
+    })
   })
 })
 
@@ -430,7 +437,7 @@ describe('목 회원 상태', () => {
     await loginWithEmail('flow@example.com', 'dongne2026', 'mock')
     expect(getMockSession()).toBe('member-no-consent')
 
-    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'), 'mock')
     expect(getMockSession()).toBe('member')
   })
 
@@ -467,7 +474,7 @@ describe('목 회원 상태', () => {
     expect(listener).toHaveBeenCalledTimes(1)
 
     unsubscribe()
-    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'), 'mock')
     expect(listener).toHaveBeenCalledTimes(1)
   })
 })
@@ -509,7 +516,7 @@ describe('목 프로필 · 로그아웃 · 동의 철회 · 탈퇴', () => {
 
   it('카카오 가입은 카카오 예시 프로필이고, 건강정보 동의는 프로필을 그대로 둔다', async () => {
     await signup({ kind: 'kakao', consents }, 'mock')
-    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'), 'mock')
     expect(getMockProfile()).toEqual(EXAMPLE_PROFILES.kakao)
   })
 
@@ -527,14 +534,14 @@ describe('목 프로필 · 로그아웃 · 동의 철회 · 탈퇴', () => {
 
   it('동의 철회하면 로그아웃과 같이 비회원이 되고 프로필도 지운다', async () => {
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
-    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
-    await withdrawHealthConsent()
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'), 'mock')
+    await withdrawHealthConsent('mock')
     expect(getMockSession()).toBe('guest')
     expect(getMockProfile()).toBeNull()
   })
 
   it('비회원 세션에서 동의 철회해도 비회원 그대로다 (덮어쓰기로 연 경우)', async () => {
-    await withdrawHealthConsent()
+    await withdrawHealthConsent('mock')
     expect(getMockSession()).toBe('guest')
   })
 
@@ -544,7 +551,7 @@ describe('목 프로필 · 로그아웃 · 동의 철회 · 탈퇴', () => {
     ['withdraw-fail@example.com', withdrawMembership],
   ] as const)('프로필 이메일이 %s 면 거부하고 세션을 그대로 둔다', async (email, action) => {
     await loginWithEmail(email, 'dongne2026', 'mock')
-    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+    await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'), 'mock')
     await expect(action('mock')).rejects.toThrow()
     expect(getMockSession()).toBe('member')
     expect(getMockProfile()?.email).toBe(email)
@@ -730,14 +737,14 @@ describe('약관 재동의 · 동네 다시 저장 (목)', () => {
   it('재동의에 성공하면 재동의 표시를 끄고 다른 값은 그대로 둔다', async () => {
     await loginWithEmail('reconsent@example.com', 'dongne2026', 'mock')
     const before = getMockProfile()
-    await expect(agreeTermsReconsent(consentFor('TERMS_OF_SERVICE'))).resolves.toBeUndefined()
+    await expect(agreeTermsReconsent('mock')).resolves.toEqual({ status: 'ok' })
     expect(getMockProfile()).toEqual({ ...before, termsReconsentRequired: false })
     expect(getMockSession()).toBe('member-no-consent')
   })
 
   it('재현 이메일이면 재동의가 거부되고 표시는 그대로다', async () => {
     await loginWithEmail('reconsent-fail@example.com', 'dongne2026', 'mock')
-    await expect(agreeTermsReconsent(consentFor('TERMS_OF_SERVICE'))).rejects.toThrow()
+    await expect(agreeTermsReconsent('mock')).rejects.toThrow()
     expect(getMockProfile()?.termsReconsentRequired).toBe(true)
   })
 
@@ -761,7 +768,7 @@ describe('약관 재동의 · 동네 다시 저장 (목)', () => {
 
   it('프로필이 없으면(덮어쓰기만 있음) 세션을 바꾸지 않는다', async () => {
     await saveRegion(YEOKSAM1, 'mock')
-    await agreeTermsReconsent(consentFor('TERMS_OF_SERVICE'))
+    await agreeTermsReconsent('mock')
     expect(getMockSession()).toBe('guest')
     expect(getMockProfile()).toBeNull()
   })
@@ -1246,6 +1253,253 @@ describe('saveRegion (API)', () => {
     expect(apiRequest).not.toHaveBeenCalled()
     expect(setMemberRegion).not.toHaveBeenCalled()
     expect(broadcastMemberRegionChanged).not.toHaveBeenCalled()
+  })
+})
+
+describe('동의 · 철회 (API, #168)', () => {
+  const HEALTH = consentFor('SENSITIVE_HEALTH_INFO')
+
+  /** 세션 요약을 이 값으로 둔다(회원) */
+  function memberSummary(summary: { pendingConsents?: string[]; reportWritable?: boolean }) {
+    vi.mocked(getSessionSnapshot).mockReturnValue({
+      status: 'member',
+      summary: {
+        memberId: '1',
+        role: 'USER',
+        pendingConsents: [],
+        reportWritable: true,
+        ...summary,
+      },
+    })
+  }
+
+  describe('agreeHealthConsent', () => {
+    it('지금 버전으로 동의를 보낸 뒤 세션 요약을 다시 받고, 다시 받은 요약의 보고 가능 여부를 돌려준다', async () => {
+      memberSummary({ reportWritable: false })
+      vi.mocked(apiRequest).mockResolvedValueOnce({})
+      // 재발급이 새 요약(report:write)을 넣는다 — 동의만으로는 지금 access 의 scope 가 그대로다
+      vi.mocked(refreshSession).mockImplementationOnce(() => {
+        memberSummary({ reportWritable: true })
+        return Promise.resolve()
+      })
+      expect(await agreeHealthConsent(HEALTH, 'api')).toEqual({
+        status: 'ok',
+        reportWritable: true,
+        purgePending: false,
+      })
+      expect(apiRequest).toHaveBeenCalledExactlyOnceWith('/api/v1/members/me/consents', {
+        method: 'POST',
+        body: {
+          type: 'SENSITIVE_HEALTH_INFO',
+          documentVersion: LEGAL_VERSIONS.SENSITIVE_HEALTH_INFO,
+        },
+      })
+      expect(vi.mocked(refreshSession).mock.invocationCallOrder[0]).toBeGreaterThan(
+        vi.mocked(apiRequest).mock.invocationCallOrder[0] ?? Infinity,
+      )
+    })
+
+    it('다시 받은 요약이 아직 보고할 수 없으면(재발급 일시 장애) reportWritable 이 거짓이고 파기 대기는 아니다', async () => {
+      memberSummary({ reportWritable: false })
+      vi.mocked(apiRequest).mockResolvedValueOnce({
+        pendingConsents: [],
+        healthInfoAgreed: true,
+        reportWritable: true,
+        purgePending: false,
+      })
+      expect(await agreeHealthConsent(HEALTH, 'api')).toEqual({
+        status: 'ok',
+        reportWritable: false,
+        purgePending: false,
+      })
+      expect(refreshSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('동의 응답이 파기 대기(purgePending)면 그 사유를 싣는다', async () => {
+      memberSummary({ reportWritable: false })
+      vi.mocked(apiRequest).mockResolvedValueOnce({
+        pendingConsents: [],
+        healthInfoAgreed: true,
+        reportWritable: false,
+        purgePending: true,
+      })
+      expect(await agreeHealthConsent(HEALTH, 'api')).toEqual({
+        status: 'ok',
+        reportWritable: false,
+        purgePending: true,
+      })
+    })
+
+    it.each([null, 'purgePending', { purgePending: 'true' }, { purgePending: 1 }])(
+      '응답 모양이 어긋나면(%j) 파기 대기가 아닌 것으로 본다',
+      async (body) => {
+        memberSummary({ reportWritable: false })
+        vi.mocked(apiRequest).mockResolvedValueOnce(body)
+        expect(await agreeHealthConsent(HEALTH, 'api')).toEqual({
+          status: 'ok',
+          reportWritable: false,
+          purgePending: false,
+        })
+      },
+    )
+
+    it('문서 버전이 낡았으면(MEMBER_011) outdated 이고 재발급하지 않는다', async () => {
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError('MEMBER_011', 409))
+      expect(await agreeHealthConsent(HEALTH, 'api')).toEqual({ status: 'outdated' })
+      expect(refreshSession).not.toHaveBeenCalled()
+    })
+
+    it('일시 장애 · 분류 밖 오류면 거부하고 재발급하지 않는다', async () => {
+      vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('timeout', 0))
+      await expect(agreeHealthConsent(HEALTH, 'api')).rejects.toThrow(ApiError)
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError('MEMBER_010', 400))
+      await expect(agreeHealthConsent(HEALTH, 'api')).rejects.toThrow(ApiError)
+      expect(refreshSession).not.toHaveBeenCalled()
+    })
+
+    it('실데이터 세션이 회원이 아니면 요청 없이 거부한다', async () => {
+      vi.mocked(getSessionSnapshot).mockReturnValue({ status: 'guest' })
+      await expect(agreeHealthConsent(HEALTH, 'api')).rejects.toThrow()
+      expect(apiRequest).not.toHaveBeenCalled()
+    })
+
+    it('목데이터면 API · 재발급을 부르지 않고 목 세션이 동의 회원이 된다', async () => {
+      resetMockSession()
+      await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
+      expect(await agreeHealthConsent(HEALTH, 'mock')).toEqual({
+        status: 'ok',
+        reportWritable: true,
+        purgePending: false,
+      })
+      expect(apiRequest).not.toHaveBeenCalled()
+      expect(refreshSession).not.toHaveBeenCalled()
+      expect(getMockSession()).toBe('member')
+    })
+  })
+
+  describe('agreeTermsReconsent', () => {
+    it('요약의 pendingConsents 중 이용약관 · 개인정보를 각각 지금 버전으로 보낸 뒤 세션 요약을 다시 받는다', async () => {
+      memberSummary({ pendingConsents: ['PRIVACY_POLICY', 'TERMS_OF_SERVICE'] })
+      vi.mocked(apiRequest).mockResolvedValue({})
+      expect(await agreeTermsReconsent('api')).toEqual({ status: 'ok' })
+      expect(vi.mocked(apiRequest).mock.calls).toEqual([
+        [
+          '/api/v1/members/me/consents',
+          {
+            method: 'POST',
+            body: { type: 'TERMS_OF_SERVICE', documentVersion: LEGAL_VERSIONS.TERMS_OF_SERVICE },
+          },
+        ],
+        [
+          '/api/v1/members/me/consents',
+          {
+            method: 'POST',
+            body: { type: 'PRIVACY_POLICY', documentVersion: LEGAL_VERSIONS.PRIVACY_POLICY },
+          },
+        ],
+      ])
+      expect(refreshSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('모르는 항목 · 재동의 대상이 아닌 항목은 보내지 않고, 아는 항목은 보내되 결과는 outdated 다 — ok 면 가드가 되돌리는 반복', async () => {
+      memberSummary({ pendingConsents: ['MARKETING', 'AGE_OVER_19', 'PRIVACY_POLICY'] })
+      vi.mocked(apiRequest).mockResolvedValue({})
+      expect(await agreeTermsReconsent('api')).toEqual({ status: 'outdated' })
+      expect(refreshSession).toHaveBeenCalledTimes(1)
+      expect(apiRequest).toHaveBeenCalledExactlyOnceWith('/api/v1/members/me/consents', {
+        method: 'POST',
+        body: { type: 'PRIVACY_POLICY', documentVersion: LEGAL_VERSIONS.PRIVACY_POLICY },
+      })
+    })
+
+    it('아는 항목이 없으면 보내지 않고 outdated, 다시 동의할 항목이 없으면 보내지 않고 ok 다', async () => {
+      memberSummary({ pendingConsents: ['MARKETING'] })
+      expect(await agreeTermsReconsent('api')).toEqual({ status: 'outdated' })
+      memberSummary({ pendingConsents: [] })
+      expect(await agreeTermsReconsent('api')).toEqual({ status: 'ok' })
+      expect(apiRequest).not.toHaveBeenCalled()
+      expect(refreshSession).not.toHaveBeenCalled()
+    })
+
+    it('MEMBER_011 이면 outdated 이고 남은 항목을 보내지 않으며 재발급하지 않는다', async () => {
+      memberSummary({ pendingConsents: ['TERMS_OF_SERVICE', 'PRIVACY_POLICY'] })
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError('MEMBER_011', 409))
+      expect(await agreeTermsReconsent('api')).toEqual({ status: 'outdated' })
+      expect(apiRequest).toHaveBeenCalledTimes(1)
+      expect(refreshSession).not.toHaveBeenCalled()
+    })
+
+    it('중간에 일시 장애면 거부하고 재발급하지 않는다', async () => {
+      memberSummary({ pendingConsents: ['TERMS_OF_SERVICE', 'PRIVACY_POLICY'] })
+      vi.mocked(apiRequest)
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(unavailableError('network', 0))
+      await expect(agreeTermsReconsent('api')).rejects.toThrow(ApiError)
+      expect(apiRequest).toHaveBeenCalledTimes(2)
+      expect(refreshSession).not.toHaveBeenCalled()
+    })
+
+    it('실데이터 세션이 회원이 아니면 요청 없이 거부한다', async () => {
+      vi.mocked(getSessionSnapshot).mockReturnValue({ status: 'restoring' })
+      await expect(agreeTermsReconsent('api')).rejects.toThrow()
+      expect(apiRequest).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('withdrawHealthConsent', () => {
+    afterEach(() => clearSessionExpiring())
+
+    it('DELETE 로 철회하고, 성공하면 세션 저장소를 비우고 만료 진행 표시를 끈다', async () => {
+      notifySessionExpired()
+      vi.mocked(apiRequest).mockResolvedValueOnce({
+        pendingConsents: [],
+        healthInfoAgreed: false,
+        reportWritable: false,
+        purgePending: true,
+      })
+      await expect(withdrawHealthConsent('api')).resolves.toBeUndefined()
+      expect(apiRequest).toHaveBeenCalledExactlyOnceWith(
+        '/api/v1/members/me/consents/SENSITIVE_HEALTH_INFO',
+        { method: 'DELETE' },
+      )
+      expect(clearSession).toHaveBeenCalledExactlyOnceWith('logout')
+      expect(isSessionExpiring()).toBe(false)
+    })
+
+    it('철회할 동의가 없는 멱등 응답에도 세션을 비운다(다른 기기가 먼저 철회해 서버 세션이 이미 없다)', async () => {
+      vi.mocked(apiRequest).mockResolvedValueOnce({
+        pendingConsents: [],
+        healthInfoAgreed: false,
+        reportWritable: false,
+        purgePending: false,
+      })
+      await withdrawHealthConsent('api')
+      expect(clearSession).toHaveBeenCalledExactlyOnceWith('logout')
+    })
+
+    it.each([
+      ['UNAVAILABLE', 0],
+      ['SECURITY_001', 401],
+      ['AUTH_014', 401],
+      ['MEMBER_012', 400],
+    ])('%s 면 거부하고 세션을 그대로 둔다 — 철회가 일어나지 않았다', async (code, status) => {
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, status))
+      await expect(withdrawHealthConsent('api')).rejects.toThrow(ApiError)
+      expect(clearSession).not.toHaveBeenCalled()
+    })
+
+    it('실데이터 세션이 회원이 아니면 요청 없이 거부한다', async () => {
+      vi.mocked(getSessionSnapshot).mockReturnValue({ status: 'guest' })
+      await expect(withdrawHealthConsent('api')).rejects.toThrow()
+      expect(apiRequest).not.toHaveBeenCalled()
+      expect(clearSession).not.toHaveBeenCalled()
+    })
+
+    it('목데이터면 API · 세션 저장소를 부르지 않는다', async () => {
+      await withdrawHealthConsent('mock')
+      expect(apiRequest).not.toHaveBeenCalled()
+      expect(clearSession).not.toHaveBeenCalled()
+    })
   })
 })
 

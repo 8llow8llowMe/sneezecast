@@ -5,7 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type Membership, OnboardingProvider } from '@/features/onboarding/onboarding-context'
 import { setSession } from '@/lib/session/session-store'
-import { memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
+import {
+  errorResponse,
+  memberToken,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
 import type * as authClient from './auth-client'
 import { agreeHealthConsent } from './auth-client'
@@ -47,6 +53,18 @@ const check = () =>
   })
 const isOff = (button: HTMLElement) => button.getAttribute('aria-disabled') === 'true'
 
+/** 응답을 테스트가 정할 때까지 붙잡아 둔다. 돌려준 함수로 성공(반영됨)을 돌려준다 */
+function holdAgree(): () => void {
+  let resolve: () => void = () => {}
+  vi.mocked(agreeHealthConsent).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = () => done({ status: 'ok', reportWritable: true, purgePending: false })
+      }),
+  )
+  return () => resolve()
+}
+
 describe('HealthConsentScreen', () => {
   beforeEach(() => {
     router.replace.mockClear()
@@ -78,10 +96,10 @@ describe('HealthConsentScreen', () => {
     await user.click(agree())
 
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'))
-    expect(agreeHealthConsent).toHaveBeenCalledWith({
-      type: 'SENSITIVE_HEALTH_INFO',
-      documentVersion: '2026-10-01',
-    })
+    expect(agreeHealthConsent).toHaveBeenCalledWith(
+      { type: 'SENSITIVE_HEALTH_INFO', documentVersion: '2026-10-01' },
+      'mock',
+    )
     expect(router.push).not.toHaveBeenCalled()
   })
 
@@ -93,10 +111,7 @@ describe('HealthConsentScreen', () => {
   })
 
   it('보내는 동안 두 번 눌러도 한 번만 보낸다', async () => {
-    let resolve: () => void = () => {}
-    vi.mocked(agreeHealthConsent).mockImplementationOnce(
-      () => new Promise<void>((done) => (resolve = done)),
-    )
+    const resolve = holdAgree()
     const { user } = setup()
     await user.click(check())
     await user.click(agree())
@@ -119,11 +134,20 @@ describe('HealthConsentScreen', () => {
     expect(router.replace).not.toHaveBeenCalled()
   })
 
-  it('보내는 동안 화면을 떠나면 늦은 응답으로 이동하지 않는다', async () => {
-    let resolve: () => void = () => {}
-    vi.mocked(agreeHealthConsent).mockImplementationOnce(
-      () => new Promise<void>((done) => (resolve = done)),
+  it('동의서 버전이 낡았으면(outdated) 새로고침을 안내하고 이동하지 않는다', async () => {
+    vi.mocked(agreeHealthConsent).mockResolvedValueOnce({ status: 'outdated' })
+    const { user } = setup()
+    await user.click(check())
+    await user.click(agree())
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '동의를 보내지 못했어요. 동의 내용이 바뀌었으니 새로고침해 주세요.',
     )
+    expect(isOff(agree())).toBe(false)
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('보내는 동안 화면을 떠나면 늦은 응답으로 이동하지 않는다', async () => {
+    const resolve = holdAgree()
     const { user, unmount } = setup()
     await user.click(check())
     await user.click(agree())
@@ -180,33 +204,69 @@ describe('HealthConsentScreen', () => {
       expect(window.sessionStorage.getItem(LOGIN_RETURN_STORAGE_KEY)).toBeNull()
     })
 
-    describe('실데이터 — 동의가 세션 요약에 반영됐을 때만 보고 진입을 붙인다', () => {
+    describe('실데이터 — 동의 뒤 다시 받은 세션 요약에 반영됐을 때만 보고 진입을 붙인다', () => {
       afterEach(() => resetApiSession())
 
-      it('요약이 아직 미동의면(#168 전 — 동의 보내기가 목) 보고 진입 없이 같은 동네 홈으로 간다', async () => {
-        selectApiSource()
-        act(() => setSession(memberToken({ reportWritable: false })))
-        saveLoginReturn(REPORT)
-        const { user } = setup()
-        await user.click(check())
-        await user.click(agree())
-        await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/?region=11680640'))
-      })
+      /** 동의 API 와 재발급에 답하는 서버. 재발급은 `reissued` 요약으로, 동의는 `purgePending` 으로 답한다 */
+      function serve(reissued: { reportWritable: boolean }, purgePending = false) {
+        const fetchMock = vi.fn((url: string) =>
+          Promise.resolve(
+            new URL(url).pathname === '/api/v1/auth/token/reissue'
+              ? okResponse(memberToken({ accessToken: 'access-2', ...reissued }))
+              : okResponse({
+                  pendingConsents: [],
+                  healthInfoAgreed: true,
+                  reportWritable: reissued.reportWritable,
+                  purgePending,
+                }),
+          ),
+        )
+        vi.stubGlobal('fetch', fetchMock)
+        return () => fetchMock.mock.calls.map(([url]) => new URL(url).pathname)
+      }
 
-      it('요약이 동의로 바뀌었으면(#168 에서 동의 뒤 세션 요약을 다시 받음) 보고 진입을 붙인다', async () => {
+      async function agreeAsApiMember() {
         selectApiSource()
         act(() => setSession(memberToken({ reportWritable: false })))
-        vi.mocked(agreeHealthConsent).mockImplementationOnce(() => {
-          setSession(memberToken({ reportWritable: true }))
-          return Promise.resolve()
-        })
         saveLoginReturn(REPORT)
         const { user } = setup()
         await user.click(check())
         await user.click(agree())
+      }
+
+      it('동의를 보낸 뒤 재발급해 요약이 보고 가능이 되면 같은 동네 홈의 보고 진입으로 간다', async () => {
+        const paths = serve({ reportWritable: true })
+        await agreeAsApiMember()
         await waitFor(() =>
           expect(router.replace).toHaveBeenCalledWith('/?region=11680640&report=start'),
         )
+        expect(paths()).toEqual(['/api/v1/members/me/consents', '/api/v1/auth/token/reissue'])
+      })
+
+      it('재발급한 요약이 아직 보고할 수 없으면(재발급 일시 장애 등) 보고 진입 없이 같은 동네 홈으로 간다', async () => {
+        serve({ reportWritable: false })
+        await agreeAsApiMember()
+        await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/?region=11680640'))
+      })
+
+      it('앞선 철회의 보고 파기가 끝나지 않았으면(purgePending) 이동하지 않고 지우는 중이라고 알린다', async () => {
+        serve({ reportWritable: false }, true)
+        await agreeAsApiMember()
+        expect((await screen.findByRole('alert')).textContent).toBe(
+          '동의는 보냈어요. 지난 보고를 지우는 중이라 아직 보고할 수 없어요. 다 지우면 보고할 수 있어요.',
+        )
+        expect(router.replace).not.toHaveBeenCalled()
+      })
+
+      it('서버가 문서 버전을 받지 않으면(MEMBER_011) 새로고침을 안내하고 재발급하지 않는다', async () => {
+        const fetchMock = vi.fn(() => Promise.resolve(errorResponse('MEMBER_011', 409)))
+        vi.stubGlobal('fetch', fetchMock)
+        await agreeAsApiMember()
+        expect((await screen.findByRole('alert')).textContent).toBe(
+          '동의를 보내지 못했어요. 동의 내용이 바뀌었으니 새로고침해 주세요.',
+        )
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(router.replace).not.toHaveBeenCalled()
       })
     })
 

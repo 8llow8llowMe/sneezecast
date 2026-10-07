@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 
+import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
 
 import { ConsentRow } from './consent-row'
@@ -28,6 +29,37 @@ const NOTICE: { term: string; description: string }[] = [
   },
   { term: '모으지 않는 것', description: '이름, 연락처, 정확한 주소, GPS 위치, 자유 입력' },
 ]
+
+/**
+ * 동의를 보낸 뒤 알릴 문제. 화면(S02-4) · 시트가 같은 문구를 쓴다.
+ * - `failed`: 보내지 못함(일시 장애 등) — 다시 누르면 된다
+ * - `outdated`: 서버가 이 배포의 동의서 버전을 받지 않음(`MEMBER_011`). 다시 눌러도 같고, 새로고침해 새 배포를 받아야 맞는 버전으로 보낸다
+ * - `purge-pending`: 동의는 서버에 남았는데 앞선 철회의 보고 파기가 끝나지 않아 보고 권한이 없다(동의 응답의 `purgePending`, #155 전에는
+ *   계속). 다시 눌러도 풀리지 않아 "잠시 뒤 다시" 라고 하지 않는다. 화면 · 시트 모두 보고 흐름을 열지 않는다 — 열면 홈이 미동의로 보고
+ *   동의 시트로 되돌린다
+ * - `not-reflected`(시트만): 그 밖의 까닭으로 보고 권한이 아직 없다(동의 뒤 재발급이 일시 장애 등). 다시 누르면 다시 보내고 재발급한다.
+ *   화면(S02-4)은 이때 보고 진입 없이 홈으로 가므로 쓰지 않는다
+ */
+export type HealthConsentProblem = 'failed' | 'outdated' | 'purge-pending' | 'not-reflected'
+
+export function HealthConsentAlert({ problem }: { problem: HealthConsentProblem }) {
+  if (problem === 'purge-pending' || problem === 'not-reflected') {
+    return (
+      <AlertBox tone="neutral" role="alert">
+        {problem === 'purge-pending'
+          ? '동의는 보냈어요. 지난 보고를 지우는 중이라 아직 보고할 수 없어요. 다 지우면 보고할 수 있어요.'
+          : '동의는 보냈어요. 보고는 잠시 뒤 다시 시도해 주세요.'}
+      </AlertBox>
+    )
+  }
+  return (
+    <AlertBox tone="danger">
+      {problem === 'outdated'
+        ? '동의를 보내지 못했어요. 동의 내용이 바뀌었으니 새로고침해 주세요.'
+        : '동의를 보내지 못했어요. 잠시 뒤 다시 시도해 주세요.'}
+    </AlertBox>
+  )
+}
 
 /**
  * 고지 표. 위아래 1px 구분선. 화면(Setup-4)은 왼쪽 항목 104 · 글자 14, 시트(`compact`, Consent-health-sheet)는
