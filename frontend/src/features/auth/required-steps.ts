@@ -136,6 +136,8 @@ export const NEXT_PATHS: readonly string[] = [
   '/me/reports',
   '/me/interest-regions',
   '/me/notifications',
+  // 운영자 검토 대기(#219). 운영자가 아니면 화면이 권한 없음을 알린다(`features/admin/admin-gate.tsx`)
+  '/admin/review',
 ]
 
 /** `?next=` 값을 돌아갈 경로로. 없거나 목록 밖이면 홈이다 */

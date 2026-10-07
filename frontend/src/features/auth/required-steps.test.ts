@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { ADMIN_REVIEW_PATH } from '@/features/admin/types'
 import {
   ME_DEVICES_PATH,
   ME_INTEREST_REGIONS_PATH,
@@ -181,7 +182,7 @@ describe('sessionRequirements (실데이터)', () => {
 })
 
 describe('safeNextPath (오픈 리다이렉트 방지)', () => {
-  it('허용 목록은 홈 · 내 정보 화면이고 me-paths 와 같다', () => {
+  it('허용 목록은 홈 · 내 정보 화면 · 운영자 검토 대기이고 me-paths · 운영자 경로와 같다', () => {
     expect(NEXT_PATHS).toEqual([
       '/',
       ME_PATH,
@@ -192,6 +193,7 @@ describe('safeNextPath (오픈 리다이렉트 방지)', () => {
       ME_REPORTS_PATH,
       ME_INTEREST_REGIONS_PATH,
       ME_NOTIFICATIONS_PATH,
+      ADMIN_REVIEW_PATH,
     ])
   })
 
@@ -205,6 +207,7 @@ describe('safeNextPath (오픈 리다이렉트 방지)', () => {
     '/me/reports',
     '/me/interest-regions',
     '/me/notifications',
+    '/admin/review',
   ])('%s 는 그대로다', (path) => {
     expect(safeNextPath(path)).toBe(path)
   })
