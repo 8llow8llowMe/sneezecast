@@ -49,7 +49,7 @@ describe('useMockAuth', () => {
     await act(() => loginWithEmail('dong@example.com', 'dongne2026', 'mock'))
     expect(result.current).toBe('member-no-consent')
 
-    await act(() => agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO')))
+    await act(() => agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'), 'mock'))
     expect(result.current).toBe('member')
   })
 

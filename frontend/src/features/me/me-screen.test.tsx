@@ -21,7 +21,7 @@ import {
 import { consentFor } from '@/features/auth/legal'
 import { resetMemberInfoForTests, startMemberInfo } from '@/features/auth/member-info'
 import { cancelReport, getSubmittedReport, submitReport } from '@/features/report/report-client'
-import { resetSessionForTests, setSession } from '@/lib/session/session-store'
+import { getSessionSnapshot, resetSessionForTests, setSession } from '@/lib/session/session-store'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 import {
@@ -88,7 +88,7 @@ function notificationSection() {
 /** 동의한 회원으로 로그인해 둔다 (목 세션) */
 async function loginAsMember(email = 'dong@example.com') {
   await loginWithEmail(email, 'dongne2026', 'mock')
-  await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'))
+  await agreeHealthConsent(consentFor('SENSITIVE_HEALTH_INFO'), 'mock')
 }
 
 function deferred() {
@@ -707,7 +707,7 @@ describe('MeScreen 확인 대화상자', () => {
     // 응답만 늦춘다. 늦게 와도 목 API(두 번째 부름은 원래 구현)가 화면과 무관하게 세션을 바꾼다
     vi.mocked(withdrawHealthConsent).mockImplementationOnce(async () => {
       await pending.promise
-      await withdrawHealthConsent()
+      await withdrawHealthConsent('mock')
     })
     await loginAsMember()
     search = 'confirm=consent-withdraw'
@@ -934,5 +934,55 @@ describe('MeScreen 실데이터 (회원 API, #164)', () => {
     expect(screen.getByRole('link', { name: '비밀번호 변경' }).getAttribute('href')).toBe(
       '/me/password',
     )
+  })
+
+  it('동의 철회는 철회 API 를 부르고, 성공하면 세션을 비운 뒤 홈으로 간다(#168)', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    search = 'region=11440660&confirm=consent-withdraw'
+    renderMe({ regionCode: '11440660' })
+    await flush()
+
+    const dialog = screen.getByRole('dialog', { name: '건강정보 동의를 철회할까요?' })
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: '동의 철회하기' }))
+    expect(withdrawHealthConsent).toHaveBeenCalledWith('api')
+    act(() =>
+      server.reply(
+        'DELETE /api/v1/members/me/consents/SENSITIVE_HEALTH_INFO',
+        okResponse({
+          pendingConsents: [],
+          healthInfoAgreed: false,
+          reportWritable: false,
+          purgePending: true,
+        }),
+      ),
+    )
+    await waitFor(() => expect(router.replace.mock.calls).toEqual([['/?region=11440660']]))
+    expect(getSessionSnapshot()).toEqual({ status: 'guest' })
+    expect(takeHomeNotice()).toBe('건강정보 동의를 철회하고 로그아웃했어요')
+  })
+
+  it('동의 철회 요청이 실패하면 대화상자 안에 알리고 세션 · 화면을 그대로 둔다(#168)', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    search = 'confirm=consent-withdraw'
+    renderMe()
+    await flush()
+
+    const dialog = screen.getByRole('dialog', { name: '건강정보 동의를 철회할까요?' })
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: '동의 철회하기' }))
+    // 봉투 없는 503(게이트웨이 · 일시 장애)
+    act(() =>
+      server.reply(
+        'DELETE /api/v1/members/me/consents/SENSITIVE_HEALTH_INFO',
+        new Response('', { status: 503 }),
+      ),
+    )
+    expect((await within(dialog).findByRole('alert')).textContent).toContain(
+      '동의를 철회하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    )
+    expect(getSessionSnapshot()).toMatchObject({ status: 'member' })
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(takeHomeNotice()).toBeNull()
   })
 })

@@ -9,12 +9,14 @@ import {
   broadcastMemberRegionChanged,
   clearSession,
   getSessionSnapshot,
+  refreshSession,
+  type SessionSummary,
   setSession,
 } from '@/lib/session/session-store'
 import { clearSessionExpiring } from '@/lib/session-expiry'
 
 import { kakaoTicketLost } from './kakao-ticket'
-import type { Consent, ConsentType } from './legal'
+import { type Consent, consentFor, type ConsentType } from './legal'
 import type { KakaoFailReason } from './login-notice'
 import { type MyInfo, type MyRegion, patchMyNickname, putMyRegion } from './member-client'
 import {
@@ -30,8 +32,9 @@ import {
  * 이메일 인증 · 가입 · 이메일 로그인 · 로그아웃(`sendEmailCode` · `verifyEmailCode` · `signup` 이메일 갈래 · `loginWithEmail` ·
  * `logout`)과 내 동네 저장(`saveRegion`, #164), 비밀번호 재설정 · 변경과 로그인한 기기(`sendPasswordResetCode` ·
  * `verifyPasswordResetCode` · `resetPassword` · `changePassword` · `listSessions` · `revokeSession` · `revokeOtherSessions`, #166),
- * 카카오 가입(`signup` 카카오 갈래, #167 — 카카오 로그인 · 연결은 `kakao-client.ts`), 닉네임 바꾸기(`updateNickname`, #192)는 마지막 인자로 데이터 출처(`DataSource`)를
- * 받는다. `api` 면 auth · 회원 API(docs/api-contract-draft.md "인증" · "회원")를 부르고, `mock` 이면 아래 목 동작 그대로다. 출처는 부르는 화면이 `useDataSource()` 로 읽어 넘긴다 — 이 모듈은 쿠키를 읽지 않는다
+ * 카카오 가입(`signup` 카카오 갈래, #167 — 카카오 로그인 · 연결은 `kakao-client.ts`), 닉네임 바꾸기(`updateNickname`, #192),
+ * 건강정보 동의 · 약관 재동의 · 건강정보 동의 철회(`agreeHealthConsent` · `agreeTermsReconsent` · `withdrawHealthConsent`, #168)는
+ * 마지막 인자로 데이터 출처(`DataSource`)를 받는다. `api` 면 auth · 회원 API(docs/api-contract-draft.md "인증" · "회원")를 부르고, `mock` 이면 아래 목 동작 그대로다. 출처는 부르는 화면이 `useDataSource()` 로 읽어 넘긴다 — 이 모듈은 쿠키를 읽지 않는다
  * (docs/conventions.md "데이터 출처", `features/region/region-client.ts` 와 같다). 그 밖의 함수는 아직 출처와 무관하게 목이다.
  *
  * - 인증이 필요 없는 요청(코드 받기 · 코드 확인 · 가입 · 카카오 가입 · 로그인 · 비밀번호 재설정)은 `auth: false` 로 부른다 — 만료된 access 를
@@ -64,12 +67,14 @@ const PASSWORD_RESET_SEND_CODE_PATH = '/api/v1/auth/password/reset/send-code'
 const PASSWORD_RESET_VERIFY_CODE_PATH = '/api/v1/auth/password/reset/verify-code'
 const PASSWORD_RESET_PATH = '/api/v1/auth/password/reset'
 const CHANGE_PASSWORD_PATH = '/api/v1/members/me/password'
+const CONSENTS_PATH = '/api/v1/members/me/consents'
+const HEALTH_CONSENT_PATH = `${CONSENTS_PATH}/SENSITIVE_HEALTH_INFO`
 
 /* ── 목 회원 상태 ──────────────────────────────────────────────────────────────────
  *
  * 홈이 보고 진입을 나눌 때 쓰는 회원 · 동의 상태다 (docs/design/SCREENS.md "목 회원 상태").
- * **API 연동 전 목이다.** 연동 때 이 자리를 실제 세션(토큰 · `report:write` scope)으로 바꾸고, 화면은 `useMockAuth` 를
- * 세션 훅으로 바꾼다.
+ * **목데이터 모드의 상태다.** 실데이터는 세션 저장소의 회원 요약(`reportWritable` — `report:write` scope)이고, 화면은
+ * `useAuth`(`use-auth.ts`)로 출처를 가려 읽는다. 아래 상태 이름은 두 출처가 같이 쓴다.
  *
  * - `guest`: 로그인하지 않음 (기본값)
  * - `member-no-consent`: 회원이지만 건강정보(민감정보) 동의를 하지 않음
@@ -83,7 +88,7 @@ const CHANGE_PASSWORD_PATH = '/api/v1/members/me/password'
  * 내 정보(S10)가 보일 프로필(`MockProfile`)도 같은 세션에 둔다. 로그인 · 가입할 때 채우고 로그아웃 · 탈퇴하면 지운다.
  * 내 동네 저장(`saveRegion`)에 성공하면 동네를 바꾸고 폐지 표시를 끄고, 약관 재동의(`agreeTermsReconsent`)에 성공하면 재동의 표시를 끈다.
  * 닉네임 바꾸기(`updateNickname`)에 성공하면 닉네임을 바꾼다.
- * 연동 때 `GET /api/v1/members/me`(백엔드 #58) 응답으로 바꾼다.
+ * 실데이터의 프로필은 회원 정보 저장소(`member-info.ts` — `GET /api/v1/members/me`, #164)다.
  */
 export type MockAuthState = 'guest' | 'member-no-consent' | 'member'
 
@@ -91,7 +96,7 @@ export const MOCK_AUTH_STATES: readonly MockAuthState[] = ['guest', 'member-no-c
 
 /**
  * 내 정보에 보일 회원 프로필 (목). 로그인 방법(`provider`) · 이메일 · 닉네임 · 비밀번호가 있는지만 둔다 —
- * 이름 · 연락처 · 주소는 받지 않는다. 연동 때 `GET /api/v1/members/me` 응답으로 바꾼다. 카카오 회원의 이메일 · 닉네임과
+ * 이름 · 연락처 · 주소는 받지 않는다. 실데이터는 `GET /api/v1/members/me` 응답이다(`member-info.ts`). 카카오 회원의 이메일 · 닉네임과
  * 이메일 로그인의 닉네임은 목이 모르므로 시안의 예시 값(`EXAMPLE_PROFILES`)을 쓴다.
  *
  * `hasPassword` 는 이메일 · 비밀번호로도 로그인할 수 있는지다(`GET /me` 의 같은 이름). 이메일 가입은 늘 true, 카카오 가입은 false 다.
@@ -99,7 +104,7 @@ export const MOCK_AUTH_STATES: readonly MockAuthState[] = ['guest', 'member-no-c
  *
  * 내 동네와 다시 들어올 때 거칠 화면의 조건(`regionAbolished` · `termsReconsentRequired`)도 둔다. 홈 · 내 정보가 이 값으로
  * 약관 재동의(Setup-3-reconsent) · 동네 다시 고르기(Setup-1-reselect)로 먼저 보낸다(`required-steps.ts`).
- * 연동 때 이 두 값을 어느 응답이 주는지 백엔드(#59 · #60)와 정한다(docs/design/SCREENS.md 연동 요구사항).
+ * 실데이터는 세션 요약의 `pendingConsents`(로그인 · 재발급 응답)와 내 동네의 `abolished`(`GET /api/v1/members/me/region`)다(#164).
  */
 export type MockProfile = {
   provider: 'email' | 'kakao'
@@ -524,7 +529,7 @@ function consumeSignupVerification(email: string): boolean {
  *
  * 이메일 가입은 실데이터에서 `POST /api/v1/auth/signup`(백엔드 #56, `auth: false`)이다. 내 동네 저장은 `PUT /api/v1/members/me/region`
  * (#60, 아래 `saveRegion`)이다. 카카오 가입은 `POST /api/v1/auth/kakao/signup`(#61 · #167, `auth: false`, 가입표 쿠키)이다.
- * 건강정보 동의(#59)는 아직 출처와 무관하게 목이다.
+ * 건강정보 동의는 `POST /api/v1/members/me/consents`(#59 · #168, 아래 `agreeHealthConsent`)다.
  * 이메일 가입 응답에는 토큰이 없다 — 이어서 `loginWithEmail`(#57)로 로그인한 뒤 동네를 저장한다.
  * 카카오 가입 응답은 로그인 응답(`AuthToken`)이라 바로 세션을 넣고 동네를 저장한다.
  *
@@ -749,19 +754,117 @@ export async function saveRegion(
   return { status: 'ok' }
 }
 
-/** 건강 · 증상 정보(민감정보) 처리 동의. 근거 문서 버전을 함께 보낸다 */
-export function agreeHealthConsent(consent: Consent): Promise<void> {
-  void consent
-  // 동의를 보낸 화면이 응답 전에 닫혀도 서버에는 동의가 남는다. 세션 상태도 화면과 무관하게 여기서 바꾼다
+/* ── 동의 보내기 (#59 · #168) ──────────────────────────────────────────────────────────────
+ *
+ * 건강정보 동의(S02-4 · 홈의 증상 보고 동의 시트)와 약관 재동의(Setup-3-reconsent)는 모두 `POST /api/v1/members/me/consents
+ * {type, documentVersion}`(access 필요)이다. 버전은 `legal.ts` 의 지금 버전이다. 그 항목이 이미 지금 버전으로 유효하면 서버는 멱등 성공이다.
+ * 응답은 동의 상태(`ConsentStatus`)다. **동의해도 지금 access 의 scope 는 그대로**라(서버가 발급 때 계산) 세션 요약(`reportWritable` ·
+ * `pendingConsents`)은 응답이 아니라 재발급(`refreshSession`)으로 새 access 와 함께 받는다. 재발급은 다른 탭에도 알린다. 응답에서는
+ * 보고를 막는 사유(`purgePending`)만 읽는다.
+ *
+ * 한계: `refreshSession()` 은 진행 중인 재발급과 하나로 묶인다. 동의 커밋 전에 나간 재발급(탭 안에서 진행 중이거나, 탭 사이 잠금을
+ * 기다리는 동안 다른 탭이 받은 결과)에 묶이면 동의 전 요약을 받을 수 있다 — 드물고, 건강정보 동의 시트는 "잠시 뒤 다시" 안내에서
+ * 다시 누르면, 재동의는 가드에 한 번 되돌려진 뒤 다시 누르면 풀린다(서버는 멱등).
+ */
+
+/**
+ * 동의 보내기 결과.
+ * - `ok`: 서버에 동의가 남았다
+ * - `outdated`: 보낸 문서 버전이 서버의 지금 버전과 다르다(`MEMBER_011`, 409 — 이 배포의 `legal.ts` 상수가 낡았다). 다시 눌러도 같고,
+ *   새로고침해 새 배포를 받아야 맞는 버전으로 보낸다. 화면은 일반 실패와 따로 "새로고침해 주세요" 로 알린다
+ */
+export type ConsentResult = { status: 'ok' } | { status: 'outdated' }
+
+/**
+ * 건강정보 동의 결과. `reportWritable` 은 동의가 회원 상태에 반영돼 홈이 보고 흐름을 열 수 있는지다(동의 뒤 보고 진입을 붙일지
+ * 정하는 **한 곳**, #140). 홈은 회원 상태로 보고 진입을 고쳐(`guardReportEntry`) 미동의면 `report=start` 를 동의 시트로 바꾸므로,
+ * 거짓이면 화면은 보고 흐름을 열지 않는다. `purgePending` 은 거짓인 까닭이 앞선 철회의 보고 파기가 끝나지 않아서인지다(동의 응답 —
+ * 다시 눌러도 풀리지 않는다). 아니면 재발급 일시 장애 등이라 다시 누르면 풀릴 수 있다
+ */
+export type HealthConsentResult =
+  { status: 'ok'; reportWritable: boolean; purgePending: boolean } | { status: 'outdated' }
+
+/** `POST /api/v1/members/me/consents` · `DELETE …/SENSITIVE_HEALTH_INFO` 의 `dataBody` (backend 동의 상태) */
+type ConsentStatus = {
+  pendingConsents: string[]
+  healthInfoAgreed: boolean
+  reportWritable: boolean
+  /** 앞선 철회의 보고 파기가 끝나지 않았다 — 끝날 때까지(#155) 다시 동의해도 `reportWritable` 이 false 다 */
+  purgePending: boolean
+}
+
+const CONSENT_FAILURES: Readonly<Record<string, 'outdated'>> = { MEMBER_011: 'outdated' }
+
+/** 실데이터 세션이 회원이 아니면 거부한다 — 토큰 없이 보내 401(SECURITY_001)을 받으러 가지 않는다 */
+function requireMemberSession(what: string): SessionSummary {
+  const session = getSessionSnapshot()
+  if (session.status !== 'member') throw new Error(`${what}: no member session`)
+  return session.summary
+}
+
+/**
+ * 동의 하나를 보낸다. 성공하면 응답의 `purgePending` 을 싣는다 — 래퍼는 본문 모양을 검사하지 않으므로 `true` 일 때만 참으로 읽는다
+ * (모양이 어긋나면 파기 대기가 아닌 것으로 본다 — 그래도 보고 진입은 다시 받은 요약이 막는다). `MEMBER_011` 이면 `outdated`, 그 밖의 오류는 던진다
+ */
+async function postConsent({
+  type,
+  documentVersion,
+}: Consent): Promise<{ status: 'ok'; purgePending: boolean } | { status: 'outdated' }> {
+  let body: unknown
+  try {
+    body = await apiRequest<ConsentStatus>(CONSENTS_PATH, {
+      method: 'POST',
+      body: { type, documentVersion },
+    })
+  } catch (error) {
+    const failure = mapError(error, CONSENT_FAILURES)
+    if (failure) return { status: failure }
+    throw error
+  }
+  const purgePending =
+    typeof body === 'object' &&
+    body !== null &&
+    'purgePending' in body &&
+    body.purgePending === true
+  return { status: 'ok', purgePending }
+}
+
+/**
+ * 건강 · 증상 정보(민감정보) 처리 동의. 근거 문서 버전을 함께 보낸다.
+ *
+ * 실데이터: 세션 저장소가 회원이 아니면 요청 없이 거부한다. 동의를 보내고 성공하면 세션 요약을 다시 받는다(`refreshSession`).
+ * `reportWritable` 은 그 뒤 요약의 값이다 — 재발급이 일시 장애였거나(요약이 그대로다) 서버가 아직 보고를 막으면(앞선 철회의 파기가
+ * 끝나지 않음 — 응답의 `purgePending`, #155 전에는 다시 동의해도 늘 그렇다) 거짓이다. `purgePending` 은 동의 응답의 값이다(화면이 두 까닭을
+ * 다른 문구로 알린다). `MEMBER_011` → `outdated`, 그 밖(일시 장애 등)은 거부한다 — 화면은 "동의를 보내지 못했어요" 로 알린다.
+ *
+ * 목: 목 세션을 `member` 로 바꿔 늘 반영된다.
+ * 동의를 보낸 화면이 응답 전에 닫혀도 서버에는 동의가 남는다. 세션 상태도 화면과 무관하게 여기서 바꾼다.
+ */
+export async function agreeHealthConsent(
+  consent: Consent,
+  source: DataSource,
+): Promise<HealthConsentResult> {
+  if (source === 'api') {
+    requireMemberSession('agreeHealthConsent')
+    const result = await postConsent(consent)
+    if (result.status !== 'ok') return result
+    await refreshSession()
+    const session = getSessionSnapshot()
+    return {
+      status: 'ok',
+      reportWritable: session.status === 'member' && session.summary.reportWritable,
+      purgePending: result.purgePending,
+    }
+  }
   setMockSession('member')
-  return Promise.resolve()
+  return { status: 'ok', reportWritable: true, purgePending: false }
 }
 
 /* ── 약관 재동의 · 동네 다시 고르기 (Setup-3-reconsent · Setup-1-reselect) ───────────────────────────
  *
- * 연동 때 바꾼다: 재동의 — 백엔드 #59 의 재동의 API(요청 · 응답 모양은 아직 없다). 동네 다시 저장은 위 `saveRegion`(#60, 연동됨)이다.
+ * 재동의는 위 동의 API(#59 · #168, 아래 `agreeTermsReconsent`), 동네 다시 저장은 위 `saveRegion`(#60)이다.
  * 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다 — 화면은 다시 시도하라고 알린다.
- * 성공하면 화면과 무관하게 목 프로필의 조건을 먼저 끈다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다).
+ * 목은 성공하면 화면과 무관하게 목 프로필의 조건을 먼저 끈다(응답 전에 화면을 떠나도 서버에서는 끝난 일이다).
  *
  * 목에서 상태를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다). 프로필 이메일로 가린다 — 그 이메일로 이메일 로그인하면
  * 조건이 켜진 채 홈으로 간다:
@@ -774,24 +877,62 @@ export const MOCK_RECONSENT_FAIL_EMAIL = 'reconsent-fail@example.com'
 export const MOCK_RESELECT_EMAIL = 'reselect@example.com'
 export const MOCK_RESELECT_FAIL_EMAIL = 'reselect-fail@example.com'
 
-/** 개정된 필수 약관에 다시 동의한다. 근거 문서 버전(`legal.ts` 의 지금 버전)을 함께 보낸다 */
-export function agreeTermsReconsent(consent: Consent): Promise<void> {
-  void consent
+/**
+ * 재동의 화면이 다시 받는 항목(보내는 순서). 만 19세 확인은 다시 받지 않는다(서버도 `pendingConsents` 에 넣지 않는다). 건강정보 동의는
+ * 따로 받는 민감정보 동의라 약관 화면에서 보내지 않는다(S02-4 · 동의 시트).
+ *
+ * 화면(시안)은 이용약관 상자 · 체크만 보이는데 개인정보 처리방침도 보낸다. 처리방침을 아직 개정하지 않아(`LEGAL_VERSIONS.PRIVACY_POLICY`
+ * 가 첫 판) 지금 버전으로 가입한 회원의 `pendingConsents` 에 들어올 수 없다. 개정하면 `terms-reconsent-screen.test.tsx` 의 버전 고정
+ * 테스트가 깨져 화면에 처리방침 상자 · 체크를 더하게 한다. 처리방침을 막아(`outdated`) 두지 않는 까닭은, 그러면 개정 때 회원이
+ * 새로고침 안내에 갇히기 때문이다
+ */
+const RECONSENT_TYPES: readonly ConsentType[] = ['TERMS_OF_SERVICE', 'PRIVACY_POLICY']
+
+/**
+ * 개정된 필수 약관에 다시 동의한다. 항목마다 근거 문서 버전(`legal.ts` 의 지금 버전)을 함께 보낸다.
+ *
+ * 실데이터 (세션 저장소가 회원이 아니면 요청 없이 거부한다):
+ * - 보낼 항목은 세션 요약의 `pendingConsents` 중 재동의 항목(`RECONSENT_TYPES` — 이용약관 · 개인정보 처리방침)이다. 서버가 항목 하나씩
+ *   받아 차례로 보낸다. 모르는 항목은 보내지 않는다 — 화면이 무엇에 동의받는지 보이지 못한다
+ * - 요약에 다시 동의할 항목이 없으면(다른 탭에서 이미 마침) 보내지 않고 `ok` 다. 모르는 항목이 하나라도 있으면 아는 항목은 보내되
+ *   결과는 `outdated` 다(아는 항목이 없으면 보내지 않는다) — 서버가 이 배포가 모르는 항목을 요구한다는 뜻이라 상수가 낡았다. `ok` 로
+ *   두면 모르는 항목이 남아 가드가 이 화면으로 되돌리고, 다시 눌러도 같은 일이 되풀이된다
+ * - 모두 성공하면 세션 요약을 다시 받는다(`refreshSession`). 받지 않으면 요약의 `pendingConsents` 가 그대로라 조건 가드
+ *   (`required-steps.ts`)가 다시 이 화면으로 보낸다. 재발급이 일시 장애여도 같다 — 다시 누르면 서버는 멱등 성공이고 다시 재발급한다
+ * - 어느 항목이든 `MEMBER_011` 이면 `outdated` 이고 남은 항목은 보내지 않는다. 그 밖은 거부한다(앞서 보낸 항목은 서버에 남고, 다시 보내도 멱등)
+ *
+ * 목: 이용약관 하나를 보낸 것으로 보고, 성공하면 목 프로필의 재동의 표시를 끈다. 목은 `outdated` 를 돌려주지 않는다.
+ */
+export async function agreeTermsReconsent(source: DataSource): Promise<ConsentResult> {
+  if (source === 'api') {
+    const { pendingConsents } = requireMemberSession('agreeTermsReconsent')
+    if (pendingConsents.length === 0) return { status: 'ok' }
+    const types = RECONSENT_TYPES.filter((type) => pendingConsents.includes(type))
+    const unknown = pendingConsents.some((type) => !RECONSENT_TYPES.some((known) => known === type))
+    if (types.length === 0) return { status: 'outdated' }
+    for (const type of types) {
+      const result = await postConsent(consentFor(type))
+      if (result.status !== 'ok') return result
+    }
+    await refreshSession()
+    return { status: unknown ? 'outdated' : 'ok' }
+  }
   const failure = rejectIfProfileEmail(MOCK_RECONSENT_FAIL_EMAIL, 'terms reconsent')
   if (failure) return failure
   if (mockProfile?.termsReconsentRequired) {
     setMockSession(mockSession, { ...mockProfile, termsReconsentRequired: false })
   }
-  return Promise.resolve()
+  return { status: 'ok' }
 }
 
 /* ── 로그아웃 · 건강정보 동의 철회 · 탈퇴 (S10 확인 대화상자) ───────────────────────────────
  *
  * 로그아웃은 실데이터에서 `POST /api/v1/auth/logout`(백엔드 #57 — refresh 세션 폐기 + access token 블랙리스트)이다(아래 `logout`).
- * 연동 때 바꾼다: 건강정보 동의 철회(#59 — 원시 보고 파기 요청 + refresh 세션 전부 폐기), 탈퇴 `POST /api/v1/members/me/withdraw`(#59).
+ * 건강정보 동의 철회는 `DELETE /api/v1/members/me/consents/SENSITIVE_HEALTH_INFO`(#59 · #168 — 원시 보고 파기 요청 + 모든 기기 로그아웃,
+ * 아래 `withdrawHealthConsent`)다. 탈퇴(`withdrawMembership`)는 백엔드 #154 전이라 아직 출처와 무관하게 목이다(#169).
  * 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다 — 화면은 대화상자 안에서 다시 시도하라고 알린다.
  *
- * 성공하면 화면과 무관하게 여기서 목 세션을 바꾼다(응답 전에 화면이 닫혀도 서버에는 결과가 남는다):
+ * 성공하면 화면과 무관하게 여기서 세션(실데이터는 세션 저장소, 목은 목 세션)을 바꾼다(응답 전에 화면이 닫혀도 서버에는 결과가 남는다):
  * 로그아웃 · 탈퇴 · 동의 철회 → `guest`(프로필도 지운다). 동의 철회는 서버가 모든 기기의 세션을 폐기하므로 로그아웃과 같은 결과다.
  *
  * 목에서 실패를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다). 프로필 이메일로 가린다 — 그 이메일로 이메일 로그인한 뒤 연다:
@@ -854,16 +995,35 @@ export async function logout(source: DataSource): Promise<void> {
 /**
  * 건강정보(민감정보) 처리 동의를 철회한다. 서버가 보낸 보고를 모두 지운다(파기 요청).
  *
- * 목은 로그아웃과 같이 `guest` 로 만들고 프로필을 지운다(보낸 보고 목도 세션이 바뀌어 함께 지운다). 백엔드 #59 는 철회와 함께
- * refresh 세션을 모두 폐기하고 요청 기기의 access token 도 막는다(대화상자 문구 "모든 기기에서 로그아웃돼요").
- * 연동 때 철회 응답 뒤 세션이 폐기되는지 백엔드와 맞춘다(SCREENS.md 연동 요구사항).
+ * 실데이터: `DELETE /api/v1/members/me/consents/SENSITIVE_HEALTH_INFO`(access 필요). 서버는 철회와 파기 요청을 한 트랜잭션에 남기고,
+ * 커밋 뒤 **모든 기기를 로그아웃**한다(refresh 세션 전부 폐기 + access 차단, 응답이 refresh 쿠키를 지움 — 대화상자 문구
+ * "모든 기기에서 로그아웃돼요").
+ * - 세션 저장소가 회원이 아니면 요청 없이 거부한다
+ * - 성공 → 이 기기 세션을 비운다(`endThisDeviceSession` — `clearSession('logout')` · 만료 진행 표시 끔, 로그아웃과 같은 이유).
+ *   다른 탭에도 알린다. 회원 정보 · 이번 주 보고 저장소는 세션이 비회원이 되면 스스로 지운다(`member-info.ts` · `current-report.ts`)
+ * - **철회할 동의가 없는 멱등 200(서버는 로그아웃하지 않고 쿠키도 지우지 않는다)에도 세션을 비운다.** 철회 행은 보고할 수 있는
+ *   회원에게만 보이므로(`features/me/confirm.ts` 의 `confirmAllowed`) 이 탭 요약은 동의했다는데 서버에 철회할 동의가 없는 경우다.
+ *   다른 기기가 먼저 철회했다면 서버가 모든 세션의 최근 access 를 막아 이 요청은 401 로 끝나므로(아래 거부) 여기에 오지 않는다.
+ *   멱등 200 은 앞선 철회의 세션 폐기가 저장소(Redis) 장애로 실패했거나 이 탭 요약이 낡았을 때 나오고, 그때는 이 기기의 refresh
+ *   세션이 서버에 남을 수 있다(로그인한 기기 목록에 만료까지 남는다). 그래도 철회는 이미 끝났으니 화면은 철회 결과를 따라 비회원으로
+ *   간다 — 이 기기에서 다시 로그인하면 된다. 응답으로 두 경우를 가르지 않는다
+ * - **그 밖은 모두 거부하고 세션을 그대로 둔다** — 일시 장애 · 분류 밖 오류 · 401 계열 모두 철회가 일어나지 않았다. 로그아웃과 달리
+ *   "세션이 이미 없음"(`LOGOUT_SESSION_GONE`)을 성공으로 보지 않는다 — 바란 것은 로그아웃이 아니라 철회 · 파기다. API 계층의 재발급이
+ *   재로그인으로 끝났으면 세션 저장소가 이미 비우고 만료 이동(로그인 화면)이 맡는다. 화면은 대화상자 안에서 다시 시도하라고 알린다
+ *
+ * 목은 로그아웃과 같이 `guest` 로 만들고 프로필을 지운다(보낸 보고 목도 세션이 바뀌어 함께 지운다).
  */
-export function withdrawHealthConsent(): Promise<void> {
+export async function withdrawHealthConsent(source: DataSource): Promise<void> {
+  if (source === 'api') {
+    requireMemberSession('withdrawHealthConsent')
+    await apiRequest<ConsentStatus>(HEALTH_CONSENT_PATH, { method: 'DELETE' })
+    endThisDeviceSession()
+    return
+  }
   const failure = rejectIfProfileEmail(MOCK_CONSENT_WITHDRAW_FAIL_EMAIL, 'consent withdraw')
   if (failure) return failure
   // 철회하면 로그아웃된다(모든 기기). 비회원 세션(`?mock-auth=member` 덮어쓰기로 연 경우)은 이미 비회원이라 그대로다
   setMockSession('guest')
-  return Promise.resolve()
 }
 
 /**
@@ -965,7 +1125,7 @@ function deviceSessions(): DeviceSession[] {
 }
 
 /**
- * 서버가 이 기기의 세션을 끝냈다(사용자가 고른 동작 — 이 기기 로그아웃 · 이 탭 계정의 비밀번호 재설정). 세션 저장소가 아직 회원이면
+ * 서버가 이 기기의 세션을 끝냈다(사용자가 고른 동작 — 이 기기 로그아웃 · 이 탭 계정의 비밀번호 재설정 · 건강정보 동의 철회). 세션 저장소가 아직 회원이면
  * `clearSession('logout')` 으로 비운다: 만료가 아니라 사용자가 고른 결과라 "다시 로그인해 주세요" 안내(`expired`)를 띄우지 않고
  * (화면이 스스로 이동한다), 같은 refresh 쿠키를 쓰는 다른 탭에도 알린다. `logout` 과 같게 만료 진행 표시도 끈다
  */

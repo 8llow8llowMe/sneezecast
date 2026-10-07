@@ -13,11 +13,19 @@ import {
   startSession,
 } from '@/lib/session/session-store'
 import { clearSessionExpiring, notifySessionExpired } from '@/lib/session-expiry'
-import { holdReissue, memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
+import {
+  errorResponse,
+  holdReissue,
+  memberToken,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
 import type * as authClient from './auth-client'
 import {
   agreeTermsReconsent,
+  type ConsentResult,
   getMockProfile,
   getMockSession,
   loginWithEmail,
@@ -54,6 +62,18 @@ const ui = (
 
 const agreeButton = () => screen.getByRole('button', { name: '동의하고 계속하기' })
 const isOff = (button: HTMLElement) => button.getAttribute('aria-disabled') === 'true'
+
+/** 재동의 응답을 테스트가 정할 때까지 붙잡아 둔다. 돌려준 함수로 성공을 돌려준다 */
+function holdAgree(): () => void {
+  let finish: () => void = () => {}
+  vi.mocked(agreeTermsReconsent).mockImplementationOnce(
+    () =>
+      new Promise<ConsentResult>((resolve) => {
+        finish = () => resolve({ status: 'ok' })
+      }),
+  )
+  return () => finish()
+}
 
 beforeEach(async () => {
   search = ''
@@ -99,17 +119,14 @@ describe('TermsReconsentScreen 그림', () => {
 })
 
 describe('TermsReconsentScreen 보내기', () => {
-  it('지금 이용약관 버전으로 동의하고, 프로필을 바꾼 뒤 next 로 기록을 바꿔 간다', async () => {
+  it('목데이터 출처로 재동의를 보내고, 프로필을 바꾼 뒤 next 로 기록을 바꿔 간다', async () => {
     search = 'next=/me/devices&region=11440660'
     const user = userEvent.setup()
     render(ui)
     await user.click(screen.getByRole('checkbox', { name: '바뀐 서비스 이용약관에 동의해요' }))
     await user.click(agreeButton())
 
-    expect(agreeTermsReconsent).toHaveBeenCalledWith({
-      type: 'TERMS_OF_SERVICE',
-      documentVersion: LEGAL_VERSIONS.TERMS_OF_SERVICE,
-    })
+    expect(agreeTermsReconsent).toHaveBeenCalledWith('mock')
     expect(getMockProfile()?.termsReconsentRequired).toBe(false)
     expect(router.replace).toHaveBeenCalledTimes(1)
     expect(router.replace).toHaveBeenCalledWith('/me/devices?region=11440660')
@@ -129,10 +146,7 @@ describe('TermsReconsentScreen 보내기', () => {
   })
 
   it('보내는 동안 버튼이 꺼지고 다시 눌러도 한 번만 보낸다', async () => {
-    let finish: () => void = () => {}
-    vi.mocked(agreeTermsReconsent).mockImplementationOnce(
-      () => new Promise<void>((resolve) => (finish = resolve)),
-    )
+    const finish = holdAgree()
     const user = userEvent.setup()
     render(ui)
     await user.click(screen.getByRole('checkbox', { name: '바뀐 서비스 이용약관에 동의해요' }))
@@ -166,11 +180,22 @@ describe('TermsReconsentScreen 보내기', () => {
     expect(agreeTermsReconsent).toHaveBeenCalledTimes(2)
   })
 
-  it('응답 전에 화면을 떠나면 늦은 응답으로 이동하지 않는다 (동의는 남는다)', async () => {
-    let finish: () => void = () => {}
-    vi.mocked(agreeTermsReconsent).mockImplementationOnce(
-      () => new Promise<void>((resolve) => (finish = resolve)),
+  it('약관 버전이 낡았으면(outdated) 새로고침을 안내하고 화면에 남는다', async () => {
+    vi.mocked(agreeTermsReconsent).mockResolvedValueOnce({ status: 'outdated' })
+    const user = userEvent.setup()
+    render(ui)
+    await user.click(screen.getByRole('checkbox', { name: '바뀐 서비스 이용약관에 동의해요' }))
+    await user.click(agreeButton())
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      '약관 동의를 보내지 못했어요. 약관이 바뀌었으니 새로고침해 주세요.',
     )
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(isOff(agreeButton())).toBe(false)
+  })
+
+  it('응답 전에 화면을 떠나면 늦은 응답으로 이동하지 않는다 (동의는 남는다)', async () => {
+    const finish = holdAgree()
     const user = userEvent.setup()
     const { unmount } = render(ui)
     await user.click(screen.getByRole('checkbox', { name: '바뀐 서비스 이용약관에 동의해요' }))
@@ -308,25 +333,86 @@ describe('TermsReconsentScreen 보고하려던 로그인 (#140)', () => {
     expect(router.replace.mock.calls).toEqual([['/?region=11680640']])
   })
 
-  it('실데이터도 재동의를 마치면 같은 동네 홈의 보고 진입으로 간다', async () => {
-    selectApiSource()
-    // 내 동네 읽기는 실패시켜(일시 장애) 동네 조건 없이 정해지게 한다
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
-    )
-    const stop = startSession()
-    act(() => setSession(memberToken({ pendingConsents: ['TERMS_OF_SERVICE'] })))
-    try {
+  describe('실데이터 (#168)', () => {
+    /** 동의 · 재발급에 답하는 서버. 내 동네 읽기는 실패시켜(일시 장애) 동네 조건 없이 정해지게 한다 */
+    function serve(consent: () => Response) {
+      // 보낸 본문을 읽으려고 init 까지 받는 모양으로 둔다(mock.calls)
+      const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>((url) => {
+        const path = new URL(url).pathname
+        if (path === '/api/v1/members/me/consents') return Promise.resolve(consent())
+        if (path === '/api/v1/auth/token/reissue') {
+          return Promise.resolve(okResponse(memberToken({ accessToken: 'access-2' })))
+        }
+        return Promise.reject(new TypeError('Failed to fetch'))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      return fetchMock
+    }
+
+    async function agreeAsApiMember(pendingConsents: string[]) {
+      selectApiSource()
+      const stop = startSession()
+      act(() => setSession(memberToken({ pendingConsents })))
       search = 'region=11680640&intent=report'
       await agreeNow()
-      await vi.waitFor(() =>
-        expect(router.replace).toHaveBeenCalledWith('/?region=11680640&report=start'),
-      )
-    } finally {
-      stop()
-      resetApiSession()
+      return stop
     }
+
+    it('남은 항목(이용약관 · 개인정보)을 각각 보내고 재발급해 조건을 비운 뒤 같은 동네 홈의 보고 진입으로 간다', async () => {
+      const fetchMock = serve(() =>
+        okResponse({
+          pendingConsents: [],
+          healthInfoAgreed: false,
+          reportWritable: false,
+          purgePending: false,
+        }),
+      )
+      const stop = await agreeAsApiMember(['TERMS_OF_SERVICE', 'PRIVACY_POLICY'])
+      try {
+        await vi.waitFor(() =>
+          expect(router.replace).toHaveBeenCalledWith('/?region=11680640&report=start'),
+        )
+        const sent = fetchMock.mock.calls
+          .filter(([url]) => new URL(url).pathname === '/api/v1/members/me/consents')
+          .map(([, init]) => JSON.parse(init?.body as string) as unknown)
+        expect(sent).toEqual([
+          { type: 'TERMS_OF_SERVICE', documentVersion: LEGAL_VERSIONS.TERMS_OF_SERVICE },
+          { type: 'PRIVACY_POLICY', documentVersion: LEGAL_VERSIONS.PRIVACY_POLICY },
+        ])
+        expect(getSessionSnapshot()).toMatchObject({ summary: { pendingConsents: [] } })
+      } finally {
+        stop()
+        resetApiSession()
+      }
+    })
+
+    it('서버가 약관 버전을 받지 않으면(MEMBER_011) 새로고침을 안내하고 화면에 남는다', async () => {
+      serve(() => errorResponse('MEMBER_011', 409))
+      const stop = await agreeAsApiMember(['TERMS_OF_SERVICE'])
+      try {
+        expect((await screen.findByRole('alert')).textContent).toContain(
+          '약관 동의를 보내지 못했어요. 약관이 바뀌었으니 새로고침해 주세요.',
+        )
+        expect(router.replace).not.toHaveBeenCalled()
+        expect(getSessionSnapshot()).toMatchObject({
+          summary: { pendingConsents: ['TERMS_OF_SERVICE'] },
+        })
+      } finally {
+        stop()
+        resetApiSession()
+      }
+    })
+  })
+})
+
+describe('TermsReconsentScreen 개인정보 처리방침 (#168)', () => {
+  it('처리방침 버전이 첫 판 그대로다 — 개정하면 재동의 화면에 처리방침 상자 · 체크를 더한 뒤 이 기대값을 바꾼다', () => {
+    // 재동의(agreeTermsReconsent)는 pendingConsents 의 PRIVACY_POLICY 도 보내는데 화면은 이용약관 상자 · 체크만 보인다.
+    // 지금은 처리방침을 개정하지 않아 pending 에 들어올 수 없다. 개정하면 이 테스트가 화면 수정을 강제한다
+    expect(
+      LEGAL_VERSIONS.PRIVACY_POLICY,
+      '개인정보 처리방침을 개정했다: 재동의 화면이 처리방침 동의를 보이지 않은 채 보낸다 — 화면에 처리방침 상자 · 체크를 더한 뒤 기대값을 바꾼다',
+    ).toBe('2026-10-01')
   })
 })
 

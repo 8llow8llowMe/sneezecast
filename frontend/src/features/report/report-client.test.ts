@@ -48,7 +48,7 @@ function okReport(result: Awaited<ReturnType<typeof submitReport>>): SubmittedRe
 /** 동의한 회원 목 세션을 만든다 (이메일 로그인 → 건강정보 동의) */
 async function signInWithConsent() {
   await loginWithEmail('reporter@example.com', 'password1!', 'mock')
-  await agreeHealthConsent(HEALTH_CONSENT)
+  await agreeHealthConsent(HEALTH_CONSENT, 'mock')
 }
 
 describe('report-client (목) — 이번 주에 보낸 보고', () => {
@@ -137,7 +137,7 @@ describe('report-client (목) — 이번 주에 보낸 보고', () => {
     await signInWithConsent()
     await submitReport({ kind: 'none' }, null, 'mock')
 
-    await withdrawHealthConsent()
+    await withdrawHealthConsent('mock')
 
     expect(getSubmittedReport()).toBeNull()
   })
@@ -147,7 +147,7 @@ describe('report-client (목) — 이번 주에 보낸 보고', () => {
     const sent = await submitReport({ kind: 'none' }, null, 'mock')
 
     // 이미 동의한 회원이 다시 동의를 보내도 세션 상태는 member 그대로다
-    await agreeHealthConsent(HEALTH_CONSENT)
+    await agreeHealthConsent(HEALTH_CONSENT, 'mock')
 
     expect(getSubmittedReport()).toBe(okReport(sent))
   })
