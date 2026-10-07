@@ -76,7 +76,7 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
   - 로그인 성공 → 응답(`AuthToken`)을 그대로 `setSession`. 가입 응답에는 토큰이 없어 S02-3 이 가입 → 로그인 → 동네 저장 순서로 잇고 비밀번호는 로그인 뒤 지운다. 가입 본문의 동의 값은 화면의 동의 목록(`legal.ts` `Consent`)에서 만들고 문서 버전은 보내지 않는다(서버의 `legal.*-version`). `sensitiveHealthInfoAgreed` 는 S02-4 에서 따로 받으므로 false 다.
   - **로그아웃 실패 정책**: 성공 · 토큰이 이미 무효(`login-required` · `reissue` · `relogin` — API 계층의 재발급이 재로그인으로 끝나 세션을 이미 비운 경우 포함)면 `clearSession('logout')`. 일시 장애 · 분류 밖 오류면 거부하고 세션을 그대로 둔다 — 서버의 refresh 세션이 살아 있는데 화면만 로그아웃된 것처럼 보이지 않게 한다. 화면(내 정보 · 재동의)은 로그아웃 실패 안내를 띄운다.
   - 세션이 사라진 갈래는 세션 저장소가 아직 회원일 때만 비운다(재발급이 재로그인으로 끝나 `clearSession('expired')` 로 이미 비웠으면 로그아웃을 다시 방송하지 않는다). 성공 · 세션 사라짐 모두 만료 진행 표시(`clearSessionExpiring`)를 꺼 화면의 홈 이동이 이기고 만료 토스트가 남지 않게 한다.
-  - 동의(건강정보 · 재동의) · 탈퇴 함수는 아직 출처와 무관하게 목이다. 내 정보 · 내 동네는 아래 "회원" 의 "프론트 연동 (#164)", 비밀번호 재설정 · 로그인한 기기는 바로 아래 "프론트 연동 (#166)", 카카오는 아래 "프론트 연동 (#167)" 이다.
+  - 탈퇴 함수(`withdrawMembership`)만 아직 출처와 무관하게 목이다(백엔드 #154, 프론트 #169). 건강정보 동의 · 철회 · 약관 재동의는 아래 "회원" 의 "프론트 연동 (#168)", 내 정보 · 내 동네는 아래 "회원" 의 "프론트 연동 (#164)", 비밀번호 재설정 · 로그인한 기기는 바로 아래 "프론트 연동 (#166)", 카카오는 아래 "프론트 연동 (#167)" 이다.
 - **프론트 연동 (#166)**: `sendPasswordResetCode` · `verifyPasswordResetCode` · `resetPassword` · `listSessions` · `revokeSession` · `revokeOtherSessions` 도 출처를 마지막 인자로 받는다. 부르는 화면(재설정 세 단계 · 로그인한 기기)이 `useDataSource()` 로 넘긴다.
   - 재설정 세 요청은 `auth: false`, 기기 세 요청은 access 를 싣는다.
   - 재설정 코드 받기 · 확인은 가입 인증과 같은 갈래다: send-code `AUTH_001` · `002` → `limit`, verify-code `AUTH_003` → `wrong`(남은 시도는 이메일별 실패 수로 채움) · `004` → `expired` · `005` · `010` → `locked`. **실패 수는 가입과 따로 센다**(서버 Redis 키도 따로). 성공 응답의 `resetToken` 은 화면 Provider 메모리에만 두고, 토큰이 없는 성공 응답은 거부한다.
