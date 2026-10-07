@@ -192,12 +192,12 @@ GET  /api/regions/{admCd}/weekly?week=     → { status: normal|slight|high|insu
                                                 groups: [{ key, trend, series: number[] }] }
 GET  /api/notices/{admCd}?week=            → 발행된 안내 | null (정정·철회 이력 포함)
 GET  /api/official/latest                  → 질병관리청 단계·기준 주·요약·원문 링크
-GET  /api/admin/candidates?week=           → 후보 목록 (운영자)
+GET  /api/admin/candidates?week=           → 후보 목록 (운영자) — 아래 "운영자 검토 (#219)"
 POST /api/admin/candidates/{id}/publish|hold|correct|withdraw
 ```
 
 - `insufficient` 응답에는 `symptomRate` · `baselineRate` 가 없다. 프론트는 이 값이 없을 때 수치·상태색을 그리지 않는다.
-- 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 홈 주간 집계 · 공식 정보 · 운영자는 목 데이터다(보고는 위 "주간 보고" 로 확정).
+- 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 홈 주간 집계 · 공식 정보는 목 데이터다(보고는 위 "주간 보고" 로 확정). 운영자 검토는 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)").
 
 ### 지난 보고 내역 (#194, 프론트 초안)
 
@@ -247,3 +247,23 @@ PATCH /api/v1/members/me/notification-settings  { weeklyReport?, regionNotice? }
 - 백엔드와 정할 것: `regionNotice` 가 내 동네만인지 관심 동네(위 "관심 동네")도 포함하는지(기획 확인 후보 — SCREENS.md "홈 화면 추가 · 알림 미지원"), 탈퇴 · 동의 철회 때 설정을 지울지, 검증 오류 번호(위 `MEMBER_1xx`).
 - **2단계 — 푸시 구독(이번 범위 아님)**: 사용자가 스위치를 켤 때 서비스 워커 등록 → 알림 권한 요청 → `pushManager.subscribe` 를 거쳐 구독을 등록한다. 가정한 모양은 `POST /api/v1/members/me/push-subscriptions { endpoint, keys: { p256dh, auth } }`(기기마다 하나) · `DELETE /api/v1/members/me/push-subscriptions?endpoint=`. 서버는 **설정이 켜졌고 구독이 있는 회원에게만** 보낸다. 구독이 없거나 받을 수 없는 기기(iOS 홈 화면 추가 전 등)는 서비스 안에서 같은 내용을 본다(홈의 동네 안내 · "알림 대신 여기서 알려드려요"). VAPID 공개 키 전달 · 만료된 구독(410) 정리 · 로그아웃한 기기의 구독 삭제를 함께 정한다.
 - 프론트 함수: `features/notification/notification-settings-client.ts` 의 `getNotificationSettings` · `updateNotificationSetting(topic, enabled, source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 스위치를 꺼진 모양으로 두고 "알림은 아직 준비하고 있어요")이다 — 켠 모양을 보이면 알림이 오는 줄 알고, 저장하지 않은 설정이 사라진다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 설정이고 목 세션이 비회원이 되면 지운다.
+
+### 운영자 검토 (#219, 프론트 초안)
+
+운영자 검토 대기 · 후보 상세(`/admin/review`, A01–A02)가 가정한 모양이다. **백엔드는 #214 에서 만든다.** 화면 동작 · 시안과 다른 점은 [SCREENS.md](design/SCREENS.md) "운영자 검토 대기 · 후보 상세" 다. 운영자(`OPERATOR` · `ADMIN`)만 부른다 — 서버가 역할을 확인해 그 밖이면 403 이다(화면 가드는 길 안내일 뿐이다).
+
+```text
+GET  /api/v1/admin/review-candidates?week=                      → { isoWeek, candidates: ReviewCandidate[] }   (이번 주 · 발행한 후보는 뺌)
+PUT  /api/v1/admin/review-candidates/{id}/draft   { draft, version } → ReviewCandidate                       (수정 저장 — EDITED)
+POST /api/v1/admin/review-candidates/{id}/hold    { version }        → ReviewCandidate                       (보류)
+POST /api/v1/admin/review-candidates/{id}/publish { draft, version } → 204                                   (승인하고 발행 — APPROVED → PUBLISHED)
+```
+
+- `ReviewCandidate` = `{ id, kind: baseline|surge|repeat, districtCode, districtName, isoWeek, participants, symptomRate, leadingSymptom: respiratory|gastrointestinal, state: waiting|reviewing|held, draft, version, guides: string[] }` + **1단계에 없는 선택 값** `baselineRate` · `baselineDeltaPp` · `recentRates` · `burstCount` · `sameDeviceRepeatCount` · `newParticipantRate` · `reviewStartedAt`(`features/admin/types.ts`). 선택 값은 **없으면 빼고 보낸다**(0 · null 로 채우지 않는다) — 화면이 그 칸 · 행을 숨긴다. 백엔드 1단계 근거: entity-design §2-2(검토 후보 = 참여 급증 · `revised_report_count` 비율, 기준선 · `review_signal` 은 2단계).
+- 후보는 표본 100명 이상(`자료 부족` 이 아닌 마감된 집계)에서만 나온다 — advisory 초안 전제(§2-3)와 같다.
+- `version` 은 advisory `@Version` 이다. 다르면 **409** 이고, 화면은 오류 봉투에 후보가 없으니 목록을 다시 읽어 그 후보를 바꿔 그린다(목은 충돌 응답에 최신 후보를 싣는다 — 연동 때 `GET` 을 다시 부르는 쪽으로 바꾼다). 그사이 발행돼 목록에 없으면 목록에서 뺀다.
+- 상태 전이(§2-5): 수정 저장 → EDITED, 발행 → APPROVED → PUBLISHED(백엔드가 한 요청에서 둘을 할지, 화면이 두 번 부를지 정한다). 발행 요청은 화면에 보이는 초안을 함께 보낸다 — 저장하지 않은 수정도 승인 대상이다. **승인 뒤 수정하면 다시 승인**(§2-5)이라 발행은 늘 본문을 싣는다.
+- **보류는 §2-5 에 없다.** 안내가 아니라 후보의 처리 결과(이번 주 이 후보로는 발행하지 않음)이고 후보는 목록에 남는다. 1단계 후보는 조회 때 계산하므로(§2-2) **후보 처리 기록(보류 · 대기 · 검토 중)을 둘 곳이 필요하다** — `review_signal`(2단계)을 당겨 올지, advisory 에 상태를 더할지 정한다. 보류 이력(누가 · 언제)도 남겨야 한다(루트 CLAUDE.md "승인 · 수정 · 발행 이력").
+- 정할 것: advisory 의 `title`(필수)을 화면이 받을지(시안 초안에 제목이 없다), 초안 최대 길이(화면은 500자 — `DRAFT_MAX_LENGTH`), 발행 전 확인 세 항목을 서버에 남길지, 검토 시작 시각의 출처(advisory 생성 시각?), 다른 주 조회(`?week=` — 화면은 이번 주만), 검증 오류 번호.
+- AI 초안 생성(DRAFT → AI_DRAFTED)은 이 화면이 부르지 않는다(범위 밖). 목 초안은 이미 있는 것으로 둔다.
+- 프론트 함수: `features/admin/admin-review-client.ts` 의 `listReviewCandidates` · `saveCandidateDraft` · `holdCandidate` · `publishCandidate(…, source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "운영자 검토는 아직 준비하고 있어요")이다 — 목 후보를 실제 집계로 알고 발행해도 시민에게 아무것도 나가지 않는다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다. 목 재현 `?mock-admin=empty|fail|conflict`.
