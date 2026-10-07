@@ -16,26 +16,10 @@
  * 목록 행 · 덧붙임은 한 줄에 한 문장이다.
  */
 
-export const INFO_PAGE_KINDS = ['privacy', 'data-sources', 'ai'] as const
+// 종류 · 주소는 문구 없는 `info-paths.ts` 에 둔다 — 경로만 쓰는 화면(로그인 · 내 정보 · 조건 가드)이 이 문구를 번들에 끌어오지 않게(#229)
+import type { InfoPageKind } from './info-paths'
 
-export type InfoPageKind = (typeof INFO_PAGE_KINDS)[number]
-
-/**
- * 안내 화면 주소. 내 정보(`/me`) 아래에 두지만 **회원 가드를 걸지 않는다** — 회원만 보는 화면은 화면마다 `useMemberGate` 를 건다.
- * 내 정보 레이아웃의 조건 가드(`MeRequiredStepsGate` — 재동의 · 동네 다시 고르기)도 이 경로에서는 보내지 않는다(`isInfoPath`).
- * 돌아갈 곳 허용 목록(`NEXT_PATHS` · `BROWSE_NEXT_PATHS`)에는 넣지 않는다 — 로그인으로 보냈다 돌려보낼 일이 없고,
- * 머리줄 동네 이름은 동네 안내처럼 홈을 돌아갈 곳으로 연다(안내 내용은 동네와 무관하다).
- */
-export const INFO_PATHS: Record<InfoPageKind, string> = {
-  privacy: '/me/privacy',
-  'data-sources': '/me/data-sources',
-  ai: '/me/ai',
-}
-
-/** 안내 화면 경로인지. 쿼리 없는 경로(`usePathname`)로 본다 */
-export function isInfoPath(pathname: string | null): boolean {
-  return pathname !== null && Object.values(INFO_PATHS).includes(pathname)
-}
+export { INFO_PAGE_KINDS, INFO_PATHS, type InfoPageKind, isInfoPath } from './info-paths'
 
 export type InfoSection = {
   title: string

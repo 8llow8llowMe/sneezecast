@@ -17,7 +17,7 @@ import { HOME_PATH, LOGIN_PATH } from '@/features/onboarding/paths'
 import { isSessionExpiring } from '@/lib/session-expiry'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
-import { isInfoPath } from './info-pages'
+import { isInfoPath } from './info-paths'
 
 /**
  * 회원만 쓰는 화면(내 정보 · 로그인한 기기 · 비밀번호 · 내 동네 · 닉네임 · 최근 보고 내역 · 관심 동네 · 알림 설정)의 가드. 서비스 안내 화면(`info-screen.tsx`)은 비회원도 봐서 걸지 않는다. 회원이면 회원 상태를, 아니면(또는 아직 모르면) null 을 돌려준다.

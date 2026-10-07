@@ -17,8 +17,15 @@ import {
   SIGNUP_EMAIL_PATH,
   SIGNUP_EMAIL_VERIFICATION_EXPIRED_PATH,
 } from '@/features/onboarding/paths'
+import {
+  lazyComponent,
+  preloadWhenIdle,
+  SHEET_LOAD_FAILED_MESSAGE,
+  useLazyComponent,
+} from '@/lib/lazy-component'
 import { useActiveRef } from '@/lib/use-active-ref'
 import { useDataSource } from '@/lib/use-data-source'
+import { useModalParam } from '@/lib/use-modal-param'
 
 import {
   loginWithEmail,
@@ -41,6 +48,18 @@ type Failure = 'signup' | 'email-taken' | 'login' | 'region' | 'region-invalid' 
  * 바꾸면 안내도 함께 고친다(`info-screen.test.tsx` 가 맞춰 본다)
  */
 export const PRIVACY_CONSENT_DETAIL = '이메일, 닉네임, 행정동'
+
+/**
+ * 서비스 안내 시트를 여는 쿼리(`/setup/terms?info=privacy`, #229). 열림을 주소에 둔다(docs/conventions.md "화면 위에 뜨는 시트").
+ * 이 화면만 쓰므로 여기에 둔다 — 시트 모듈(`features/me/info-sheet.tsx`)은 처음 열 때 받는다
+ */
+const INFO_PARAM = 'info'
+const PRIVACY_INFO = 'privacy'
+
+/** 서비스 안내 시트(지연 로드, #184 — `src/lib/lazy-component.ts`). 첫 그림에 보이지 않아 초기 스크립트에 넣지 않는다 */
+const infoSheet = lazyComponent(() =>
+  import('@/features/me/info-sheet').then((mod) => mod.InfoSheet),
+)
 
 /**
  * S02-3 가입 동의 (3 / 4). 여기서 회원 가입 요청을 보내고, 이메일 가입이면 로그인한 뒤 내 동네를 저장하고
@@ -67,6 +86,9 @@ export const PRIVACY_CONSENT_DETAIL = '이메일, 닉네임, 행정동'
  * - 증상 보고 동의로는 기록을 바꿔 간다 — 뒤로 가기로 이 화면에 돌아와 다시 가입하지 않게 한다
  * - 값이 없으면(바로 들어옴 · 새로고침) 앞 단계로 보낸다: 동네 → 성인 확인 → 가입 종류(모르면 로그인 방법 선택) →
  *   이메일 가입의 인증 · 비밀번호(없으면 이메일 단계). 이미 가입을 마쳤으면 다음 단계로 보낸다
+ * - `개인정보 수집·이용` 의 `보기` 는 `모으는 정보와 보관 기간` 안내를 이 화면 위 시트(`?info=privacy`)로 연다(#229). 안내 화면
+ *   (`/me/privacy`)으로 옮겨 가면 첫 진입 Provider 가 내려가 가입 진행이 사라지기 때문이다(`features/me/info-sheet.tsx`).
+ *   이용약관 `보기` 는 본문이 없어 "준비하고 있어요" 알림이다
  *
  * 시안: docs/design/auth/screens/ 의 Setup-3 (default · incomplete, + -T · -D)
  */
@@ -88,6 +110,13 @@ export function TermsScreen() {
   const [checks, setChecks] = useState<TermsChecks>(NO_CHECKS)
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<Failure>(null)
+  const info = useModalParam(INFO_PARAM)
+  const InfoSheet = useLazyComponent(infoSheet, info.value === PRIVACY_INFO, () => {
+    info.close()
+    show({ message: SHEET_LOAD_FAILED_MESSAGE })
+  })
+  // 하이드레이션 뒤 유휴 시간에 미리 받는다. 대개 누르기 전에 받아 두어 바로 그린다
+  useEffect(() => preloadWhenIdle([infoSheet]), [])
 
   const redirect = !district
     ? SETUP_REGION_PATH
@@ -112,6 +141,16 @@ export function TermsScreen() {
 
   const blocked = !requiredAgreed(checks) || pending
   const notReady = () => show({ message: LEGAL_TEXT_NOT_READY })
+
+  /**
+   * 받는 동안에도 눌린다. 누른 순간 주소에 시트 쿼리가 이미 있으면 다시 쌓지 않는다(같은 기록이 두 번 쌓이지 않게).
+   * 가입을 보내는 중에도 열지 않는다 — 시트 쿼리를 쌓은 채 증상 보고 동의로 기록을 바꿔 가면 뒤로 가기에 가입 동의가 남는다
+   */
+  function openPrivacyInfo() {
+    if (pending) return
+    if (new URLSearchParams(window.location.search).get(INFO_PARAM) === PRIVACY_INFO) return
+    info.open(PRIVACY_INFO)
+  }
 
   function change(patch: Partial<TermsChecks>) {
     const next = { ...checks, ...patch }
@@ -275,7 +314,7 @@ export function TermsScreen() {
             detail={PRIVACY_CONSENT_DETAIL}
             checked={checks.privacy}
             onChange={(privacy) => change({ privacy })}
-            onView={notReady}
+            onView={openPrivacyInfo}
           />
           <ConsentRow
             tag="optional"
@@ -320,6 +359,10 @@ export function TermsScreen() {
         onAction={dismiss}
         className="fixed inset-x-0 bottom-30 z-10 mx-auto max-w-115 px-page-mobile"
       />
+
+      {InfoSheet && (
+        <InfoSheet kind={PRIVACY_INFO} open={info.value === PRIVACY_INFO} onClose={info.close} />
+      )}
     </OnboardingLayout>
   )
 }

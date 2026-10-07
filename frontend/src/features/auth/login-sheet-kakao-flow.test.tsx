@@ -23,6 +23,7 @@ const location = vi.hoisted(() => ({ pathname: '/' }))
 vi.mock('next/navigation', () => ({
   useRouter: () => router,
   usePathname: () => location.pathname,
+  useSearchParams: () => new URLSearchParams(),
 }))
 
 vi.mock('./auth-client', async (importOriginal) => {
