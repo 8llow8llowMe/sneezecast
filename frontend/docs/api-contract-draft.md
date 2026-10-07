@@ -192,12 +192,13 @@ GET  /api/regions/{admCd}/weekly?week=     → { status: normal|slight|high|insu
                                                 groups: [{ key, trend, series: number[] }] }
 GET  /api/notices/{admCd}?week=            → 발행된 안내 | null (정정·철회 이력 포함)
 GET  /api/official/latest                  → 질병관리청 단계·기준 주·요약·원문 링크
-GET  /api/admin/candidates?week=           → 후보 목록 (운영자) — 아래 "운영자 검토 (#219)"
-POST /api/admin/candidates/{id}/publish|hold|correct|withdraw
+GET  /api/v1/admin/review-candidates?week=  → 후보 목록 (운영자) — 아래 "운영자 검토 (#219)"
+GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — 아래 "발행 이력 (#220)"
+(운영자 처리 경로 · 동사는 아래 "운영자 검토 (#219)" · "발행 이력 · 정정 · 철회 (#220)" 가 정본이다)
 ```
 
 - `insufficient` 응답에는 `symptomRate` · `baselineRate` 가 없다. 프론트는 이 값이 없을 때 수치·상태색을 그리지 않는다.
-- 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 홈 주간 집계 · 공식 정보는 목 데이터다(보고는 위 "주간 보고" 로 확정). 운영자 검토는 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)").
+- 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 홈 주간 집계 · 공식 정보는 목 데이터다(보고는 위 "주간 보고" 로 확정). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
 
 ### 지난 보고 내역 (#194, 프론트 초안)
 
@@ -267,3 +268,23 @@ POST /api/v1/admin/review-candidates/{id}/publish { draft, version } → 204    
 - 정할 것: advisory 의 `title`(필수)을 화면이 받을지(시안 초안에 제목이 없다), 초안 최대 길이(화면은 500자 — `DRAFT_MAX_LENGTH`), 발행 전 확인 세 항목을 서버에 남길지, 검토 시작 시각의 출처(advisory 생성 시각?), 다른 주 조회(`?week=` — 화면은 이번 주만), 검증 오류 번호.
 - AI 초안 생성(DRAFT → AI_DRAFTED)은 이 화면이 부르지 않는다(범위 밖). 목 초안은 이미 있는 것으로 둔다.
 - 프론트 함수: `features/admin/admin-review-client.ts` 의 `listReviewCandidates` · `saveCandidateDraft` · `holdCandidate` · `publishCandidate(…, source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "운영자 검토는 아직 준비하고 있어요")이다 — 목 후보를 실제 집계로 알고 발행해도 시민에게 아무것도 나가지 않는다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다. 목 재현 `?mock-admin=empty|fail|conflict`.
+
+### 발행 이력 · 정정 · 철회 (#220, 프론트 초안)
+
+운영자 발행 이력(`/admin/history`, A03)이 가정한 모양이다. **백엔드는 #214 · #215 에서 만든다.** 화면 동작 · 시안과 다른 점은 [SCREENS.md](design/SCREENS.md) "운영자 발행 이력 · 정정 · 철회" 다. 운영자(`OPERATOR` · `ADMIN`)만 부른다.
+
+```text
+GET  /api/v1/admin/advisories/history                                  → { entries: HistoryEntry[] }   (최근 처리한 것부터)
+POST /api/v1/admin/advisories/{id}/correct  { body, reason, version }   → { id }                        (정정 발행 — 새 안내 id)
+POST /api/v1/admin/advisories/{id}/retract  { reason, version }         → 204                           (철회 — PUBLISHED → RETRACTED)
+```
+
+- `HistoryEntry` = `{ id, kind: baseline|surge|repeat, districtCode, districtName, isoWeek, participants, symptomRate, outcome: published|held|corrected|retracted, processedAt, edited, body, version, timeline: [{ step, at, note? }], correction?: { previousId, correctedOn, reason }, retraction?: { retractedOn, reason } }` + **1단계에 없는 선택 값** `operatorName` · `reviewMinutes`(`features/admin/types.ts`). 선택 값 · `note` 는 **없으면 빼고 보낸다** — 화면이 그 열 · 칸 · 문구를 숨긴다.
+  - 행은 안내(advisory) 하나 또는 보류한 후보 하나다. `timeline` 은 advisory_history(§2-4)의 전이를 오래된 것부터 옮긴 것이다 — `step`: `registered`(생성) · `ai-drafted`(AI_DRAFTED) · `edited`(EDITED) · `published`(PUBLISHED, 승인은 묶음) · `held`(보류) · `corrected`(정정으로 내려감) · `correction-published`(정정한 새 안내의 발행) · `retracted`(RETRACTED), `at` = `created_at`, `note` 는 정정 · 철회의 `memo` 만 백엔드에서 나온다.
+  - `edited` 는 PUBLISHED 전에 EDITED 를 거쳤는지다(요약의 수정 후 발행 비율 — 화면이 목록에서 계산한다). `correctedOn` · `retractedOn` 은 한국 날짜 `YYYY-MM-DD`(동네 안내 `NoticeCorrection` 과 같은 모양)다.
+- **정정 발행은 §2-5 에 없다**(PUBLISHED 본문은 고치지 않는다). 화면은 **이전 안내 철회(RETRACTED, `memo` = 사유) + 새 안내 발행(같은 동네 · 주 · 인용값, 고친 본문) + 둘을 잇는 값**(예: advisory `corrects_advisory_id`)을 한 요청으로 가정한다. 잇는 값이 있어야 ① 이력에서 이전 안내를 `철회` 가 아니라 `정정됨` 으로 보이고 ② 동네 안내(`GET /api/notices/{admCd}?week=`)가 지금 안내에서 이전 안내로 따라가 정정 이력(`corrections` — 정정일 · 사유, 최근 것부터)을 만든다. 새 안내는 운영자가 고친 본문이라 AI 초안 · 승인 단계를 어떻게 남길지(바로 PUBLISHED 로 만들지) 정한다.
+- 정정 · 철회는 발행 중(PUBLISHED)인 안내에만 된다. 정정됨 · 철회(끝 상태)에 보내거나 `version` 이 다르면 **409** 이고, 화면은 이력을 다시 읽어 바꿔 그린다(목은 충돌 응답에 이력을 싣는다 — 연동 때 `GET` 을 다시 부르는 쪽으로 바꾼다).
+- 검증: `reason` 필수 · 500자(`memo` VARCHAR(500)), `body` 필수 · 500자(검토 대기 `DRAFT_MAX_LENGTH` 와 같음). 검증 오류 번호는 백엔드가 정한다.
+- 정할 것 — **숫자를 바로잡는 정정의 의미**: 인용값(`cited_*`)은 초안 생성 때 마감 집계에서 복사해 고정되고(§2-3) 마감 집계는 바뀌지 않는다. 그래서 ① 정정한 새 안내의 인용값을 이전 안내에서 그대로 옮길지(목은 그렇게 한다), 정정 시점의 집계에서 다시 복사할지(마감 집계가 다시 계산될 수 있는지와 함께), ② 운영자가 본문의 숫자를 고치면 본문과 인용값이 어긋나는 문제를 어떻게 막을지(본문 숫자를 인용값에서만 만들지, 검증할지) 정한다. 화면은 지금 본문을 바꾸지 않고 사유만 남기는 정정도 받는다.
+- 정할 것: 담당 표시 이름의 출처(`operator_id` 뿐), 검토 시작 시각(검토 시간 · 평균), 보류 기록을 둘 곳(검토 대기와 같음), 이력 범위(시안 `최근 4주`) · 쪽 나누기, 정정한 새 안내의 `title`.
+- 프론트 함수: `features/admin/admin-history-client.ts` 의 `listHistory` · `correctAdvisory` · `retractAdvisory(…, source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "발행 이력은 아직 준비하고 있어요")이다(검토 대기와 같은 예외). 목은 모듈 메모리 이력이고 검토 대기 목의 보류 · 발행이 더해진다(`recordReviewOutcome`). 목 세션이 비회원이 되면 지운다. 목 재현 `?mock-admin=empty|fail|conflict`.
