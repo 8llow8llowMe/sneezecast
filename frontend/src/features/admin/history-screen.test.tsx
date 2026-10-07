@@ -231,7 +231,7 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
     expect(steps().at(-1)).toBe('발행 철회 · 11월 20일 14:08공식 자료와 달랐어요.')
     expect(document.activeElement).toBe(screen.getAllByRole('heading', { level: 2 })[0])
     expect(screen.getByRole('link', { name: '사용자 화면에서 보기' }).getAttribute('href')).toBe(
-      '/notice/99990101/2025-W46?mock=none',
+      '/notice/99990101/2025-W46?mock=retracted',
     )
   })
 

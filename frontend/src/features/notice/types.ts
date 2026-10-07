@@ -10,10 +10,22 @@ import type { MeasuredStatus } from '@/lib/status'
  */
 export type RegionNotice = RegionNoticeCommon & RegionNoticeBody
 
-/** 안내와 수치. 안내가 있으면 수치가 있는 주다 */
+/**
+ * 안내와 수치. 안내가 있으면 수치가 있는 주다.
+ *
+ * **철회된 안내는 발행된 안내(`notice`)가 아니다** — 안내가 없는 갈래에 철회 표시(`retraction`)만 둔다(#225). 철회된 안내의
+ * 제목 · 할 일 · 근거 · 인용 수치는 타입에 아예 없어, 화면이 내린 안내를 다시 퍼뜨리거나 `data.notice` 만 보는 곳이 철회된 안내를
+ * 발행 중인 안내로 그릴 수 없다. 안내가 없는 갈래의 `stats` 는 그 주 집계(시민 자가보고)이고 철회된 안내가 인용한 값이 아니다 —
+ * 그래서 `자료 부족` 일 수도 있다(백엔드와 정할 것 — docs/api-contract-draft.md "동네 안내").
+ */
 export type RegionNoticeBody =
-  | { notice: PublishedRegionNotice; stats: MeasuredNoticeStats }
-  | { notice: null; stats: MeasuredNoticeStats | InsufficientNoticeStats }
+  | { notice: PublishedRegionNotice; retraction: null; stats: MeasuredNoticeStats }
+  | {
+      notice: null
+      /** 이 동네 · 주의 안내를 운영자가 철회했으면 철회 표시, 처음부터 안내가 없었으면 null 이다 */
+      retraction: NoticeRetraction | null
+      stats: MeasuredNoticeStats | InsufficientNoticeStats
+    }
 
 type RegionNoticeCommon = {
   /** 행정동 코드 (SGIS 8자리) */
@@ -47,6 +59,18 @@ export type NoticeCorrection = {
   correctedOn: string
   /** 무엇을 왜 바로잡았는지. 예: "중복 보고를 제외해 참여자 수를 131명에서 128명으로 바로잡았어요. 안내 내용은 같아요." */
   reason: string
+}
+
+/**
+ * 철회 표시. 운영자가 발행한 안내를 내렸다(백엔드 advisory PUBLISHED → RETRACTED, `retracted_at` — 끝 상태).
+ * 정정 표시(`NoticeCorrection`)와 같은 모양이고 사유만 선택 값이다 — 철회 사유(advisory_history `memo`)를 공개 응답에 내릴지는
+ * 백엔드 #215 에서 정한다. 없으면 화면이 사유 줄을 뺀다
+ */
+export type NoticeRetraction = {
+  /** 철회일 (`YYYY-MM-DD`, 한국 날짜) */
+  retractedOn: string
+  /** 왜 내렸는지. 예: "공식 자료와 달라 안내를 내렸어요." */
+  reason?: string
 }
 
 export type MeasuredNoticeStats = {

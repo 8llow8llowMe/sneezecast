@@ -3,7 +3,7 @@ import type { District } from '@/features/region/types'
 import type { MeasuredNoticeStats, PublishedRegionNotice, RegionNoticeBody } from './types'
 
 /**
- * 동네 안내 목 데이터. 값은 시안(Guide-published · Guide-none · Guide-corrected)의 예시 값이다.
+ * 동네 안내 목 데이터. 값은 시안(Guide-published · Guide-none · Guide-corrected)의 예시 값이다. 철회(`retracted`)는 시안이 없다(#225).
  *
  * **API 연동 전까지만 쓴다.** 연동 이슈(`GET /api/notices/{admCd}?week=`)에서 이 파일을 지우고 API 매핑으로 바꾼다.
  */
@@ -30,7 +30,13 @@ export const NOTICE_EXAMPLE_DISTRICTS: readonly District[] = [
 /** 시안의 기준 주 (11월 17일~23일 = 2025년 ISO 47주) */
 export const NOTICE_EXAMPLE_WEEK = '2025-W47'
 
-export const NOTICE_MOCK_KEYS = ['published', 'corrected', 'none', 'insufficient'] as const
+export const NOTICE_MOCK_KEYS = [
+  'published',
+  'corrected',
+  'retracted',
+  'none',
+  'insufficient',
+] as const
 export type NoticeMockKey = (typeof NOTICE_MOCK_KEYS)[number]
 
 /** 동네 · 주를 뺀 목 데이터. 주소의 동네 · 주에 붙여 쓴다 */
@@ -61,8 +67,9 @@ const HIGH_STATS: MeasuredNoticeStats = {
 }
 
 export const NOTICE_MOCKS: Record<NoticeMockKey, NoticeMock> = {
-  published: { notice: PUBLISHED_NOTICE, stats: HIGH_STATS },
+  published: { notice: PUBLISHED_NOTICE, retraction: null, stats: HIGH_STATS },
   corrected: {
+    retraction: null,
     notice: {
       ...PUBLISHED_NOTICE,
       corrections: [
@@ -75,9 +82,17 @@ export const NOTICE_MOCKS: Record<NoticeMockKey, NoticeMock> = {
     },
     stats: HIGH_STATS,
   },
+  // 발행 시안의 안내를 철회한 주. 집계는 그 주 집계라 발행 · 정정 시안과 같다(마감 집계는 다시 계산되지 않는다).
+  // 사유는 없다 — 철회 사유(운영자 메모)를 공개 응답에 내릴지는 백엔드 #215 에서 정한다. 사유가 있는 모양은 테스트가 그린다
+  retracted: {
+    notice: null,
+    retraction: { retractedOn: '2025-11-20' },
+    stats: HIGH_STATS,
+  },
   // Guide-none 의 수치 (참여 136명 · 증상 보고 11% · 지난 4주 평균 8%)
   none: {
     notice: null,
+    retraction: null,
     stats: {
       status: 'slight',
       participants: 136,
@@ -92,6 +107,7 @@ export const NOTICE_MOCKS: Record<NoticeMockKey, NoticeMock> = {
   // 시안에 없는 상태. 홈 목의 자료 부족(참여 64명)과 같은 값이다
   insufficient: {
     notice: null,
+    retraction: null,
     stats: { status: 'insufficient', participants: 64, publicThreshold: 100 },
   },
 }
