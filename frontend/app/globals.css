@@ -123,6 +123,10 @@
 @utility border-emphasis {
   border-width: var(--border-emphasis);
 }
+/* 위쪽만 1.5 — 운영자 검토의 기준선 점선(Admin, features/admin/candidate-detail.tsx) */
+@utility border-t-emphasis {
+  border-top-width: var(--border-emphasis);
+}
 @utility border-selected {
   border-width: var(--border-selected);
 }
