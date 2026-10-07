@@ -12,10 +12,11 @@ import { AdminGate } from './admin-gate'
 
 // 테스트에는 Next 라우터가 없다. 주소 · 경로는 이 값으로 흉내 낸다
 let search = ''
+let pathname = '/admin/review'
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(search),
-  usePathname: () => '/admin/review',
+  usePathname: () => pathname,
   useRouter: () => router,
 }))
 
@@ -31,6 +32,7 @@ const FORBIDDEN = '운영자만 볼 수 있는 화면이에요'
 
 beforeEach(() => {
   search = ''
+  pathname = '/admin/review'
   resetMockSession()
   router.replace.mockClear()
 })
@@ -46,6 +48,14 @@ describe('AdminGate 운영자 화면 가드 (목데이터)', () => {
     expect(router.replace).toHaveBeenCalledWith('/login?next=%2Fadmin%2Freview')
     expect(screen.queryByText('운영자 본문')).toBeNull()
     expect(screen.queryByText(FORBIDDEN)).toBeNull()
+  })
+
+  it('발행 이력(#220)의 비회원도 로그인 뒤 그 화면으로 돌아온다', () => {
+    pathname = '/admin/history'
+    search = 'mock-role=operator'
+    renderGate()
+    expect(router.replace).toHaveBeenCalledWith('/login?next=%2Fadmin%2Fhistory')
+    expect(screen.queryByText('운영자 본문')).toBeNull()
   })
 
   it('일반 회원(역할 덮어쓰기 없음 · user)은 보내지 않고 권한 없음을 알린다', () => {
