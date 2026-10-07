@@ -55,6 +55,12 @@ describe('getRegionNotice', () => {
     expect(notice?.stats.status).toBe('insufficient')
   })
 
+  it('운영자 목의 예시 동네(○○1동~○○5동)도 안다 — 발행 이력의 사용자 화면에서 보기', async () => {
+    const notice = await getRegionNotice('99990105', '2025-W46', 'mock', 'published')
+    expect(notice?.regionName).toBe('○○5동')
+    expect(notice?.notice).not.toBeNull()
+  })
+
   it('모르는 동네면 null 이다', async () => {
     await expect(getRegionNotice('00000000', '2025-W47', 'mock', 'published')).resolves.toBeNull()
   })
