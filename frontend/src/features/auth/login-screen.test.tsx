@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -324,6 +324,31 @@ describe('LoginScreen', () => {
     expect(screen.getByRole('link', { name: '이메일로 로그인' }).getAttribute('href')).toBe(
       '/login/email',
     )
+  })
+
+  describe('서비스 안내 링크 (#229)', () => {
+    const infoHrefs = () =>
+      within(screen.getByRole('navigation', { name: '서비스 안내' }))
+        .getAllByRole('link')
+        .map((link) => [link.textContent, link.getAttribute('href')])
+
+    it('버튼 아래에 서비스 안내 세 화면으로 가는 링크를 둔다', () => {
+      renderLogin()
+      expect(infoHrefs()).toEqual([
+        ['모으는 정보', '/me/privacy'],
+        ['데이터 출처', '/me/data-sources'],
+        ['AI 사용 방식', '/me/ai'],
+      ])
+    })
+
+    it('둘러보기 동네만 싣는다 — 돌아갈 곳(next · intent)은 안내 화면의 뒤로가 되돌려 이 주소로 오며 그대로다', () => {
+      renderLogin(null, EMPTY_SIGNUP, { next: '/', region: '11680640', intent: 'report' })
+      expect(infoHrefs()).toEqual([
+        ['모으는 정보', '/me/privacy?region=11680640'],
+        ['데이터 출처', '/me/data-sources?region=11680640'],
+        ['AI 사용 방식', '/me/ai?region=11680640'],
+      ])
+    })
   })
 
   describe('카카오 · 이메일 가입으로 떠날 때 돌아갈 곳을 둔다 (#140)', () => {

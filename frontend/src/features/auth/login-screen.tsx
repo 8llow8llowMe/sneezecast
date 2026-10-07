@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { Fragment, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
@@ -8,6 +8,8 @@ import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
 import { KakaoButton } from '@/components/kakao-button'
 import { ToastRegion, useToast } from '@/components/toast'
+import { INFO_PATHS, type InfoPageKind } from '@/features/me/info-paths'
+import { regionSearch } from '@/features/me/me-paths'
 import { useOnboarding } from '@/features/onboarding/onboarding-context'
 import { OnboardingLayout } from '@/features/onboarding/onboarding-layout'
 import {
@@ -16,6 +18,7 @@ import {
   SIGNUP_EMAIL_PATH,
   START_PATH,
 } from '@/features/onboarding/paths'
+import { navHref } from '@/lib/nav'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
 import type { KakaoFailReason, LoginNotice } from './login-notice'
@@ -38,11 +41,21 @@ const KAKAO_FAIL_TEXT: Readonly<Record<KakaoFailReason | 'default', string>> = {
 }
 
 /**
+ * 맨 아래 서비스 안내 링크(#229, 시안 없음). 가입을 고민하는 사람이 무엇을 모으고 얼마나 보관하는지 가입 전에 본다.
+ * 안내 화면끼리는 서로 잇지 않아 셋을 모두 둔다. 한 줄에 들어가게 첫 화면 이름(`모으는 정보와 보관 기간`)은 줄였다
+ */
+const INFO_LINKS: ReadonlyArray<{ kind: InfoPageKind; label: string }> = [
+  { kind: 'privacy', label: '모으는 정보' },
+  { kind: 'data-sources', label: '데이터 출처' },
+  { kind: 'ai', label: 'AI 사용 방식' },
+]
+
+/**
  * S13-1 로그인 방법 고르기. 단계 표시는 없다.
  *
  * | 상태 | 주소 | 보이는 것 |
  * | --- | --- | --- |
- * | 기본 | `/login` | 카카오로 계속하기 · 이메일로 가입하기 · 이메일로 로그인 |
+ * | 기본 | `/login` | 카카오로 계속하기 · 이메일로 가입하기 · 이메일로 로그인 · 서비스 안내 링크 |
  * | 카카오 실패 | `?error=kakao-fail`(+ `&kakao=<사유>`) | 빨강 상자(사유별 문장) + 기본 버튼 |
  * | 로그인 만료 | `?reason=expired` | 기본 + "다시 로그인해 주세요" 토스트 |
  *
@@ -63,6 +76,12 @@ const KAKAO_FAIL_TEXT: Readonly<Record<KakaoFailReason | 'default', string>> = {
  * 카카오로 계속하기 · 이메일로 가입하기는 떠나기 전에 돌아갈 곳을 둔다(`login-return-store.ts`, #140) — 카카오 로그인 · 계정 연결 ·
  * 가입 마무리(S02-4)를 마치면 그곳으로 간다. 돌아갈 곳이 없으면 앞서 둔 값을 지운다. 이메일 가입의 뒤로는 기록을 되돌려 이 주소(쿼리 포함)로 온다.
  * 로그인 만료(`?reason=expired`)도 만료된 화면(허용 목록 안이면)을 `?next=` 로 싣고 온다(#140).
+ *
+ * **서비스 안내 링크**(#229): 비회원이 들어올 앱 안 길이다. 버튼 아래 작은 글자 한 줄이라 로그인 · 가입의 위계를 해치지 않는다.
+ * 안내 화면(`/me/privacy` 등)으로 옮겨 가고 둘러보기 동네(`?region=`)만 싣는다 — 안내 화면은 돌아갈 곳(`next` · `intent`)을 받지 않고,
+ * 안내 화면의 뒤로가 기록을 되돌려 이 주소(쿼리 포함)로 오므로 돌아갈 곳은 그대로다. 안내 화면은 첫 진입 레이아웃 밖이라 Provider 가
+ * 내려가지만, 이 화면은 들어올 때 가입 초안 · 마무리 진행을 이미 비운다(`resetSignup`). 잃는 것은 이메일 칸 미리 채움과 앞 단계에서
+ * 돌아왔을 때 남은 동네 · 성인 확인뿐이고 가입을 다시 시작하면 다시 고른다. 진행이 있는 가입 동의(S02-3)는 같은 안내를 시트로 연다.
  *
  * 시안: docs/design/auth/screens/ 의 Login · Login-kakao-fail (+ -T · -D)
  */
@@ -144,6 +163,23 @@ export function LoginScreen({
             </Link>
           </p>
           <p className="text-center text-sub text-fg-sub">카카오에서는 이메일과 닉네임만 받아요.</p>
+          <nav aria-label="서비스 안내" className="flex flex-wrap items-center justify-center">
+            {INFO_LINKS.map(({ kind, label }, index) => (
+              <Fragment key={kind}>
+                {index > 0 && (
+                  <span aria-hidden="true" className="text-sub text-fg-sub">
+                    ·
+                  </span>
+                )}
+                <Link
+                  href={navHref(INFO_PATHS[kind], regionSearch(loginReturn.region))}
+                  className="flex min-h-touch min-w-touch items-center justify-center px-2 text-sub text-fg-sub underline underline-offset-2"
+                >
+                  {label}
+                </Link>
+              </Fragment>
+            ))}
+          </nav>
         </>
       }
     >

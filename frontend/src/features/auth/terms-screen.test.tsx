@@ -32,9 +32,11 @@ import { SignupEmailScreen } from './signup-email-screen'
 import { TermsScreen } from './terms-screen'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
+// 주소 쿼리는 jsdom 의 지금 주소를 읽는다(시트를 연 pushState 가 바로 보인다)
 vi.mock('next/navigation', () => ({
   useRouter: () => router,
   usePathname: () => '/setup/terms',
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }))
 
 vi.mock('./auth-client', async (importOriginal) => {
@@ -172,12 +174,76 @@ describe('TermsScreen', () => {
     expect(box(/개인정보 수집·이용/).checked).toBe(false)
   })
 
-  it('보기는 본문을 준비하고 있다고 알린다', async () => {
+  it('이용약관 보기는 본문을 준비하고 있다고 알린다 — 화면을 떠나지 않고 시트도 열지 않는다', async () => {
     const { user } = setup()
     await user.click(screen.getByRole('button', { name: '서비스 이용약관 보기' }))
     expect(
       screen.getAllByRole('status').some((r) => r.textContent === '약관 본문을 준비하고 있어요'),
     ).toBe(true)
+    expect(window.location.search).toBe('')
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
+  describe('개인정보 수집·이용 보기 — 서비스 안내 시트 (#229)', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+      window.history.replaceState(null, '', '/')
+    })
+
+    const privacyView = () => screen.getByRole('button', { name: '개인정보 수집·이용 보기' })
+    const infoDialog = () =>
+      screen.queryByRole<HTMLDialogElement>('dialog', { name: '모으는 정보와 보관 기간' })
+
+    it('모으는 정보와 보관 기간을 이 화면 위 시트로 열고, 닫아도 동의 체크 · 가입 진행이 그대로다', async () => {
+      const { user, show } = setup({ draft: EMAIL_DRAFT })
+      await user.click(box(/서비스 이용약관/))
+      await user.click(box(/개인정보 수집·이용/))
+
+      await user.click(privacyView())
+      // 안내 화면(/me/privacy)으로 옮겨 가지 않는다 — 첫 진입 Provider 밖이라 가입 진행이 사라진다
+      expect(router.push).not.toHaveBeenCalled()
+      expect(window.location.search).toBe('?info=privacy')
+
+      show(<TermsScreen />)
+      await waitFor(() => expect(infoDialog()?.open).toBe(true))
+      // 본문은 안내 화면과 같다 — 가입 동의 항목(PRIVACY_CONSENT_DETAIL)의 섹션이 있다
+      expect(screen.getByRole('heading', { name: '가입할 때 모으는 것' })).toBeDefined()
+
+      await user.click(screen.getByRole('button', { name: '확인' }))
+      // 연 만큼 기록을 되돌린다(휴대폰 뒤로 가기와 같다)
+      await waitFor(() => expect(window.location.search).toBe(''))
+      show(<TermsScreen />)
+      // 닫힌 dialog 는 접근성 트리에서 빠진다
+      expect(infoDialog()).toBeNull()
+
+      expect(box(/서비스 이용약관/).checked).toBe(true)
+      expect(box(/개인정보 수집·이용/).checked).toBe(true)
+      expect(isOff(submit())).toBe(false)
+      expect(state().draft).toEqual(EMAIL_DRAFT)
+      expect(router.replace).not.toHaveBeenCalled()
+    })
+
+    it('가입을 보내는 중에는 열지 않는다 — 증상 보고 동의로 바꿔 갈 때 기록에 가입 동의가 남지 않게', async () => {
+      vi.mocked(signup).mockReturnValue(new Promise(() => {}))
+      const pushState = vi.spyOn(window.history, 'pushState')
+      const { user } = setup()
+      await user.click(box('전체 동의'))
+      await user.click(submit())
+      expect(signup).toHaveBeenCalledOnce()
+
+      await user.click(privacyView())
+      expect(pushState).not.toHaveBeenCalled()
+      expect(window.location.search).toBe('')
+    })
+
+    it('주소에 시트 쿼리가 이미 있으면 다시 눌러도 기록을 한 번만 쌓는다', async () => {
+      const pushState = vi.spyOn(window.history, 'pushState')
+      const { user } = setup()
+      await user.click(privacyView())
+      await user.click(privacyView())
+      expect(pushState).toHaveBeenCalledTimes(1)
+      expect(pushState).toHaveBeenCalledWith({ sneezecastModalDepth: 1 }, '', '?info=privacy')
+    })
   })
 
   it('이메일 가입이면 가입 → 로그인 → 동네 저장 순서로 보내고, 로그인 뒤 비밀번호 · 인증을 지운다', async () => {

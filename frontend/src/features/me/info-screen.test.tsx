@@ -154,16 +154,20 @@ describe('InfoScreen 안내 화면 틀', () => {
     expect(router.push).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?.*intent=report/))
   })
 
-  it('앱 안에서 왔으면 어느 화면에서 왔든 기록을 되돌린다', async () => {
-    pathname = '/'
-    const { rerender } = render(withTrail(<div />))
-    pathname = INFO_PATHS.privacy
-    rerender(withTrail(<InfoScreen kind="privacy" regionName="○○동" />))
+  // 로그인 방법 고르기(S13-1)는 비회원이 들어오는 링크를 둔다(#229) — 되돌리면 그 주소(돌아갈 곳 쿼리 포함)로 간다
+  it.each(['/', '/login'])(
+    '앱 안에서 왔으면 어느 화면에서 왔든 기록을 되돌린다 (%s)',
+    async (from) => {
+      pathname = from
+      const { rerender } = render(withTrail(<div />))
+      pathname = INFO_PATHS.privacy
+      rerender(withTrail(<InfoScreen kind="privacy" regionName="○○동" />))
 
-    await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
-    expect(router.back).toHaveBeenCalledTimes(1)
-    expect(router.replace).not.toHaveBeenCalled()
-  })
+      await userEvent.setup().click(screen.getByRole('button', { name: '뒤로' }))
+      expect(router.back).toHaveBeenCalledTimes(1)
+      expect(router.replace).not.toHaveBeenCalled()
+    },
+  )
 })
 
 describe('INFO_PAGES 문구 (이미 보여 준 동의 문구와 어긋나지 않는다)', () => {

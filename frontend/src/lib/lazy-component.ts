@@ -17,6 +17,13 @@ export type LazyComponent<P> = {
   subscribe: (listener: () => void) => () => void
 }
 
+/**
+ * 지연 로드한 시트의 청크를 받지 못했을 때 알림 — 화면을 연 뒤 연결이 끊겼거나, 배포 뒤 오래 열어 둔 탭이라 청크 이름(해시)이 바뀌었다.
+ * `useLazyComponent` 의 `onError` 에서 시트 쿼리를 닫고 띄운다(홈 · 가입 동의)
+ */
+export const SHEET_LOAD_FAILED_MESSAGE =
+  '화면을 불러오지 못했어요. 연결을 확인하고 새로고침해 주세요.'
+
 /** 유휴 시간이 오지 않는 환경(`requestIdleCallback` 이 없는 Safari 등)에서 미리 받기까지 기다리는 시간 */
 export const IDLE_FALLBACK_DELAY_MS = 2000
 /** 유휴 시간이 끝내 오지 않아도(계속 바쁜 화면) 이 시간 안에는 미리 받는다 */

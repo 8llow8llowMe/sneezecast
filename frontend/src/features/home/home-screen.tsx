@@ -20,7 +20,7 @@ import { HOME_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
 import { REPORT_PARAM, REPORT_STEPS } from '@/features/report/types'
 import { useSubmittedReport } from '@/features/report/use-submitted-report'
-import { preloadWhenIdle, useLazyComponent } from '@/lib/lazy-component'
+import { preloadWhenIdle, SHEET_LOAD_FAILED_MESSAGE, useLazyComponent } from '@/lib/lazy-component'
 import { useModalParam } from '@/lib/use-modal-param'
 import { useOnline } from '@/lib/use-online'
 
@@ -47,9 +47,6 @@ import { StatusCard } from './status-card'
 import { SymptomTrends } from './symptom-trends'
 import type { HomeWeekly } from './types'
 import { EXPLAIN_PARAM, useExplainParam } from './use-explain-param'
-
-/** 지연 로드한 시트의 청크를 받지 못했을 때 알림 — 화면을 연 뒤 연결이 끊겼거나, 배포 뒤 오래 열어 둔 탭이라 청크 이름(해시)이 바뀌었다 */
-const SHEET_LOAD_FAILED_MESSAGE = '화면을 불러오지 못했어요. 연결을 확인하고 새로고침해 주세요.'
 
 /**
  * S03 홈. 폭에 따라 구성이 바뀐다 (시안 Home · Tablet · Desktop).

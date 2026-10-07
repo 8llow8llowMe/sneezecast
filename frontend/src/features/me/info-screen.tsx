@@ -11,7 +11,8 @@ import { navHref } from '@/lib/nav'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
 import { AccountPageLayout } from './account-page-layout'
-import { INFO_PAGES, type InfoPageKind, type InfoSection } from './info-pages'
+import { InfoBody } from './info-body'
+import { INFO_PAGES, type InfoPageKind } from './info-pages'
 import { ME_PATH, meSearch, notificationsHref, regionSearch, reportHrefFor } from './me-paths'
 import { useShownRegionName } from './member-region'
 
@@ -20,10 +21,10 @@ const GUEST_BACK = { text: '뒤로', label: '뒤로 가기' }
 
 /**
  * S10 서비스 안내 화면 (#193, 시안 없음): 모으는 정보와 보관 기간(`/me/privacy`) · 데이터 출처(`/me/data-sources`) ·
- * AI 사용 방식(`/me/ai`). 문구는 `info-pages.ts` 에 두고 이 화면은 틀만 맡는다.
+ * AI 사용 방식(`/me/ai`). 문구는 `info-pages.ts` 에 두고 이 화면은 틀만 맡는다(본문은 가입 동의 위 시트와 같이 쓰는 `info-body.tsx`).
  *
  * - **비회원도 본다.** 회원 가드(`useMemberGate`)를 걸지 않는다. 비회원이면 머리줄 알림(종)을 그리지 않고(내 정보와 같다, #123)
- *   보고 버튼은 보고하려던 로그인으로 간다(`reportHrefFor`)
+ *   보고 버튼은 보고하려던 로그인으로 간다(`reportHrefFor`). 비회원은 로그인 방법 고르기(S13-1) 아래 링크로 들어온다(#229)
  * - 틀은 계정 화면(`AccountPageLayout`)이고 아래 버튼은 없다. 본문은 판단 기준(S11 `explain-sheet.tsx`)처럼
  *   섹션 제목 + 1px 구분선 행 + 회색 덧붙임이다(카드 없음 — docs/design-guide.md "디자인 규칙")
  * - **뒤로**: 여러 화면에서 들어올 수 있는 화면이라 앞 화면 후보 없이 앱 안 어디서 왔든 되돌린다(공식 정보와 같다,
@@ -71,37 +72,7 @@ export function InfoScreen({
       onReportClick={() => router.push(reportHrefFor(auth, regionCode))}
       reportLabel={reportLabel}
     >
-      <div className="flex flex-col gap-7 pb-10">
-        <p className="text-body leading-[1.6] text-fg-sub">{page.lead}</p>
-        {page.sections.map((section) => (
-          <InfoSectionBlock key={section.title} section={section} />
-        ))}
-      </div>
+      <InfoBody page={page} className="pb-10" />
     </AccountPageLayout>
-  )
-}
-
-/** 섹션 제목 17 굵게(내 정보 섹션과 같다) → 1px 구분선 행 → 회색 덧붙임 */
-function InfoSectionBlock({ section }: { section: InfoSection }) {
-  return (
-    <section className="flex flex-col">
-      <h2 className="mb-1 text-section-title font-bold text-fg">{section.title}</h2>
-      <ul className="flex flex-col border-t border-divider">
-        {section.items.map((item) => (
-          <li key={item} className="border-b border-divider py-3 text-body leading-[1.6] text-fg">
-            {item}
-          </li>
-        ))}
-      </ul>
-      {section.notes && (
-        <div className="flex flex-col gap-1 pt-3">
-          {section.notes.map((note) => (
-            <p key={note} className="text-sub leading-[1.55] text-fg-sub">
-              {note}
-            </p>
-          ))}
-        </div>
-      )}
-    </section>
   )
 }

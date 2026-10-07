@@ -43,7 +43,7 @@ import {
   parseConfirm,
 } from './confirm'
 import { ConfirmDialog } from './confirm-dialog'
-import { INFO_PATHS } from './info-pages'
+import { INFO_PATHS } from './info-paths'
 import { CONSENT_WITHDRAWN_NOTICE, leaveHomeNotice } from './leave-notice'
 import {
   ME_DEVICES_PATH,
