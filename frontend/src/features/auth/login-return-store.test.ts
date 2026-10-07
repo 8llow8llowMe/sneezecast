@@ -12,6 +12,7 @@ import {
   saveLoginReturn,
   takeLoginReturn,
   withSavedLoginReturn,
+  withSavedRegion,
 } from './login-return-store'
 
 const NOW = 1_800_000_000_000
@@ -180,6 +181,34 @@ describe('login-return-store', () => {
       expect(peekLoginReturn()).toEqual(ME)
       clearLoginReturn()
       expect(withSavedLoginReturn('/login/email')).toBe('/login/email')
+    })
+
+    it('가입 동네 고르기로 갈 때는 둔 둘러보기 동네만 처음 선택으로 싣고 지우지 않는다 (#227)', () => {
+      saveLoginReturn(REPORT)
+      expect(withSavedRegion('/setup/region')).toBe('/setup/region?region=11680640')
+      expect(withSavedRegion('/setup/region?from=kakao')).toBe(
+        '/setup/region?from=kakao&region=11680640',
+      )
+      expect(peekLoginReturn()).toEqual(REPORT)
+    })
+
+    it('둘러보기 동네가 없거나 둔 값이 없으면 주소를 그대로 둔다 — 빈 선택으로 시작한다', () => {
+      saveLoginReturn(ME)
+      expect(withSavedRegion('/setup/region')).toBe('/setup/region')
+      clearLoginReturn()
+      expect(withSavedRegion('/setup/region?from=kakao')).toBe('/setup/region?from=kakao')
+    })
+
+    it('카카오 왕복 뒤 저장소에서 되살린 동네를 싣고, 저장소를 못 썼으면(모듈 변수만) 싣지 않는다', async () => {
+      saveLoginReturn(REPORT, Date.now())
+      expect((await reloadStore()).withSavedRegion('/setup/region?from=kakao')).toBe(
+        '/setup/region?from=kakao&region=11680640',
+      )
+
+      window.sessionStorage.clear()
+      expect((await reloadStore()).withSavedRegion('/setup/region?from=kakao')).toBe(
+        '/setup/region?from=kakao',
+      )
     })
   })
 })

@@ -7,8 +7,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { AdultScreen } from '@/features/onboarding/adult-screen'
 import { OnboardingProvider } from '@/features/onboarding/onboarding-context'
-import { FROM_KAKAO, FROM_PARAM } from '@/features/onboarding/paths'
+import { FROM_KAKAO, FROM_PARAM, PRESET_REGION_PARAM } from '@/features/onboarding/paths'
 import { RegionScreen } from '@/features/onboarding/region-screen'
+import { districtFromParam } from '@/features/region/region-param'
 
 import type * as authClient from './auth-client'
 import { getMockSession, loginWithEmail, resetMockSession, signup } from './auth-client'
@@ -33,7 +34,7 @@ vi.mock('./auth-client', async (importOriginal) => {
  * 홈의 로그인 안내 시트는 첫 진입 Provider 밖에 있어 가입 종류를 둘 수 없다. 카카오에서 돌아온 주소(`?from=kakao`)를
  * S02-1 이 받아 가입 종류를 카카오로 두므로, 동네 · 성인 확인을 거쳐 S02-3 이 카카오 가입을 보낸다.
  * 시트가 떠나기 전에 둔 돌아갈 곳(보고하려던 로그인 · 둘러보던 동네)은 카카오 왕복(문서를 새로 엶) 뒤 저장소에서 살아나
- * 가입 마무리(S02-4)가 같은 동네 홈의 보고 진입으로 보낸다(#140).
+ * 가입 마무리(S02-4)가 같은 동네 홈의 보고 진입으로 보낸다(#140). 둘러보던 동네는 S02-1 의 처음 선택으로도 보인다(#227).
  */
 describe('홈 로그인 안내 시트 → 카카오 → 가입 마무리', () => {
   it('시트 → 카카오 → S02-1(from=kakao) → S02-2 → S02-3 제출이 카카오 가입을 보낸다', async () => {
@@ -47,6 +48,7 @@ describe('홈 로그인 안내 시트 → 카카오 → 가입 마무리', () =>
     await waitFor(() => expect(router.push).toHaveBeenCalledTimes(1))
     const redirect = new URL(String(router.push.mock.calls[0]?.[0]), 'http://localhost')
     expect(redirect.pathname).toBe('/setup/region')
+    expect(redirect.searchParams.get(PRESET_REGION_PARAM)).toBe('11680640')
     sheet.unmount()
 
     // 카카오 왕복을 흉내 낸다: 문서를 새로 열면 모듈 변수는 비고 저장소만 남는다
@@ -55,14 +57,24 @@ describe('홈 로그인 안내 시트 → 카카오 → 가입 마무리', () =>
     clearLoginReturn()
     window.sessionStorage.setItem(LOGIN_RETURN_STORAGE_KEY, saved ?? '')
 
-    // 2) 돌아온 주소로 첫 진입 화면을 새 Provider 로 그린다 (홈 → 첫 진입은 레이아웃이 새로 그려진다)
+    // 2) 돌아온 주소로 첫 진입 화면을 새 Provider 로 그린다 (홈 → 첫 진입은 레이아웃이 새로 그려진다).
+    //    둘러보기 동네는 서버 페이지처럼 행정동으로 확인해 넘긴다(`app/(onboarding)/setup/region/page.tsx` — 페이지 테스트가 따로 있다)
     const fromKakao = redirect.searchParams.get(FROM_PARAM) === FROM_KAKAO
+    const preset = await districtFromParam(
+      redirect.searchParams.get(PRESET_REGION_PARAM) ?? undefined,
+      'mock',
+    )
     const tree = (child: ReactNode) => <OnboardingProvider>{child}</OnboardingProvider>
     location.pathname = '/setup/region'
-    const flow = render(tree(<RegionScreen fromKakao={fromKakao} />))
+    const flow = render(tree(<RegionScreen fromKakao={fromKakao} preset={preset} />))
 
-    await user.type(screen.getByRole('searchbox', { name: '행정동 이름' }), '역삼')
-    await user.click((await screen.findAllByRole('radio'))[0]!)
+    // 시트를 연 둘러보기 동네가 처음 선택이다 — 다시 검색하지 않고 확인만 하고 넘어간다
+    expect(screen.getByRole<HTMLInputElement>('searchbox', { name: '행정동 이름' }).value).toBe(
+      '역삼1동',
+    )
+    expect((await screen.findByRole<HTMLInputElement>('radio', { name: /역삼1동/ })).checked).toBe(
+      true,
+    )
     await user.click(screen.getByRole('button', { name: '다음' }))
     expect(router.push).toHaveBeenLastCalledWith('/setup/adult')
 

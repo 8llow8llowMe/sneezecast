@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react'
+import { hydrateRoot, type Root } from 'react-dom/client'
+import { renderToString } from 'react-dom/server'
+
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -353,5 +357,161 @@ describe('RegionScreen 카카오에서 돌아옴 (?from=kakao)', () => {
   it('둘러보기에서는 ?from=kakao 가 있어도 무시한다', () => {
     renderRegion({ browse: true })
     expect(state().signup).toEqual(EMPTY_SIGNUP)
+  })
+})
+
+describe('RegionScreen 둘러보던 동네를 처음 선택으로 (#227)', () => {
+  const YEOKSAM1: District = { code: '11680640', name: '역삼1동', sigungu: '서울특별시 강남구' }
+  const SEOGYO: District = { code: '11440660', name: '서교동', sigungu: '서울특별시 마포구' }
+
+  function Probe() {
+    const { district } = useOnboarding()
+    return (
+      <span hidden data-testid="district">
+        {district?.code ?? 'none'}
+      </span>
+    )
+  }
+  const chosen = () => screen.getByTestId('district').textContent
+
+  /** `shown` 이 거짓이면 S02-1 을 떼어 앞 · 뒤 단계로 간 것을 흉내 낸다(Provider 는 레이아웃이라 남는다) */
+  function tree({
+    preset = YEOKSAM1,
+    initial = null,
+    browse = false,
+    shown = true,
+  }: {
+    preset?: District | null
+    initial?: District | null
+    browse?: boolean
+    shown?: boolean
+  }) {
+    return (
+      <NavTrailProvider>
+        <OnboardingProvider initialDistrict={initial}>
+          {shown && <RegionScreen browse={browse} preset={preset} />}
+          <Probe />
+        </OnboardingProvider>
+      </NavTrailProvider>
+    )
+  }
+
+  const input = () => screen.getByRole<HTMLInputElement>('searchbox', { name: '행정동 이름' })
+  const nextButton = (name = '다음') => screen.getByRole<HTMLButtonElement>('button', { name })
+
+  beforeEach(() => {
+    router.push.mockClear()
+    router.replace.mockClear()
+    location.pathname = '/setup/region'
+  })
+
+  it('넘겨받은 동네를 고른 채 보이고, 자동으로 넘기지 않고 다음을 눌러야 성인 확인으로 간다', async () => {
+    render(tree({}))
+    expect(input().value).toBe('역삼1동')
+    expect(nextButton().disabled).toBe(false)
+    expect(chosen()).toBe('11680640')
+    expect(router.push).not.toHaveBeenCalled()
+
+    const option = await screen.findByRole<HTMLInputElement>('radio', { name: /역삼1동/ })
+    expect(option.checked).toBe(true)
+    await userEvent.setup().click(nextButton())
+    expect(router.push).toHaveBeenCalledWith('/setup/adult')
+  })
+
+  it('다른 동네로 바꾸면 그 동네로 간다', async () => {
+    const user = userEvent.setup()
+    render(tree({}))
+    await user.clear(input())
+    expect(nextButton().disabled).toBe(true)
+    await user.type(input(), '서교')
+    await user.click(await screen.findByRole('radio', { name: /서교동/ }))
+    expect(chosen()).toBe('11440660')
+  })
+
+  it('이 흐름에서 이미 고른 동네가 있으면(뒤로 갔다 옴) 그것이 이긴다', async () => {
+    render(tree({ initial: SEOGYO }))
+    expect(input().value).toBe('서교동')
+    expect(chosen()).toBe('11440660')
+    const option = await screen.findByRole<HTMLInputElement>('radio', { name: /서교동/ })
+    expect(option.checked).toBe(true)
+  })
+
+  it('이미 고른 동네가 이긴 뒤 그 선택을 지우면, 다시 와도 넘겨받은 동네로 채우지 않는다', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(tree({ initial: SEOGYO }))
+    await user.clear(input())
+    expect(chosen()).toBe('none')
+
+    // 넘겨받은 동네를 쓰지 않았어도 이 흐름에서 이미 다뤘다(markRegionPresetUsed) — 앞 단계에 갔다 와도 채우지 않는다
+    rerender(tree({ initial: SEOGYO, shown: false }))
+    rerender(tree({ initial: SEOGYO }))
+    expect(input().value).toBe('')
+    expect(nextButton().disabled).toBe(true)
+    expect(chosen()).toBe('none')
+  })
+
+  it('StrictMode(effect 두 번)에서도 첫 그림부터 고른 채이고 결과가 같다', async () => {
+    render(<StrictMode>{tree({})}</StrictMode>)
+    expect(input().value).toBe('역삼1동')
+    expect(nextButton().disabled).toBe(false)
+    expect(chosen()).toBe('11680640')
+    const option = await screen.findByRole<HTMLInputElement>('radio', { name: /역삼1동/ })
+    expect(option.checked).toBe(true)
+  })
+
+  it('한 번만 채운다 — 지운 선택은 앞 단계로 갔다 다시 와도 채우지 않는다', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(tree({}))
+    await user.clear(input())
+    expect(chosen()).toBe('none')
+
+    rerender(tree({ shown: false }))
+    rerender(tree({}))
+    expect(input().value).toBe('')
+    expect(nextButton().disabled).toBe(true)
+    expect(chosen()).toBe('none')
+  })
+
+  it('고른 채 성인 확인에 갔다 돌아오면 그대로 고른 채다', () => {
+    const { rerender } = render(tree({}))
+    rerender(tree({ shown: false }))
+    rerender(tree({}))
+    expect(input().value).toBe('역삼1동')
+    expect(chosen()).toBe('11680640')
+  })
+
+  it('넘겨받은 동네가 없으면(모르는 · 폐지 코드 · 조회 실패 — 페이지가 버림) 지금처럼 빈 선택이다', () => {
+    render(tree({ preset: null }))
+    expect(input().value).toBe('')
+    expect(nextButton().disabled).toBe(true)
+    expect(chosen()).toBe('none')
+  })
+
+  it('둘러보기 동네 고르기에서는 쓰지 않는다', () => {
+    render(tree({ browse: true }))
+    expect(input().value).toBe('')
+    expect(nextButton('이 동네 보기').disabled).toBe(true)
+    expect(chosen()).toBe('none')
+  })
+
+  it('서버 첫 그림부터 고른 채이고 하이드레이션이 어긋나지 않는다', () => {
+    const html = renderToString(tree({}))
+    expect(html).toContain('value="역삼1동"')
+    const container = document.createElement('div')
+    container.innerHTML = html
+    document.body.append(container)
+    const recoverable = vi.fn()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let root: Root | undefined
+    act(() => {
+      root = hydrateRoot(container, tree({}), { onRecoverableError: recoverable })
+    })
+    expect(recoverable).not.toHaveBeenCalled()
+    expect(consoleError).not.toHaveBeenCalled()
+    expect(nextButton().disabled).toBe(false)
+    expect(chosen()).toBe('11680640')
+    consoleError.mockRestore()
+    act(() => root?.unmount())
+    container.remove()
   })
 })

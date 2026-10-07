@@ -224,6 +224,16 @@ describe('KakaoCallbackScreen', () => {
       expect(peekLoginReturn()).toEqual({ next: '/me', region: null, intent: null })
     })
 
+    it('가입이 필요하면 둘러보던 동네를 S02-1 의 처음 선택(&region=)으로 싣고 값은 남긴다 (#227)', async () => {
+      savedBeforeKakao('/', '11680640', 'report')
+      vi.mocked(kakaoLogin).mockResolvedValueOnce({ status: 'signup-required' })
+      visit('?code=c1&state=s1')
+      await waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith('/setup/region?from=kakao&region=11680640'),
+      )
+      expect(peekLoginReturn()).toEqual({ next: '/', region: '11680640', intent: 'report' })
+    })
+
     it('실패하면 로그인 화면 주소에 둔 값을 다시 싣는다 (값은 남는다)', async () => {
       savedBeforeKakao('/', '11680640', 'report')
       vi.mocked(kakaoLogin).mockResolvedValueOnce({ status: 'failed', reason: 'expired' })

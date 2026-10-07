@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/button'
+import type { District } from '@/features/region/types'
 import { useDistrictSearch } from '@/features/region/use-district-search'
 import { useNavTrail } from '@/lib/use-nav-trail'
 
@@ -71,6 +72,11 @@ export type RegionScreenProps = {
    * 둘러보기에서는 쓰지 않는다
    */
   fromKakao?: boolean
+  /**
+   * 가입 전에 둘러보던 동네(`/setup/region?region=`, #227). 서버 페이지가 행정동으로 확인한 지금 있는 동네만 온다(모르면 null).
+   * 이 흐름에서 처음 닿았고 아직 고른 동네가 없을 때 한 번만 처음 선택으로 보인다. 둘러보기에서는 쓰지 않는다
+   */
+  preset?: District | null
 }
 
 /**
@@ -88,6 +94,11 @@ export type RegionScreenProps = {
  * 고른 동네는 OnboardingProvider 가 갖는다. 성인 확인에서 돌아오면 고른 동네 이름으로 다시 검색해 선택을 보인다.
  * 검색어를 고치면 선택을 지운다 — 고른 동네가 목록에서 사라졌는데 버튼만 켜져 있지 않게 한다.
  *
+ * 가입 전에 둘러보던 동네(`preset`, #227)가 있으면 처음 선택으로 고른 채 보인다 — 자동으로 다음 단계로 넘기지 않고, 사용자가 확인하고
+ * `다음` 을 누르거나 검색어를 고쳐 다른 동네를 고른다. 이 흐름에서 이미 고른 동네(뒤로 갔다 옴 · 둘러보기에서 고름)가 있으면 그것이 이기고,
+ * 한 번 다룬 뒤에는(`regionPresetUsed`) 지운 선택을 다시 채우지 않는다. 서버 · 하이드레이션 첫 그림도 Provider 가 비어 같은 값을 그리므로
+ * 첫 그림부터 고른 채이고, 커밋 뒤 effect 가 그 값을 Provider 에 옮겨 둔다(보이는 것은 그대로다).
+ *
  * 카카오에서 돌아오면(`fromKakao`) 가입 종류를 카카오로 한 번만 둔다. 이미 카카오면(S13-1 에서 카카오로 시작 · 뒤로 가기로
  * 다시 옴) 그대로 두어 진행 중인 카카오 가입의 마무리 진행(`membership`)을 지우지 않는다. 다른 가입 종류였다면 새 가입 시도라
  * `resetSignup` 이 초안과 진행을 함께 비운다(로그인 화면에서 카카오로 시작할 때와 같다).
@@ -98,10 +109,20 @@ export function RegionScreen({
   browse = false,
   browseReturn = null,
   fromKakao = false,
+  preset = null,
 }: RegionScreenProps) {
   const router = useRouter()
-  const { district, setDistrict, goBack, replace, signup, resetSignup, updateSignup } =
-    useOnboarding()
+  const {
+    district,
+    setDistrict,
+    regionPresetUsed,
+    markRegionPresetUsed,
+    goBack,
+    replace,
+    signup,
+    resetSignup,
+    updateSignup,
+  } = useOnboarding()
   const { goBack: goBackInTrail } = useNavTrail()
   const returning = browse ? browseReturn : null
 
@@ -111,16 +132,27 @@ export function RegionScreen({
     resetSignup()
     updateSignup({ method: 'kakao' })
   }, [needsKakaoMethod, resetSignup, updateSignup])
-  const [query, setQuery] = useState(district?.name ?? '')
+
+  // 넘겨받은 동네는 Provider 에 옮기기 전(첫 그림)에도 고른 것으로 그린다. 옮긴 뒤에는 Provider 값만 본다
+  const presetPending = !browse && preset !== null && !regionPresetUsed
+  const seed = presetPending && district === null ? preset : null
+  const selected = district ?? seed
+  useEffect(() => {
+    if (!presetPending) return
+    if (seed) setDistrict(seed)
+    markRegionPresetUsed()
+  }, [presetPending, seed, setDistrict, markRegionPresetUsed])
+
+  const [query, setQuery] = useState(selected?.name ?? '')
   const search = useDistrictSearch(query)
   const mode = browse ? 'browse' : 'setup'
 
   function next() {
-    if (!district) return
+    if (!selected) return
     // 머리줄에서 왔으면 돌아갈 화면으로 기록을 바꿔 간다 — 뒤로 가기로 고르기 화면에 다시 오지 않고, 그 앞은 고르기 전 화면이다.
     // 시작 화면의 둘러보기는 지금처럼 홈에 쌓아 간다(홈에서 뒤로 가면 다시 골라 볼 수 있다)
-    if (returning) replace(browseReturnHref(returning, district.code))
-    else router.push(browse ? browseHomePath(district.code) : SETUP_ADULT_PATH)
+    if (returning) replace(browseReturnHref(returning, selected.code))
+    else router.push(browse ? browseHomePath(selected.code) : SETUP_ADULT_PATH)
   }
 
   function back() {
@@ -135,7 +167,7 @@ export function RegionScreen({
       onBack={back}
       panelTitle={COPY[mode].panelTitle}
       footer={
-        <Button fullWidth disabled={!district} onClick={next}>
+        <Button fullWidth disabled={!selected} onClick={next}>
           {browse ? '이 동네 보기' : '다음'}
         </Button>
       }
@@ -157,7 +189,7 @@ export function RegionScreen({
         <DistrictOptionList
           legend="검색 결과"
           options={districtOptions(searchResultsOf(search))}
-          selectedCode={district?.code ?? null}
+          selectedCode={selected?.code ?? null}
           onSelect={setDistrict}
         />
         {/*

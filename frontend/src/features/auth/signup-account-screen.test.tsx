@@ -10,6 +10,7 @@ import {
   useOnboarding,
 } from '@/features/onboarding/onboarding-context'
 
+import { clearLoginReturn, saveLoginReturn } from './login-return-store'
 import { SignupAccountScreen } from './signup-account-screen'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }))
@@ -66,6 +67,7 @@ describe('SignupAccountScreen', () => {
   beforeEach(() => {
     router.push.mockClear()
     router.replace.mockClear()
+    clearLoginReturn()
   })
 
   it('새 비밀번호 자동 완성 · 비밀번호 보기 · 닉네임 글자 수를 보인다', () => {
@@ -94,6 +96,14 @@ describe('SignupAccountScreen', () => {
     expect(saved.password).toBe('dongne2026')
     expect(saved.nickname).toBe('동네지기')
     expect(saved.verifiedAt).toBe(1)
+  })
+
+  it('가입을 떠나기 전에 둔 둘러보기 동네를 동네 선택의 처음 선택으로 싣는다 (#227)', async () => {
+    saveLoginReturn({ next: '/', region: '11680640', intent: 'report' })
+    const utils = setup()
+    await fill(utils, { password: 'dongne2026', nickname: '동네지기' })
+    await utils.user.click(utils.next)
+    expect(router.push).toHaveBeenCalledWith('/setup/region?region=11680640')
   })
 
   it('규칙에 안 맞는 비밀번호는 다음을 누를 때 알리고 고치면 지운다', async () => {
