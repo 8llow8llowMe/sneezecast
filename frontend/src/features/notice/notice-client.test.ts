@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HOME_MOCKS } from '@/features/home/mock'
+import { MAP_MOCK_KEYS, pickMapMock } from '@/features/map/mock'
 import type * as regionClient from '@/features/region/region-client'
 import { findDistrict } from '@/features/region/region-client'
 import { unavailableError } from '@/lib/api/api-error'
@@ -22,6 +23,15 @@ describe('pickNoticeMock', () => {
   it('?mock= 값으로 상태를 고른다', () => {
     expect(pickNoticeMock('published')).toBe(NOTICE_MOCKS.published)
     expect(pickNoticeMock(['corrected', 'none'])).toBe(NOTICE_MOCKS.corrected)
+    expect(pickNoticeMock('retracted')).toBe(NOTICE_MOCKS.retracted)
+  })
+
+  it('철회 목은 발행된 안내가 없고 철회 표시만 있다 — 사유는 백엔드가 정하기 전이라 없다', () => {
+    expect(NOTICE_MOCKS.retracted.notice).toBeNull()
+    expect(NOTICE_MOCKS.retracted.retraction).toEqual({ retractedOn: '2025-11-20' })
+    for (const key of ['published', 'corrected', 'none', 'insufficient'] as const) {
+      expect(NOTICE_MOCKS[key].retraction, key).toBeNull()
+    }
   })
 
   it('없거나 모르는 값이면 자료 부족의 안내 없음이다', () => {
@@ -107,5 +117,22 @@ describe('홈 목의 안내 링크', () => {
     expect(HOME_MOCKS.high.notice?.href).toBe(
       noticePath(NOTICE_EXAMPLE_DISTRICT.code, NOTICE_EXAMPLE_WEEK, 'mock=published'),
     )
+  })
+
+  it('안내를 요약해 보이는 곳(홈 안내 섹션 · 지도의 이 동네 안내 보기)은 발행 중인 안내만 연다 — 철회된 안내는 요약하지 않는다', () => {
+    const summaries = [
+      ...Object.values(HOME_MOCKS).map((week) => week.notice),
+      ...MAP_MOCK_KEYS.flatMap((key) =>
+        pickMapMock(key, null).districts.map((district) => district.week.notice),
+      ),
+    ].filter((notice) => notice !== null)
+    expect(summaries.length).toBeGreaterThan(0)
+    for (const { href } of summaries) {
+      const opened = pickNoticeMock(
+        new URL(href, 'http://localhost').searchParams.get('mock') ?? undefined,
+      )
+      expect(opened.notice, href).not.toBeNull()
+      expect(opened.retraction, href).toBeNull()
+    }
   })
 })

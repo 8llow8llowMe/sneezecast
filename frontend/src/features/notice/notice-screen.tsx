@@ -1,5 +1,6 @@
 'use client'
 
+import { useId } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -28,6 +29,7 @@ import { useNavTrail } from '@/lib/use-nav-trail'
 import type {
   InsufficientNoticeStats,
   MeasuredNoticeStats,
+  NoticeRetraction,
   PublishedRegionNotice,
   RegionNotice,
 } from './types'
@@ -51,7 +53,7 @@ function joinMeta(parts: readonly (string | null)[]): string {
 const suffix = (value: string | null, word: string) => (value === null ? null : `${value} ${word}`)
 
 /**
- * S07 동네 안내 (`/notice/[region]/[week]`, 시안 Guide-published · Guide-corrected · Guide-none). 폭에 따라 구성이 바뀐다.
+ * S07 동네 안내 (`/notice/[region]/[week]`, 시안 Guide-published · Guide-corrected · Guide-none, 철회는 시안 없음). 폭에 따라 구성이 바뀐다.
  *
  * | 폭 | 구성 |
  * | --- | --- |
@@ -64,6 +66,8 @@ const suffix = (value: string | null, word: string) => (value === null ? null : 
  * - **안내는 운영자가 검토 · 발행한 주에만 보인다.** 발행된 안내를 보일 때는 `운영자 검토` 배지와 AI 초안 고지를 늘 함께 보인다.
  * - 정정된 안내는 배지 줄에 마지막 정정일을 적고, 제목 위에 정정 이력(최근 것부터)을 모두 보인다.
  * - 안내가 없는 주는 `시민 자가보고` 배지로 집계만 보인다. `자료 부족` 이면 수치 · 상태색 없이 참여 진행 막대만 보인다.
+ * - 철회된 안내는 안내가 없는 주와 같게 그리고 제목 · 설명 자리에 `철회된 안내예요` 상자(철회일 · 사유가 있으면 사유)만 둔다(#225).
+ *   내린 안내의 제목 · 할 일 · 인용 수치 · AI 고지는 보이지 않는다 — 내린 안내를 다시 퍼뜨리지 않는다(데이터에도 없다).
  * - 질병관리청 정보는 자가보고 집계와 다른 요소(공식 배지가 달린 링크)로 공식 정보 화면(S08)에 잇는다. 링크는 둘러보기 동네(`?region=`)를 잇는다.
  * - "뒤로" 는 앱 안에서 거쳐 왔으면 기록을 되돌리고, 주소로 바로 들어왔거나 새로고침 · 새 탭으로 열었으면
  *   홈으로 기록을 바꿔 간다(`useNavTrail`).
@@ -154,6 +158,7 @@ export function NoticeScreen({
                 />
               ) : (
                 <NoneArticle
+                  retraction={data.retraction}
                   stats={data.stats}
                   statsTitle={statsTitle}
                   officialHref={officialLink}
@@ -311,13 +316,16 @@ function PublishedArticle({
   )
 }
 
+/** 안내가 없는 주(Guide-none). 철회된 안내도 이 모양이고 제목 · 설명 자리만 철회 상자로 바뀐다 */
 function NoneArticle({
+  retraction,
   stats,
   statsTitle,
   officialHref,
   weekOfMonth,
   weekRange,
 }: WeekLabels & {
+  retraction: NoticeRetraction | null
   stats: MeasuredNoticeStats | InsufficientNoticeStats
   statsTitle: string
   officialHref: string
@@ -332,12 +340,18 @@ function NoneArticle({
         />
       </div>
 
-      <h2 className="text-screen-title leading-[1.45] font-bold break-keep text-fg tablet:text-status-desktop tablet:leading-[1.4]">
-        이번 주는 발행된 안내가 없어요
-      </h2>
-      <p className="text-body leading-[1.6] text-fg-sub tablet:text-body-large">
-        {NONE_DESCRIPTION}
-      </p>
+      {retraction ? (
+        <RetractionBox retraction={retraction} />
+      ) : (
+        <>
+          <h2 className="text-screen-title leading-[1.45] font-bold break-keep text-fg tablet:text-status-desktop tablet:leading-[1.4]">
+            이번 주는 발행된 안내가 없어요
+          </h2>
+          <p className="text-body leading-[1.6] text-fg-sub tablet:text-body-large">
+            {NONE_DESCRIPTION}
+          </p>
+        </>
+      )}
 
       <section aria-label={statsTitle} className="tablet:hidden">
         {stats.status === 'insufficient' ? (
@@ -355,6 +369,31 @@ function NoneArticle({
         <ChevronRightIcon className="text-fg-muted" />
       </Link>
     </>
+  )
+}
+
+/**
+ * 철회 상자 (시안 없음 — 정정 상자 · 안내 없음 제목의 조각, #225). 정정 상자(회색 테두리)와 구분되게 회색 바탕이고,
+ * 상태는 제목 글자(`철회된 안내예요`)로 읽힌다. 처음부터 있는 내용이라 `role=status` 가 아니라 제목이 이름인 영역이다(정정 상자와 같다)
+ */
+function RetractionBox({ retraction }: { retraction: NoticeRetraction }) {
+  const headingId = useId()
+  return (
+    <section
+      aria-labelledby={headingId}
+      className="flex flex-col gap-1.5 rounded-button bg-section px-4 py-3.5 tablet:gap-2 tablet:px-5 tablet:py-4"
+    >
+      <h2 id={headingId} className="text-section-title font-bold text-fg tablet:text-screen-title">
+        철회된 안내예요
+      </h2>
+      <p className="text-body leading-[1.6] text-fg-sub tablet:text-body-large">
+        운영자가 이 안내를 내렸어요.
+      </p>
+      <p className="text-body-strong leading-normal text-fg tablet:text-body tablet:leading-[1.55]">
+        <strong>{suffix(formatMonthDay(retraction.retractedOn), '철회') ?? '철회'}</strong>
+        {retraction.reason && ` · ${retraction.reason}`}
+      </p>
+    </section>
   )
 }
 

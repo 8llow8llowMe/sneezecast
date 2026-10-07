@@ -62,7 +62,11 @@ export type SymptomGroup = {
   series: number[]
 }
 
-/** 운영자가 검토 · 발행한 이번 주 동네 안내. 발행 전이면 null 이다 */
+/**
+ * 운영자가 검토 · 발행한 이번 주 동네 안내. 발행 전이면 null 이다. **철회된 안내도 null 이다**(#225) — 이 모양에는 철회 표시가 없어
+ * 홈 안내 섹션 · 지도의 `이 동네 안내 보기` 가 철회된 안내를 발행 중인 안내로 요약할 수 없다. 연동 때 매핑 계층은 발행 중인 안내만
+ * 여기에 옮긴다. 철회 사실은 동네 안내 화면(S07, `features/notice/types.ts` 의 `retraction`)에서만 보인다
+ */
 export type PublishedNotice = {
   /** 예: "11월 18일 발행" */
   publishedLabel: string

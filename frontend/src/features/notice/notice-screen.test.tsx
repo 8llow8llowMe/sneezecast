@@ -187,6 +187,79 @@ describe('NoticeScreen — 안내 없음 (Guide-none)', () => {
   })
 })
 
+describe('NoticeScreen — 철회된 안내 (#225, 시안 없음)', () => {
+  it('철회 상자(철회일)를 보이고 내린 안내의 제목 · 할 일 · 근거 · AI 고지 · 운영자 검토 배지는 없다', () => {
+    render(<NoticeScreen data={data('retracted')} />)
+
+    const box = screen.getByRole('region', { name: '철회된 안내예요' })
+    expect(box.textContent).toBe('철회된 안내예요운영자가 이 안내를 내렸어요.11월 20일 철회')
+    expect(screen.queryByText('운영자 검토')).toBeNull()
+    expect(
+      screen.queryByRole('heading', { name: '발열·기침 보고가 지난 4주보다 많이 늘었어요' }),
+    ).toBeNull()
+    expect(screen.queryByRole('heading', { name: '이렇게 해 주세요' })).toBeNull()
+    expect(screen.queryByText(/근거:/)).toBeNull()
+    expect(screen.queryByText(AI_DRAFT_DISCLOSURE)).toBeNull()
+    // 안내가 없다는 문구 대신 철회 상자다 — 처음부터 안내가 없던 주로 읽히지 않게
+    expect(screen.queryByRole('heading', { name: '이번 주는 발행된 안내가 없어요' })).toBeNull()
+    // 모바일 아래 고정 버튼은 발행된 안내에만 있다(태블릿 이상 오른쪽 버튼 하나만 남는다)
+    expect(screen.getAllByRole('button', { name: '야간·휴일 문 연 곳 찾기' })).toHaveLength(1)
+  })
+
+  it('집계는 시민 자가보고로, 공식 정보는 따로 안내 없음과 같게 보인다', () => {
+    render(<NoticeScreen data={data('retracted')} regionCode="1111051500" />)
+
+    expect(screen.getByText('시민 자가보고')).toBeDefined()
+    expect(screen.getByText('11월 3주 기준')).toBeDefined()
+    expect(screen.getByText('11월 17일~23일 기준')).toBeDefined()
+    expect(screen.getAllByText('128명')).toHaveLength(2)
+    expect(screen.getByRole('link', { name: '공식 예방수칙 보기' }).getAttribute('href')).toBe(
+      '/official?region=1111051500',
+    )
+    const official = screen.getByRole('link', { name: /질병관리청 발표 보기/ })
+    expect(official.getAttribute('href')).toBe('/official?region=1111051500')
+    expect(official.textContent).not.toMatch(/\d/)
+  })
+
+  it('사유가 있으면 철회일 뒤에 사유를 잇는다', () => {
+    render(
+      <NoticeScreen
+        data={data('retracted', {
+          retraction: { retractedOn: '2025-11-21', reason: '공식 자료와 달라 안내를 내렸어요.' },
+        })}
+      />,
+    )
+
+    expect(screen.getByRole('region', { name: '철회된 안내예요' }).textContent).toContain(
+      '11월 21일 철회 · 공식 자료와 달라 안내를 내렸어요.',
+    )
+  })
+
+  it('철회일을 읽지 못하면 날짜 없이 철회만 적는다', () => {
+    render(<NoticeScreen data={data('retracted', { retraction: { retractedOn: '2025-13-40' } })} />)
+
+    expect(screen.getByRole('region', { name: '철회된 안내예요' }).textContent).toBe(
+      '철회된 안내예요운영자가 이 안내를 내렸어요.철회',
+    )
+  })
+
+  it('자료 부족 주의 철회면 수치 · 상태색 없이 참여 진행 막대만 보인다', () => {
+    const { container } = render(
+      <NoticeScreen
+        data={data('retracted', {
+          stats: { status: 'insufficient', participants: 64, publicThreshold: 100 },
+        })}
+      />,
+    )
+
+    expect(screen.getByRole('region', { name: '철회된 안내예요' })).toBeDefined()
+    expect(screen.getAllByRole('progressbar', { name: '우리 동네 참여 인원' })).toHaveLength(2)
+    expect(container.textContent).not.toContain('%')
+    expect(screen.queryByText('증상 보고')).toBeNull()
+    expect(container.innerHTML).not.toMatch(/(text|bg)-status-(normal|slight|high|insufficient)/)
+  })
+})
+
 describe('NoticeScreen — 이동', () => {
   /**
    * 루트의 앱 안 이동 기록(`NavTrailProvider`) 안에서 주소를 차례로 지나며 그린다. 안내 경로(`PATH`)에서는 안내를,
