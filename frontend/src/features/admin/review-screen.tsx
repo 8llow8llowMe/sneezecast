@@ -73,7 +73,7 @@ const ACTION_MESSAGES: Record<CandidateAction, { done: string; failed: string }>
  *   행정동 버튼(마우스는 행 어디를 눌러도 같다)으로 후보를 고르면 오른쪽(좁은 화면은 아래) 상세가 그 후보다. 처음은 첫 후보다.
  *   기준선 대비는 백엔드 1단계에 없어(2단계) 값이 있는 후보가 하나도 없으면 열째 숨기고, 없는 칸은 비운다
  * - 상세(`CandidateDetail`): 근거 · 이상 보고 확인 · 발행 전 확인 · 안내문 초안 · 연결된 예방수칙 · `보류` · `수정 저장` · `승인하고 발행`
- * - 처리 결과: 저장 · 보류는 후보를 바꿔 그 자리에 둔다. 발행한 후보는 목록에서 빠지고(발행 이력 #220) 목록 위에 알린 뒤 다음 후보를 고른다.
+ * - 처리 결과: 저장 · 보류는 후보를 바꿔 그 자리에 둔다. 발행한 후보는 목록에서 빠지고(발행 이력 A03 에 남는다) 목록 위에 알린 뒤 다음 후보를 고른다.
  *   실패는 상세에 빨강 상자, 충돌(409 — 다른 운영자가 먼저 고침)은 서버의 최신 후보로 바꿔 그리고 다시 확인하라고 알린다
  * - **실데이터는 운영자 API 가 없어(#214) 요청하지 않고** 아직 준비하고 있다고 알린다. 목 재현은 `?mock-admin=empty|fail|conflict`
  * - 좁은 화면(모바일 · 태블릿, 시안 없음): 한 단으로 쌓는다(목록 → 상세). 표는 행마다 두 줄 카드 모양이 된다(가로 스크롤 없음)
@@ -220,6 +220,7 @@ export function AdminReviewScreen() {
 
   return (
     <AdminShell
+      current="review"
       weekLabel={ready ? formatIsoWeekOfMonth(load.isoWeek) : null}
       pendingCount={pendingCount}
     >

@@ -79,15 +79,17 @@ describe('AdminReviewScreen 검토 대기 (목)', () => {
     expect(screen.getByText(/^이번 주 후보 4건 · 후보 기준:/)).toBeDefined()
     expect(screen.getByText('11월 3주')).toBeDefined()
     expect(pendingMenu()).toBe('검토 대기, 남은 후보 4건')
-    // 화면이 없는 메뉴는 링크가 아니다(없는 화면 404 로 가지 않게)
-    expect(screen.queryByRole('link', { name: /발행 이력/ })).toBeNull()
-    expect(screen.getByText('발행 이력').textContent).toBe('발행 이력 (준비 중)')
-    // 메뉴 링크는 목 회원 · 역할 덮어쓰기만 잇는다(목 재현은 잇지 않는다)
-    expect(
-      within(screen.getByRole('navigation', { name: '운영 메뉴' }))
-        .getByRole('link', { name: /검토 대기/ })
-        .getAttribute('href'),
-    ).toBe('/admin/review?mock-auth=member&mock-role=operator')
+    // 화면이 없는 메뉴(기준 설정)는 링크가 아니다(없는 화면 404 로 가지 않게). 발행 이력은 #220 부터 링크다
+    const menu = within(screen.getByRole('navigation', { name: '운영 메뉴' }))
+    expect(menu.queryByRole('link', { name: /기준 설정/ })).toBeNull()
+    expect(menu.getByText('기준 설정').textContent).toBe('기준 설정 (준비 중)')
+    // 메뉴 링크는 목 회원 · 역할 덮어쓰기만 잇는다(목 재현은 잇지 않는다). 지금 화면만 aria-current 다
+    const review = menu.getByRole('link', { name: /검토 대기/ })
+    const history = menu.getByRole('link', { name: '발행 이력' })
+    expect(review.getAttribute('href')).toBe('/admin/review?mock-auth=member&mock-role=operator')
+    expect(history.getAttribute('href')).toBe('/admin/history?mock-auth=member&mock-role=operator')
+    expect(review.getAttribute('aria-current')).toBe('page')
+    expect(history.hasAttribute('aria-current')).toBe(false)
     expect(screen.getByRole('link', { name: '우리동네체온계' }).getAttribute('href')).toBe(
       '/?mock-auth=member&mock-role=operator',
     )

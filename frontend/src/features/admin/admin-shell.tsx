@@ -11,7 +11,7 @@ import { HOME_PATH } from '@/features/onboarding/paths'
 import { APP_NAME } from '@/lib/app-info'
 import { navHref } from '@/lib/nav'
 
-import { ADMIN_REVIEW_PATH } from './types'
+import { ADMIN_HISTORY_PATH, ADMIN_REVIEW_PATH } from './types'
 
 /** 메뉴 사이를 오갈 때 남기는 QA 덮어쓰기(목데이터 모드에서만 듣는다). 빠지면 비회원 · 일반 회원으로 보여 가드가 막는다 */
 function adminSearch(searchParams: Pick<URLSearchParams, 'get'>): string {
@@ -24,23 +24,30 @@ function adminSearch(searchParams: Pick<URLSearchParams, 'get'>): string {
 }
 
 const MENU_ITEM = 'flex h-11 items-center justify-between gap-2 rounded-button px-3 text-body'
+const MENU_CURRENT = 'bg-section font-bold text-brand'
+const MENU_OTHER = 'font-medium text-fg-sub'
+
+/** 운영자 메뉴 중 지금 화면 */
+export type AdminMenu = 'review' | 'history'
 
 /**
  * 운영자 화면 틀 (시안 Admin 의 머리줄 · 왼쪽 메뉴). 데스크톱 시안만 있다.
  *
  * - 머리줄: 서비스명(홈 링크) · `운영자` 배지 · 오른쪽 기준 주. 시안의 기준 주는 고르는 버튼이지만 지금은 이번 주만 보여(다른 주 조회는
- *   #214 계약에 없다) 글자로 둔다
- * - 메뉴: `검토 대기`(남은 후보 수) · `발행 이력` · `기준 설정`. 발행 이력(A03)은 #220, 기준 설정은 시안 · 화면이 없어 **누를 수 없는
- *   글자**로 둔다(링크로 두면 없는 화면 404 로 간다). #220 에서 발행 이력을 링크로 바꾼다
+ *   #214 계약에 없다) 글자로 둔다. 발행 이력은 시안의 기간(`최근 4주 ▾`)을 고를 계약이 없어 그리지 않는다
+ * - 메뉴: `검토 대기`(남은 후보 수) · `발행 이력`(#220) · `기준 설정`. 기준 설정은 시안 · 화면이 없어 **누를 수 없는 글자**로 둔다
+ *   (링크로 두면 없는 화면 404 로 간다). 지금 화면(`current`)은 `aria-current="page"` 다
  * - 좁은 화면(데스크톱 미만)은 메뉴를 머리줄 아래 한 줄로 두고 본문을 한 단으로 쌓는다(시안 없음)
  *
  * 시안은 `box-sizing` 이 content-box 라 메뉴 폭 220 에 안쪽 여백 32 · 테두리 1 이 더해진 253 이다(배지도 24 + 테두리 3). 보이는 크기를 맞춘다.
  */
 export function AdminShell({
+  current,
   weekLabel,
   pendingCount,
   children,
 }: {
+  current: AdminMenu
   /** 머리줄의 기준 주 (`11월 3주`). 모르면 그리지 않는다 */
   weekLabel?: string | null
   /** `검토 대기` 옆 수 — 아직 처리하지 않은 후보(보류 제외). 모르면 그리지 않는다 */
@@ -75,8 +82,8 @@ export function AdminShell({
         >
           <Link
             href={navHref(ADMIN_REVIEW_PATH, search)}
-            aria-current="page"
-            className={clsx(MENU_ITEM, 'bg-section font-bold text-brand')}
+            aria-current={current === 'review' ? 'page' : undefined}
+            className={clsx(MENU_ITEM, current === 'review' ? MENU_CURRENT : MENU_OTHER)}
           >
             <span>검토 대기</span>
             {pendingCount != null && (
@@ -88,7 +95,13 @@ export function AdminShell({
               </span>
             )}
           </Link>
-          <DisabledMenuItem label="발행 이력" />
+          <Link
+            href={navHref(ADMIN_HISTORY_PATH, search)}
+            aria-current={current === 'history' ? 'page' : undefined}
+            className={clsx(MENU_ITEM, current === 'history' ? MENU_CURRENT : MENU_OTHER)}
+          >
+            발행 이력
+          </Link>
           <DisabledMenuItem label="기준 설정" />
         </nav>
         <main className="flex min-w-0 grow flex-col gap-5 px-page-mobile py-6 tablet:px-page-tablet desktop:px-page-desktop">
@@ -105,9 +118,7 @@ export function AdminShell({
  */
 function DisabledMenuItem({ label }: { label: string }) {
   return (
-    <span
-      className={clsx(MENU_ITEM, 'cursor-not-allowed font-medium text-fg-sub opacity-disabled')}
-    >
+    <span className={clsx(MENU_ITEM, MENU_OTHER, 'cursor-not-allowed opacity-disabled')}>
       {label}
       <span className="sr-only"> (준비 중)</span>
     </span>

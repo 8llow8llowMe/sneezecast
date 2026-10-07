@@ -1,8 +1,9 @@
 import { getMockSession, subscribeMockSession } from '@/features/auth/auth-client'
 import type { DataSource } from '@/lib/data-source'
 
+import { recordReviewOutcome } from './admin-history-client'
 import { createMockCandidates, MOCK_REVIEW_WEEK } from './mock'
-import type { ReviewCandidate } from './types'
+import type { ReviewCandidate, TimelineEvent, TimelineStep } from './types'
 
 /* ── 운영자 검토 (A01–A02 `/admin/review`, #219) ────────────────────────────────────────────────
  *
@@ -16,6 +17,7 @@ import type { ReviewCandidate } from './types'
  *
  * 상태 전이(backend/docs/entity-design.md §2-5): 수정 저장 → EDITED(목록 `검토 중`), 승인하고 발행 → APPROVED → PUBLISHED
  * (목록에서 빠짐). 보류는 §2-5 에 없다 — 안내가 아니라 후보의 처리 결과(이번 주 이 후보로는 발행하지 않음)로 보고 목록에 남긴다.
+ * 보류 · 발행은 같은 목 서버의 발행 이력(A03, `admin-history-client.ts`)에도 남는다(#220).
  */
 
 export type CandidateListResult =
@@ -42,7 +44,8 @@ export function parseMockAdminScenario(value: string | null): MockAdminScenario 
   return MOCK_SCENARIOS.find((scenario) => scenario === value) ?? null
 }
 
-type MockEntry = { candidate: ReviewCandidate; published: boolean }
+/** `log`: 이 후보의 처리 기록(수정 저장 · 보류 · 발행). 보류 · 발행하면 발행 이력에 넘긴다 */
+type MockEntry = { candidate: ReviewCandidate; published: boolean; log: TimelineEvent[] }
 type MockStore = { entries: MockEntry[]; failWrites: boolean; staleOnList: boolean }
 
 let mockStore: MockStore | null = null
@@ -55,7 +58,7 @@ subscribeMockSession(() => {
 function seed(scenario: MockAdminScenario | null): MockStore {
   const candidates = scenario === 'empty' ? [] : createMockCandidates()
   return {
-    entries: candidates.map((candidate) => ({ candidate, published: false })),
+    entries: candidates.map((candidate) => ({ candidate, published: false, log: [] })),
     failWrites: scenario === 'fail',
     staleOnList: scenario === 'conflict',
   }
@@ -100,9 +103,17 @@ export function listReviewCandidates(
   })
 }
 
-type Change = (candidate: ReviewCandidate) => { candidate: ReviewCandidate; published?: boolean }
+type Change = (candidate: ReviewCandidate) => {
+  candidate: ReviewCandidate
+  published?: boolean
+  /** 처리 기록에 더할 단계 */
+  steps: TimelineStep[]
+}
 
-/** 목 서버의 처리 하나. 버전이 다르거나 이미 발행했으면 충돌, 재현 `fail` 이면 거부한다 */
+/**
+ * 목 서버의 처리 하나. 버전이 다르거나 이미 발행했으면 충돌, 재현 `fail` 이면 거부한다.
+ * 보류 · 발행이면 처리 기록을 발행 이력에 넘긴다(`recordReviewOutcome`)
+ */
 function write(
   id: string,
   version: number,
@@ -120,6 +131,10 @@ function write(
     const next = change(entry.candidate)
     entry.candidate = { ...next.candidate, version: version + 1 }
     entry.published = next.published ?? false
+    const at = new Date().toISOString()
+    entry.log = [...entry.log, ...next.steps.map((step) => ({ step, at }))]
+    if (next.steps.includes('held') || next.published)
+      recordReviewOutcome(entry.candidate, entry.log)
     return { status: 'ok', candidate: entry.published ? null : entry.candidate }
   })
 }
@@ -141,6 +156,7 @@ export function saveCandidateDraft(
 ): Promise<CandidateActionResult> {
   return write(id, version, source, (candidate) => ({
     candidate: { ...startReview(candidate), draft },
+    steps: ['edited'],
   }))
 }
 
@@ -150,12 +166,15 @@ export function holdCandidate(
   { version }: { version: number },
   source: DataSource,
 ): Promise<CandidateActionResult> {
-  return write(id, version, source, (candidate) => ({ candidate: { ...candidate, state: 'held' } }))
+  return write(id, version, source, (candidate) => ({
+    candidate: { ...candidate, state: 'held' },
+    steps: ['held'],
+  }))
 }
 
 /**
  * 지금 초안으로 승인하고 발행한다(APPROVED → PUBLISHED). 저장하지 않은 수정도 함께 보낸다 — 운영자가 본 본문이 발행된다.
- * 발행한 후보는 목록에서 빠진다(`candidate: null`)
+ * 발행한 후보는 목록에서 빠진다(`candidate: null`). 저장한 초안과 다르면 운영자 수정(EDITED)을 거친 것으로 남긴다
  */
 export function publishCandidate(
   id: string,
@@ -165,7 +184,21 @@ export function publishCandidate(
   return write(id, version, source, (candidate) => ({
     candidate: { ...candidate, draft },
     published: true,
+    steps: draft === candidate.draft ? ['published'] : ['edited', 'published'],
   }))
+}
+
+/**
+ * `검토 대기` 메뉴 옆 수 — 처리하지 않은 후보(보류 · 발행 제외). 다른 운영자 화면(발행 이력)의 메뉴가 쓴다.
+ * 목 목록 · 재현을 바꾸지 않고 읽기만 한다. 실데이터는 운영자 API 가 없어 null 이다
+ */
+export function countPendingCandidates(source: DataSource): Promise<number | null> {
+  return respond(() =>
+    source === 'api'
+      ? null
+      : store().entries.filter((entry) => !entry.published && entry.candidate.state !== 'held')
+          .length,
+  )
 }
 
 /** 테스트에서 목 목록을 처음(시안 목록)으로 되돌린다. 화면 코드는 부르지 않는다 */
