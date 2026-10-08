@@ -324,7 +324,7 @@ export function MeScreen({
                     value={memberRegion?.name}
                     href={navHref(ME_REGION_PATH, accountSearch)}
                   />
-                  {/* 값은 목에서만 보인다 — 실데이터는 관심 동네 API 가 없어(BE 미정) 지어낸 수를 두지 않고 비운다 */}
+                  {/* 읽기 전 · 읽지 못함이면 값을 비운다 — 지어낸 수를 두지 않는다 */}
                   <MenuRow
                     title="관심 동네"
                     value={interestCount === null ? undefined : `${interestCount}곳`}
@@ -437,17 +437,20 @@ export function MeScreen({
 }
 
 /**
- * 관심 동네 수(`관심 동네` 행의 값). 회원으로 판단된 뒤 읽는다. 실데이터 · 읽기 전이면 null 이다 — 관심 동네 API 가 아직 없어
- * 실데이터는 요청하지 않는다(`interest-region-client.ts`)
+ * 관심 동네 수(`관심 동네` 행의 값). 회원으로 판단된 뒤 읽는다(실데이터는 `GET /api/v1/members/me/interest-regions`, #237).
+ * 읽기 전 · 읽지 못함이면 null 이다 — 실패를 따로 알리지 않는다(행을 누르면 관심 동네 화면이 다시 읽고 알린다)
  */
 function useInterestRegionCount(member: boolean, source: DataSource): number | null {
   const [count, setCount] = useState<{ source: DataSource; value: number } | null>(null)
   useEffect(() => {
     if (!member) return
     let live = true
-    void listInterestRegions(source).then((result) => {
-      if (live && result.status === 'ready') setCount({ source, value: result.regions.length })
-    })
+    listInterestRegions(source).then(
+      (regions) => {
+        if (live) setCount({ source, value: regions.length })
+      },
+      () => {},
+    )
     return () => {
       live = false
     }

@@ -12,7 +12,7 @@ import type { ReviewCandidate, TimelineEvent, TimelineStep } from './types'
  *
  * - 실데이터: 요청하지 않고 `unavailable` 이다. BE 미정 API 는 보통 출처와 무관하게 목이지만(docs/conventions.md "데이터 출처"),
  *   운영자가 목 후보를 실제 집계로 알고 발행을 눌러도 시민에게 아무것도 나가지 않는다. 화면이 아직 준비하고 있다고 알린다
- *   (알림 설정 · 관심 동네와 같은 결)
+ *   (알림 설정 · 최근 보고 내역과 같은 결)
  * - 목: 모듈 메모리의 후보 목록(목 서버 흉내). 처리는 백엔드처럼 `version` 을 맞춰 보고, 다르면 충돌(409)로 답한다
  *
  * 상태 전이(backend/docs/entity-design.md §2-5): 수정 저장 → EDITED(목록 `검토 중`), 승인하고 발행 → APPROVED → PUBLISHED

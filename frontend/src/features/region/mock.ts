@@ -46,6 +46,12 @@ export const ABOLISHED_DISTRICT_EXAMPLE: District = {
 }
 
 /**
+ * 행정동 서비스가 모르는 코드 (관심 동네 목 재현 `?mock-interest-regions=abolished`). 서버는 이 코드의 이름 · 시군구를 null 로 준다.
+ * 실제 행정동과 겹치지 않게 지어낸 8자리다 — 화면에 보이지 않는다(이름 자리에 `없어진 동네`).
+ */
+export const UNKNOWN_DISTRICT_CODE_EXAMPLE = '99990120'
+
+/**
  * 폐지된 동네 코드 → 다시 고를 후보 (Setup-1-reselect 시안의 세 줄). **시안 예시 값이다.**
  * 연동 때 백엔드 #60 의 재선택 유도 응답으로 바꾸고 이 값을 지운다.
  */

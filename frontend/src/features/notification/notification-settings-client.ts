@@ -12,7 +12,7 @@ import type { NotificationTopic } from './notification-topics'
  *   (`Notification.requestPermission` · `pushManager.subscribe` 를 부르지 않는다). 켠 항목도 지금은 알림이 오지 않는다
  * - 실데이터: 요청하지 않고 `unavailable` 이다. BE 미정 API 는 보통 출처와 무관하게 목이지만(docs/conventions.md "데이터 출처"),
  *   실제 회원에게 켜짐을 보이면 알림이 오는 줄 알고, 저장하지 않은 설정이 새로고침 · 다른 기기에서 사라진다.
- *   그래서 화면이 아직 준비하고 있다고 알린다(관심 동네 `listInterestRegions` 와 같은 결)
+ *   그래서 화면이 아직 준비하고 있다고 알린다(최근 보고 내역 `listPastReports` 와 같은 결)
  * - 목: 모듈 메모리의 설정(목 서버 흉내). 관심 동네 · 로그인한 기기 목록과 같게 목 세션이 **비회원이 될 때만** 지운다
  *
  * 처음 값은 **모두 꺼짐**이다 — 알림은 동의한 사용자에게만 보낸다(루트 `CLAUDE.md` "공식 정보와 안내"). 시안(Settings)의 켜진 모양은
