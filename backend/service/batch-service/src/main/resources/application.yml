@@ -75,6 +75,12 @@ sgis:
 kdca:
   service-key: ${KDCA_API_SERVICE_KEY:}
 
+# 감염병포털 표본감시 화면 데이터 (sentinelImportJob). 공개 API 가 아니라 인증키가 없다 — 화면을 열어 받은 세션 쿠키로 데이터를 받는다.
+# 환경마다 다를 값이 없고 기본값으로 돌기 때문에 여기에 키를 두지 않는다.
+# base-url · connect-timeout(3s) · read-timeout(30s) · request-interval(3s, 최소 3s) · user-agent 기본값은 SentinelPortalProperties,
+# 최근 주 수 sentinel-import.recent-weeks(8) · 실행당 호출 상한 sentinel-import.max-calls-per-run(12) 기본값은
+# SentinelImportProperties 에 있다. 요청 간격을 줄이면 포털 연결이 끊기므로(data-api-analysis §3-5) 낮추지 못하게 막아 둔다.
+
 # Snowflake ID (official_surveillance · official_source_snapshot PK). 범위는 0~31, 밖이면 기동 실패.
 # batch 프로세스끼리는 worker-id 가 겹치면 안 된다 — upsert(ON DUPLICATE KEY UPDATE)가 PK 충돌도 UPDATE 로 처리해 다른 행을 덮어쓴다.
 # 그래서 수동 실행 JVM(spring.batch.job.enabled=true)은 자동으로 +1 을 쓴다 (상주 1 → 수동 2, BatchServiceBeansConfig).

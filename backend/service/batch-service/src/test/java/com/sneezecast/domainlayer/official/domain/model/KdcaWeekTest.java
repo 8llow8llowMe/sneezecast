@@ -65,4 +65,43 @@ class KdcaWeekTest {
         assertThatThrownBy(() -> new KdcaWeek(2025, 53)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new KdcaWeek(2025, 0)).isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("날짜가 든 주 — 연말은 다음 해 1주다 (2025-12-28 은 2026년 1주, 2025-12-27 은 2025년 52주)")
+    void containingCrossesTheYearBoundary() {
+        assertThat(KdcaWeek.containing(LocalDate.of(2026, 1, 1))).isEqualTo(new KdcaWeek(2026, 1));
+        assertThat(KdcaWeek.containing(LocalDate.of(2025, 12, 28))).isEqualTo(new KdcaWeek(2026, 1));
+        assertThat(KdcaWeek.containing(LocalDate.of(2025, 12, 27))).isEqualTo(new KdcaWeek(2025, 52));
+        assertThat(KdcaWeek.containing(LocalDate.of(2022, 12, 31))).isEqualTo(new KdcaWeek(2022, 53));
+    }
+
+    @Test
+    @DisplayName("2026-10-02(금)은 2026년 40주다 — 40주는 09-27 ~ 10-03 이고, 그때 공개된 마지막 주는 39주(09-20 ~ 09-26)였다")
+    void containingWeekOfSentinelObservation() {
+        KdcaWeek week = KdcaWeek.containing(LocalDate.of(2026, 10, 2));
+
+        assertThat(week).isEqualTo(new KdcaWeek(2026, 40));
+        assertThat(week.start()).isEqualTo(LocalDate.of(2026, 9, 27));
+        assertThat(new KdcaWeek(2026, 39).start()).isEqualTo(LocalDate.of(2026, 9, 20));
+    }
+
+    @Test
+    @DisplayName("주의 모든 날(일 ~ 토)이 같은 주다")
+    void containingIsStableWithinAWeek() {
+        KdcaWeek week = new KdcaWeek(2026, 40);
+
+        for (int day = 0; day < 7; day++) {
+            assertThat(KdcaWeek.containing(week.start().plusDays(day))).isEqualTo(week);
+        }
+    }
+
+    @Test
+    @DisplayName("n 주 전 — 연도 경계(2026년 2주 − 3주 = 2025년 51주)와 53주가 있는 해(2023년 1주 − 1주 = 2022년 53주)를 넘어간다")
+    void minusWeeksCrossesYearBoundaryAnd53WeekYears() {
+        assertThat(new KdcaWeek(2026, 2).minusWeeks(3)).isEqualTo(new KdcaWeek(2025, 51));
+        assertThat(new KdcaWeek(2023, 1).minusWeeks(1)).isEqualTo(new KdcaWeek(2022, 53));
+        assertThat(new KdcaWeek(2023, 2).minusWeeks(2)).isEqualTo(new KdcaWeek(2022, 53));
+        assertThat(new KdcaWeek(2026, 40).minusWeeks(0)).isEqualTo(new KdcaWeek(2026, 40));
+        assertThat(new KdcaWeek(2026, 40).minusWeeks(7)).isEqualTo(new KdcaWeek(2026, 33));
+    }
 }
