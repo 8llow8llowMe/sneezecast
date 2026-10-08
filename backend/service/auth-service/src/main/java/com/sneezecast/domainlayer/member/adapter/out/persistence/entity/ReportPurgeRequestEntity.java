@@ -40,6 +40,9 @@ import org.springframework.data.domain.Persistable;
     })
 public class ReportPurgeRequestEntity extends BaseEntity implements Persistable<Long> {
 
+    /** {@code last_error} 컬럼 길이. 실패 기록은 이 길이에서 자른다. */
+    public static final int LAST_ERROR_MAX_LENGTH = 200;
+
     @Id
     @Comment("파기 요청 아이디 (Snowflake)")
     private Long id;
@@ -71,7 +74,7 @@ public class ReportPurgeRequestEntity extends BaseEntity implements Persistable<
     @Comment("파기 호출 시도 횟수")
     private int attemptCount;
 
-    @Column(length = 200)
+    @Column(length = LAST_ERROR_MAX_LENGTH)
     @Comment("마지막 실패 사유 - 예외 코드 · 상태 코드만 (응답 본문을 넣지 않는다)")
     private String lastError;
 
