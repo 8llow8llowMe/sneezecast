@@ -1,7 +1,7 @@
 package com.sneezecast.domainlayer.region.application.exception;
 
 /**
- * 내 동네 요청 검증 메시지 카탈로그 (REGION_1xx).
+ * 내 동네 · 관심 동네 요청 검증 메시지 카탈로그 (REGION_1xx). 관심 동네 삭제의 경로 변수도 같은 형식 코드(REGION_102)를 쓴다.
  *
  * <p>Bean Validation 의 {@code message} 는 컴파일 상수만 받아 enum 을 직접 쓸 수 없다. 코드와 메시지를 여기 모아 DTO 가 참조하게
  * 하면 오타 · 삭제를 컴파일러가 잡는다. 형식은 {@code "코드:사용자 메시지"} — {@code ValidationErrorSupport} 가 접두어를 분리한다.

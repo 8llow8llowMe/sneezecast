@@ -12,8 +12,10 @@ spring:
       # Redis 는 템플릿으로 TTL 키-값만 다룬다. 리포지터리 스캔은 JPA 만 하게 해서, 리포지터리가 어느 저장소 것인지 헷갈릴 여지를 없앤다.
       repositories:
         enabled: false
-  # 서비스 간 호출(Feign) 공통 timeout — 지금은 내 동네 저장 · 조회의 surveillance 행정동 확인뿐이다. 사용자 요청 경로라 게이트웨이 응답 상한
+  # 서비스 간 호출(Feign) 공통 timeout — 지금은 내 동네 · 관심 동네의 surveillance 행정동 확인뿐이다. 사용자 요청 경로라 게이트웨이 응답 상한
   # (GATEWAY_RESPONSE_TIMEOUT 10s)보다 훨씬 짧게 둔다: 같은 망의 단건 PK 조회라 정상이면 수십 ms 이고, 늦으면 기다리지 않고 503 으로 끝낸다.
+  # 관심 동네 목록은 동네마다(region.interest.max-count, 기본 3) 순차로 부른다 — 모두 read-timeout 직전에 겨우 답하면 합이 게이트웨이 상한을
+  # 넘을 수 있다(그때는 게이트웨이 504). timeout 을 늘리거나 상한을 키울 때 함께 본다.
   # 서킷 자동 래핑(spring.cloud.openfeign.circuitbreaker.enabled)은 끈 채 둔다 — InternalClientSupport 가 감싼다.
   cloud:
     openfeign:
@@ -33,6 +35,12 @@ infra:
 snowflake:
   datacenter-id: ${SNOWFLAKE_DATACENTER_ID:0}
   worker-id: ${SNOWFLAKE_WORKER_ID:0}
+
+# 관심 동네(region 컨텍스트). 0 이하면 기동 실패. 환경변수로 받지 않는다 — 프론트 상수 INTEREST_REGION_LIMIT 과 같은 값이어야 해서 이 파일이 정본이다.
+region:
+  interest:
+    # 회원당 관심 동네 상한(내 동네는 세지 않는다). 줄여도 이미 고른 동네는 지우지 않고 더 고르지 못하게만 한다.
+    max-count: 3
 
 auth:
   # 인증 메일 발신자 표시. 비면 "우리동네체온계" / SMTP 계정 주소.
