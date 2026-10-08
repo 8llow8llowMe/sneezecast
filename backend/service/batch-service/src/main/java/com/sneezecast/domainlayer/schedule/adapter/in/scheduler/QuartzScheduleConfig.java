@@ -1,6 +1,7 @@
 package com.sneezecast.domainlayer.schedule.adapter.in.scheduler;
 
 import com.sneezecast.domainlayer.notifiableimport.adapter.in.batch.job.NotifiableImportJobConfig;
+import com.sneezecast.domainlayer.sentinelimport.adapter.in.batch.job.SentinelImportJobConfig;
 import com.sneezecast.global.properties.BatchScheduleProperties;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -75,6 +76,23 @@ public class QuartzScheduleConfig {
         @Qualifier("notifiableImportJobDetail") JobDetail notifiableImportJobDetail
     ) {
         return newCronTrigger(notifiableImportJobDetail, batchScheduleProperties.notifiableCron(), batchScheduleProperties);
+    }
+
+    /**
+     * 표본감시 적재(매주 금 06:00 KST). 겹침 금지 목록은 자기 자신뿐이다 — 전수신고 잡과 같은 테이블에 쓰지만 {@code source} 가 달라 행이 겹치지
+     * 않고, 스케줄 잡끼리는 Quartz 스레드가 하나라 겹치지 않는다. 수동 실행 JVM 과의 겹침은 메타데이터 판정이 맡는다.
+     */
+    @Bean
+    public JobDetail sentinelImportJobDetail() {
+        return newJobDetail(SentinelImportJobConfig.JOB_NAME);
+    }
+
+    @Bean
+    public Trigger sentinelImportTrigger(
+        BatchScheduleProperties batchScheduleProperties,
+        @Qualifier("sentinelImportJobDetail") JobDetail sentinelImportJobDetail
+    ) {
+        return newCronTrigger(sentinelImportJobDetail, batchScheduleProperties.sentinelCron(), batchScheduleProperties);
     }
 
     /**

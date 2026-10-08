@@ -19,13 +19,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param timeZone          cron 과 {@code runAt} 을 해석할 시간대. 배포 환경의 {@code -Duser.timezone} 에 기대지 않는다. 기본 Asia/Seoul
  * @param staleRunningAfter 이 시간을 넘긴 STARTED 실행은 죽은 JVM 의 잔재로 보고 겹침 판정에서 뺀다. 기본 6시간
  * @param notifiableCron    {@code notifiableImportJob}(전수신고) 주기. 기본 {@code 0 0 5 ? * TUE} (매주 화 05:00)
+ * @param sentinelCron      {@code sentinelImportJob}(표본감시) 주기. 기본 {@code 0 0 6 ? * FRI} (매주 금 06:00)
  */
 @ConfigurationProperties(prefix = "batch.schedule")
-public record BatchScheduleProperties(String timeZone, Duration staleRunningAfter, String notifiableCron) {
+public record BatchScheduleProperties(String timeZone, Duration staleRunningAfter, String notifiableCron, String sentinelCron) {
 
     private static final String DEFAULT_TIME_ZONE = "Asia/Seoul";
     private static final Duration DEFAULT_STALE_RUNNING_AFTER = Duration.ofHours(6);
     static final String DEFAULT_NOTIFIABLE_CRON = "0 0 5 ? * TUE";
+    static final String DEFAULT_SENTINEL_CRON = "0 0 6 ? * FRI";
 
     public BatchScheduleProperties {
         if (timeZone == null || timeZone.isBlank()) {
@@ -50,6 +52,11 @@ public record BatchScheduleProperties(String timeZone, Duration staleRunningAfte
             notifiableCron = DEFAULT_NOTIFIABLE_CRON;
         }
         notifiableCron = requireCron(notifiableCron.trim(), "batch.schedule.notifiable-cron");
+
+        if (sentinelCron == null || sentinelCron.isBlank()) {
+            sentinelCron = DEFAULT_SENTINEL_CRON;
+        }
+        sentinelCron = requireCron(sentinelCron.trim(), "batch.schedule.sentinel-cron");
     }
 
     public ZoneId zoneId() {

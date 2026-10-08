@@ -3,6 +3,7 @@ package com.sneezecast.domainlayer.schedule.adapter.in.scheduler;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sneezecast.domainlayer.notifiableimport.adapter.in.batch.job.NotifiableImportJobConfig;
+import com.sneezecast.domainlayer.sentinelimport.adapter.in.batch.job.SentinelImportJobConfig;
 import com.sneezecast.global.properties.BatchScheduleProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,7 @@ import org.springframework.context.annotation.Configuration;
  * 배포에서 실제로 들어올 수 있고, 그때 기동이 죽으면 안 된다.
  *
  * <p>{@code QuartzAutoConfiguration} 을 함께 올려 실제 스케줄러의 시작 여부까지 본다. yml 처럼 {@code auto-startup=false} 를 주고,
- * 조건이 참일 때만 커스터마이저가 그것을 이기는지가 이 구성의 핵심이다. 트리거(전수신고)도 조건을 따라 붙거나 빠진다. 스케줄러가 시작돼도
+ * 조건이 참일 때만 커스터마이저가 그것을 이기는지가 이 구성의 핵심이다. 트리거(전수신고 · 표본감시)도 조건을 따라 붙거나 빠진다. 스케줄러가 시작돼도
  * 발화하지 않게 cron 을 먼 미래(2099년)로 준다 — 이 컨텍스트에는 잡을 띄울 유스케이스가 없다.
  * application.yml 을 읽지 않으므로 스케줄러 이름이 달라 {@code BatchServiceApplicationTests} 의 스케줄러와 겹치지 않는다.
  */
@@ -38,7 +39,8 @@ class QuartzScheduleConfigConditionTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
         .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class, QuartzAutoConfiguration.class))
         .withUserConfiguration(BatchSchedulePropertiesTestConfig.class, QuartzScheduleConfig.class)
-        .withPropertyValues("spring.quartz.auto-startup=false", "batch.schedule.notifiable-cron=" + NEVER_CRON);
+        .withPropertyValues("spring.quartz.auto-startup=false", "batch.schedule.notifiable-cron=" + NEVER_CRON,
+            "batch.schedule.sentinel-cron=" + NEVER_CRON);
 
     @Test
     @DisplayName("스케줄이 켜져 있고 수동 실행 JVM 이 아니면 커스터마이저가 auto-startup=false 를 이겨 스케줄러가 시작된다")
@@ -48,6 +50,7 @@ class QuartzScheduleConfigConditionTest {
                 assertThat(context).hasSingleBean(SchedulerFactoryBeanCustomizer.class);
                 assertThat(context.getBean(Scheduler.class).isStarted()).isTrue();
                 assertThat(context.getBean(Scheduler.class).checkExists(JobKey.jobKey(NotifiableImportJobConfig.JOB_NAME))).isTrue();
+                assertThat(context.getBean(Scheduler.class).checkExists(JobKey.jobKey(SentinelImportJobConfig.JOB_NAME))).isTrue();
             });
     }
 

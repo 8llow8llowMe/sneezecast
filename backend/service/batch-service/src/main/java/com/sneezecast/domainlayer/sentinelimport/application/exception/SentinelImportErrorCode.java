@@ -39,9 +39,18 @@ public enum SentinelImportErrorCode {
 
     /** 실행당 호출 상한에 닿았다. 원천에 부담을 주지 않으려는 장치라, 이후 요청은 부르지 않는다. */
     REQUEST_BUDGET_EXCEEDED("SENTINEL_IMPORT_010", "실행당 감염병포털 호출 상한에 닿아 더 부르지 않습니다. (used=%s, maxCallsPerRun=%s)",
-        HttpStatus.TOO_MANY_REQUESTS);
+        HttpStatus.TOO_MANY_REQUESTS),
 
-    // 실행 요약 — 020 ~ 029 은 적재 잡(#157)이 쓴다.
+    // 실행 요약 — 020 ~ 029
+
+    /**
+     * 실행 하나에서 실패한 요청이 있다. 실패한 요청마다 FAILED 적재 이력이 남아 있고, 이 예외는 Step · Job 을 FAILED 로 끝내 알리는 몫이다.
+     * {@code aborted=true} 면 {@code abortedBy} 코드 때문에 남은 요청({@code notAttempted})을 부르지 않았다. {@code failedRequestKeys} 는 앞에서부터
+     * 최대 20개다.
+     */
+    RUN_FAILED("SENTINEL_IMPORT_020",
+        "표본감시 적재에서 실패한 요청이 있습니다. (planned=%s, imported=%s, failed=%s, notAttempted=%s, aborted=%s, abortedBy=%s, failedRequestKeys=%s)",
+        HttpStatus.BAD_GATEWAY);
 
     private final String code;
     private final String message;

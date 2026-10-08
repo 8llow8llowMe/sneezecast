@@ -7,6 +7,7 @@ import com.sneezecast.domainlayer.notifiableimport.adapter.in.batch.job.Notifiab
 import com.sneezecast.domainlayer.schedule.adapter.in.scheduler.SpringBatchLaunchQuartzJob;
 import com.sneezecast.domainlayer.schedule.application.exception.ScheduleErrorCode;
 import com.sneezecast.domainlayer.schedule.application.exception.ScheduleException;
+import com.sneezecast.domainlayer.sentinelimport.adapter.in.batch.job.SentinelImportJobConfig;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.concurrent.CompletableFuture;
@@ -33,8 +34,8 @@ import org.springframework.test.annotation.DirtiesContext;
 /**
  * 스케줄을 켠 전체 컨텍스트 게이트. {@code BatchServiceApplicationTests} 와 같은 대체값에 {@code BATCH_SCHEDULE_ENABLED=true} 만 다르다.
  *
- * <p>여기서는 스케줄러가 <b>실제로 시작된다</b>. 실제 트리거({@code notifiableImportJob})가 등록되지만 cron 을 먼 미래(2099년)로 바꿔 저절로
- * 발화하지 않게 한다 — 발화하면 질병관리청 API 를 부르러 간다(키가 없어 실패하더라도). 대신 테스트가 {@code districtImportJob} 을 향한
+ * <p>여기서는 스케줄러가 <b>실제로 시작된다</b>. 실제 트리거({@code notifiableImportJob} · {@code sentinelImportJob})가 등록되지만 cron 을 먼
+ * 미래(2099년)로 바꿔 저절로 발화하지 않게 한다 — 발화하면 질병관리청 API · 감염병포털을 부르러 간다. 대신 테스트가 {@code districtImportJob} 을 향한
  * 1회성 트리거를 직접 걸어, Quartz 가 만든 {@link SpringBatchLaunchQuartzJob} 에 유스케이스가 주입되고 {@code JobLauncher} 까지 닿는지 본다.
  * {@code year} 없이 띄우므로 잡 검증기가 JobInstance 를 만들기 전에 거절한다 — 외부 호출도 메타 행도 생기지 않는다.
  *
@@ -54,6 +55,7 @@ import org.springframework.test.annotation.DirtiesContext;
     "spring.batch.jdbc.initialize-schema=always",
     "BATCH_SCHEDULE_ENABLED=true",
     "batch.schedule.notifiable-cron=0 0 0 1 1 ? 2099",
+    "batch.schedule.sentinel-cron=0 0 0 1 1 ? 2099",
     "spring.quartz.properties.org.quartz.scheduler.instanceName=batch-schedule-context-scheduler"
 })
 @DirtiesContext
@@ -71,16 +73,19 @@ class BatchScheduleContextTests {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("스케줄을 켜면 커스터마이저가 auto-startup=false 를 이겨 스케줄러가 시작되고, notifiableImportJob 의 JobDetail · Trigger 가 등록된다")
-    void startsSchedulerWithNotifiableTriggerWhenEnabled() throws Exception {
+    @DisplayName("스케줄을 켜면 커스터마이저가 auto-startup=false 를 이겨 스케줄러가 시작되고, 전수신고 · 표본감시 잡의 JobDetail · Trigger 가 등록된다")
+    void startsSchedulerWithImportTriggersWhenEnabled() throws Exception {
         assertThat(scheduler.isStarted()).isTrue();
-        assertThat(scheduler.getJobKeys(GroupMatcher.anyGroup())).containsExactly(JobKey.jobKey(NotifiableImportJobConfig.JOB_NAME));
+        assertThat(scheduler.getJobKeys(GroupMatcher.anyGroup()))
+            .containsExactlyInAnyOrder(JobKey.jobKey(NotifiableImportJobConfig.JOB_NAME), JobKey.jobKey(SentinelImportJobConfig.JOB_NAME));
 
-        Trigger trigger = scheduler.getTrigger(TriggerKey.triggerKey(NotifiableImportJobConfig.JOB_NAME + "Trigger"));
-        assertThat(trigger).isNotNull();
-        assertThat(trigger.getJobKey()).isEqualTo(JobKey.jobKey(NotifiableImportJobConfig.JOB_NAME));
-        assertThat(trigger.getNextFireTime()).isInTheFuture();
-        assertThat(scheduler.getTriggerState(trigger.getKey())).isEqualTo(Trigger.TriggerState.NORMAL);
+        for (String jobName : new String[] {NotifiableImportJobConfig.JOB_NAME, SentinelImportJobConfig.JOB_NAME}) {
+            Trigger trigger = scheduler.getTrigger(TriggerKey.triggerKey(jobName + "Trigger"));
+            assertThat(trigger).as(jobName).isNotNull();
+            assertThat(trigger.getJobKey()).isEqualTo(JobKey.jobKey(jobName));
+            assertThat(trigger.getNextFireTime()).isInTheFuture();
+            assertThat(scheduler.getTriggerState(trigger.getKey())).isEqualTo(Trigger.TriggerState.NORMAL);
+        }
     }
 
     @Test
