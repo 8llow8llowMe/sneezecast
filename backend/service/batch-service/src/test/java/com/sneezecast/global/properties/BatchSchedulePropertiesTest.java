@@ -21,7 +21,7 @@ class BatchSchedulePropertiesTest {
         .withUserConfiguration(TestConfig.class);
 
     @Test
-    @DisplayName("값을 주지 않으면 Asia/Seoul · 6시간 · 전수신고 화 05:00 이 채워진다")
+    @DisplayName("값을 주지 않으면 Asia/Seoul · 6시간 · 전수신고 화 05:00 · 표본감시 금 06:00 이 채워진다")
     void fillsDefaultsWhenAbsent() {
         contextRunner.run(context -> {
             BatchScheduleProperties properties = context.getBean(BatchScheduleProperties.class);
@@ -29,6 +29,7 @@ class BatchSchedulePropertiesTest {
             assertThat(properties.zoneId()).isEqualTo(ZoneId.of("Asia/Seoul"));
             assertThat(properties.staleRunningAfter()).isEqualTo(Duration.ofHours(6));
             assertThat(properties.notifiableCron()).isEqualTo("0 0 5 ? * TUE");
+            assertThat(properties.sentinelCron()).isEqualTo("0 0 6 ? * FRI");
         });
     }
 
@@ -40,6 +41,25 @@ class BatchSchedulePropertiesTest {
         contextRunner.withPropertyValues("batch.schedule.notifiable-cron=")
             .run(context -> assertThat(context.getBean(BatchScheduleProperties.class).notifiableCron())
                 .isEqualTo(BatchScheduleProperties.DEFAULT_NOTIFIABLE_CRON));
+    }
+
+    @Test
+    @DisplayName("표본감시 cron 은 설정한 값을 받고, 빈 값은 기본값으로 접는다")
+    void bindsSentinelCron() {
+        contextRunner.withPropertyValues("batch.schedule.sentinel-cron=0 0 7 ? * SAT")
+            .run(context -> assertThat(context.getBean(BatchScheduleProperties.class).sentinelCron()).isEqualTo("0 0 7 ? * SAT"));
+        contextRunner.withPropertyValues("batch.schedule.sentinel-cron= ")
+            .run(context -> assertThat(context.getBean(BatchScheduleProperties.class).sentinelCron())
+                .isEqualTo(BatchScheduleProperties.DEFAULT_SENTINEL_CRON));
+    }
+
+    @ParameterizedTest(name = "sentinel-cron={0}")
+    @ValueSource(strings = {"0 6 * * FRI", "0 0 6 * * FRI", "every friday"})
+    @DisplayName("표본감시 cron 도 Quartz cron 이 아니면 기동을 세운다")
+    void rejectsInvalidSentinelCron(String cron) {
+        contextRunner.withPropertyValues("batch.schedule.sentinel-cron=" + cron)
+            .run(context -> assertThat(context).hasFailed()
+                .getFailure().rootCause().hasMessageContaining("batch.schedule.sentinel-cron"));
     }
 
     @ParameterizedTest(name = "notifiable-cron={0}")

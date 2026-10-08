@@ -3,6 +3,7 @@ package com.sneezecast.domainlayer.schedule.adapter.in.scheduler;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sneezecast.domainlayer.notifiableimport.adapter.in.batch.job.NotifiableImportJobConfig;
+import com.sneezecast.domainlayer.sentinelimport.adapter.in.batch.job.SentinelImportJobConfig;
 import com.sneezecast.global.properties.BatchScheduleProperties;
 import java.time.DayOfWeek;
 import java.time.ZoneId;
@@ -28,7 +29,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * {@code QuartzScheduleConfig} 의 실제 트리거 빈({@code notifiableImportJob})이 메모리 스토어 스케줄러에 어떻게 올라가는지 본다. 헬퍼
+ * {@code QuartzScheduleConfig} 의 실제 트리거 빈({@code notifiableImportJob} · {@code sentinelImportJob})이 메모리 스토어 스케줄러에 어떻게 올라가는지 본다. 헬퍼
  * ({@link QuartzScheduleConfig#newJobDetail})의 겹침 목록 정리는 스케줄러 없이 직접 본다.
  *
  * <p><b>스케줄러는 시작하지 않는다.</b> 시작하면 트리거가 실제 cron 시각에 발화하려 든다. {@code spring.quartz.auto-startup=false} 만으로는
@@ -42,6 +43,7 @@ class QuartzScheduleRegistrationTest {
 
     private static final String SCHEDULER_NAME = "schedule-registration-test-scheduler";
     private static final String JOB_NAME = NotifiableImportJobConfig.JOB_NAME;
+    private static final String SENTINEL_JOB_NAME = SentinelImportJobConfig.JOB_NAME;
     private static final String OTHER_JOB_NAME = "otherImportJob";
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
@@ -73,8 +75,8 @@ class QuartzScheduleRegistrationTest {
             Trigger trigger = scheduler.getTrigger(TriggerKey.triggerKey(JOB_NAME + "Trigger"));
             assertThat(trigger).isNotNull();
             assertThat(trigger.getJobKey()).isEqualTo(jobDetail.getKey());
-            // 지금 스케줄되는 잡은 이것 하나다. districtImportJob 은 수동 전용이다.
-            assertThat(scheduler.getJobKeys(GroupMatcher.anyGroup())).containsExactly(jobDetail.getKey());
+            // 지금 스케줄되는 잡은 전수신고 · 표본감시 둘이다. districtImportJob 은 수동 전용이다.
+            assertThat(scheduler.getJobKeys(GroupMatcher.anyGroup())).containsExactlyInAnyOrder(jobDetail.getKey(), JobKey.jobKey(SENTINEL_JOB_NAME));
         });
     }
 
@@ -87,6 +89,38 @@ class QuartzScheduleRegistrationTest {
             assertThat(jobDataMap.getString(SpringBatchLaunchQuartzJob.JOB_NAME_KEY)).isEqualTo(JOB_NAME);
             assertThat(SpringBatchLaunchQuartzJob.parseBlockedBy(jobDataMap.getString(SpringBatchLaunchQuartzJob.BLOCKED_BY_KEY)))
                 .containsExactly(JOB_NAME);
+        });
+    }
+
+    @Test
+    @DisplayName("표본감시 JobDetail 도 같은 모양(durable · 동시 실행 금지)이고 겹침 금지 목록은 자기 자신뿐이다 — 전수신고와는 source 가 달라 행이 겹치지 않는다")
+    void sentinelJobBlocksOnlyItself() {
+        contextRunner.run(context -> {
+            JobDetail jobDetail = context.getBean(Scheduler.class).getJobDetail(JobKey.jobKey(SENTINEL_JOB_NAME));
+
+            assertThat(jobDetail.getJobClass()).isEqualTo(SpringBatchLaunchQuartzJob.class);
+            assertThat(jobDetail.isDurable()).isTrue();
+            assertThat(jobDetail.isConcurrentExectionDisallowed()).isTrue();
+            assertThat(jobDetail.getJobDataMap().getString(SpringBatchLaunchQuartzJob.JOB_NAME_KEY)).isEqualTo(SENTINEL_JOB_NAME);
+            assertThat(SpringBatchLaunchQuartzJob.parseBlockedBy(jobDetail.getJobDataMap().getString(SpringBatchLaunchQuartzJob.BLOCKED_BY_KEY)))
+                .containsExactly(SENTINEL_JOB_NAME);
+        });
+    }
+
+    @Test
+    @DisplayName("표본감시 기본 cron 의 다음 발화는 Asia/Seoul 기준 금요일 06:00 이고, misfire 는 FireAndProceed 다")
+    void sentinelNextFireIsFridaySixKst() {
+        contextRunner.run(context -> {
+            CronTrigger trigger = (CronTrigger) context.getBean(Scheduler.class).getTrigger(TriggerKey.triggerKey(SENTINEL_JOB_NAME + "Trigger"));
+
+            assertThat(trigger.getJobKey()).isEqualTo(JobKey.jobKey(SENTINEL_JOB_NAME));
+            assertThat(trigger.getCronExpression()).isEqualTo("0 0 6 ? * FRI");
+            assertThat(trigger.getTimeZone()).isEqualTo(TimeZone.getTimeZone("Asia/Seoul"));
+            ZonedDateTime nextFire = trigger.getNextFireTime().toInstant().atZone(ZoneId.of("Asia/Seoul"));
+            assertThat(nextFire.getDayOfWeek()).isEqualTo(DayOfWeek.FRIDAY);
+            assertThat(nextFire.getHour()).isEqualTo(6);
+            assertThat(nextFire.getMinute()).isZero();
+            assertThat(trigger.getMisfireInstruction()).isEqualTo(CronTrigger.MISFIRE_INSTRUCTION_FIRE_ONCE_NOW);
         });
     }
 

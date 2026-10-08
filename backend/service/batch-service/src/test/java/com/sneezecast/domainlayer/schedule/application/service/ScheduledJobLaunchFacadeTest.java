@@ -47,7 +47,7 @@ class ScheduledJobLaunchFacadeTest {
     private final ScheduleMetricsPort scheduleMetricsPort = mock(ScheduleMetricsPort.class);
 
     private final ScheduledJobLaunchFacade facade = new ScheduledJobLaunchFacade(
-        new BatchScheduleProperties("Asia/Seoul", STALE_AFTER, null), runningJobGuardProcessor, batchJobLaunchPort, scheduleMetricsPort);
+        new BatchScheduleProperties("Asia/Seoul", STALE_AFTER, null, null), runningJobGuardProcessor, batchJobLaunchPort, scheduleMetricsPort);
 
     private final ScheduledLaunchCommand command = new ScheduledLaunchCommand(JOB_NAME, BLOCKED_BY, SCHEDULED_AT, FIRED_AT);
 
@@ -104,7 +104,7 @@ class ScheduledJobLaunchFacadeTest {
     @DisplayName("runAt 은 JVM 이 아니라 설정 시간대로 만든다")
     void formatsRunAtInConfiguredTimeZone() {
         ScheduledJobLaunchFacade utcFacade = new ScheduledJobLaunchFacade(
-            new BatchScheduleProperties("UTC", STALE_AFTER, null), runningJobGuardProcessor, batchJobLaunchPort, scheduleMetricsPort);
+            new BatchScheduleProperties("UTC", STALE_AFTER, null, null), runningJobGuardProcessor, batchJobLaunchPort, scheduleMetricsPort);
         given(runningJobGuardProcessor.findBlocking(BLOCKED_BY, FIRED_AT, STALE_AFTER)).willReturn(Optional.of("sentinelImportJob"));
 
         assertThat(utcFacade.launch(command).runAt()).isEqualTo("2026-10-05T20:00:00");

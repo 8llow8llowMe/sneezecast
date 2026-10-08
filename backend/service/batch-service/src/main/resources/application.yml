@@ -56,6 +56,8 @@ batch:
     # 원천의 갱신 주기에서 나온 값이라 환경마다 다르지 않아 환경변수로 열지 않는다. 바꾸려면 여기를 고친다.
     # notifiableImportJob(전수신고): 매주 화 05:00. districtImportJob 은 수동 전용이라 주기가 없다.
     notifiable-cron: "0 0 5 ? * TUE"
+    # sentinelImportJob(표본감시): 매주 금 06:00. 지난주가 아직 '집계 중' 이어도 다음 주 실행이 최근 8주를 다시 받아 메운다.
+    sentinel-cron: "0 0 6 ? * FRI"
 
 # SGIS 오픈API (districtImportJob). 인증키는 Vault kv/sneezecast/batch 에서 주입한다.
 # 비어 있어도 기동은 성공하고, 잡을 실행할 때 SGIS_CREDENTIALS_MISSING 으로 실패한다.
