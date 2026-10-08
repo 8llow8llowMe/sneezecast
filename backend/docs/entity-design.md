@@ -203,20 +203,30 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | respiratory_count | INT | N | 호흡기 증상군 보고 수 |
 | enteric_count | INT | N | 장관 증상군 보고 수 |
 | revised_report_count | INT | N | 그 주에 한 번 이상 수정된 보고 수. 반복 보고 검토 후보의 근거 |
-| level | VARCHAR(20) | N | `AggregateLevel` — GOOD / NORMAL / CAUTION / INSUFFICIENT |
-| insufficient_reason | VARCHAR(20) | Y | `InsufficientReason` — LOW_SAMPLE / UNSTABLE. level 이 INSUFFICIENT 일 때만 |
+| level | VARCHAR(20) | N | `AggregateLevel` — NORMAL / SLIGHT / HIGH / INSUFFICIENT |
+| insufficient_reason | VARCHAR(20) | Y | `InsufficientReason` — LOW_SAMPLE / UNSTABLE / NO_BASELINE. level 이 INSUFFICIENT 일 때만 |
+| baseline_participant_count | INT | Y | 판정에 쓴 기준선 주들의 참여자 합. 기준선이 없으면(INSUFFICIENT) null |
+| baseline_symptomatic_count | INT | Y | 판정에 쓴 기준선 주들의 증상 보고 합. 기준선 비율은 저장하지 않고 조회 시 이 두 수로 계산한다 |
 | rule_version | VARCHAR(20) | N | 판정에 쓴 규칙 버전 (설정 `aggregate.rule-version`). 규칙이 바뀌어도 과거 판정을 설명할 수 있게 남긴다 |
 | calculated_at | TIMESTAMP | N | 마지막 재계산 시각 |
 | finalized_at | TIMESTAMP | Y | 주 마감 확정 시각. 확정 후에는 재계산하지 않는다 |
 
-- **`uk_district_weekly_aggregate_district_code_iso_week`** — 스케줄러는 현재 주를 `GROUP BY` 로 다시 세서 이 키로 upsert 한다 (카운터 누적이 아니라 멱등).
+- **`uk_district_weekly_aggregate_district_code_iso_week`** — 스케줄러는 현재 주를 `GROUP BY` 로 다시 세서 이 키로 upsert 한다 (카운터 누적이 아니라 멱등). 네이티브 upsert 대신 주 단위 행 목록을 읽어 없으면 insert · 있으면 update 한다. 같은 칸 두 번째 insert 는 UK 위반이 `DataIntegrityViolationException` 그대로 나간다 — 보고 제출(§2-1)과 달리 도메인 예외로 바꾸지 않는다. 스케줄러는 하나뿐이라 경합이 드물고, 그 트랜잭션은 rollback-only 지만 다음 실행이 행을 보고 update 로 맞춘다.
+- 인덱스: `idx_district_weekly_aggregate_iso_week` (주 단위 전체 조회 · 기준선 · 전주 행 조회 · 마감)
 - **재계산 결과에 없는 행**(동을 바꾼 수정 · 파기로 보고가 0건이 된 동)은 수치를 0, level 을 INSUFFICIENT(LOW_SAMPLE) 로 덮어쓴다. 결과에 없다고 건너뛰면 이전 수치가 남는다.
 - **행이 없는 동**은 조회 API 가 INSUFFICIENT 로 응답한다 (보고가 한 번도 없던 동).
-- **판정 (1단계)**: 참여자 < 최소 표본 → LOW_SAMPLE, 전주 대비 참여자 급변 → UNSTABLE (전주 행과 비교한다), 그 밖은 증상 보고 비율 임계값으로 GOOD / NORMAL / CAUTION. 임계값은 설정값이고 기준선 대비 판정은 2단계다.
-  - 전주 행이 없거나 전주 참여자 < 최소 표본이면 UNSTABLE 을 보지 않는다 (비교할 기준이 없다). 판정 순서는 LOW_SAMPLE → UNSTABLE → 비율이다.
-- **마감**: 월요일 00:10(KST) 마감 잡이 지난 주를 마지막으로 재계산하고 `finalized_at` 을 채운다. 지난 주 보고는 받지 않으므로(§2-1) 마감 뒤 원시 보고와 어긋나지 않는다.
+- **판정 (1단계, 시안 기준 — 2026-10-08 결정)**: 단계는 **기준선 대비 증상 보고 비율이 몇 %p 늘었는지**로 정한다 (`AggregateRule`, 순수 도메인). 비율 절대 임계값 단계(GOOD / NORMAL / CAUTION)는 쓰지 않는다. 순서대로 보고 앞에서 걸리면 멈춘다.
+  1. 참여자 < `min-sample`(100) → INSUFFICIENT · LOW_SAMPLE.
+  2. **마감 판정에서만** — 전주 행이 있고 전주 참여자 ≥ `min-sample` 이며 전주 대비 참여 변화량(절댓값) ≥ 전주 참여 × `unstable-change-percent`(50)% → INSUFFICIENT · UNSTABLE. 전주 행이 없거나 표본 미달이면 보지 않는다 (비교할 기준이 없다). 전주는 마감 여부와 무관하다.
+     - 진행 중인 주는 월요일 0명부터 쌓이므로 다 찬 전주와 견주면 전주의 절반에 닿을 때까지 늘 급변이 된다(전주 300명 · 화요일 150명). 그래서 판정은 대상 주 상태(`WeekState`)를 받는다 — 재계산 · 마감 잡(#211)은 **현재 주 재계산을 `IN_PROGRESS`**(이 단계를 건너뛰고 LOW_SAMPLE → NO_BASELINE → %p), **마감(놓친 지난 주 포함)을 `CLOSED`**(모든 단계)로 부른다. UNSTABLE 은 마감 판정만 남기므로 기준선 자격(마감 ∧ UNSTABLE 아님)의 뜻은 그대로다.
+  3. **기준선**: 같은 동의 직전 `baseline-lookback-weeks`(8)주 중 **마감됐고 · 참여자 ≥ `min-sample` 이고 · UNSTABLE 이 아닌** 주를 최근 순으로 `baseline-weeks`(4)개 고른다. 모자라면 INSUFFICIENT · NO_BASELINE. 기준선 비율 = Σ증상 / Σ참여 (주별 비율의 평균이 아니라 합산 비율). 그 주 판정이 NO_BASELINE 이어도 조건을 채우면 기준선이 된다.
+  4. Δ = 증상 / 참여 − 기준선 비율. Δ ≥ `high-delta-pp`(8)%p → HIGH, ≥ `slight-delta-pp`(3)%p → SLIGHT, 그 밖(감소 포함) → NORMAL.
+  - 비교는 정수 곱셈으로 한다 — `100 × (증상 × 기준선 참여 − 기준선 증상 × 참여) ≥ pp × 참여 × 기준선 참여`. 부동소수로 나누면 정확히 3%p 같은 경계가 어긋난다.
+  - 판정에 쓴 기준선 두 수를 `baseline_*` 에 남긴다. INSUFFICIENT 면 이유만 있고 기준선은 null, 그 밖의 단계는 이유가 null 이고 기준선이 있다.
+  - 값은 surveillance `application.yml` 의 `aggregate.*` 가 정본이다. **자리표시자를 두지 않고 배포 설정(compose · Vault)에 `AGGREGATE_*` 를 넣지 않는다** — relaxed binding 으로 환경변수가 yml 값을 덮으면 `rule-version` 은 그대로인 채 규칙만 바뀐다. 잘못된 값(0 이하, high ≤ slight, high > 100, lookback < baseline-weeks, 버전 공백 · 20자 초과)이면 기동 실패. **값을 하나라도 바꾸면 `rule-version` 도 바꾼다** — 같은 버전 이름에 다른 규칙이 섞이면 과거 판정을 설명할 수 없다. 화면 값(design-guide "상태 단계"의 `slightDeltaPp` · `highDeltaPp` · `publicThresholdParticipants`)과 같게 둔다.
+- **마감**: 월요일 00:10(KST) 마감 잡이 지난 주를 마지막으로 재계산하고 `finalized_at` 을 채운다. 지난 주 보고는 받지 않으므로(§2-1) 마감 뒤 원시 보고와 어긋나지 않는다. 재계산 갱신은 `finalized_at is null` 조건으로만 고치므로 마감된 행은 바뀌지 않는다(0건). 마감은 주 단위 벌크 갱신이고 이미 마감된 행은 그대로라 다시 불러도 된다. 마감 잡이 놓친 주 중 **집계 행이 있는** 미마감 주는 "현재 주 이전의 마감 안 된 주" 조회로 따라잡는다. 이 조회는 행이 하나도 없는 지난 주(배포 전부터 쌓인 보고, 한 주 내내 서비스가 내려가 재계산이 한 번도 돌지 않은 주)를 돌려주지 않으므로, #211 이 원시 보고(`weekly_report`) 쪽에서 그런 주를 찾아 행을 채운 뒤 마감해야 한다.
 - 비율은 저장하지 않고 조회 시 `count / participant_count` 로 계산한다. **INSUFFICIENT 면 API 는 수치 · 비율을 내리지 않는다** — 행에 숫자가 있어도 응답에서 뺀다.
-- **검토 후보 (1단계)**: 운영자 화면이 조회 시 계산한다 — 참여 급증(전주 대비 `participant_count`), 반복 보고(`revised_report_count / participant_count`). 기준선 대비 변화와 후보 적재 테이블(`review_signal`)은 2단계다.
+- **검토 후보 (1단계)**: 운영자 화면이 조회 시 계산한다 — 참여 급증(전주 대비 `participant_count`), 반복 보고(`revised_report_count / participant_count`), 기준선 대비 변화(단계 SLIGHT · HIGH 와 `baseline_*`). 후보 적재 테이블(`review_signal`)은 2단계다.
 - 집계 · 마감 스케줄러는 **한 번에 하나만** 돈다. 1단계는 surveillance 인스턴스 1개로 운영하고, 늘리면 ShedLock 을 붙인다.
 - 원시 보고가 52주 뒤 지워져도 이 행은 남는다 (익명 집계).
 
@@ -438,7 +448,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | `push_subscription` · `notification_delivery` (auth) | PWA 푸시 구독 · 발송 로그 | 발행 안내는 서비스 안에서만 본다 |
 | `outbox_event` (surveillance) | 발행 → 알림 전달 | 알림이 없으니 필요 없다 |
 | `review_signal` (surveillance) | 검토 후보 적재 · 처리 상태 | 운영자 화면이 조회 시 계산한다 (§2-2) |
-| `district_baseline` (surveillance) | 기준선 · 기준선 대비 변화 | 없음 |
+| `district_baseline` (surveillance) | 기준선 별도 저장 · 장기(계절) 기준선 | 집계 행이 판정에 쓴 기준선(직전 마감 4주 합산)을 `baseline_*` 컬럼에 남긴다 (§2-2) |
 | `threshold_config` (surveillance) | 판정 임계값 운영자 변경 | `application.yml` 설정 + `rule_version` |
 | `member_role_history` (auth) | OPERATOR · ADMIN 역할 부여 · 회수 이력 | ADMIN 이 DB 로 직접 부여하고 로그로 남긴다 |
 
@@ -454,8 +464,8 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | `ConsentType` | TERMS_OF_SERVICE / PRIVACY_POLICY / SENSITIVE_HEALTH_INFO / AGE_OVER_19 | member_consent |
 | `PurgeReason` | WITHDRAWAL / HEALTH_CONSENT_WITHDRAWN | report_purge_request |
 | `SymptomGroup` (비트) | RESPIRATORY(1, 발열 · 기침 · 인후통) / ENTERIC(2, 구토 · 설사) | weekly_report.symptom_mask, 보고 요청 |
-| `AggregateLevel` | GOOD(좋음) / NORMAL(보통) / CAUTION(주의) / INSUFFICIENT(판단 보류 — 화면 문구는 `자료 부족`) | district_weekly_aggregate, advisory |
-| `InsufficientReason` | LOW_SAMPLE / UNSTABLE | district_weekly_aggregate |
+| `AggregateLevel` | NORMAL(평소 수준) / SLIGHT(조금 늘었어요) / HIGH(많이 늘었어요) / INSUFFICIENT(자료 부족) — 시안 단계 | district_weekly_aggregate, advisory |
+| `InsufficientReason` | LOW_SAMPLE(참여 부족) / UNSTABLE(참여 급변) / NO_BASELINE(기준선 없음) — 판정 순서 | district_weekly_aggregate |
 | `AdvisoryStatus` | DRAFT / AI_DRAFTED / EDITED / APPROVED / PUBLISHED / RETRACTED | advisory, advisory_history |
 | `OfficialSource` | KDCA_NOTIFIABLE / KDCA_SENTINEL | official_surveillance, official_source_snapshot |
 | `OfficialProgram` | NOTIFIABLE / INFLUENZA_ILI / ARI / ENTERIC | official_surveillance, official_source_snapshot |
