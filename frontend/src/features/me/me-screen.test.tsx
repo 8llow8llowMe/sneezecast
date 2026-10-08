@@ -849,9 +849,39 @@ describe('MeScreen 실데이터 (회원 API, #164)', () => {
     expect(section('me-account')).toContain('재채기탐정')
     expect(section('me-account')).toContain('카카오 · kakao@example.com')
     expect(section('me-region')).toContain('역삼1동')
-    // 관심 동네는 API 가 없어(BE 미정) 요청하지 않고 수를 비운다 — 목 예시 수(2곳)를 보이지 않는다
+    // 관심 동네 수는 읽기 전이면 비운다 — 목 예시 수(2곳)를 보이지 않는다
+    const interestRow = screen.getByRole('link', { name: /^관심 동네/ })
+    expect(interestRow.textContent).toBe('관심 동네')
+
+    act(() =>
+      server.reply(
+        'GET /api/v1/members/me/interest-regions',
+        okResponse({
+          contents: [
+            { code: '11440690', name: '망원1동', sigungu: '서울특별시 마포구', abolished: false },
+          ],
+          hasNext: false,
+        }),
+      ),
+    )
+    await flush()
+    expect(interestRow.textContent).toBe('관심 동네1곳')
+  })
+
+  it('관심 동네를 읽지 못하면 수를 비운다 — 내 정보는 그대로다(#237)', async () => {
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    renderMe()
+    await flush()
+    act(() => {
+      server.reply('GET /api/v1/members/me', okResponse(myInfoBody()))
+      server.reply('GET /api/v1/members/me/region', okResponse(null))
+      server.reply('GET /api/v1/members/me/interest-regions', errorResponse('REGION_004', 503))
+    })
+    await flush()
+
     expect(screen.getByRole('link', { name: /^관심 동네/ }).textContent).toBe('관심 동네')
-    expect(server.requests().filter((request) => request.includes('interest'))).toEqual([])
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('알림을 받을 수 없는 기기의 미지원 상자는 알림 설정과 같게 설치 문장 · 링크 없이 홈 상단 안내만 둔다 (#195)', async () => {
@@ -889,7 +919,7 @@ describe('MeScreen 실데이터 (회원 API, #164)', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: '다시 시도' }))
     await flush()
-    expect(server.requests()).toEqual([
+    expect(server.requests().filter((request) => !request.includes('interest'))).toEqual([
       'GET /api/v1/members/me',
       'GET /api/v1/members/me/region',
       'GET /api/v1/members/me/region',
