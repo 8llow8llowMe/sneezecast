@@ -10,6 +10,7 @@
 [auth 스키마]                                   [surveillance 스키마]
 member ──1:N── member_consent                   district ◀── batch 적재 (SGIS)
   │──1:1── member_region ─(district_code)──▶      ▲ (district_code, 보고 요청이 싣는다)
+  │──1:N── member_interest_region ───────────▶    │
   └──1:N── report_purge_request ──DELETE──▶     weekly_report            (reporter_key, member_id 없음)
                                                   │ GROUP BY
         member.id ──HMAC(pepper)──▶ reporter_key  district_weekly_aggregate
@@ -38,6 +39,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | `member_consent.withdrawn_at` | 없음 | 있음 | 건강정보 동의는 철회할 수 있다 |
 | 동의 인덱스 | `idx_member_consent_member_id` | `idx_member_consent_member_id_type` | 항목별 최신 동의 조회 |
 | 행정동 | 없음 | `member_region` | 동네 선택 |
+| 관심 동네 | 없음 | `member_interest_region` | 내 동네 말고 지켜볼 동네 (상한 3곳) |
 | 보고 파기 | 없음 | `report_purge_request` | 다른 서비스에 있는 민감정보 파기를 끝까지 보장한다 |
 
 ### 1-1. member
@@ -101,7 +103,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | member_id | BIGINT | N | 회원 아이디 (FK: member.id). **`uk_member_region_member_id`** |
 | district_code | VARCHAR(8) | N | 행정동 코드 (SGIS 8자리, surveillance `district.code`). 저장 전 내부 API 로 **현행 코드인지** 검증한다 |
 
-- `member` 컬럼이 아니라 테이블로 둔 이유: `region` 컨텍스트가 소유하고, 관심 지역을 여럿 두게 되면 unique 만 풀어 1:N 으로 넘어간다.
+- `member` 컬럼이 아니라 테이블로 둔 이유: `region` 컨텍스트가 소유한다. 관심 동네(여러 곳)는 이 테이블의 unique 를 풀지 않고 별도 테이블 `member_interest_region`(§1-6)으로 뒀다 — 내 동네는 주간 보고 지역이라 회원당 하나가 불변식이고, 두 목록의 규칙(상한 · 폐지 처리 · 바꾸기)이 다르다.
 - 행정동이 개편돼도 이 행은 자동으로 바꾸지 않는다. 폐지된 코드면 화면에서 다시 선택하게 한다 (§3-1).
 - 저장은 `PUT /api/v1/members/me/region` 의 회원당 1행 upsert 이고 **현재 값만** 둔다(변경 이력 없음). 현행 코드만 저장할 수 있다. 이름 · 폐지 여부는 저장하지 않고 조회할 때마다 surveillance 내부 API 로 읽어 `abolished` 로 내린다.
 - FE 는 주간 보고 요청에 이 코드를 실어 보낸다. surveillance 는 요청 코드를 `district` 로 다시 검증하고 보고 행에 **복사**한다 (§2-1) — 회원이 동네를 바꿔도 지난 보고의 지역은 바뀌지 않는다.
@@ -125,6 +127,24 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - **완료 조건: 호출 시작 시각이 `requested_at + access token TTL(15분) + 여유(설정, 기본 5분)` 이후인 파기 호출이 성공했을 때.** 철회 직전에 발급된 다른 기기의 access token 에는 `report:write` 가 최대 15분 남는다. 1차 파기 뒤 그 토큰으로 들어온 보고를 2차 파기가 지운다. 여유는 만료 직전에 검증된 요청이 늦게 커밋되는 경우와 서버 간 시계 오차를 흡수한다.
 - 스케줄러(auth, 5분 주기)는 `completed_at is null` 행에 `DELETE /internal/v1/reporters/{memberId}` 를 부른다. **받는 쪽은 멱등이다** — 지울 행이 0건이어도 204.
 - `attempt_count` 가 임계값(설정)을 넘으면 경보를 낸다. 행을 지우거나 포기 상태로 두지 않는다 (파기는 반드시 끝나야 한다).
+
+### 1-6. member_interest_region — 관심 동네
+
+내 동네(§1-4) 말고 지켜보려고 고른 행정동이다(#217). 회원당 여러 행이고 `region` 컨텍스트가 소유한다. 위치 · 주소가 아니라 행정동 코드만 둔다.
+
+| 컬럼 | 타입 | Null | 설명 |
+|------|------|------|------|
+| id | BIGINT | N | PK (Snowflake). **오름차순이 고른 순서다** |
+| member_id | BIGINT | N | 회원 아이디 (FK: member.id) |
+| district_code | VARCHAR(8) | N | 행정동 코드 (SGIS 8자리, surveillance `district.code`). 저장 전 내부 API 로 **현행 코드인지** 검증한다 |
+| slot | INT | N | 칸 번호 1..`region.interest.max-count`(기본 3). 회원당 상한을 DB unique 로 지키는 데만 쓰고 **순서가 아니다** — 지운 칸을 다음에 고른 동네가 다시 쓴다 |
+
+- 유니크: **`uk_member_interest_region_member_id_district_code`** `(member_id, district_code)` — 같은 동네를 두 번 고르지 못한다. 회원 기준 목록 조회 인덱스를 겸한다. **`uk_member_interest_region_member_id_slot`** `(member_id, slot)` — 동시에 들어온 추가가 같은 빈 칸을 노리면 하나만 들어가 상한을 넘지 않는다.
+- 추가 규칙: 내 동네와 같은 코드 · 이미 고른 코드 · 상한(지금 개수 ≥ max-count)은 409 로 막고, 통과하면 1..max-count 중 가장 작은 빈 칸에 넣는다. 상한을 개수로 보므로 설정을 줄여도 범위 밖 칸의 옛 행이 남아 있을 뿐 더 고르지는 못한다(옛 행을 지우지 않는다).
+- 내 동네를 관심 동네 중 하나로 **바꿔도** 그 관심 동네는 그대로 둔다(내 동네 저장은 이 테이블을 건드리지 않는다 — 2026-10-08 결정).
+- 행정동이 폐지돼도 행을 지우거나 바꾸지 않는다. 조회 때 `abolished: true` 로 내리고 회원이 지운다 (§3-1).
+- 이름 · 폐지 여부는 저장하지 않고 조회할 때마다 surveillance 내부 API 로 읽는다(내 동네와 같다).
+- 회원 단위 삭제(탈퇴 시 정리)는 탈퇴 처리(#154)에서 저장소 포트와 함께 만든다.
 
 ---
 
@@ -283,6 +303,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - **보호 규칙**: 직전 현행 코드 중 새 스냅샷에서 사라지는 비율이 임계값(설정, 기본 2%)을 넘으면 폐지 처리를 하지 않고 잡을 실패시킨다. 2024 → 2025 는 3,559개 중 3개(0.1%)였다. 잘린 응답과 광주 · 전남 통합 같은 대규모 코드 변경은 운영자가 확인한 뒤 잡 파라미터 `allowMassRetire=true` 로 다시 돌린다 — 폐지되면 그 동을 고른 회원 전원이 재선택해야 하기 때문이다.
 - 경계 GeoJSON 은 테이블에 넣지 않는다. 프론트 정적 자원이다 (UTM-K EPSG:5179 → 웹 지도용 4326 으로 변환해서 싣는다).
 - 폐지된 코드를 가진 `member_region` 은 화면에서 재선택을 요구한다. 신 · 구 코드 연계표 API 는 확인되지 않아 자동 이관하지 않는다.
+- 폐지된 코드를 가진 `member_interest_region` 은 지우지 않고 `abolished: true` 로 보이며 회원이 지운다 (§1-6).
 
 ### 3-2. official_surveillance — 질병관리청 감시 자료
 
@@ -445,6 +466,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 |--------|------|--------|
 | member | 탈퇴 후 30일, **보고 파기 완료 후** | 파기 스케줄러가 hard delete |
 | member_consent · member_region | 회원과 같다 | 회원 파기 때 함께 삭제 |
+| member_interest_region | 회원과 같다 | 회원 파기 때 함께 삭제 — 회원 단위 삭제는 탈퇴 처리(#154)에서 만든다 |
 | report_purge_request | 완료 후 1년 (설정) — 파기 증빙 | 정리 스케줄러가 삭제 |
 | weekly_report | 52주 · 탈퇴 / 철회 시 즉시 | 삭제 스케줄러 · 파기 API |
 | district_weekly_aggregate | 계속 (익명 집계) | — |

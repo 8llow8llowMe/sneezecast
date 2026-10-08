@@ -124,7 +124,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | `auth` | 이메일 + 비밀번호 가입·로그인, 카카오 소셜 로그인, 이메일 인증 코드, 비밀번호 재설정, 토큰 발급·재발급·폐기, 세션(기기) 관리 |
 | `member` | 회원 (닉네임·프로필 이미지), 내 정보 수정, 비밀번호 변경, 탈퇴 |
 | `consent` | (별도 컨텍스트를 두지 않는다 — 동의 · 철회 이력과 원시 보고 파기 요청은 `member` 컨텍스트가 맡는다. 알림 수신 동의는 2단계) |
-| `region` | 회원이 선택한 행정동 (내 동네 저장 · 조회 — 코드 검증과 이름 · 폐지 여부는 surveillance 내부 API 를 Feign 으로 부른다) |
+| `region` | 회원이 선택한 행정동 (내 동네 저장 · 조회, 관심 동네 조회 · 추가 · 삭제 — 코드 검증과 이름 · 폐지 여부는 surveillance 내부 API 를 Feign 으로 부른다) |
 | `notification` | PWA 푸시 구독, 안내 발행 시 팬아웃 발송, 발송 로그 (2단계) |
 
 - 스키마: MySQL `auth` (물리 DB 이름 `sneezecast_auth` — 공유 dev MySQL 에서 다른 프로젝트와 겹치지 않게 접두사를 붙인다). Redis · MinIO 사용.
@@ -143,6 +143,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 내 정보 | `GET /me` · `PATCH /me` · `POST /me/withdraw` (#154) · 프로필 이미지 업로드 · `DELETE /me/profile-image` (#112) |
 | 동의 | `POST /me/consents` (동의 · 재동의) · `DELETE /me/consents/SENSITIVE_HEALTH_INFO` (건강정보 동의 철회) |
 | 내 동네 | `GET /me/region` · `PUT /me/region` |
+| 관심 동네 | `GET /me/interest-regions` · `POST /me/interest-regions` · `DELETE /me/interest-regions/{code}` |
 
 **저장소**
 
@@ -151,6 +152,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | MySQL `member` | 이메일(unique) · 비밀번호 해시 · 닉네임 · 프로필 이미지(소셜 URL / 업로드 오브젝트 키) · 역할 · 소셜 제공자 · 상태 · 탈퇴 시각 |
 | MySQL `member_consent` | 동의 종류 · 문서 버전 · 동의/철회 이력 |
 | MySQL `member_region` | 선택한 행정동 (회원당 1개) |
+| MySQL `member_interest_region` | 관심 동네 (회원당 `region.interest.max-count` 개까지, 기본 3) |
 | MySQL `report_purge_request` | 탈퇴 · 건강정보 동의 철회 시 surveillance 원시 보고 파기 요청 (완료될 때까지 재시도) |
 | Redis (TTL) | 이메일 인증 코드, 비밀번호 재설정 코드 · 재설정 토큰(해시), 로그인 · 비밀번호 확인 시도 횟수, OAuth state · 카카오 가입표 · 연결 확인표(해시), refresh 세션 |
 | MinIO | 업로드한 프로필 이미지 |
@@ -262,6 +264,18 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - `GET` 은 미설정이면 200 + `dataBody: null`, 있으면 이름 · 폐지 여부를 그때 surveillance 에서 읽는다(`abolished = !active`). surveillance 에 코드가 없으면 `abolished: true` · 이름 null 로 내리고 WARN 을 남긴다(코드만). 저장 행은 자동으로 바꾸지 않는다.
 - Feign `DistrictClient`(이름 `feign-client.target-services.surveillance-service`), timeout connect 1s · read 3s(`spring.cloud.openfeign.client.config.default`), 서킷 `surveillance-service`(최근 20건 중 10건 이상 · 실패율 50% → 10초 열림, 4xx 제외). 5xx · timeout · 서킷 오픈 · 계약 밖 응답(봉투 없는 404 등)은 `REGION_004`(503) — **검증하지 못한 코드는 저장하지 않고**, 조회도 503 이다.
 
+**관심 동네** (`region` 컨텍스트, `/api/v1/members/me/interest-regions`, #217)
+
+- 내 동네 말고 지켜볼 행정동이다. 인증만 요구하고 `report:write` 는 요구하지 않는다(건강정보가 아니다 — 동의 전 회원도 쓴다). 응답 한 줄은 내 동네와 같은 `MemberRegionResponse {code, name, sigungu, abolished}` 이고, 세 요청 모두 **바뀐 뒤의 목록**을 `SliceResponse { contents, hasNext }` 로 준다 — 고른 순서(`id` 오름차순), 상한만큼만 있어 한 번에 모두 주고 `hasNext` 는 항상 false. 하나도 없으면 빈 `contents` 다(`dataBody: null` 이 아니다).
+- 상한은 `region.interest.max-count`(application.yml, 기본 3 — 환경변수 · Vault 로 받지 않는다. 프론트 `INTEREST_REGION_LIMIT` 과 같게 둔다, 0 이하면 기동 실패 `RegionInterestProperties`). 저장은 칸 번호 `slot`(1..max-count)과 unique `(member_id, slot)` 로 상한을 DB 가 지킨다 — 순서가 아니고, 지운 칸을 다음에 고른 동네가 다시 쓴다 ([entity-design.md §1-6](entity-design.md#1-6-member_interest_region--관심-동네)).
+- `POST`(본문 `{ code }`): 형식(`REGION_101` 필수 · `102` 숫자 8자리 — 내 동네 요청과 같은 규칙) → surveillance 로 현행 확인(`REGION_001` 없는 코드 · `002` 폐지(400), `004` 장애(503) — 내 동네의 `requireSelectableDistrict` 를 그대로 쓴다, 트랜잭션 밖) → `MemberInterestRegionProcessor.add` 트랜잭션에서 **내 동네와 같으면 `REGION_007` → 이미 고른 동네면 `REGION_006` → 상한이 찼으면(지금 개수 ≥ max-count) `REGION_005`**(모두 409), 통과하면 가장 작은 빈 칸에 넣는다. 같은 회원의 동시 추가가 두 unique(`(member_id, district_code)` · `(member_id, slot)`) 중 하나에 막히면 저장소 어댑터가 `REGION_003` 으로 바꾸고, 그 트랜잭션이 롤백된 뒤 **새 읽기 트랜잭션에서 다시 읽어** 그 코드가 있으면 `REGION_006`, 없으면(다른 동네가 같은 칸을 먼저 차지) `REGION_003`(409, 다시 보내면 다음 칸으로 풀린다)이다. 같은 코드를 같은 칸에 넣는 두 요청은 DB 가 어느 제약을 먼저 보고할지 정해져 있지 않아 제약 이름으로 가르지 않는다. 응답 이름은 방금 확인한 동네는 그 값을 쓰고 나머지만 다시 읽는다.
+- `DELETE /{code}`: 경로 코드 형식이 틀리면 `REGION_102`(400, 본문 검증과 같은 봉투 · `fieldErrors[0].field = code`). 벌크 DELETE 라 목록에 없는 코드여도 성공(멱등)이고, 폐지된 동네도 같은 코드로 지운다.
+- `GET`: 저장된 코드(읽기 트랜잭션) → 동네마다 surveillance 를 **순차로** 한 번씩 부른다(벌크 내부 API 가 없고 상한만큼이라 감수 — coding-conventions §8-5 예외). 하나라도 장애면 `REGION_004`(503). 폐지됐으면 `abolished: true`(이름은 남는다), surveillance 에 코드가 없으면 `abolished: true` · `name` · `sigungu` null — 내 동네의 `describe` 와 같은 규칙이고 **저장 행은 자동으로 지우거나 바꾸지 않는다.** 모두 read-timeout 직전에 겨우 답하면 합이 게이트웨이 응답 상한(10초)을 넘을 수 있다(504) — 상한을 키울 때 함께 본다.
+- 내 동네와의 관계: 내 동네와 같은 코드는 관심 동네로 더하지 못하지만(`REGION_007`), **내 동네를 관심 동네 중 하나로 바꾸는 것은 막지 않고 그 관심 동네도 그대로 둔다** — `PUT /me/region` 은 관심 동네를 건드리지 않는다(2026-10-08 결정). 화면이 그 줄을 `내 동네` 로 적는다.
+- **변경은 커밋된 채 503 일 수 있다**: 추가 · 삭제를 커밋한 뒤 목록 이름을 읽다 surveillance 가 실패하면 응답은 `REGION_004` 지만 변경은 남는다. 삭제는 멱등이라 다시 보내면 되고, 추가를 다시 보내면 `REGION_006` 이 된다.
+- 화면 계약: **409(`REGION_003` · `005` · `006` · `007`) 오류 봉투에는 목록이 없다(`dataBody: null`)** — 프론트는 거절 뒤 `GET` 으로 목록을 다시 읽어 맞춘다. `name` · `sigungu` 가 null 인 줄(행정동 서비스가 코드를 모름)은 지어낸 이름 없이 보이고 삭제는 그대로 둔다. 폐지(`abolished: true`)는 이름이 남아 있어도 지우게 안내한다.
+- 탈퇴(#154) 때 이 테이블의 회원 행을 지우는 회원 단위 삭제는 #154 에서 저장소 포트와 함께 만든다.
+
 **설정 · 기동 규칙**
 
 - 프로필은 dev / prod 만(로컬 없음), 값은 환경변수. prod 는 Swagger(springdoc) 를 끈다.
@@ -272,6 +286,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 재설정 토큰 수명 `auth.password-reset.token-ttl`(env `AUTH_PASSWORD_RESET_TOKEN_TTL`, 기본 PT15M)은 0 이하면 기동 실패다. 필수 키가 아니다.
 - 카카오 앱 키 `KAKAO_CLIENT_ID`(REST API 키) · `KAKAO_CLIENT_SECRET` · `KAKAO_REDIRECT_URI`(프론트 콜백 페이지, 카카오 개발자 콘솔에 등록한 값과 같아야 함)는 **기본값이 없는 auth 필수 키**다 — 비거나 공백이거나 `${...}` 가 풀리지 않으면 기동 실패(`KakaoOAuthProperties`, `toString` 에서 secret 을 가린다). 카카오 앱은 동의 항목 `account_email` · `profile_nickname` 을 켜야 한다. timeout `KAKAO_CONNECT_TIMEOUT`(PT1S) · `KAKAO_READ_TIMEOUT`(PT2S), authorize IP 상한 `AUTH_OAUTH_AUTHORIZE_IP_MAX_COUNT`(30) · `AUTH_OAUTH_AUTHORIZE_IP_WINDOW`(PT10M)과 `AUTH_OAUTH_STATE_TTL` · `AUTH_OAUTH_SIGNUP_TICKET_TTL` · `AUTH_OAUTH_LINK_TICKET_TTL` 은 기본값이 있고 0 이하면 기동 실패다.
 - persistence-core 의 Snowflake · QueryDSL · JPA Auditing 을 `AuthServiceBeansConfig` 에서 켠다. Snowflake 는 기본 datacenter 0 / worker 0 — 인스턴스를 늘리면 `SNOWFLAKE_WORKER_ID` 를 인스턴스마다 다르게 준다.
+- 관심 동네 상한 `region.interest.max-count`(기본 3)는 application.yml 에만 있고 환경변수로 받지 않는다(프론트 상수와 같은 값이어야 해서 배포 환경마다 다르게 두지 않는다). 0 이하면 기동 실패(`RegionInterestProperties`).
 
 ## service/surveillance-service
 

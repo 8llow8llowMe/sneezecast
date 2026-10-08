@@ -73,7 +73,7 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 
 | 호출 | 경로 | 용도 |
 |------|------|------|
-| auth → surveillance | `GET /internal/v1/districts/{code}` | 행정동 설정 저장 시 코드 검증, 내 동네 조회 시 이름 · 폐지 여부 |
+| auth → surveillance | `GET /internal/v1/districts/{code}` | 내 동네 저장 · 관심 동네 추가 시 코드 검증, 내 동네 · 관심 동네 조회 시 이름 · 폐지 여부 (관심 동네 목록은 동네마다 한 번씩) |
 | auth → surveillance | `DELETE /internal/v1/reporters/{memberId}` | 탈퇴·민감정보 동의 철회 시 원시 보고 파기. **멱등**(0건이어도 204)이고, auth `report_purge_request` 스케줄러가 완료될 때까지 다시 부른다 ([entity-design.md §1-5](entity-design.md#1-5-report_purge_request--원시-보고-파기-요청)) |
 | surveillance → auth | `POST /internal/v1/notifications/broadcasts` | 안내 발행 알림 팬아웃 (2단계) |
 
