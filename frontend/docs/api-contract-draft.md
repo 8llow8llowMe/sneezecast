@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원 · 행정동 · 주간 보고(이번 주)는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자 · 지난 보고 내역 · 관심 동네는 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 포함) · 행정동 · 주간 보고(이번 주)는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자 · 지난 보고 내역 · 알림 설정은 **BE 미정**이라 아래 초안은 프론트 제안이다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -134,6 +134,36 @@ refresh 토큰은 본문이 아니라 쿠키 `refreshToken`(HttpOnly · Secure �
   - 한계: 파기 실행(#155) 전에는 철회 뒤 다시 동의해도 미완료 파기 요청 때문에 `reportWritable` 이 false 라 보고할 수 없다. 응답의 `purgePending` 으로 보이는 "보고를 지우는 중" 홈(Home-purging)은 다음 단계다. `refreshSession()` 이 동의 커밋 전에 나간 진행 중 재발급(탭 안 · 탭 사이 잠금 대기 중 다른 탭의 결과)에 묶이면 동의 전 요약을 받을 수 있다 — 시트는 "잠시 뒤 다시" 안내, 재동의는 가드에 한 번 되돌려지고 다시 누르면 풀린다.
 - **BE 미정**: 프로필 이미지(#112).
 
+### 관심 동네 `/me/interest-regions` (확정 — 백엔드 #217, 화면 #198, 연동 #237)
+
+내 동네 말고 지켜볼 행정동이다. 정본은 [`backend/docs/modules.md`](../../backend/docs/modules.md) "관심 동네" 와 #198 의 백엔드 결정(2026-10-08)이다.
+
+```text
+GET    /api/v1/members/me/interest-regions          → SliceResponse<MemberRegion>   (인증, 고른 순서)
+POST   /api/v1/members/me/interest-regions  { code } → SliceResponse<MemberRegion>   (인증, 목록 끝에 더한 뒤의 목록)
+DELETE /api/v1/members/me/interest-regions/{code}    → SliceResponse<MemberRegion>   (인증, 뺀 뒤의 목록, 없어도 성공)
+```
+
+- `MemberRegion` 은 내 동네와 같은 `{ code, name, sigungu, abolished }` 다. 행정동 코드만 저장한다 — 위치 · 주소를 받지 않는다. 인증만 요구하고 `report:write` 는 요구하지 않는다(건강정보가 아니다 — 동의하지 않은 회원도 쓴다).
+- 세 요청 모두 **바뀐 뒤의 목록**을 준다 — 화면이 더하고 뺀 결과를 다시 읽지 않고 그대로 그린다. 목록은 `SliceResponse { contents, hasNext }` 이고 상한만큼만 있어 한 번에 모두 준다(`hasNext` 는 늘 false — 프론트는 보지 않는다). 하나도 없으면 빈 `contents` 다(`dataBody: null` 이 아니다).
+- **상한 3곳** — 서버 설정 `region.interest.max-count`(기본 3, 환경마다 바꾸지 않음)와 프론트 `INTEREST_REGION_LIMIT` 이 같은 값이다. 바꾸면 함께 바꾼다.
+- 결정(2026-10-08): 내 동네와 같은 동네는 **서버도 막는다**(`REGION_007`). 내 동네를 관심 동네 중 하나로 바꿔도 그 관심 동네는 **남는다**(`PUT /me/region` 은 관심 동네를 건드리지 않는다 — 화면이 그 줄을 `내 동네` 로 적는다). 폐지된 관심 동네는 **서버가 지우지 않고** `abolished: true` 로 남는다(이름이 남아 있으면 이름도 온다). 행정동 서비스가 코드를 모르면 `name` · `sigungu` 가 null(`abolished: true`)이다 — 내 동네와 같은 규칙이다.
+- `GET` 은 동네마다 행정동 서비스를 차례로 읽어 하나라도 장애면 `REGION_004`(503)다.
+
+| 오류                                     | 상태 | 뜻                                                          | 프론트                                                                                                              |
+| ---------------------------------------- | ---- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `REGION_005`                             | 409  | 상한(3곳) 초과                                              | `GET` 으로 다시 읽어 `{ status: 'limit', regions }`                                                                 |
+| `REGION_006`                             | 409  | 이미 고른 동네                                              | `GET` 으로 다시 읽어 `{ status: 'duplicate', regions }`                                                             |
+| `REGION_007`                             | 409  | 내 동네와 같음                                              | `GET` 으로 다시 읽어 `{ status: 'home', regions }`                                                                  |
+| `REGION_003`                             | 409  | 같은 계정의 추가가 겹침(다시 보내면 풀림)                   | 한 번 다시 보낸다. 두 번째도 겹치면 거부                                                                            |
+| `REGION_001` · `002`, 검증 `101` · `102` | 400  | 없는 코드 · 폐지 · 형식(`DELETE` 의 경로 코드 형식도 `102`) | 추가는 `{ status: 'invalid' }`, 삭제는 거부                                                                         |
+| `REGION_004`                             | 503  | 행정동 확인 장애. 추가 · 삭제는 **커밋된 채** 올 수 있다    | 추가는 `GET` 으로 맞춰 그 동네가 있으면 `ok`, 없으면 `failed`(목록과 함께), 다시 읽기도 실패하면 거부. 그 밖은 거부 |
+
+- 409 오류 봉투에는 목록이 없다(`dataBody: null`) — 그래서 거절 뒤 `GET` 으로 다시 읽는다. 다시 읽기가 실패하면 거부한다. 다시 읽은 목록이 거절과 맞지 않으면(`006` 인데 목록에 없음 · `005` 인데 상한 미만 — 그사이 다른 곳에서 지움) `{ status: 'failed', regions }` 다(화면은 목록을 맞추고 "더하지 못했어요").
+- 커밋된 채 503: 삭제는 멱등이라 다시 누르면 성공한다. 추가를 다시 보내면 `REGION_006` 이 된다 — 그래서 추가의 `REGION_004` 는 바로 `GET` 으로 맞춘다(목록에 없으면 `failed`, 다시 읽기도 실패하면 거부 — 화면에서 다시 누르면 `duplicate` 로 목록이 맞는다).
+- 프론트 함수: `features/region/interest-region-client.ts` 의 `listInterestRegions(source, { scenario })` · `addInterestRegion(district, source)` · `removeInterestRegion(code, source)`. 실데이터는 위 계약대로 부르고, 일시 장애 · 인증 오류 · 분류 밖 오류는 거부한다(화면은 "잠시 뒤 다시 시도"). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다(목도 내 동네와 같으면 `home` 으로 거절한다).
+- 화면 표시(`features/me/interest-regions-screen.tsx`, [SCREENS.md](design/SCREENS.md) "관심 동네"): `name` 이 null 인 줄은 이름 자리에 `없어진 동네`, 시군구 자리에 `행정구역 개편으로 바뀌었어요` 를 보이고 `삭제` 는 그대로 둔다(이름 `없어진 동네 삭제`). 폐지(`abolished: true`, 이름 있음)는 이름 · 시군구 뒤에 `없어진 동네` 를 붙인다. 둘 중 하나라도 있으면 목록 아래 회색 상자로 지우고 새로 고르게 안내한다. 지어낸 이름 · 코드를 보이지 않는다 — 이름 null 줄이 둘 이상이면 `삭제` 이름에만 순번을 붙인다(`없어진 동네 1 삭제`). `home` 거절을 받았는데 화면이 아는 내 동네가 다르면 회원 정보 저장소의 내 동네를 다시 읽는다(`reloadMemberRegion`). 결과 목록의 `· 관심 동네` 표시 · 이미 고름 판단은 코드로 한다.
+
 ## 행정동 `/api/v1/districts` (확정)
 
 인증 불필요(비로그인 둘러보기에서도 쓴다).
@@ -230,25 +260,6 @@ GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:writ
 - 오류는 `/reports/current` 와 같다: 토큰 없음 `SECURITY_001`, 동의 전 `SECURITY_006`(403). 받는 파라미터가 없어 검증 오류는 없다.
 - 프론트 함수: `features/report/report-history.ts` 의 `listPastReports(source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "지난 보고는 아직 불러올 수 없어요")이다 — 건강정보라 BE 미정이어도 실제 회원에게 예시 이력을 보이지 않는다(conventions.md "데이터 출처" 의 예외). 목은 예시 이력이다.
 
-### 관심 동네 (#198, 프론트 초안)
-
-관심 동네 화면(`/me/interest-regions`)이 가정한 모양이다. 내 동네(`/me/region`, 위 "회원")의 경로 · 권한 · 응답 · 오류 관례를 따른다.
-
-```text
-GET    /api/v1/members/me/interest-regions          → SliceResponse<MemberRegion>   (인증, 고른 순서)
-POST   /api/v1/members/me/interest-regions  { code } → SliceResponse<MemberRegion>   (인증, 목록 끝에 더한 뒤의 목록)
-DELETE /api/v1/members/me/interest-regions/{code}    → SliceResponse<MemberRegion>   (인증, 뺀 뒤의 목록, 없어도 성공)
-```
-
-- `MemberRegion` 은 내 동네와 같은 `{ code, name, sigungu, abolished }` 다. 행정동만 저장한다 — 위치 · 주소를 받지 않는다. 건강정보가 아니라 `report:write` 를 요구하지 않는다(동의하지 않은 회원도 쓴다).
-- 세 요청 모두 바뀐 뒤의 목록을 준다 — 화면이 더하고 뺀 결과를 다시 읽지 않고 그대로 그린다. 목록은 관례대로 `SliceResponse { contents, hasNext }` 다(architecture-guide §8). 상한이 3곳이라 한 번에 모두 주고 `hasNext` 는 늘 false 다(프론트는 보지 않는다). 배열(`List`) 예외는 쓰지 않았다 — 상한이 임시 결정이라 늘어날 수 있고, 지난 보고 내역(위)과 같은 판단이다.
-- **상한 3곳은 임시 결정이다**(`INTEREST_REGION_LIMIT`). 기획서 · 시안에 상한이 없어 시안 예시(`2곳`)보다 하나 많게 두었다. 서버 상한과 같게 맞춘다.
-- `POST` 오류는 `PUT /me/region` 을 따른다: `REGION_001` 없는 코드 · `002` 폐지(400), `004` 행정동 확인 장애(503), 검증 `101` · `102`(400). 새로 둘 것(번호는 백엔드가 정한다): **상한 초과 409 · 이미 고른 동네 409.** 화면은 보내기 전에 둘 다 막지만 다른 탭 · 기기에서 바뀌었을 수 있다. **409 오류 봉투(`dataBody: null`)에는 목록이 없어 프론트는 거절 뒤 `GET` 을 다시 불러** 목록을 맞추고, 고른 동네는 남겨 이유를 보인다.
-- `DELETE` 는 목록에 없는 코드여도 성공이다(이미 지운 동네를 다시 지움 — 화면은 끝난 것으로 본다). 형식이 틀린 코드는 검증 오류(400)다.
-- `MemberRegion` 의 `name` · `sigungu` 는 null 일 수 있다(행정동 서비스가 코드를 모름 — 폐지 · 개편, 내 동네와 같은 규칙). 지금 화면 모델(`District`)은 이름이 늘 있어 연동 때 더한다: 그 줄은 이름 자리에 `없어진 동네`, 시군구 자리에 `행정구역 개편으로 바뀌었어요` 를 보이고 `삭제` 는 그대로 둔다(이름 `없어진 동네 삭제`). 지어낸 이름 · 코드를 보이지 않는다. 결과 목록의 `· 관심 동네` 표시 · 이미 고름 판단은 코드로 한다.
-- 백엔드와 정할 것: 내 동네와 같은 동네를 서버도 막을지(화면은 막는다 — "내 동네는 이미 지켜보고 있어요"), 내 동네를 관심 동네 중 하나로 바꾸면 그 관심 동네를 남길지(지금 화면은 남기고 `내 동네` 로 적는다), 폐지된 관심 동네(`abolished: true` — 이름이 남아 있을 때)를 위 null 처리와 같게 보일지 · 서버가 자동으로 지울지(목에는 폐지 동네가 없어 화면에 표시가 없다).
-- 프론트 함수: `features/region/interest-region-client.ts` 의 `listInterestRegions` · `addInterestRegion` · `removeInterestRegion(source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "관심 동네는 아직 저장할 수 없어요")이다 — 실제 회원이 고른 동네를 저장한 것처럼 보이지 않게 한다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다.
-
 ### 알림 설정 (#195, 프론트 초안)
 
 알림 설정 화면(`/me/notifications`)이 가정한 모양이다. 회원(`/api/v1/members/me`, 위 "회원")의 경로 · 권한 관례를 따른다. **알림을 받을지 고른 값(설정)과 실제로 보낼 곳(푸시 구독)은 따로다** — 설정은 이번 단계, 구독은 2단계다.
@@ -261,7 +272,7 @@ PATCH /api/v1/members/me/notification-settings  { weeklyReport?, regionNotice? }
 - `NotificationSettings` = `{ weeklyReport: boolean, regionNotice: boolean }`. 항목은 시안(Settings) 알림 섹션의 둘이다 — `weeklyReport` 주간 보고 요청(월요일 아침), `regionNotice` 검토를 마친 동네 안내(운영자가 발행했을 때). 건강정보가 아니라 `report:write` 를 요구하지 않는다(동의하지 않은 회원도 쓴다).
 - **처음 값은 모두 false 다** — 알림은 동의한 사용자에게만 보낸다(루트 `CLAUDE.md`). 켠 시각 · 끈 시각을 동의 이력으로 남길지는 백엔드가 정한다.
 - `PATCH` 는 보낸 항목만 바꾼다(`PUT` 으로 전부를 바꾸면 다른 탭 · 기기에서 바꾼 다른 항목을 덮는다). 빈 바디 · 모르는 항목 · boolean 이 아닌 값은 검증 `MEMBER_1xx`(400, 번호는 백엔드가 정한다)다. 응답은 바뀐 뒤의 설정 전부라 화면이 다시 읽지 않고 그린다.
-- 백엔드와 정할 것: `regionNotice` 가 내 동네만인지 관심 동네(위 "관심 동네")도 포함하는지(기획 확인 후보 — SCREENS.md "홈 화면 추가 · 알림 미지원"), 탈퇴 · 동의 철회 때 설정을 지울지, 검증 오류 번호(위 `MEMBER_1xx`).
+- 백엔드와 정할 것: `regionNotice` 가 내 동네만인지 관심 동네(위 "회원" 의 "관심 동네")도 포함하는지(기획 확인 후보 — SCREENS.md "홈 화면 추가 · 알림 미지원"), 탈퇴 · 동의 철회 때 설정을 지울지, 검증 오류 번호(위 `MEMBER_1xx`).
 - **2단계 — 푸시 구독(이번 범위 아님)**: 사용자가 스위치를 켤 때 서비스 워커 등록 → 알림 권한 요청 → `pushManager.subscribe` 를 거쳐 구독을 등록한다. 가정한 모양은 `POST /api/v1/members/me/push-subscriptions { endpoint, keys: { p256dh, auth } }`(기기마다 하나) · `DELETE /api/v1/members/me/push-subscriptions?endpoint=`. 서버는 **설정이 켜졌고 구독이 있는 회원에게만** 보낸다. 구독이 없거나 받을 수 없는 기기(iOS 홈 화면 추가 전 등)는 서비스 안에서 같은 내용을 본다(홈의 동네 안내 · "알림 대신 여기서 알려드려요"). VAPID 공개 키 전달 · 만료된 구독(410) 정리 · 로그아웃한 기기의 구독 삭제를 함께 정한다.
 - 프론트 함수: `features/notification/notification-settings-client.ts` 의 `getNotificationSettings` · `updateNotificationSetting(topic, enabled, source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 스위치를 꺼진 모양으로 두고 "알림은 아직 준비하고 있어요")이다 — 켠 모양을 보이면 알림이 오는 줄 알고, 저장하지 않은 설정이 사라진다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 설정이고 목 세션이 비회원이 되면 지운다.
 
