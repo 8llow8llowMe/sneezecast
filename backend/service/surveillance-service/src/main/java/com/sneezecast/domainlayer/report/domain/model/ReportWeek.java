@@ -1,8 +1,10 @@
 package com.sneezecast.domainlayer.report.domain.model;
 
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoField;
 import java.time.temporal.IsoFields;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -65,6 +67,25 @@ public record ReportWeek(
         return new ReportWeek(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)));
     }
 
+    /**
+     * {@code weeks} 주 앞의 주. 연말 경계를 주 번호 산술이 아니라 날짜로 넘긴다 — 53주가 있는 해(2026)와 없는 해(2027)가 섞여도
+     * {@code 2027-W01} 의 1주 앞은 {@code 2026-W53}, {@code 2028-W01} 의 1주 앞은 {@code 2027-W52} 다.
+     *
+     * @param weeks 0 이상. 0 이면 같은 주
+     * @throws IllegalArgumentException 음수인 경우
+     */
+    public ReportWeek minusWeeks(int weeks) {
+        if (weeks < 0) {
+            throw new IllegalArgumentException("앞으로 갈 주 수는 0 이상이어야 합니다. weeks=" + weeks);
+        }
+        return of(monday().minusWeeks(weeks));
+    }
+
+    /** 바로 앞 주 (전주). */
+    public ReportWeek previous() {
+        return minusWeeks(1);
+    }
+
     /** 저장 · 비교에 쓰는 {@code YYYY-Www} 문자열. */
     public String value() {
         // 로캘마다 숫자 모양이 달라질 수 있어(예: 태국 숫자) 고정 계약인 저장 값은 Locale.ROOT 로 만든다.
@@ -74,6 +95,13 @@ public record ReportWeek(
     @Override
     public String toString() {
         return value();
+    }
+
+    // 1월 4일은 항상 그 해의 1주에 들어간다. 거기서 주 번호를 옮기면 요일과 주 기준 연도는 그대로다.
+    private LocalDate monday() {
+        return LocalDate.of(weekBasedYear, 1, 4)
+            .with(IsoFields.WEEK_OF_WEEK_BASED_YEAR, week)
+            .with(ChronoField.DAY_OF_WEEK, DayOfWeek.MONDAY.getValue());
     }
 
     // 12월 28일은 항상 그 해의 마지막 ISO 주에 들어간다.

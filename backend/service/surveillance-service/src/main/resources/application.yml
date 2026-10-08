@@ -16,6 +16,26 @@ snowflake:
   datacenter-id: ${SNOWFLAKE_DATACENTER_ID:0}
   worker-id: ${SNOWFLAKE_WORKER_ID:0}
 
+# 집계 단계 판정 규칙 (aggregate 컨텍스트, entity-design §2-2). 잘못되면 기동 실패 (AggregateRule 이 검사한다).
+# 이 파일이 정본이다. ${...} 자리표시자를 두지 않고, 배포 설정(compose · Vault)에 AGGREGATE_* 를 넣지 않는다 — relaxed binding 으로 환경변수가
+# 이 값을 덮으면 rule-version 은 그대로인 채 규칙만 바뀐다. 집계 행마다 rule_version 을 남겨 과거 판정을 설명하므로,
+# **값을 하나라도 바꾸면 rule-version 도 바꾼다.**
+aggregate:
+  # 공백이 아닌 20자 이하 (rule_version 컬럼). 규칙을 정한 날짜로 짓는다.
+  rule-version: "2026-10-08"
+  # 최소 표본(참여자 수). 미만이면 자료 부족(LOW_SAMPLE). 시안의 publicThresholdParticipants 와 같은 값이다.
+  min-sample: 100
+  # 전주 대비 참여자 변화율(%)이 이 값 이상이면 자료 부족(UNSTABLE). 마감 판정에서만 보고, 전주가 없거나 표본 미달이면 보지 않는다.
+  unstable-change-percent: 50
+  # 증상 보고 비율이 기준선보다 이 %p 이상 높으면 조금 늘었어요(SLIGHT) · 많이 늘었어요(HIGH). 시안의 slightDeltaPp · highDeltaPp 와 같다.
+  # high 는 slight 보다 크고 100 이하.
+  slight-delta-pp: 3
+  high-delta-pp: 8
+  # 기준선 = 직전 baseline-lookback-weeks 주 중 마감됐고 · 표본이 충분하고 · 급변이 아닌 최근 baseline-weeks 주의 합산 비율(Σ증상 / Σ참여).
+  # 모자라면 자료 부족(NO_BASELINE). lookback 은 baseline-weeks 이상.
+  baseline-weeks: 4
+  baseline-lookback-weeks: 8
+
 logging:
   level:
     # Eureka 클라이언트가 주기적으로 Eureka 서버 엔드포인트를 확인할 때 출력하는 반복 로그를 줄이기 위한 설정
