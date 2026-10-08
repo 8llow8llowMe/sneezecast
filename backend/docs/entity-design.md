@@ -300,7 +300,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | id | BIGINT | N | PK (Snowflake) |
 | source | VARCHAR(30) | N | `OfficialSource` |
 | program | VARCHAR(20) | N | `OfficialProgram` — 위 표 |
-| disease_key | VARCHAR(100) | N | 정규화 키. 표본감시는 **포털 병원체 코드**(예: `ND0715` 노로바이러스, 합계는 `TOTAL`, 인플루엔자 분율은 `ILI`), 전수신고는 원천에 코드가 없어 감염병명에서 앞의 `@` 표식을 뗀 값 |
+| disease_key | VARCHAR(100) | N | 정규화 키. 표본감시는 **포털 병원체 코드**(예: `ND0615` 노로바이러스, 합계는 `TOTAL`, 인플루엔자 분율은 `ILI`), 전수신고는 원천에 코드가 없어 감염병명에서 앞의 `@` 표식을 뗀 값 |
 | disease_name | VARCHAR(100) | N | 표시 이름 (원천 그대로) |
 | disease_group | VARCHAR(20) | Y | 원천 분류 — 전수신고 `icdGroupNm` 을 `제N급` 으로 맞춘 값(원천은 오퍼레이션마다 `제2급` / `2급`), 표본감시 세균 / 바이러스 / 원충 |
 | metric | VARCHAR(30) | N | `OfficialMetric` — CASE_COUNT / INCIDENCE_PER_100K / ILI_PER_1000 |
@@ -336,7 +336,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | id | BIGINT | N | PK (Snowflake) |
 | source | VARCHAR(30) | N | `OfficialSource` |
 | program | VARCHAR(20) | N | `OfficialProgram` |
-| request_key | VARCHAR(200) | N | 조회 조건 요약 (예: `ari:2026-31~2026-38:age=ALL`) |
+| request_key | VARCHAR(200) | N | 조회 조건 요약 (예: `notifiable:region:count:2026:sido=01`, `sentinel:ari:2026-33~2026-40`, `sentinel:influenza:2026-2027`) |
 | channel | VARCHAR(20) | N | `IngestChannel` — OPEN_API / PORTAL_JSON |
 | content_sha256 | CHAR(64) | Y | 받은 본문의 해시 (추적용). 실패해서 본문이 없으면 null |
 | byte_length | INT | N | 받은 바이트 수 |
@@ -363,7 +363,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | `sentinelImportJob` | 감염병포털 표본감시 (인플루엔자 · 급성호흡기 · 장관) | 매주 금 06:00 | 최근 8주 (인플루엔자는 현재 절기) | §3-2 UK | 포털 요청 간격 ≥ 3초, 실행당 요청 상한 (설정) |
 
 - 주기는 전부 설정값(`batch.schedule.*-cron`)이다. 표본감시 공표 요일은 확인되지 않았다 — 2026-09-30(수) 기준 38주(09-13 ~ 09-19)까지 공개돼 있었다. 몇 주 적재해 보고 조정한다.
-- 공식 API 가 없는 표본감시는 포털 화면이 쓰는 데이터 요청으로 받는다. **공개 API 가 아니므로** 형식이 바뀌면 조용히 틀리지 않고 실패하게 만든다 — 열 제목(`captionList`)을 설정의 기대 목록과 대조하고, 다르면 `SENTINEL_SCHEMA_CHANGED` 로 실패하고 기존 데이터는 그대로 둔다 ([data-api-analysis.md §3](data-api-analysis.md#3-표본감시-감염병포털)).
+- 공식 API 가 없는 표본감시는 포털 화면이 쓰는 데이터 요청으로 받는다. **공개 API 가 아니므로** 형식이 바뀌면 조용히 틀리지 않고 실패하게 만든다 — 열 제목(`captionList`)을 기대 목록(코드 상수 `SentinelPathogenCatalog`)과 대조하고, 다르면 형식 변경(`SENTINEL_IMPORT_005`)으로 실패하고 기존 데이터는 그대로 둔다 ([data-api-analysis.md §3](data-api-analysis.md#3-표본감시-감염병포털)).
 - 포털이 막히면 그 주는 적재하지 않고 FAILED 를 남긴다. 기존 값은 그대로 보이고, 다음 실행이 최근 8주를 다시 받으므로 한 주 빠져도 메워진다. 급하면 수동 재실행한다. **포털 CSV 수동 적재는 두지 않는다** — 헤더가 없고 합계 정의가 화면과 달라 기존 값을 망가뜨린다 ([data-api-analysis.md §3-2](data-api-analysis.md#3-2-1단계는-화면-데이터json를-쓴다)).
 
 ### 4-2. Quartz 규칙 (hondigagae batch-service 와 같다)
