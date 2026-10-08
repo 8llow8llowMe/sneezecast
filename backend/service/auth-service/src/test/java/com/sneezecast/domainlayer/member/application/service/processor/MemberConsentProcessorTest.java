@@ -18,6 +18,7 @@ import com.sneezecast.persistence.util.SnowflakeIdGenerator;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -74,6 +75,32 @@ class MemberConsentProcessorTest {
             @Override
             public boolean existsIncompleteByMemberId(long memberId) {
                 return purgeRequests.stream().anyMatch(request -> request.memberId() == memberId && request.completedAt() == null);
+            }
+
+            // 아래는 파기 스케줄러(#155) 몫이라 동의 처리에서 부르지 않는다.
+            @Override
+            public Optional<ReportPurgeRequest> findById(long id) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public List<ReportPurgeRequest> findDue(LocalDateTime secondCallDueAt, int limit) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public int recordSuccess(long id, LocalDateTime succeededAt, LocalDateTime completedAt) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public int recordFailure(long id, String lastError, LocalDateTime failedAt) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public int deleteCompletedBefore(LocalDateTime threshold) {
+                throw new UnsupportedOperationException();
             }
         };
         SnowflakeIdGenerator ids = new SnowflakeIdGenerator(0, 0);

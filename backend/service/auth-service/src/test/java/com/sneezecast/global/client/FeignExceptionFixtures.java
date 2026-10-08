@@ -30,19 +30,41 @@ public final class FeignExceptionFixtures {
     }
 
     public static FeignException status(int status, String body) {
-        feign.Response response = feign.Response.builder()
-            .status(status)
-            .reason("test")
-            .request(REQUEST)
-            .headers(Map.of())
-            .body(body, StandardCharsets.UTF_8)
-            .build();
-        return FeignException.errorStatus("DistrictClient#getDistrict(String)", response);
+        return status(status, body, REQUEST);
+    }
+
+    /** 요청 URL 을 정해 만든다 — 실제 예외 메시지에 {@code [METHOD] to [url]} 이 실리는 것까지 재현한다 (로그 누출 검사용). */
+    public static FeignException status(int status, String body, Request.HttpMethod method, String url) {
+        return status(status, body, request(method, url));
     }
 
     /** read timeout — Feign 은 상태 없이(-1) {@link RetryableException} 으로 올린다. */
     public static RetryableException readTimeout() {
-        return new RetryableException(-1, "Read timed out", Request.HttpMethod.GET, new SocketTimeoutException("Read timed out"), (Long) null, REQUEST);
+        return readTimeout(REQUEST);
+    }
+
+    public static RetryableException readTimeout(Request.HttpMethod method, String url) {
+        return readTimeout(request(method, url));
+    }
+
+    private static FeignException status(int status, String body, Request request) {
+        feign.Response response = feign.Response.builder()
+            .status(status)
+            .reason("test")
+            .request(request)
+            .headers(Map.of())
+            .body(body, StandardCharsets.UTF_8)
+            .build();
+        return FeignException.errorStatus("TestClient#call()", response);
+    }
+
+    private static RetryableException readTimeout(Request request) {
+        return new RetryableException(-1, "Read timed out executing " + request.httpMethod() + " " + request.url(), request.httpMethod(),
+            new SocketTimeoutException("Read timed out"), (Long) null, request);
+    }
+
+    private static Request request(Request.HttpMethod method, String url) {
+        return Request.create(method, url, Map.of(), null, StandardCharsets.UTF_8, new RequestTemplate());
     }
 
     /** yml 과 같은 판정(4xx 무시)에 창만 작게 줄인 레지스트리 — 실패 2건이면 열린다. */
