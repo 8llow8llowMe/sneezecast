@@ -179,7 +179,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 세션은 로그인 한 번 = 기기 하나다. 세션 ID 는 로그인 때 만들고 **회전해도 유지**하며, refresh JWT 의 jti 만 매번 바뀐다. JWT 의 `sid` claim 이 세션 ID 다(access · refresh 둘 다).
 - Redis 키: `{prefix}:auth:refreshSession:{memberId}:{sessionId}`(HASH — 현재 · 직전 refresh jti, 회전 시각, 기기 이름, 생성 · 마지막 사용 시각, 최근 access jti · 만료) · `{prefix}:auth:refreshSessions:{memberId}`(ZSET, score = 마지막 사용). TTL 은 refresh 만료(기본 14일, 회전마다 갱신). **refresh 토큰 원문은 저장하지 않는다.** 회원당 기기 상한(`auth.session.max-devices`, 기본 5)을 넘으면 가장 오래 안 쓴 세션부터 밀어낸다.
 - 재발급 회전은 Lua 하나로 원자 처리한다 — 제시한 jti 가 현재 jti 면 회전, **직전 jti 이고 회전 직후(`auth.session.rotation-grace`, 기본 10초)면 여러 탭의 동시 재발급으로 보고 세션을 두고 `AUTH_016`(409)**, 그 밖의 옛 jti 는 **재사용(탈취 의심)으로 보고 그 세션을 폐기**하고 `AUTH_015`. 세션이 없거나 refresh 가 만료면 `AUTH_014`.
-- scope 와 재동의 표시는 로그인 · 재발급마다 동의 이력에서 다시 계산한다. `pendingConsents` = 이용약관 · 개인정보 중 현재 문서 버전의 유효 동의가 없는 것(문서 개정 → 재동의 유도, 로그인은 막지 않는다). **만 19세 이상 확인은 버전과 무관하게 유효**하다(사실 확인이라 약관 개정 때 다시 받지 않는다 — 2026-10-02 결정). `report:write` 는 **pendingConsents 가 비어 있고 · 건강정보 동의가 유효하고 · 미완료 보고 파기 요청이 없을 때만** 싣는다(`ReportScopePolicy`). 마지막 조건은 2차 파기가 새 보고를 지우지 않게 하려는 것이라, 파기 실행(#155)이 들어오기 전에는 철회 뒤 다시 동의해도 보고할 수 없다.
+- scope 와 재동의 표시는 로그인 · 재발급마다 동의 이력에서 다시 계산한다. `pendingConsents` = 이용약관 · 개인정보 중 현재 문서 버전의 유효 동의가 없는 것(문서 개정 → 재동의 유도, 로그인은 막지 않는다). **만 19세 이상 확인은 버전과 무관하게 유효**하다(사실 확인이라 약관 개정 때 다시 받지 않는다 — 2026-10-02 결정). `report:write` 는 **pendingConsents 가 비어 있고 · 건강정보 동의가 유효하고 · 미완료 보고 파기 요청이 없을 때만** 싣는다(`ReportScopePolicy`). 마지막 조건은 2차 파기가 새 보고를 지우지 않게 하려는 것이라, 철회 뒤 다시 동의해도 파기가 완료될 때까지(빨라야 철회 + access 수명 + 여유, 기본 20분) 보고할 수 없다.
 - 재발급은 회원 상태도 다시 본다. ACTIVE 가 아니면 그 회원의 전 세션을 지운다.
 - 로그아웃은 현재 세션(access `sid`)을 지우고 access jti 를 남은 만료 시간만큼 블랙리스트에 올린다. 세션 폐기(`DELETE /sessions/{id}` · `DELETE /sessions`) · 재사용 감지 · 기기 상한 밀어내기는 그 세션에 저장된 **최근 access jti** 를 블랙리스트에 올려 그 기기를 끊는다. 같은 세션에서 그보다 먼저 발급돼 아직 만료되지 않은 access(여러 탭)는 최대 access TTL(15분) 동안 남는다 — 동의 철회와 같은 허용 범위다([architecture-guide.md](architecture-guide.md)). 로그아웃만 Redis 장애를 관용한다(로그를 남기고 200 + 쿠키 삭제 — 쿠키가 지워지면 그 브라우저의 refresh 는 사라진다).
 - 기기 이름은 `User-Agent` 를 "OS · 브라우저"(예: `iPhone · Safari`)로 줄여 저장한다. **UA 원문과 IP 는 저장하지 않는다.**
@@ -230,7 +230,16 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 철회는 **한 트랜잭션**에서 그 행에 `withdrawn_at` 을 채우고(쓰기 잠금으로 읽어 동시 철회가 파기 요청을 두 번 남기지 않게, 조회 후 변경 감지) `report_purge_request`(reason `HEALTH_CONSENT_WITHDRAWN`)를 만든다 — 파기 요청이 철회와 반드시 함께 남는다. 미완료 파기 요청이 이미 있으면 둘째 요청을 만들지 않는다(파기가 끝나기 전에는 `report:write` 가 없어 새 보고가 생길 수 없다).
 - 커밋 뒤 **모든 기기를 로그아웃**한다 — refresh 세션 전부 폐기 + 그 세션들의 최근 access 와 요청한 access 를 블랙리스트에 올리고, 응답에서 refresh 쿠키를 지운다(프론트 #129 요청, 시안 "모든 기기에서 로그아웃돼요"). 세션 폐기가 실패해도(Redis 장애) 철회 · 파기 요청은 이미 커밋됐으므로 로그만 남기고 200 이다 — 다음 재발급에서 scope 가 다시 계산돼 `report:write` 가 빠지고, 남은 access(최대 15분)로 들어온 보고는 #155 의 2차 파기가 지운다.
 - 두 API 모두 동의 상태 `{pendingConsents, healthInfoAgreed, reportWritable, purgePending}` 를 돌려준다. **동의 뒤 access 의 scope 는 그대로**다(토큰은 발급 때 계산) — `report:write` 를 받으려면 `POST /auth/token/reissue` 로 새 access 를 받는다.
-- 파기 실행(재시도 스케줄러 · surveillance 내부 삭제 API)은 #155, 탈퇴는 #154 다.
+- 탈퇴(`WITHDRAWAL` 요청 생성 · 회원 hard delete)는 #154 다.
+
+**원시 보고 파기 실행** (`member` 컨텍스트, #155 — 정본은 [entity-design.md §1-5](entity-design.md#1-5-report_purge_request--원시-보고-파기-요청))
+
+- `ReportPurgeScheduler`(`member/adapter/in/scheduler`) → `ReportPurgeUseCase` → `ReportPurgeFacade`(트랜잭션 없음) → `ReportPurgeExecutionProcessor`(조회 · 기록 · 정리 메서드마다 트랜잭션) · `ReportPurgeCommandPort` → `ReportPurgeClientAdapter` → Feign `ReportPurgeClient`(`DELETE /internal/v1/reporters/{memberId}`, contextId `memberReportPurgeClient`, Authorization 헤더 없음). **Feign 호출은 트랜잭션 밖이다.**
+- 회차(`fixed-delay` 5분): 미완료 행 중 1차 전인 것은 바로, 이미 한 번 성공한 것은 `requested_at + access 수명 + completion-margin` 이 지난 뒤에만 고른다(요청 시각 · ID 순, `batch-size` 50건). 성공(204)이면 시도 + 1 · 첫 성공 시각(처음만)을 남기고, **호출 시작 시각**이 그 경계 이후면 완료다. 거절(4xx — 봉투 없는 404 포함)과 응답 없음(5xx · timeout)은 시도 + 1 · `last_error` 를 남기고, 기록 뒤 시도 횟수가 `alert-attempt-threshold`(12) 이상이면 ERROR 경보 로그다. 서킷이 열려 있으면 시도로 세지 않고 그 회차를 멈춘다. 한 항목의 예상 밖 예외는 다음 항목을 막지 않는다.
+- **인스턴스 하나 전제**다. 기록은 JPQL 원자 갱신(`attempt_count + 1 … where id = ? and completed_at is null`)이라 시도 횟수 유실 · 완료 덮어쓰기는 막지만, 호출 자체는 막지 못한다 — 다른 인스턴스의 늦은 DELETE 가 완료 · 재동의 뒤의 새 보고를 지울 수 있다. auth 인스턴스를 늘리기 전에 ShedLock 같은 단일 실행 잠금(또는 행 점유 lease)을 먼저 둔다.
+- 정리: 매일 04:30(KST, `cleanup-cron`) 완료 뒤 `retention`(365일)이 지난 행을 지운다. 미완료 행은 지우지 않는다.
+- 로그 · `last_error` 에는 파기 요청 ID · 건수 · 상태 코드 · 결과 코드 · 예외 클래스 단순 이름만 남긴다. **회원 ID · 요청 URL · Feign 예외 메시지 · 스택트레이스를 남기지 않는다** — 건강정보 동의 철회 사실과 회원이 이어진다. 스케줄 메서드는 최상위에서 예외를 잡아 클래스 이름만 남긴다.
+- 서킷 인스턴스 `surveillance-service` 를 내 동네 · 관심 동네의 행정동 확인과 함께 쓴다 — surveillance 장애로 파기 호출이 쌓여 실패하면 두 동네 저장 · 조회도 잠시 503 이 된다.
 
 **화면 계약** (2026-10-01 결정, 프론트 S13-1~6 · S02-1~4 · S10)
 
@@ -256,7 +265,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
   - 실패는 모두 `/login?error=kakao-fail` 이다 — `AUTH_020`(state, 처음부터) · `021` · `022` · `023`(카카오 이메일 제공 동의 필요) · `024`(카카오 이메일 미인증) · `025` · `026`(시간 지남, 카카오 로그인부터) · `027` · `028`(요청 많음, 잠시 뒤). 탈퇴 · 정지는 `MEMBER_002` · `003`.
   - **iOS 홈 화면(standalone) PWA 는 실기기 확인이 필요하다** — 외부 도메인(kauth.kakao.com)이 앱 안 Safari 시트로 열리면 PWA 와 쿠키 저장소가 달라 state 쿠키가 없을 수 있다(→ `AUTH_020`). 연동 때 iOS Safari · PWA 에서 먼저 확인한다.
 - 동의(#59): 증상 보고 동의(S02-4 · 홈의 동의 시트) · 약관 재동의(S02-3 reconsent)는 모두 `POST /members/me/consents {type, documentVersion}` 이다(`legal.ts` 의 현재 버전). `MEMBER_011`(409)이면 화면의 문서 버전이 낡은 것이다. 응답의 `pendingConsents` · `reportWritable` 로 화면을 고르고, **증상 보고 동의 뒤에는 `POST /auth/token/reissue` 로 새 access 를 받아야 보고(`report:write`)할 수 있다.** 재동의 화면은 이용약관 · 개인정보만 다시 받는다(만 19세 확인은 다시 받지 않는다).
-- 건강정보 동의 철회(S10 확인 대화상자)는 `DELETE /members/me/consents/SENSITIVE_HEALTH_INFO` 이고, 성공하면 **모든 기기가 로그아웃된다**(응답이 refresh 쿠키를 지운다) — 화면은 비회원 홈으로 간다. 응답의 `purgePending: true` 는 보고를 지우는 중이라는 뜻이다(Home-purging 은 다음 단계). 파기 실행(#155)이 들어오기 전에는 다시 동의해도 `reportWritable` 이 false 다.
+- 건강정보 동의 철회(S10 확인 대화상자)는 `DELETE /members/me/consents/SENSITIVE_HEALTH_INFO` 이고, 성공하면 **모든 기기가 로그아웃된다**(응답이 refresh 쿠키를 지운다) — 화면은 비회원 홈으로 간다. 응답의 `purgePending: true` 는 보고를 지우는 중이라는 뜻이다(Home-purging 은 다음 단계). 파기가 완료되기 전(빨라야 철회 뒤 20분 — access 수명 15분 + 여유 5분)에는 다시 동의해도 `reportWritable` 이 false 다.
 
 **내 동네** (`region` 컨텍스트, `/api/v1/members/me/region`)
 
@@ -285,6 +294,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - SMTP 계정 `MAIL_USERNAME` · `MAIL_PASSWORD` 는 기본값이 없다(auth 전용 필수 키). 동의 문서 버전 `legal.*-version` 은 비거나 20자를 넘으면 기동 실패(`LegalDocumentProperties`).
 - 재설정 토큰 수명 `auth.password-reset.token-ttl`(env `AUTH_PASSWORD_RESET_TOKEN_TTL`, 기본 PT15M)은 0 이하면 기동 실패다. 필수 키가 아니다.
 - 카카오 앱 키 `KAKAO_CLIENT_ID`(REST API 키) · `KAKAO_CLIENT_SECRET` · `KAKAO_REDIRECT_URI`(프론트 콜백 페이지, 카카오 개발자 콘솔에 등록한 값과 같아야 함)는 **기본값이 없는 auth 필수 키**다 — 비거나 공백이거나 `${...}` 가 풀리지 않으면 기동 실패(`KakaoOAuthProperties`, `toString` 에서 secret 을 가린다). 카카오 앱은 동의 항목 `account_email` · `profile_nickname` 을 켜야 한다. timeout `KAKAO_CONNECT_TIMEOUT`(PT1S) · `KAKAO_READ_TIMEOUT`(PT2S), authorize IP 상한 `AUTH_OAUTH_AUTHORIZE_IP_MAX_COUNT`(30) · `AUTH_OAUTH_AUTHORIZE_IP_WINDOW`(PT10M)과 `AUTH_OAUTH_STATE_TTL` · `AUTH_OAUTH_SIGNUP_TICKET_TTL` · `AUTH_OAUTH_LINK_TICKET_TTL` 은 기본값이 있고 0 이하면 기동 실패다.
+- 원시 보고 파기 `auth.report-purge.*`(env `AUTH_REPORT_PURGE_*`): `scheduler-enabled`(`true` / `false` 만 받고 대소문자는 무시한다. `yes` · `1` · 빈 문자열 등은 기동 실패 — 조건(`@ConditionalOnProperty`)이 조용히 꺼짐으로 읽을 값이라서다. yml 기본 false, **compose 가 dev · prod 모두 true 로 넘긴다**. 테스트 컨텍스트가 surveillance 를 부르지 않게 하려는 것이다. 꺼져 있으면 기동 때 WARN 한 줄을 남긴다), `initial-delay`(PT1M, 0 허용) · `fixed-delay`(PT5M) · `completion-margin`(PT5M) · `batch-size`(50) · `alert-attempt-threshold`(12) · `retention`(P365D) · `cleanup-cron`(`0 30 4 * * *`, KST). 0 이하 · 잘못된 cron 은 기동 실패(`ReportPurgeProperties`). `@EnableScheduling` 은 같은 스위치로 `AuthServiceSchedulingConfig` 에 건다.
 - persistence-core 의 Snowflake · QueryDSL · JPA Auditing 을 `AuthServiceBeansConfig` 에서 켠다. Snowflake 는 기본 datacenter 0 / worker 0 — 인스턴스를 늘리면 `SNOWFLAKE_WORKER_ID` 를 인스턴스마다 다르게 준다.
 - 관심 동네 상한 `region.interest.max-count`(기본 3)는 application.yml 에만 있고 환경변수로 받지 않는다(프론트 상수와 같은 값이어야 해서 배포 환경마다 다르게 두지 않는다). 0 이하면 기동 실패(`RegionInterestProperties`).
 
