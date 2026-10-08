@@ -125,8 +125,19 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 - 인덱스: `idx_report_purge_request_member_id`, `idx_report_purge_request_completed_at`
 - **완료 조건: 호출 시작 시각이 `requested_at + access token TTL(15분) + 여유(설정, 기본 5분)` 이후인 파기 호출이 성공했을 때.** 철회 직전에 발급된 다른 기기의 access token 에는 `report:write` 가 최대 15분 남는다. 1차 파기 뒤 그 토큰으로 들어온 보고를 2차 파기가 지운다. 여유는 만료 직전에 검증된 요청이 늦게 커밋되는 경우와 서버 간 시계 오차를 흡수한다.
-- 스케줄러(auth, 5분 주기)는 `completed_at is null` 행에 `DELETE /internal/v1/reporters/{memberId}` 를 부른다. **받는 쪽은 멱등이다** — 지울 행이 0건이어도 204.
-- `attempt_count` 가 임계값(설정)을 넘으면 경보를 낸다. 행을 지우거나 포기 상태로 두지 않는다 (파기는 반드시 끝나야 한다).
+- 스케줄러(auth `ReportPurgeScheduler`, 회차가 끝나고 5분 뒤 다음 회차)는 미완료 행에 `DELETE /internal/v1/reporters/{memberId}` 를 부른다. **받는 쪽은 멱등이다** — 지울 행이 0건이어도 204. 호출은 DB 트랜잭션 밖에서 한다.
+- **대상 선정**: `completed_at is null` 이고, `first_purged_at is null`(1차 — 바로) 이거나 `requested_at <= now - (access TTL + 여유)`(2차 — 대기 뒤에만)인 행. 그 사이에 부르는 호출은 완료 조건을 통과할 수 없어 쓸모가 없다. `requested_at, id` 순으로 회차당 상한(설정, 기본 50건)까지. 시각 비교는 `requested_at` 과 같은 기준(JVM 기본 시간대 `LocalDateTime.now()`)이다.
+- **결과 기록** (항목마다 짧은 쓰기 트랜잭션):
+  - 성공(2xx) → `attempt_count + 1`, `first_purged_at` 은 비어 있을 때만 성공 시각, 호출 시작 시각이 완료 경계 이후면 `completed_at = 성공 시각`. 성공해도 `last_error` 는 지우지 않는다(마지막 실패 이력).
+  - 거절(4xx — 봉투 없는 404 = 상대가 옛 버전 포함) · 응답 없음(5xx · timeout · 연결 실패) → `attempt_count + 1`, `last_error`. 4xx 도 성공으로 보지 않는다.
+  - 서킷 오픈 → 호출이 나가지 않았으므로 기록하지 않고 그 회차를 멈춘다.
+- **`last_error` 형식**: `REJECTED status=404 resultCode=null` · `REJECTED status=400 resultCode=REPORT_106` · `UNAVAILABLE status=503` · `UNAVAILABLE SocketTimeoutException`. 200자에서 자른다. 회원 ID · 요청 URL · 응답 본문을 넣지 않는다.
+- **인스턴스 하나 전제**: 스케줄러는 환경당 auth 인스턴스 하나에서만 돈다(`fixed-delay` 라 한 인스턴스 안에서는 회차가 겹치지 않는다).
+  - 기록은 읽고-고치고-쓰기가 아니라 JPQL 원자 갱신(`attempt_count = attempt_count + 1 … where id = ? and completed_at is null`)이다. 이것이 막는 것은 **기록**의 경합뿐이다 — 시도 횟수 유실, 완료 시각 덮어쓰기.
+  - **호출**은 막지 못한다. 인스턴스 B 가 대상을 읽은 뒤 A 가 완료하고, 회원이 다시 동의 · 재발급해 새 보고를 쓴 다음 B 의 늦은 DELETE 가 도착하면 완료 뒤의 정상 보고가 지워진다.
+  - 그래서 auth 인스턴스를 늘리기 전에 ShedLock 같은 단일 실행 잠금(또는 행 점유 lease)을 먼저 둔다.
+- **경보**: 실패를 기록한 뒤 `attempt_count` 가 임계값(설정, 기본 12 — 5분 주기로 약 1시간) 이상이면 ERROR 로그를 남긴다(요청 ID · 시도 횟수 · 오류 요약만). 행을 지우거나 포기 상태로 두지 않는다 (파기는 반드시 끝나야 한다).
+- **정리**: 매일 04:30(KST, 설정) 완료 후 보관 기간(설정, 기본 365일)이 지난 행을 지운다(§8). 미완료 행은 기간과 상관없이 남긴다.
 
 ### 1-6. member_interest_region — 관심 동네
 
