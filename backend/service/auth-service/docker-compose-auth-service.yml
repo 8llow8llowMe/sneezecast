@@ -29,7 +29,7 @@ x-auth-service-environment: &auth_service_environment
   SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
   # 게이트웨이 라우트(lb://${AUTH_SERVICE_APP_NAME})와 같은 값이어야 해서 공통 키를 그대로 쓴다.
   SPRING_APPLICATION_NAME: ${AUTH_SERVICE_APP_NAME}
-  # 내 동네 코드 검증 Feign 대상(surveillance)의 Eureka 등록명. 게이트웨이와 같은 공통 키다. 기본값은 application.yml 과 같다.
+  # 내 동네 코드 검증 · 원시 보고 파기 Feign 대상(surveillance)의 Eureka 등록명. 게이트웨이와 같은 공통 키다. 기본값은 application.yml 과 같다.
   SURVEILLANCE_SERVICE_APP_NAME: ${SURVEILLANCE_SERVICE_APP_NAME:-surveillance-service}
   AUTH_SERVICE_PORT: ${AUTH_SERVICE_PORT}
   SERVICE_DISCOVERY_HOSTNAME: ${SERVICE_DISCOVERY_HOSTNAME}
@@ -103,6 +103,16 @@ x-auth-service-environment: &auth_service_environment
   AUTH_OAUTH_LINK_TICKET_TTL: ${AUTH_OAUTH_LINK_TICKET_TTL:-PT10M}
   AUTH_OAUTH_AUTHORIZE_IP_MAX_COUNT: ${AUTH_OAUTH_AUTHORIZE_IP_MAX_COUNT:-30}
   AUTH_OAUTH_AUTHORIZE_IP_WINDOW: ${AUTH_OAUTH_AUTHORIZE_IP_WINDOW:-PT10M}
+  # 원시 보고 파기 스케줄러 (auth.report-purge.*). 0 이하면 기동 실패. 스위치만 application.yml(false)과 다르게 기본 true 다 — yml 기본값은
+  # 테스트 · 개발자 PC 용이고, 배포된 auth 는 dev · prod 모두 파기를 돌려야 한다(법적 의무). 나머지 기본값은 application.yml 과 같다.
+  AUTH_REPORT_PURGE_SCHEDULER_ENABLED: ${AUTH_REPORT_PURGE_SCHEDULER_ENABLED:-true}
+  AUTH_REPORT_PURGE_INITIAL_DELAY: ${AUTH_REPORT_PURGE_INITIAL_DELAY:-PT1M}
+  AUTH_REPORT_PURGE_FIXED_DELAY: ${AUTH_REPORT_PURGE_FIXED_DELAY:-PT5M}
+  AUTH_REPORT_PURGE_COMPLETION_MARGIN: ${AUTH_REPORT_PURGE_COMPLETION_MARGIN:-PT5M}
+  AUTH_REPORT_PURGE_BATCH_SIZE: ${AUTH_REPORT_PURGE_BATCH_SIZE:-50}
+  AUTH_REPORT_PURGE_ALERT_ATTEMPT_THRESHOLD: ${AUTH_REPORT_PURGE_ALERT_ATTEMPT_THRESHOLD:-12}
+  AUTH_REPORT_PURGE_RETENTION: ${AUTH_REPORT_PURGE_RETENTION:-P365D}
+  AUTH_REPORT_PURGE_CLEANUP_CRON: "${AUTH_REPORT_PURGE_CLEANUP_CRON:-0 30 4 * * *}"
   # Snowflake ID. 환경당 인스턴스 하나라 기본값(0/0)으로 충분하다. 인스턴스를 늘리면 인스턴스마다 다른 worker-id 를 준다.
   SNOWFLAKE_DATACENTER_ID: ${SNOWFLAKE_DATACENTER_ID:-0}
   SNOWFLAKE_WORKER_ID: ${SNOWFLAKE_WORKER_ID:-0}
