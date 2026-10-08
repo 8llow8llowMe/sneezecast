@@ -96,6 +96,37 @@ class ReportWeekTest {
         assertThatThrownBy(() -> ReportWeek.parse(value)).isInstanceOf(IllegalArgumentException.class);
     }
 
+    @ParameterizedTest(name = "{0} - {1}주 = {2}")
+    @CsvSource({
+        "2026-W41, 1, 2026-W40",
+        "2026-W41, 0, 2026-W41",
+        // 2026 은 53주까지 있다 — 2027 의 첫 주 바로 앞은 W53 이다.
+        "2027-W01, 1, 2026-W53",
+        // 2027 은 52주까지다 — 2028 의 첫 주 바로 앞은 W52 다 (W53 을 만들지 않는다).
+        "2028-W01, 1, 2027-W52",
+        "2026-W01, 1, 2025-W52",
+        // 기준선 범위(8주)가 53주 연말을 넘는다: W03 → W02 → W01 → W53 → W52 → W51 → W50 → W49 → W48
+        "2027-W03, 8, 2026-W48",
+        "2026-W53, 53, 2025-W52"
+    })
+    @DisplayName("앞 주 계산은 연말 52 · 53주 경계를 날짜로 넘는다")
+    void minusWeeksCrossesYearEnd(String week, int weeks, String expected) {
+        assertThat(ReportWeek.parse(week).minusWeeks(weeks).value()).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("전주는 1주 앞이다")
+    void previousIsOneWeekBefore() {
+        assertThat(ReportWeek.parse("2027-W01").previous()).isEqualTo(ReportWeek.parse("2026-W53"));
+        assertThat(ReportWeek.parse("2026-W41").previous()).isEqualTo(ReportWeek.parse("2026-W40"));
+    }
+
+    @Test
+    @DisplayName("음수 주 수는 거부한다 — 뒤 주로 가는 연산이 아니다")
+    void minusWeeksRejectsNegative() {
+        assertThatThrownBy(() -> ReportWeek.parse("2026-W41").minusWeeks(-1)).isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     @DisplayName("문자열 정렬이 시간 순이다")
     void stringOrderIsChronological() {
