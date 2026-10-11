@@ -495,6 +495,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | `SymptomGroup` (비트) | RESPIRATORY(1, 발열 · 기침 · 인후통) / ENTERIC(2, 구토 · 설사) | weekly_report.symptom_mask, 보고 요청 |
 | `AggregateLevel` | NORMAL(평소 수준) / SLIGHT(조금 늘었어요) / HIGH(많이 늘었어요) / INSUFFICIENT(자료 부족) — 시안 단계 | district_weekly_aggregate, advisory |
 | `InsufficientReason` | LOW_SAMPLE(참여 부족) / UNSTABLE(참여 급변) / NO_BASELINE(기준선 없음) — 판정 순서 | district_weekly_aggregate |
+| `GroupTrend` | DOWN(조금 줄었어요) / FLAT(비슷해요) / SLIGHT(조금 늘었어요) / HIGH(많이 늘었어요) — 증상군 비율의 전주 대비 변화 | 공개 집계 응답만 (저장하지 않음, modules.md "공개 집계 조회") |
 | `AdvisoryStatus` | DRAFT / AI_DRAFTED / EDITED / APPROVED / PUBLISHED / RETRACTED | advisory, advisory_history |
 | `OfficialSource` | KDCA_NOTIFIABLE / KDCA_SENTINEL | official_surveillance, official_source_snapshot |
 | `OfficialProgram` | NOTIFIABLE / INFLUENZA_ILI / ARI / ENTERIC | official_surveillance, official_source_snapshot |
