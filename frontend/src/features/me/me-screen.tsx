@@ -333,12 +333,7 @@ export function MeScreen({
                 </SettingsSection>
 
                 <SettingsSection id="me-notification" title="알림">
-                  {/* 실데이터는 알림을 켤 수 없어(알림 설정 API 없음) 설치하면 켤 수 있다는 문장 · 링크를 뺀다 — 알림 설정 화면과 같은 기준 */}
-                  <PushUnavailable
-                    support={push}
-                    regionCode={regionCode}
-                    canEnable={source === 'mock'}
-                  />
+                  <PushUnavailable support={push} regionCode={regionCode} />
                   {/* 시안은 이 자리의 스위치지만 켜고 끄기는 알림 설정 화면에서 한다(#195). 행은 같은 이름 · 설명의 링크다 */}
                   {NOTIFICATION_TOPICS.map((topic) => (
                     <MenuRow

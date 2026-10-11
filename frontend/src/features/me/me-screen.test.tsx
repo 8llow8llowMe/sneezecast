@@ -884,7 +884,7 @@ describe('MeScreen 실데이터 (회원 API, #164)', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('알림을 받을 수 없는 기기의 미지원 상자는 알림 설정과 같게 설치 문장 · 링크 없이 홈 상단 안내만 둔다 (#195)', async () => {
+  it('홈 화면에 추가해야 하는 기기의 미지원 상자는 목데이터와 같게 설치 문장 · 링크를 둔다 — 알림 설정을 켤 수 있다 (#250)', async () => {
     search = 'mock-push=needs-install'
     holdRequests()
     act(() => setSession(memberToken()))
@@ -893,11 +893,10 @@ describe('MeScreen 실데이터 (회원 API, #164)', () => {
 
     const box = within(notificationSection()).getByText('이 기기에서는 알림을 받을 수 없어요')
       .parentElement as HTMLElement
-    expect(box.textContent).toMatch(/같은 내용은 홈 상단에서 확인할 수 있어요\.$/)
-    expect(box.textContent).not.toContain('알림을 켤 수 있어요')
+    expect(box.textContent).toContain('홈 화면에 추가 후 알림을 켤 수 있어요.')
     expect(
-      within(notificationSection()).queryByRole('link', { name: '홈 화면에 추가하는 방법 보기' }),
-    ).toBeNull()
+      within(notificationSection()).getByRole('link', { name: '홈 화면에 추가하는 방법 보기' }),
+    ).toBeDefined()
   })
 
   it('내 동네만 읽지 못해도 빨강 상자로 알리고, 다시 시도하면 내 동네만 다시 읽는다', async () => {
