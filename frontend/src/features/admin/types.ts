@@ -3,8 +3,8 @@ import type { ReportSymptom } from '@/features/report/types'
 
 /* ── 운영자 검토 (A01–A02 `/admin/review`, #219) ────────────────────────────────────────────────
  *
- * 화면 모델. **후보 목록 백엔드(#266)가 아직 없다** — 가정한 응답은 docs/api-contract-draft.md "운영자 검토 (#219, 프론트 초안)" 다.
- * 처리(수정 · 승인 · 발행 · 철회)의 응답은 "운영자 안내 처리"(#246, 확정)다.
+ * 화면 모델. 후보 목록의 응답은 docs/api-contract-draft.md "운영자 검토 후보"(#266, 확정)이고 연동 전이다 — 응답은 동네 하나가 한 행이고
+ * 신호가 여럿일 수 있어 연동 때 매핑이 이 모델로 옮긴다. 처리(수정 · 승인 · 발행 · 철회)의 응답은 "운영자 안내 처리"(#246, 확정)다.
  * 시안(Admin)에는 있지만 백엔드 1단계(backend/docs/entity-design.md §2-2 · §6)에 없는 값은 **선택 값**으로 둔다.
  * 값이 없으면 화면이 그 칸 · 행을 숨긴다 — 지어낸 값이나 0 으로 채우지 않는다.
  */
@@ -17,7 +17,7 @@ export const ADMIN_HISTORY_PATH = '/admin/history'
 
 /**
  * 후보 유형 (시안 필터 · 표의 `유형`).
- * - baseline: 기준선 대비 변화 — 기준선(`district_baseline`)이 2단계라 1단계에는 이 유형이 나오지 않는다
+ * - baseline: 기준선 대비 변화 — 집계 단계 SLIGHT · HIGH (후보 API `BASELINE` 신호, #266)
  * - surge: 참여 급증 — 전주 대비 `participant_count` (1단계)
  * - repeat: 반복 보고 의심 — `revised_report_count / participant_count` (1단계)
  */
@@ -78,9 +78,9 @@ export type ReviewCandidate = Readonly<{
   guides: readonly string[]
 
   // ── 백엔드 1단계에 없는 값 — 없으면 그 칸 · 행을 숨긴다 ──────────────────────────────
-  /** 기준선 증상 보고 비율(%). 2단계 `district_baseline` */
+  /** 기준선 증상 보고 비율(%). 후보 API 에 있다(#266, 집계 판정 기준선) — 자료 부족 후보에는 없다 */
   baselineRate?: number
-  /** 기준선 대비 변화(%p). 2단계 */
+  /** 기준선 대비 변화(%p). 후보 API 에 있다(#266) — 자료 부족 후보에는 없다 */
   baselineDeltaPp?: number
   /** 최근 주 증상 보고 비율(%), 오래된 주부터 이번 주까지(시안 8주 막대). 기준선과 함께 그린다 */
   recentRates?: readonly number[]
