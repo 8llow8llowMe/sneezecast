@@ -19,7 +19,6 @@ import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.Comment;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import org.springframework.data.domain.Persistable;
 
 /**
  * surveillance 원시 보고 파기 요청 (entity-design §1-5). Feign 호출 한 번에 기대지 않고 완료될 때까지 다시 부르려고 행으로 남긴다.
@@ -38,7 +37,7 @@ import org.springframework.data.domain.Persistable;
         // 스케줄러의 미완료 행 조회 (completed_at is null)
         @Index(name = "idx_report_purge_request_completed_at", columnList = "completedAt")
     })
-public class ReportPurgeRequestEntity extends BaseEntity implements Persistable<Long> {
+public class ReportPurgeRequestEntity extends BaseEntity {
 
     /** {@code last_error} 컬럼 길이. 실패 기록은 이 길이에서 자른다. */
     public static final int LAST_ERROR_MAX_LENGTH = 200;
@@ -77,13 +76,4 @@ public class ReportPurgeRequestEntity extends BaseEntity implements Persistable<
     @Column(length = LAST_ERROR_MAX_LENGTH)
     @Comment("마지막 실패 사유 - 예외 코드 · 상태 코드만 (응답 본문을 넣지 않는다)")
     private String lastError;
-
-    /**
-     * 새 행인지 판정한다 — 감사 컬럼 {@code createdAt} 이 비어 있으면 아직 저장되지 않은 엔티티다. Snowflake 로 ID 를 미리 정하므로 이 판정이 없으면
-     * {@code save} 가 merge 로 가서 겹치는 ID 를 조용히 덮어쓴다({@link MemberConsentEntity#isNew()} 와 같은 이유).
-     */
-    @Override
-    public boolean isNew() {
-        return getCreatedAt() == null;
-    }
 }

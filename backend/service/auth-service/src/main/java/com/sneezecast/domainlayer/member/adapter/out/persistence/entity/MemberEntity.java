@@ -20,7 +20,6 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Comment;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import org.springframework.data.domain.Persistable;
 
 /**
  * 회원 (entity-design §1-1). 성명 컬럼을 두지 않는다.
@@ -40,7 +39,7 @@ import org.springframework.data.domain.Persistable;
         // 동시 가입 요청에서 중복 계정이 생기지 않게 DB 가 막는다. 위반은 MemberRepositoryAdapter 가 도메인 예외로 바꾼다.
         @Index(name = MemberEntity.EMAIL_UNIQUE_INDEX, columnList = "email", unique = true)
     })
-public class MemberEntity extends BaseEntity implements Persistable<Long> {
+public class MemberEntity extends BaseEntity {
 
     public static final String EMAIL_UNIQUE_INDEX = "uk_member_email";
 
@@ -90,22 +89,7 @@ public class MemberEntity extends BaseEntity implements Persistable<Long> {
     @Column(columnDefinition = "TIMESTAMP")
     private LocalDateTime withdrawnAt;
 
-    /**
-     * 새 행인지 판정한다 — 감사 컬럼 {@code createdAt} 은 persist 때 Auditing 이 채우므로, 비어 있으면 아직 저장되지 않은 엔티티다.
-     *
-     * <p>Snowflake 로 ID 를 미리 정해 두기 때문에 기본 판정(ID null 여부)은 항상 "기존 행" 이 되어 {@code save} 가 merge 로 간다. 그러면
-     * INSERT 전에 SELECT 가 한 번 더 나가고, ID 가 겹치면 기존 행을 조용히 덮어쓴다. 이 판정으로 persist 를 타게 해서 겹치는 ID 는 PK
-     * 위반으로 실패하게 한다.
-     *
-     * <p><b>주의</b>: 도메인 모델에서 새로 매핑한 엔티티는 {@code createdAt} 이 비어 있어 항상 새 행으로 본다. 기존 행을 고치는 흐름은
-     * 엔티티를 조회해서 바꾸거나(변경 감지) 갱신 쿼리를 써야 한다 — 매핑한 엔티티를 {@code save} 하면 PK 위반이 난다.
-     */
-    @Override
-    public boolean isNew() {
-        return getCreatedAt() == null;
-    }
-
-    /** 조회한 엔티티의 닉네임을 바꾼다 — 트랜잭션 안에서 변경 감지로 UPDATE 된다 ({@link #isNew()} 주의 참고). */
+    /** 조회한 엔티티의 닉네임을 바꾼다 — 트랜잭션 안에서 변경 감지로 UPDATE 된다 ({@link BaseEntity#isNew()} 주의 참고). */
     public void changeNickname(String nickname) {
         this.nickname = nickname;
     }
