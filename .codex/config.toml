@@ -1,0 +1,9 @@
+# Codex 프로젝트 설정. 이 저장소를 신뢰(trust)한 세션에서만 로드된다.
+# 역할 · 모델 · 추론 강도의 운영 정본은 docs/codex-agents.md 다.
+[agents]
+enabled = true
+# 하위 에이전트 스레드 상한(메인 스레드 제외). 채우는 것이 목표가 아니다. 보통 읽기 전용 1~2개면 충분하다.
+max_concurrent_threads_per_session = 3
+# 역할 파일 없이 만든 하위 에이전트의 기본값. 역할 파일은 각자 model · model_reasoning_effort 를 고정한다.
+default_subagent_model = "gpt-6-luna"
+default_subagent_reasoning_effort = "medium"

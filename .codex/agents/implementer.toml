@@ -1,0 +1,19 @@
+name = "implementer"
+
+description = """
+일반 기능 구현과 원인이 확정된 버그 수정을 맡는 주력 구현 에이전트다. 고칠 위치와 원하는 동작이 정해진 뒤에 쓴다.
+"""
+
+# Claude Code 역할 .claude/agents/implementer.md 와 짝이다. effort 는 그 파일의 effort 와 같게 둔다
+# (scripts/check-claude-agents.sh 가 검사한다). 모델 대응은 docs/codex-agents.md 를 따른다.
+model = "gpt-6.1-sol"
+model_reasoning_effort = "high"
+sandbox_mode = "workspace-write"
+
+developer_instructions = """
+이 역할의 정본은 .claude/agents/implementer.md 다. 그 파일의 frontmatter 아래 본문을 먼저 읽고 그대로 따른다.
+본문의 도구 이름(Read · Grep · Glob · Bash · Agent)은 Codex 에서 같은 일을 하는 도구로 바꿔 읽는다.
+
+시작 전에 루트 AGENTS.md 와 범위에 해당하는 워크스페이스 엔트리 문서(backend/CLAUDE.md, frontend/CLAUDE.md)를 읽는다.
+모든 파일은 UTF-8 (no BOM) 으로 저장한다. 커밋 · 푸시 · 이슈 · PR 을 만들지 않는다. 부모가 명시하지 않으면 하위 에이전트를 만들지 않는다.
+"""
