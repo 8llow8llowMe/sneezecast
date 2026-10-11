@@ -264,7 +264,11 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - **마감**: 지난 주를 마지막으로 재계산하고 `finalized_at` 을 채운다. 지난 주 보고는 받지 않으므로(§2-1) 마감 뒤 원시 보고와 어긋나지 않는다. 재계산 갱신은 `finalized_at is null` 조건으로만 고치므로 마감된 행은 바뀌지 않는다(0건). 마감은 주 단위 벌크 갱신이고 이미 마감된 행은 그대로라 다시 불러도 된다. **마감된 행이 하나라도 있는 주는 다시 세지 않는다** — 그 주에 새 행도 만들지 않고, 혹시 남은 미마감 행만 그대로 마감한다.
 - **원시 보고 파기(§1-5)와의 순서**: 파기는 그 보고자의 모든 주 행을 지운다. 현재 주와 아직 마감 전인 지난 주(유예 안 · 놓친 주)는 다음 회차의 재계산 · 마감이 반영하고, 그래서 0건이 된 동은 0 과 LOW_SAMPLE 이 된다. **마감된 주는 다시 세지 않는다** — 익명 집계라 남긴다(architecture-guide §6). 52주 보관 삭제도 같다.
 - 비율은 저장하지 않고 조회 시 `count / participant_count` 로 계산한다. **INSUFFICIENT 면 API 는 수치 · 비율을 내리지 않는다** — 행에 숫자가 있어도 응답에서 뺀다.
-- **검토 후보 (1단계)**: 운영자 화면이 조회 시 계산한다 — 참여 급증(전주 대비 `participant_count`), 반복 보고(`revised_report_count / participant_count`), 기준선 대비 변화(단계 SLIGHT · HIGH 와 `baseline_*`). 후보 적재 테이블(`review_signal`)은 2단계다.
+- **검토 후보 (1단계, #266)**: 운영자 검토 후보 API(`GET /api/v1/advisories/admin/candidates`, modules.md "운영자 검토 후보")가 조회 시 이 행으로 계산한다(advisory 컨텍스트 `ReviewCandidateRule`, 설정 `advisory.review-candidate.*`). 후보 적재 테이블(`review_signal`)은 2단계다.
+  - 참여 급증 — 이번 주 · 전주가 모두 LOW_SAMPLE 이 아니고 `100 × (participant_count − 전주 participant_count) ≥ 30 × 전주 participant_count`. 전주 행이 없으면 보지 않는다.
+  - 반복 보고 — LOW_SAMPLE 이 아니고 `100 × revised_report_count ≥ 20 × participant_count`.
+  - 기준선 대비 변화 — 단계 SLIGHT · HIGH. 변화량 %p 는 행의 `baseline_*` 로 계산한 기준선 비율과의 차다.
+  - 비교는 정수다(정확히 30% · 20% 면 후보 — 2026-10-11 결정). **LOW_SAMPLE 칸은 신호가 나지 않는다.** UNSTABLE · NO_BASELINE 칸은 급증 · 반복 신호가 나면 후보지만(큰 급증은 마감 판정에서 정의상 UNSTABLE) 수치 · 비율 · 기준선 없이 참여 · 전주 참여 · 수정 수만 보이고 초안을 만들 수 없다(§2-3 초안 전제와 같다). 신호가 없어도 그 주에 안내가 있는 동네는 후보로 보인다.
 - 집계 · 마감 스케줄러는 **한 번에 하나만** 돈다. 인스턴스 안에서는 회차를 잠금으로 감싸 겹치는 트리거를 건너뛴다(스케줄러 스레드도 1개). 1단계는 surveillance 인스턴스 1개로 운영하고, 늘리면 인스턴스 사이 잠금(ShedLock)을 먼저 붙인다 — 지금은 붙이지 않았다.
 - 원시 보고가 52주 뒤 지워져도 이 행은 남는다 (익명 집계).
 
