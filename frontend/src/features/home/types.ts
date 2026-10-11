@@ -1,8 +1,9 @@
 import type { MeasuredStatus } from '@/lib/status'
 
 /**
- * 홈 화면 데이터. API(`GET /api/regions/{admCd}/weekly` 등, docs/api-contract-draft.md)를 화면용으로
- * 옮긴 모양이다. 날짜 · 주차 같은 문구는 API 연동 때 매핑 계층이 만든다 — 지금은 목 데이터가 채운다.
+ * 홈 화면 데이터. API(`GET /api/v1/districts/{code}/weekly-aggregate` 등, docs/api-contract-draft.md
+ * "행정동 주간 집계")를 화면용으로 옮긴 모양이다. 날짜 · 주차 같은 문구는 API 연동 때 매핑 계층이 만든다 —
+ * 아직 연동 전이라 목 데이터가 채운다.
  *
  * **`자료 부족` 이면 증상 비율 · 기준선 · 증상별 변화가 타입에 아예 없다.** 화면 코드가 실수로
  * 수치를 그릴 수 없게 하려는 것이다 (루트 CLAUDE.md "표본이 적으면 수치 · 색상으로 위험을 암시하지 않는다").
