@@ -37,6 +37,11 @@ public enum MemberErrorCode {
     // 철회할 수 있는 항목은 건강정보 동의뿐이다. 이용약관 · 개인정보는 탈퇴로만 끝나고, 만 19세 확인은 철회 개념이 없다.
     CONSENT_NOT_WITHDRAWABLE("MEMBER_012", "철회할 수 없는 항목입니다.", HttpStatus.BAD_REQUEST),
 
+    // 알림 설정
+    // 같은 회원의 첫 변경이 동시에 들어와 회원당 1행 unique 에 막혔거나, 조회한 행이 갱신 전에 사라졌다(탈퇴 정리 등). Facade 가 새 트랜잭션에서 한 번
+    // 다시 하므로(그때는 갱신 · 삽입 · 회원 상태 오류 중 하나) 그것마저 겹칠 때만 나간다.
+    NOTIFICATION_SETTING_SAVE_CONFLICT("MEMBER_013", "알림 설정을 저장하는 중 다른 요청과 겹쳤습니다. 다시 시도해주세요.", HttpStatus.CONFLICT),
+
     // 요청 검증 대역 — 필드별 코드(MEMBER_101~)는 MemberValidationMessage 에 있다.
     INVALID_REQUEST("MEMBER_100", "요청 값이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
     // 프레임워크 2종은 대역 끝에 둔다 — 필드별 코드가 늘어도 번호가 끼어들지 않는다.
