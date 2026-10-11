@@ -2,8 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { loginWithEmail, logout, resetMockSession } from '@/features/auth/auth-client'
 import { NOTICE_EXAMPLE_DISTRICTS } from '@/features/notice/mock'
+import { ApiError, unavailableError } from '@/lib/api/api-error'
+import { apiRequest } from '@/lib/api/client'
+import type * as sessionStore from '@/lib/session/session-store'
+import { refreshSession } from '@/lib/session/session-store'
+import { correctedHistory, historyResponse, operatorAdvisory } from '@/test/admin-history'
 
 import {
+  ADMIN_ADVISORIES_PATH,
   correctAdvisory,
   kstDate,
   listHistory,
@@ -21,6 +27,18 @@ import {
 } from './admin-review-client'
 import { createMockHistory } from './mock'
 import type { HistoryEntry } from './types'
+
+vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
+vi.mock('@/lib/session/session-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof sessionStore>()),
+  refreshSession: vi.fn(() => Promise.resolve()),
+}))
+
+function apiError(code: string, status: number): ApiError {
+  return new ApiError({ status, code, message: '거절' })
+}
+
+const HISTORY_PATH = '/api/v1/advisories/admin/history'
 
 async function entries() {
   const result = await listHistory('mock')
@@ -43,6 +61,8 @@ beforeEach(() => {
   resetMockSession()
   resetMockHistory()
   resetMockReviewCandidates()
+  vi.mocked(apiRequest).mockReset()
+  vi.mocked(refreshSession).mockClear()
   // 2025-11-20 14:08 KST
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2025-11-20T05:08:00Z'))
@@ -52,17 +72,127 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('발행 이력 클라이언트', () => {
-  it('실데이터는 요청하지 않고 unavailable 이다 (목록 · 정정 · 철회 모두)', async () => {
-    expect(await listHistory('api', { scenario: 'fail' })).toEqual({ status: 'unavailable' })
-    expect(
-      await correctAdvisory('advisory-1', { body: '본문', reason: '사유', version: 4 }, 'api'),
-    ).toEqual({ status: 'unavailable' })
-    expect(await retractAdvisory('advisory-1', { reason: '사유', version: 4 }, 'api')).toEqual({
-      status: 'unavailable',
-    })
+describe('발행 이력 클라이언트 (실데이터)', () => {
+  const correction = { title: '고친 제목', body: '고친 본문', reason: '사유', version: 4 }
+
+  it('목록은 끝 주 없이 GET /history 이고 화면 모델로 옮긴다 — 목 재현 쿼리는 듣지 않는다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(historyResponse())
+
+    const result = await listHistory('api', { scenario: 'empty' })
+    expect(apiRequest).toHaveBeenCalledWith(HISTORY_PATH)
+    expect(ADMIN_ADVISORIES_PATH).toBe('/api/v1/advisories/admin')
+    expect(result.entries.map((item) => [item.id, item.districtName, item.outcome])).toEqual([
+      ['701', '가락1동', 'published'],
+    ])
   })
 
+  it('목록 실패는 거부한다. 권한 없음(403)이면 세션 요약을 다시 맞춘다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('network', 0))
+    await expect(listHistory('api')).rejects.toMatchObject({ code: 'UNAVAILABLE' })
+    expect(refreshSession).not.toHaveBeenCalled()
+
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('SECURITY_006', 403))
+    await expect(listHistory('api')).rejects.toMatchObject({ code: 'SECURITY_006' })
+    expect(refreshSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('정정은 POST /{id}/correct { title, body, reason, version } 뒤 이력을 다시 읽고 새 안내를 고른다', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce(operatorAdvisory({ advisoryId: '702', correctsAdvisoryId: '701' }))
+      .mockResolvedValueOnce(correctedHistory())
+
+    const result = await correctAdvisory('701', correction, 'api')
+    expect(vi.mocked(apiRequest).mock.calls).toEqual([
+      [`${ADMIN_ADVISORIES_PATH}/701/correct`, { method: 'POST', body: correction }],
+      [HISTORY_PATH],
+    ])
+    if (result.status !== 'ok') throw new Error('not ok')
+    expect(result.selectedId).toBe('702')
+    expect(result.entries.map((item) => `${item.id} ${item.outcome}`)).toEqual([
+      '702 published',
+      '701 corrected',
+    ])
+  })
+
+  it('철회는 POST /{id}/retract { reason, version } 뒤 이력을 다시 읽고 그 안내를 고른다', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce(operatorAdvisory({ statusCode: 'RETRACTED', version: 5 }))
+      .mockResolvedValueOnce(historyResponse())
+
+    const result = await retractAdvisory('701', { reason: '사유', version: 4 }, 'api')
+    expect(apiRequest).toHaveBeenNthCalledWith(1, `${ADMIN_ADVISORIES_PATH}/701/retract`, {
+      method: 'POST',
+      body: { reason: '사유', version: 4 },
+    })
+    expect(result).toMatchObject({ status: 'ok', selectedId: '701' })
+  })
+
+  it.each([
+    ['ADVISORY_005', 409],
+    ['ADVISORY_006', 409],
+    ['ADVISORY_007', 409],
+    ['ADVISORY_001', 404],
+  ])('%s(%i) 면 이력을 다시 읽어 충돌로 준다', async (code, status) => {
+    vi.mocked(apiRequest)
+      .mockRejectedValueOnce(apiError(code, status))
+      .mockResolvedValueOnce(historyResponse())
+
+    const result = await retractAdvisory('701', { reason: '사유', version: 3 }, 'api')
+    expect(apiRequest).toHaveBeenLastCalledWith(HISTORY_PATH)
+    expect(result.status === 'conflict' && result.entries.map((item) => item.id)).toEqual(['701'])
+  })
+
+  it('검증 거부(400 — 100 · 105~113 · 198)는 다시 읽지 않고 invalid 다', async () => {
+    for (const code of [
+      'ADVISORY_100',
+      'ADVISORY_105',
+      'ADVISORY_110',
+      'ADVISORY_113',
+      'ADVISORY_198',
+    ]) {
+      vi.mocked(apiRequest).mockReset()
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, 400))
+      expect(await correctAdvisory('701', correction, 'api')).toEqual({ status: 'invalid' })
+      expect(apiRequest).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('그 밖의 실패(일시 장애 · 권한 없음 · 분류 밖)는 거부하고 다시 읽지 않는다. 403 이면 세션 요약을 다시 맞춘다', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('timeout', 0))
+    await expect(correctAdvisory('701', correction, 'api')).rejects.toMatchObject({
+      code: 'UNAVAILABLE',
+    })
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('ADVISORY_002', 404))
+    await expect(retractAdvisory('701', { reason: '사유', version: 4 }, 'api')).rejects.toThrow()
+    expect(refreshSession).not.toHaveBeenCalled()
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError('SECURITY_006', 403))
+    await expect(retractAdvisory('701', { reason: '사유', version: 4 }, 'api')).rejects.toThrow()
+    expect(refreshSession).toHaveBeenCalledTimes(1)
+    expect(apiRequest).toHaveBeenCalledTimes(3)
+  })
+
+  it('처리 · 충돌 뒤 이력을 다시 읽지 못하면 그 결과를 잃지 않고 unrefreshed 로 준다', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce(operatorAdvisory({ advisoryId: '702' }))
+      .mockRejectedValueOnce(unavailableError('network', 0))
+    expect(await correctAdvisory('701', correction, 'api')).toEqual({
+      status: 'unrefreshed',
+      outcome: 'ok',
+      selectedId: '702',
+    })
+
+    vi.mocked(apiRequest)
+      .mockRejectedValueOnce(apiError('ADVISORY_006', 409))
+      .mockRejectedValueOnce(unavailableError('network', 0))
+    expect(await retractAdvisory('701', { reason: '사유', version: 3 }, 'api')).toEqual({
+      status: 'unrefreshed',
+      outcome: 'conflict',
+      selectedId: null,
+    })
+  })
+})
+
+describe('발행 이력 클라이언트', () => {
   it('목은 시안의 지난 주 행이고 최근 것부터다. 동은 동네 안내 목이 아는 예시 동네다', async () => {
     const list = await entries()
     expect(list.map((item) => `${item.districtName} ${item.isoWeek} ${item.outcome}`)).toEqual([
@@ -103,16 +233,18 @@ describe('발행 이력 클라이언트', () => {
   it('정정 발행: 이전 안내는 정정됨(사유)이 되고, 고친 본문이 정정일 · 사유를 가진 새 안내로 발행된다', async () => {
     const result = await correctAdvisory(
       'advisory-1',
-      { body: '고친 본문', reason: '참여자 수를 바로잡았어요.', version: 4 },
+      { title: '고친 제목', body: '고친 본문', reason: '참여자 수를 바로잡았어요.', version: 4 },
       'mock',
     )
     if (result.status !== 'ok') throw new Error('not ok')
     const [fresh, previous] = result.entries
     expect(result.selectedId).toBe(fresh?.id)
     expect(fresh).toMatchObject({
+      kind: 'baseline',
       districtName: '○○1동',
       isoWeek: '2025-W46',
       outcome: 'published',
+      title: '고친 제목',
       body: '고친 본문',
       version: 1,
       // 동네 안내(S07)의 정정 이력과 같은 모양(정정일 YYYY-MM-DD · 사유)
@@ -134,7 +266,11 @@ describe('발행 이력 클라이언트', () => {
       await retractAdvisory(fresh!.id, { reason: '잘못 냈어요.', version: 1 }, 'mock'),
     ).toMatchObject({ status: 'ok' })
     expect(
-      await correctAdvisory('advisory-1', { body: 'x', reason: 'y', version: 5 }, 'mock'),
+      await correctAdvisory(
+        'advisory-1',
+        { title: 't', body: 'x', reason: 'y', version: 5 },
+        'mock',
+      ),
     ).toMatchObject({ status: 'conflict' })
   })
 
@@ -213,6 +349,8 @@ describe('검토 대기 → 발행 이력 (같은 목 서버)', () => {
       districtName: '○○2동',
       isoWeek: '2025-W47',
       outcome: 'held',
+      // 목 후보에는 제목이 없어 예시 제목을 짓는다
+      title: '참여가 지난주보다 많이 늘었어요',
     })
     expect(rows[0]?.reviewMinutes).toBeUndefined()
     expect(summarizeHistory(rows)).toMatchObject({ published: 3, held: 2 })
@@ -247,7 +385,12 @@ describe('검토 대기 → 발행 이력 (같은 목 서버)', () => {
       const { id, version, draft } = list.candidates[2]
       await publishCandidate(id, { draft, version }, 'mock')
       if (end === 'retract') await retractAdvisory(id, { reason: '사유', version: 1 }, 'mock')
-      else await correctAdvisory(id, { body: draft, reason: '사유', version: 1 }, 'mock')
+      else
+        await correctAdvisory(
+          id,
+          { title: '제목', body: draft, reason: '사유', version: 1 },
+          'mock',
+        )
 
       // 검토 대기 목을 처음으로(`?mock-admin=` 재설정과 같다) 되돌리고 같은 후보를 다시 발행한다
       resetMockReviewCandidates()
