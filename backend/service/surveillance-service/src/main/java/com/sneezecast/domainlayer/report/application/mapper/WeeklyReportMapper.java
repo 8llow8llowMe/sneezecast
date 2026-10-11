@@ -19,7 +19,7 @@ public interface WeeklyReportMapper {
     @Mapping(target = "symptoms", source = "symptomMask")
     WeeklyReport toDomainFromEntity(WeeklyReportEntity entity);
 
-    // 도메인 -> 엔티티 (새 행 INSERT 에만 쓴다. 기존 행은 갱신 쿼리로 고친다 — WeeklyReportEntity#isNew 참고)
+    // 도메인 -> 엔티티 (새 행 INSERT 에만 쓴다. 기존 행은 갱신 쿼리로 고친다 — BaseEntity#isNew 참고)
     @Mapping(target = "symptomMask", source = "symptoms")
     WeeklyReportEntity toEntityFromDomain(WeeklyReport domain);
 

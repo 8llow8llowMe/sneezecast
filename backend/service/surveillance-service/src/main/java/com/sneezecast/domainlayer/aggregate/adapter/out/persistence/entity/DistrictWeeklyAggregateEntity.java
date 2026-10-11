@@ -19,7 +19,6 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Comment;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import org.springframework.data.domain.Persistable;
 
 /**
  * 행정동 × 주 집계 (entity-design §2-2). 익명 집계라 회원 · 보고자 컬럼이 없고, 원시 보고가 지워져도 남는다.
@@ -39,7 +38,7 @@ import org.springframework.data.domain.Persistable;
         // 주 단위 전체 조회 · 기준선 주 조회 · 마감
         @Index(name = "idx_district_weekly_aggregate_iso_week", columnList = "isoWeek")
     })
-public class DistrictWeeklyAggregateEntity extends BaseEntity implements Persistable<Long> {
+public class DistrictWeeklyAggregateEntity extends BaseEntity {
 
     public static final String DISTRICT_CODE_ISO_WEEK_UNIQUE_INDEX = "uk_district_weekly_aggregate_district_code_iso_week";
 
@@ -104,13 +103,4 @@ public class DistrictWeeklyAggregateEntity extends BaseEntity implements Persist
     @Column(columnDefinition = "TIMESTAMP")
     @Comment("주 마감 시각. 마감 후에는 재계산하지 않는다")
     private LocalDateTime finalizedAt;
-
-    /**
-     * 새 행인지 판정한다 — {@code createdAt} 은 persist 때 Auditing 이 채우므로 비어 있으면 아직 저장되지 않은 엔티티다 (coding-conventions §8-1).
-     * Snowflake 로 ID 를 미리 정하므로 기본 판정이면 {@code save} 가 merge 로 가서 겹치는 ID 의 행을 조용히 덮어쓴다. 기존 행 수정은 갱신 쿼리로 한다.
-     */
-    @Override
-    public boolean isNew() {
-        return getCreatedAt() == null;
-    }
 }

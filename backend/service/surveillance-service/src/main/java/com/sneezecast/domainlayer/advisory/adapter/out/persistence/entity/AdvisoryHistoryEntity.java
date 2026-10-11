@@ -17,7 +17,6 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Comment;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import org.springframework.data.domain.Persistable;
 
 /**
  * 예방 안내 상태 전이 · 수정 이력 (entity-design §2-4). 쌓기만 하고 고치지 않는다 — 고치는 메서드가 없다. {@code created_at} 이 전이 시각이다.
@@ -32,7 +31,7 @@ import org.springframework.data.domain.Persistable;
 @Table(
     name = "advisory_history",
     indexes = @Index(name = "idx_advisory_history_advisory_id", columnList = "advisoryId"))
-public class AdvisoryHistoryEntity extends BaseEntity implements Persistable<Long> {
+public class AdvisoryHistoryEntity extends BaseEntity {
 
     @Id
     @Comment("이력 아이디 (Snowflake)")
@@ -77,10 +76,4 @@ public class AdvisoryHistoryEntity extends BaseEntity implements Persistable<Lon
     @Column(length = 500)
     @Comment("수정 · 철회 사유")
     private String memo;
-
-    /** {@code AdvisoryEntity#isNew} 와 같은 판정 (coding-conventions §8-1). */
-    @Override
-    public boolean isNew() {
-        return getCreatedAt() == null;
-    }
 }

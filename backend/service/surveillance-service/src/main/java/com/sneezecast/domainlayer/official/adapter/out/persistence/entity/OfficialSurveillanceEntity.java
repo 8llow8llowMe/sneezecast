@@ -35,8 +35,7 @@ import org.hibernate.type.SqlTypes;
  * 정수 연도 · 주차만 넣고 가공한 날짜({@code periodStart} · {@code periodEnd})는 넣지 않는다 — 주차 → 날짜 규칙이 바뀌어도 행이
  * 겹치지 않게 하기 위해서다.
  *
- * <p>{@code Persistable} 을 구현하지 않는다. surveillance 는 이 테이블을 {@code save} 하지 않아 isNew 판정이 쓰이지 않는다 (판정은
- * save 경로에서만 의미가 있다). #74 가 BaseEntity 로 올리면 함께 적용된다.
+ * <p>새 행 판정({@code BaseEntity#isNew})은 {@code save} 경로에서만 쓰이는데 surveillance 는 이 테이블을 {@code save} 하지 않는다.
  *
  * <p>enum 컬럼에 {@code @JdbcTypeCode(SqlTypes.VARCHAR)} 를 함께 건다. 없으면 Hibernate 6 이 MySQL · H2 에서 네이티브
  * {@code enum(...)} 을 만들어 값을 늘릴 때마다 ALTER 가 필요하다. 저장 값(이름)은 batch 와의 DB 계약이다.
