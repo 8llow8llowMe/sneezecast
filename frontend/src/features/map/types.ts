@@ -4,8 +4,8 @@ import type { HomeWeekly } from '@/features/home/types'
  * 지도(S04) 화면 데이터. 동네 하나의 이번 주는 홈과 같은 모양(`HomeWeekly`)이다 —
  * **`자료 부족` 이면 증상 비율 · 기준선 · 증상별 변화가 타입에 없어** 지도 · 동네 정보가 수치를 그릴 수 없다.
  *
- * 연동 때 집계 API(`GET /api/v1/districts/weekly-aggregates` — 시군구 하나의 동네별 상태, docs/api-contract-draft.md
- * "행정동 주간 집계")와 행정동 경계(SGIS)를 이 모양으로 옮긴다 (docs/design/SCREENS.md "지도"). 아직 목이다.
+ * 실데이터는 집계 API(`GET /api/v1/districts/weekly-aggregates` — 시군구 하나의 동네별 상태, docs/api-contract-draft.md
+ * "행정동 주간 집계")를 이 모양으로 옮긴다(`weekly-aggregates.ts`, #257). 행정동 경계(SGIS)는 아직 없다(docs/design/SCREENS.md "지도").
  */
 export type MapWeek = {
   /** 예: "11월 3주" (지도 위 기준 표시) */
