@@ -5,10 +5,10 @@ import type { ReportAnswer } from './types'
 
 /* ── 지난 보고 내역 (S10 `/me/reports`, #194) ─────────────────────────────────────────────────
  *
- * **BE 미정이다.** 백엔드는 이번 주 보고(`GET /api/v1/reports/current`)만 준다 — 지난 보고는 읽을 수 없다.
- * 화면이 가정한 모양은 docs/api-contract-draft.md "BE 미정 — 프론트 초안" 의 `GET /api/v1/reports/me`(이번 주를 뺀 지난 보고)다.
+ * **백엔드는 확정(#216), 프론트 연동 전이다.** 계약은 docs/api-contract-draft.md "지난 보고 내역 `/api/v1/reports/me` (확정)"
+ * (이번 주를 뺀 지난 보고, 최근 주부터)다.
  *
- * - 실데이터: 요청하지 않고 `unavailable` 이다. BE 미정 API 는 보통 출처와 무관하게 목이지만(docs/conventions.md "데이터 출처"),
+ * - 실데이터: 요청하지 않고 `unavailable` 이다. 연동 전 API 는 보통 출처와 무관하게 목이지만(docs/conventions.md "데이터 출처"),
  *   보고 이력은 건강정보(민감정보)라 **실제 회원에게 지어낸 과거 보고를 보이지 않는다.** 이번 주 보고는 화면이
  *   이번 주 보고 저장소(`use-submitted-report.ts`)에서 따로 읽는다
  * - 목: 지금 KST 주의 앞 주들 예시(`MOCK_PAST_ANSWERS`). 보고하지 않은 주가 하나 끼어 있다. `?mock-reports=empty` 면 빈 목록이다
