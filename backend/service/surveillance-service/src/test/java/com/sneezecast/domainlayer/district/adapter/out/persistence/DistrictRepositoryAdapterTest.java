@@ -116,6 +116,14 @@ class DistrictRepositoryAdapterTest extends DistrictH2TestSupport {
     }
 
     @Test
+    @DisplayName("여러 코드 조회는 현행 · 폐지를 한 번에 찾고, 없는 코드는 빠진다. 코드가 비면 빈 목록이다")
+    void findsAllByCodes() {
+        assertThat(codes(districtRepositoryAdapter.findAllByCodeIn(List.of("11240660", "21120560", "99999999"))))
+            .containsExactlyInAnyOrder("11240660", "21120560");
+        assertThat(districtRepositoryAdapter.findAllByCodeIn(List.of())).isEmpty();
+    }
+
+    @Test
     @DisplayName("없는 코드는 빈 Optional 이다")
     void missingCodeIsEmpty() {
         assertThat(districtRepositoryAdapter.findByCode("99999999")).isEmpty();

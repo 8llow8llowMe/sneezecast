@@ -100,7 +100,17 @@ public class AdvisoryPublicQueryProcessor {
      * 없는 주(53주가 없는 해의 W53)는 {@code WEEK_NOT_QUERYABLE} 이고 메시지에 조회할 수 있는 범위를 싣는다.
      */
     ReportWeek resolveWeek(String week) {
-        ReportWeek current = ReportWeek.of(clock.instant());
+        return resolveQueryableWeek(week, ReportWeek.of(clock.instant()));
+    }
+
+    /**
+     * 운영자 검토 후보(#266)와 같이 쓰는 조회 창 확인 — {@code current} ~ {@value #QUERYABLE_PAST_WEEKS}주 전의 주만 받는다. 생략(null) 처리는 호출자가 한다
+     * (공개 동네 안내는 필수, 검토 후보는 현재 주 − 1).
+     *
+     * @param week    {@code YYYY-Www} 형식이 확인된 주 (null 아님)
+     * @param current 현재 주
+     */
+    static ReportWeek resolveQueryableWeek(String week, ReportWeek current) {
         ReportWeek oldest = current.minusWeeks(QUERYABLE_PAST_WEEKS);
         ReportWeek requested;
         try {

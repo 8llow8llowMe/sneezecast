@@ -32,6 +32,12 @@ public interface AdvisoryRepositoryPort {
     List<Advisory> findAllPublishedByDistrictCodeInAndIsoWeekIn(Collection<String> districtCodes, Collection<ReportWeek> isoWeeks);
 
     /**
+     * 운영자 검토 후보(#266)가 읽는 여러 동네 · 한 주의 안내 — <b>모든 상태</b>. 동네 수만큼 단건으로 읽지 않고 한 번에 읽는다(동네 코드 앞 컬럼 인덱스
+     * {@code idx_advisory_district_code_status_published_at}). {@code districtCodes} 가 비면 빈 목록이다. 잠그지 않는다(전이와 줄을 서지 않는다).
+     */
+    List<Advisory> findAllByDistrictCodeInAndIsoWeek(Collection<String> districtCodes, ReportWeek isoWeek);
+
+    /**
      * {@code advisoryId} 안내와 같은 동네 · 주의 모든 안내(자신 포함)를 잠금 읽기로 가져온다. 잠금은 트랜잭션 끝까지 간다. 그 안내가 없으면 빈 목록이다.
      *
      * <p><b>호출자 트랜잭션이 있어야 한다.</b> 같은 트랜잭션에서 그 안내를 이미 잠그지 않고 읽었다면 영속성 컨텍스트의 값(옛 값일 수 있다)이 돌아온다 — 그때도

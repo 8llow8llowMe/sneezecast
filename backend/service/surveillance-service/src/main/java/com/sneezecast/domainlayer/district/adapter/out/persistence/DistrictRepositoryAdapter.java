@@ -4,6 +4,7 @@ import com.sneezecast.domainlayer.district.adapter.out.persistence.repository.Di
 import com.sneezecast.domainlayer.district.application.mapper.DistrictMapper;
 import com.sneezecast.domainlayer.district.application.port.out.DistrictRepositoryPort;
 import com.sneezecast.domainlayer.district.domain.model.District;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,16 @@ public class DistrictRepositoryAdapter implements DistrictRepositoryPort {
     @Override
     public Optional<District> findByCode(String code) {
         return districtRepository.findByCode(code).map(districtMapper::toDomainFromEntity);
+    }
+
+    @Override
+    public List<District> findAllByCodeIn(Collection<String> codes) {
+        if (codes.isEmpty()) {
+            return List.of();
+        }
+        return districtRepository.findAllByCodeIn(codes).stream()
+            .map(districtMapper::toDomainFromEntity)
+            .toList();
     }
 
     @Override

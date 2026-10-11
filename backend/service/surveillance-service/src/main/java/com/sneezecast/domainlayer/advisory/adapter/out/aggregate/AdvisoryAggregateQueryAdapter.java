@@ -2,9 +2,11 @@ package com.sneezecast.domainlayer.advisory.adapter.out.aggregate;
 
 import com.sneezecast.domainlayer.advisory.application.port.out.AdvisoryAggregateQueryPort;
 import com.sneezecast.domainlayer.advisory.application.port.out.query.AdvisoryAggregateQueryResult;
+import com.sneezecast.domainlayer.advisory.application.port.out.query.AdvisoryCandidateAggregateQueryResult;
 import com.sneezecast.domainlayer.aggregate.application.port.out.DistrictWeeklyAggregateRepositoryPort;
 import com.sneezecast.domainlayer.aggregate.domain.model.DistrictWeeklyAggregate;
 import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +14,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 같은 서비스의 {@code aggregate} 컨텍스트에 집계 행을 묻는다 ({@code AggregateDistrictQueryAdapter} 와 같은 방식). aggregate 의 저장 포트만 쓰고
- * 엔티티 · 리포지토리는 import 하지 않는다. UK {@code (district_code, iso_week)} 로 한 칸을 읽는다.
+ * 엔티티 · 리포지토리는 import 하지 않는다. 초안은 UK {@code (district_code, iso_week)} 로 한 칸을, 검토 후보(#266)는 주 단위로 모든 칸을 읽는다.
  *
  * <p>호출자 트랜잭션 안에서 같은 DB 를 읽으므로 외부 I/O 가 아니다.
  */
@@ -28,6 +30,19 @@ public class AdvisoryAggregateQueryAdapter implements AdvisoryAggregateQueryPort
         return districtWeeklyAggregateRepositoryPort.findAllByDistrictCodeInAndIsoWeekIn(List.of(districtCode), List.of(isoWeek)).stream()
             .findFirst()
             .map(AdvisoryAggregateQueryAdapter::toResult);
+    }
+
+    @Override
+    public List<AdvisoryCandidateAggregateQueryResult> findAllByIsoWeekIn(Collection<ReportWeek> isoWeeks) {
+        return districtWeeklyAggregateRepositoryPort.findAllByIsoWeekIn(isoWeeks).stream()
+            .map(AdvisoryAggregateQueryAdapter::toCandidateResult)
+            .toList();
+    }
+
+    private static AdvisoryCandidateAggregateQueryResult toCandidateResult(DistrictWeeklyAggregate aggregate) {
+        return new AdvisoryCandidateAggregateQueryResult(aggregate.districtCode(), aggregate.isoWeek(), aggregate.participantCount(),
+            aggregate.symptomaticCount(), aggregate.respiratoryCount(), aggregate.entericCount(), aggregate.revisedReportCount(), aggregate.level(),
+            aggregate.insufficientReason(), aggregate.baselineParticipantCount(), aggregate.baselineSymptomaticCount(), aggregate.finalized());
     }
 
     private static AdvisoryAggregateQueryResult toResult(DistrictWeeklyAggregate aggregate) {
