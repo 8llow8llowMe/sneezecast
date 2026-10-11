@@ -21,7 +21,7 @@ import lombok.Builder;
  * @param title              제목 (현재본, {@value #TITLE_MAX_LENGTH}자 이하)
  * @param body               본문 (현재본)
  * @param citation           인용 수치 — 초안 생성 때 고정되고 바뀌지 않는다
- * @param correctsAdvisoryId 이 안내가 정정한 이전 안내. 정정 발행(#267)이 아니면 null
+ * @param correctsAdvisoryId 이 안내가 정정한 이전 안내({@link #newCorrection}). 정정 발행(#267)이 아니면 null
  * @param publishedAt        발행 시각
  * @param retractedAt        철회 시각
  * @param version            낙관적 락 버전 — 읽은 시점의 값. 저장하면 저장소가 올린 값으로 돌려준다
@@ -72,6 +72,21 @@ public record Advisory(
     public static Advisory newDraft(long id, long aggregateId, String districtCode, ReportWeek isoWeek, AdvisoryCitation citation, String title,
         String body) {
         return new Advisory(id, aggregateId, districtCode, isoWeek, AdvisoryStatus.DRAFT, title, body, citation, null, null, null, 0L, null, null);
+    }
+
+    /**
+     * 정정 발행(#267)의 새 안내 → APPROVED. 정정 요청 자체가 운영자의 승인이다(entity-design §2-5 "(없음) → APPROVED"). 근거 집계 · 동네 · 주 · 인용 수치는
+     * <b>이전 안내에서 옮긴다</b> — 집계가 다시 계산돼도 운영자가 검토한 같은 근거를 잇는다. 이전 안내는 먼저 철회돼 있어야 한다(같은 동네 · 주에 발행 중인
+     * 안내는 하나뿐이라 철회가 먼저다).
+     *
+     * @throws IllegalStateException 이전 안내가 철회되지 않았다 — 호출 순서 오류
+     */
+    public static Advisory newCorrection(long id, Advisory previous, String title, String body) {
+        if (previous.status() != AdvisoryStatus.RETRACTED) {
+            throw new IllegalStateException("정정은 철회된 이전 안내로만 만든다. previousId=" + previous.id() + ", status=" + previous.status());
+        }
+        return new Advisory(id, previous.aggregateId(), previous.districtCode(), previous.isoWeek(), AdvisoryStatus.APPROVED, title, body,
+            previous.citation(), previous.id(), null, null, 0L, null, null);
     }
 
     /** 제목 · 본문을 고친다 → EDITED. 승인된 안내를 고치면 승인이 풀린다 — 발행하려면 다시 승인받아야 한다. */

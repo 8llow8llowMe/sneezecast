@@ -2,7 +2,9 @@ package com.sneezecast.domainlayer.advisory.application.port.in;
 
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorDetailResponse;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorResponse;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryPublicationHistoryResponse;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryReviewCandidateListResponse;
+import com.sneezecast.domainlayer.advisory.application.command.AdvisoryCorrectCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryDraftCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryEditCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryRetractCommand;
@@ -31,6 +33,14 @@ public interface AdvisoryOperatorWebUseCase {
     /** 철회 → RETRACTED. PUBLISHED 에서만 된다. 사유 필수. */
     AdvisoryOperatorResponse retract(long operatorId, long advisoryId, AdvisoryRetractCommand command);
 
+    /**
+     * 정정 발행(#267) — 발행 중인 안내를 철회하고(사유 필수) 고친 제목 · 본문으로 새 안내를 발행해 잇는다. <b>한 요청 · 한 트랜잭션</b>이고 정정 요청 자체가
+     * 승인이다(새 안내 이력: (없음) → APPROVED → PUBLISHED). PUBLISHED 에서만 되고, 같은 동네 · 주에 다른 발행 중인 안내가 있으면 409.
+     *
+     * @return 새 안내 (PUBLISHED, {@code correctsAdvisoryId} = {@code advisoryId})
+     */
+    AdvisoryOperatorResponse correct(long operatorId, long advisoryId, AdvisoryCorrectCommand command);
+
     /** 안내 한 건과 전 이력(오래된 것부터). 없는 안내 404. */
     AdvisoryOperatorDetailResponse getDetail(long advisoryId);
 
@@ -41,4 +51,11 @@ public interface AdvisoryOperatorWebUseCase {
      * @param week {@code YYYY-Www} 형식이 확인된 주. null 이면 현재 주 − 1. 조회 창 밖이면 400 {@code ADVISORY_009}
      */
     AdvisoryReviewCandidateListResponse getCandidates(String week);
+
+    /**
+     * 발행 이력(#267, A03) — {@code week} 로 끝나는 4주의 발행됨 · 철회됨 안내, 발행 시각 최근 것부터. 동 이름 · 인용 수치 · 정정 관계(양방향) · 전 이력을 싣는다.
+     *
+     * @param week {@code YYYY-Www} 형식이 확인된 끝 주. null 이면 현재 주 − 1. 조회 창 밖이면 400 {@code ADVISORY_009}
+     */
+    AdvisoryPublicationHistoryResponse getPublicationHistory(String week);
 }

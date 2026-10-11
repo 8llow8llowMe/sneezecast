@@ -1,14 +1,18 @@
 package com.sneezecast.domainlayer.advisory.adapter.in.web.controller;
 
 import com.sneezecast.common.dto.Response;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryCorrectRequest;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryDraftCreateRequest;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryEditRequest;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryPublicationHistoryRequest;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryRetractRequest;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryReviewCandidateRequest;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryVersionRequest;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorDetailResponse;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorResponse;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryPublicationHistoryResponse;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryReviewCandidateListResponse;
+import com.sneezecast.domainlayer.advisory.application.command.AdvisoryCorrectCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryDraftCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryEditCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryRetractCommand;
@@ -40,7 +44,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 운영자 예방 안내 API (#246). 게이트웨이 라우트 {@code /api/v1/advisories/**} 안의 {@code /admin} 아래에 둔다(라우트 추가 없음). URL 수준은
  * security-core 가 전부 열어 두므로 보호는 <b>클래스에 건 {@code @PreAuthorize}</b> 에 달려 있다 — 운영 API 는 OPERATOR · ADMIN 이 연다
  * ({@code SecurityRole}). 검토 후보(#266) · 정정 · 발행 이력(#267)도 이 컨트롤러에 메서드를 더해 같은 보호를 받는다. 리터럴 경로
- * {@code /candidates} 는 {@code /{advisoryId}} 보다 먼저 맞는다(변수가 적은 패턴이 우선).
+ * {@code /candidates} · {@code /history} 는 {@code /{advisoryId}} 보다 먼저 맞는다(변수가 적은 패턴이 우선).
  *
  * <p>운영자는 토큰 {@code sub} 로만 알고(클라이언트 헤더 · 본문으로 받지 않는다) 이력 {@code operator_id} 에 남는다. 전이 요청은 화면이 읽은 {@code version}
  * 을 싣는다. 자동 발행 · AI 초안 경로는 없다.
@@ -49,7 +53,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/advisories/admin")
 @PreAuthorize(AdvisoryOperatorWebController.OPERATOR_AUTHORITY)
-@Tag(name = "운영자 예방 안내", description = "운영자의 예방 안내 검토 후보 · 초안 생성 · 수정 · 승인 · 발행 · 철회 · 상세 API (OPERATOR · ADMIN)")
+@Tag(name = "운영자 예방 안내", description = "운영자의 예방 안내 검토 후보 · 초안 생성 · 수정 · 승인 · 발행 · 철회 · 정정 · 상세 · 발행 이력 API (OPERATOR · ADMIN)")
 public class AdvisoryOperatorWebController {
 
     /** 운영 API 권한 — security-core {@code SecurityRole}: ADMIN 은 운영 업무도 할 수 있다. authority 는 역할 이름 그대로(ROLE_ 접두어 없음). */
@@ -180,6 +184,45 @@ public class AdvisoryOperatorWebController {
         @Parameter(description = "안내 ID", example = "7250000000000000000") @PathVariable long advisoryId, @Valid @RequestBody AdvisoryRetractRequest request) {
         AdvisoryRetractCommand command = new AdvisoryRetractCommand(request.version(), request.reason());
         return ResponseEntity.ok(Response.success(advisoryOperatorWebUseCase.retract(loginActive.memberId(), advisoryId, command)));
+    }
+
+    @Operation(summary = "정정 발행", description = """
+        발행 중인 안내를 바로잡습니다 — 이 안내를 철회(RETRACTED, 사유 = 이력 메모)하고 고친 제목 · 본문으로 **새 안내를 발행**해 `correctsAdvisoryId` 로 잇습니다.
+        **한 요청 · 한 트랜잭션**이라 동네 안내에는 "철회된 안내" 가 끼지 않고, 새 안내와 그 정정 시각(`corrections`)이 보입니다. 정정 요청 자체가 승인입니다 — 새 안내의
+        이력은 (없음) → 승인됨 → 발행됨입니다. 근거 집계 · 동네 · 주 · 인용 수치는 이 안내에서 옮깁니다(집계가 다시 계산돼도 같은 근거). 발행됨에서만 됩니다.
+        **사유는 이력 메모로 남지만 사용자 화면에는 보이지 않습니다.** 응답은 새 안내입니다.
+
+        """ + AUTH_NOTE + """
+
+        **필수: title · body · reason(500자 이하) · version(이 안내의 버전).** 제목 105 · 106, 본문 107 · 108, 사유 110 · 111, version 112 · 113(400).
+        없는 안내 ADVISORY_001(404), 버전이 다르면 ADVISORY_006 · 발행됨이 아니면 ADVISORY_005 · 같은 동네 · 주에 다른 발행 중인 안내가 있으면 ADVISORY_007(409).
+        거부되면 아무것도 바뀌지 않습니다.
+
+        호출 예: `POST /api/v1/advisories/admin/7250000000000000000/correct` `{"title":"…","body":"…","reason":"참여자 수 표기 오류","version":3}`""",
+        security = @SecurityRequirement(name = "bearerAuth"))
+    @PostMapping("/{advisoryId}/correct")
+    public ResponseEntity<Response<AdvisoryOperatorResponse>> correct(@AuthenticationPrincipal MemberLoginActive loginActive,
+        @Parameter(description = "정정할(발행 중인) 안내 ID", example = "7250000000000000000") @PathVariable long advisoryId,
+        @Valid @RequestBody AdvisoryCorrectRequest request) {
+        AdvisoryCorrectCommand command = new AdvisoryCorrectCommand(request.version(), request.title(), request.body(), request.reason());
+        return ResponseEntity.ok(Response.success(advisoryOperatorWebUseCase.correct(loginActive.memberId(), advisoryId, command)));
+    }
+
+    @Operation(summary = "발행 이력", description = """
+        `week` 로 끝나는 **4주**(그 주와 앞 3주)의 발행됨 · 철회됨 안내를 발행 시각 최근 것부터 돌려줍니다(쪽 나누기 없음). 항목마다 안내(인용 수치 · `correctsAdvisoryId`
+        포함) · 동 이름 · 시군구 · `correctedByAdvisoryId`(이 안내를 정정한 새 안내 — 있으면 정정됨, 없는 철회는 철회) · 전 이력(오래된 것부터, 운영자 ID ·
+        정정 · 철회 사유 포함 — 사용자 화면에는 보이지 않습니다)이 있습니다. 초안 · 수정 · 승인 단계의 안내는 없습니다(검토 후보 · 상세로 봅니다).
+
+        """ + AUTH_NOTE + """
+
+        **선택: week(YYYY-Www)** — 생략하면 현재 주 − 1. 형식이 틀리면 ADVISORY_104, 미래 주 · 51주보다 이전 · 그 해에 없는 주는 ADVISORY_009(400).
+
+        호출 예: `GET /api/v1/advisories/admin/history?week=2026-W40`""",
+        security = @SecurityRequirement(name = "bearerAuth"))
+    @GetMapping("/history")
+    public ResponseEntity<Response<AdvisoryPublicationHistoryResponse>> getPublicationHistory(
+        @ParameterObject @Valid @ModelAttribute AdvisoryPublicationHistoryRequest request) {
+        return ResponseEntity.ok(Response.success(advisoryOperatorWebUseCase.getPublicationHistory(request.week())));
     }
 
     /**

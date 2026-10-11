@@ -17,6 +17,7 @@ import com.sneezecast.security.common.enums.SecurityRole;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -52,6 +53,9 @@ class AdvisoryOperatorApiIntegrationTest extends DistrictH2TestSupport {
     private static final String TITLE = "서교동 기침 보고가 많이 늘었어요";
     private static final String BODY = "손을 자주 씻어 주세요.";
     private static final String RETRACT_REASON = "중복 보고를 확인해 내림 - 운영자 메모";
+    private static final String CORRECTED_TITLE = "서교동 기침 보고가 늘었어요 (정정)";
+    private static final String CORRECTED_BODY = "손을 자주 씻고 기침 예절을 지켜 주세요.";
+    private static final String CORRECT_REASON = "참여자 수 표기 오류 - 운영자 메모";
 
     @Autowired
     private MockMvc mockMvc;
@@ -114,8 +118,8 @@ class AdvisoryOperatorApiIntegrationTest extends DistrictH2TestSupport {
      * 하나에 달려 있어(URL 수준은 열려 있다) 메서드를 더하거나 어노테이션을 옮기면 여기서 드러난다 — 목록이 컨트롤러의 핸들러 수와 같은지도 본다.
      */
     @ParameterizedTest(name = "{0}")
-    @ValueSource(strings = {"candidates", "create", "detail", "edit", "approve", "publish", "retract"})
-    @DisplayName("운영 API 7개 모두 — 유효한 요청이어도 비회원 401 SECURITY_001, 일반 회원(동의 scope 포함) 403 SECURITY_006 이고 안내 · 이력이 바뀌지 않는다")
+    @ValueSource(strings = {"candidates", "history", "create", "detail", "edit", "approve", "publish", "retract", "correct"})
+    @DisplayName("운영 API 9개 모두 — 유효한 요청이어도 비회원 401 SECURITY_001, 일반 회원(동의 scope 포함) 403 SECURITY_006 이고 안내 · 이력이 바뀌지 않는다")
     void everyEndpointRejectsNonOperators(String endpoint) throws Exception {
         insertAggregate("HIGH", null, true);
         long id = advisoryId(create(OPERATOR));
@@ -139,7 +143,7 @@ class AdvisoryOperatorApiIntegrationTest extends DistrictH2TestSupport {
         long handlers = handlerMapping.getHandlerMethods().values().stream()
             .filter(handler -> handler.getBeanType() == AdvisoryOperatorWebController.class)
             .count();
-        assertThat(handlers).isEqualTo(7);
+        assertThat(handlers).isEqualTo(9);
     }
 
     @Test
@@ -298,6 +302,140 @@ class AdvisoryOperatorApiIntegrationTest extends DistrictH2TestSupport {
         assertThat(count("advisory_history")).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("정정 발행을 API 로 — 새 안내가 발행되고, 공개 동네 안내에는 새 안내와 정정 시각만(철회 표시 · 사유 · 이전 안내 없음), 발행 이력에는 두 안내가 양방향으로 이어진다")
+    void correctionThroughApi() throws Exception {
+        insertAggregate("HIGH", null, true);
+        long id = advisoryId(create(OPERATOR));
+        transition(id, "approve", 0, OPERATOR).andExpect(status().isOk());
+        transition(id, "publish", 1, OPERATOR).andExpect(status().isOk());
+
+        JsonNode correction = dataBody(mockMvc.perform(json(post(BASE + "/{id}/correct", id), correctBody(2))
+                .header(HttpHeaders.AUTHORIZATION, bearer(ADMIN, SecurityRole.ADMIN)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataBody.status.code").value("PUBLISHED"))
+            .andExpect(jsonPath("$.dataBody.correctsAdvisoryId").value(String.valueOf(id)))
+            .andExpect(jsonPath("$.dataBody.title").value(CORRECTED_TITLE))
+            .andExpect(jsonPath("$.dataBody.citation.participantCount").value(150))
+            .andExpect(jsonPath("$.dataBody.version").value(1)));
+        long correctionId = correction.get("advisoryId").asLong();
+        String correctedAt = correction.get("publishedAt").asText();
+
+        String publicBody = mockMvc.perform(get("/api/v1/advisories").param("districtCode", SEOGYO).param("week", week.value()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataBody.advisory.title").value(CORRECTED_TITLE))
+            .andExpect(jsonPath("$.dataBody.advisory.body").value(CORRECTED_BODY))
+            .andExpect(jsonPath("$.dataBody.advisory.publishedAt").value(correctedAt))
+            .andExpect(jsonPath("$.dataBody.advisory.corrections.length()").value(1))
+            .andExpect(jsonPath("$.dataBody.advisory.corrections[0].correctedAt").value(correctedAt))
+            .andExpect(jsonPath("$.dataBody.retraction").isEmpty())
+            .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(publicBody).doesNotContain(CORRECT_REASON).doesNotContain(String.valueOf(id)).doesNotContain(TITLE);
+
+        mockMvc.perform(get(BASE + "/history").param("week", week.value()).header(HttpHeaders.AUTHORIZATION, operator()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataBody.entries.length()").value(2))
+            .andExpect(jsonPath("$.dataBody.entries[0].advisory.advisoryId").value(String.valueOf(correctionId)))
+            .andExpect(jsonPath("$.dataBody.entries[0].advisory.correctsAdvisoryId").value(String.valueOf(id)))
+            .andExpect(jsonPath("$.dataBody.entries[0].correctedByAdvisoryId").isEmpty())
+            .andExpect(jsonPath("$.dataBody.entries[0].districtName").value("서교동"))
+            .andExpect(jsonPath("$.dataBody.entries[0].sigungu").value("서울특별시 마포구"))
+            .andExpect(jsonPath("$.dataBody.entries[0].histories.length()").value(2))
+            .andExpect(jsonPath("$.dataBody.entries[0].histories[0].fromStatus").isEmpty())
+            .andExpect(jsonPath("$.dataBody.entries[0].histories[0].toStatus.code").value("APPROVED"))
+            .andExpect(jsonPath("$.dataBody.entries[0].histories[0].memo").value(CORRECT_REASON))
+            .andExpect(jsonPath("$.dataBody.entries[0].histories[1].toStatus.code").value("PUBLISHED"))
+            .andExpect(jsonPath("$.dataBody.entries[0].histories[1].operatorId").value(String.valueOf(ADMIN)))
+            .andExpect(jsonPath("$.dataBody.entries[1].advisory.advisoryId").value(String.valueOf(id)))
+            .andExpect(jsonPath("$.dataBody.entries[1].advisory.status.code").value("RETRACTED"))
+            .andExpect(jsonPath("$.dataBody.entries[1].advisory.retractedAt").value(correctedAt))
+            .andExpect(jsonPath("$.dataBody.entries[1].correctedByAdvisoryId").value(String.valueOf(correctionId)))
+            .andExpect(jsonPath("$.dataBody.entries[1].histories.length()").value(4))
+            .andExpect(jsonPath("$.dataBody.entries[1].histories[3].toStatus.code").value("RETRACTED"))
+            .andExpect(jsonPath("$.dataBody.entries[1].histories[3].memo").value(CORRECT_REASON))
+            .andExpect(jsonPath("$.dataBody.entries[1].histories[3].operatorId").value(String.valueOf(ADMIN)));
+    }
+
+    @Test
+    @DisplayName("발행 이력은 끝 주로 끝나는 4주의 발행됨 · 철회됨만 — 초안 · 승인 단계와 범위 밖 주는 빠지고, 생략하면 현재 주 − 1 로 끝난다")
+    void publicationHistoryRange() throws Exception {
+        insertAggregate("HIGH", null, true);
+        long published = advisoryId(create(OPERATOR));
+        transition(published, "approve", 0, OPERATOR).andExpect(status().isOk());
+        transition(published, "publish", 1, OPERATOR).andExpect(status().isOk());
+        long approved = advisoryId(create(OPERATOR));
+        transition(approved, "approve", 0, OPERATOR).andExpect(status().isOk());
+        create(OPERATOR).andExpect(status().isOk());
+        // 범위 첫 주(끝 주 − 3)의 철회된 안내는 들어오고, 그 앞 주(끝 주 − 4)는 빠진다. 이력 행이 없으면 빈 목록이다.
+        insertPublicAdvisory(7001L, week.minusWeeks(3), "RETRACTED", LocalDateTime.of(2026, 1, 5, 10, 0), LocalDateTime.of(2026, 1, 6, 10, 0));
+        insertPublicAdvisory(7002L, week.minusWeeks(4), "PUBLISHED", LocalDateTime.of(2026, 1, 1, 10, 0), null);
+
+        mockMvc.perform(get(BASE + "/history").param("week", week.value()).header(HttpHeaders.AUTHORIZATION, operator()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataBody.fromIsoWeek").value(week.minusWeeks(3).value()))
+            .andExpect(jsonPath("$.dataBody.toIsoWeek").value(week.value()))
+            .andExpect(jsonPath("$.dataBody.entries.length()").value(2))
+            .andExpect(jsonPath("$.dataBody.entries[0].advisory.advisoryId").value(String.valueOf(published)))
+            .andExpect(jsonPath("$.dataBody.entries[0].advisory.status.code").value("PUBLISHED"))
+            .andExpect(jsonPath("$.dataBody.entries[0].histories.length()").value(3))
+            .andExpect(jsonPath("$.dataBody.entries[1].advisory.advisoryId").value("7001"))
+            .andExpect(jsonPath("$.dataBody.entries[1].advisory.status.code").value("RETRACTED"))
+            .andExpect(jsonPath("$.dataBody.entries[1].correctedByAdvisoryId").isEmpty())
+            .andExpect(jsonPath("$.dataBody.entries[1].histories.length()").value(0));
+
+        // 생략하면 현재 주 − 1 로 끝난다 — 근거 주(현재 주 − 2)가 그 안이다.
+        ReportWeek current = ReportWeek.of(clock.instant());
+        mockMvc.perform(get(BASE + "/history").header(HttpHeaders.AUTHORIZATION, operator()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataBody.toIsoWeek").value(current.previous().value()))
+            .andExpect(jsonPath("$.dataBody.fromIsoWeek").value(current.minusWeeks(4).value()))
+            .andExpect(jsonPath("$.dataBody.entries.length()").value(1));
+    }
+
+    @Test
+    @DisplayName("정정 · 발행 이력 입력 검증은 400 봉투 — 제목 105 · 106, 본문 107 · 108, 사유 110 · 111, version 112 · 113, 주 형식 104 · 창 밖 009. 발행 중이 아니면 005")
+    void correctionAndHistoryValidation() throws Exception {
+        insertAggregate("HIGH", null, true);
+        long id = advisoryId(create(OPERATOR));
+
+        assertRejected(json(post(BASE + "/{id}/correct", id), Map.of("title", "　", "body", BODY, "reason", CORRECT_REASON, "version", 0)), "ADVISORY_105");
+        assertRejected(json(post(BASE + "/{id}/correct", id), Map.of("title", "가".repeat(101), "body", BODY, "reason", CORRECT_REASON, "version", 0)),
+            "ADVISORY_106");
+        assertRejected(json(post(BASE + "/{id}/correct", id), Map.of("title", TITLE, "reason", CORRECT_REASON, "version", 0)), "ADVISORY_107");
+        assertRejected(json(post(BASE + "/{id}/correct", id), Map.of("title", TITLE, "body", "가".repeat(16_384), "reason", CORRECT_REASON, "version", 0)),
+            "ADVISORY_108");
+        assertRejected(json(post(BASE + "/{id}/correct", id), Map.of("title", TITLE, "body", BODY, "reason", " ", "version", 0)), "ADVISORY_110");
+        assertRejected(json(post(BASE + "/{id}/correct", id), Map.of("title", TITLE, "body", BODY, "version", 0)), "ADVISORY_110");
+        assertRejected(json(post(BASE + "/{id}/correct", id), Map.of("title", TITLE, "body", BODY, "reason", "가".repeat(501), "version", 0)), "ADVISORY_111");
+        assertRejected(json(post(BASE + "/{id}/correct", id), Map.of("title", TITLE, "body", BODY, "reason", CORRECT_REASON)), "ADVISORY_112");
+        assertRejected(json(post(BASE + "/{id}/correct", id), correctBody(-1)), "ADVISORY_113");
+        assertRejected(json(post(BASE + "/{id}/correct", "abc"), correctBody(0)), "ADVISORY_198");
+        assertRejected(get(BASE + "/history").param("week", "2026-41"), "ADVISORY_104");
+        assertRejected(get(BASE + "/history").param("week", ReportWeek.of(clock.instant().plus(Duration.ofDays(7))).value()), "ADVISORY_009");
+
+        // 초안은 정정할 수 없다(발행됨에서만) — 409 이고 아무것도 바뀌지 않는다.
+        mockMvc.perform(json(post(BASE + "/{id}/correct", id), correctBody(0)).header(HttpHeaders.AUTHORIZATION, operator()))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("ADVISORY_005"));
+        assertThat(count("advisory")).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT version FROM advisory", Long.class)).isZero();
+        assertThat(count("advisory_history")).isEqualTo(1);
+    }
+
+    private static Map<String, Object> correctBody(long version) {
+        return Map.of("title", CORRECTED_TITLE, "body", CORRECTED_BODY, "reason", CORRECT_REASON, "version", version);
+    }
+
+    /** 발행됨 · 철회됨 안내 한 행을 JDBC 로 — 근거 집계 없이 다른 주의 안내를 만든다. */
+    private void insertPublicAdvisory(long id, ReportWeek isoWeek, String status, LocalDateTime publishedAt, LocalDateTime retractedAt) {
+        jdbcTemplate.update("""
+                INSERT INTO advisory (id, district_code, iso_week, aggregate_id, status, title, body, cited_participant_count, cited_symptomatic_count,
+                    cited_respiratory_count, cited_enteric_count, cited_level, cited_rule_version, corrects_advisory_id, published_at, retracted_at, version,
+                    created_at, updated_at)
+                VALUES (?, ?, ?, 1, ?, '다른 주 안내', '본문', 150, 30, 20, 15, 'HIGH', '2026-10-08', NULL, ?, ?, 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+            id, SEOGYO, isoWeek.value(), status, Timestamp.valueOf(publishedAt), retractedAt == null ? null : Timestamp.valueOf(retractedAt));
+    }
+
     private void assertCreateRejected(Map<String, ?> body, String resultCode) throws Exception {
         assertRejected(json(post(BASE), body), resultCode);
     }
@@ -318,6 +456,8 @@ class AdvisoryOperatorApiIntegrationTest extends DistrictH2TestSupport {
             case "edit" -> json(put(BASE + "/{id}", id), Map.of("title", TITLE, "body", BODY, "version", 0));
             case "approve", "publish" -> json(post(BASE + "/{id}/" + endpoint, id), Map.of("version", 0));
             case "retract" -> json(post(BASE + "/{id}/retract", id), Map.of("reason", RETRACT_REASON, "version", 0));
+            case "correct" -> json(post(BASE + "/{id}/correct", id), correctBody(0));
+            case "history" -> get(BASE + "/history").param("week", week.value());
             default -> throw new IllegalArgumentException("모르는 엔드포인트: " + endpoint);
         };
     }

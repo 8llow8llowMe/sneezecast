@@ -19,7 +19,7 @@ import java.util.Objects;
  * @param operatorId    요청한 운영자 (auth member.id, 양수)
  * @param aiModel       AI 초안을 만든 모델 id — AI_DRAFTED 전이에만 (아직 경로 없음)
  * @param promptVersion AI 초안 프롬프트 버전 — AI_DRAFTED 전이에만 (아직 경로 없음)
- * @param memo          수정 · 철회 사유 ({@value #MEMO_MAX_LENGTH}자 이하)
+ * @param memo          수정 · 철회 · 정정 사유(정정은 이전 안내 철회 행과 새 안내 생성 행 둘 다) ({@value #MEMO_MAX_LENGTH}자 이하)
  * @param createdAt     전이 시각. 저장 전이면 null
  */
 public record AdvisoryHistory(
@@ -55,7 +55,7 @@ public record AdvisoryHistory(
      * 운영자 요청으로 안내가 {@code fromStatus} 에서 지금 상태({@code advisory.status()})가 된 기록. 제목 · 본문은 바뀐 뒤의 값을 남긴다.
      *
      * @param fromStatus 이전 상태. 생성이면 null
-     * @param memo       수정 · 철회 사유. 없으면 null
+     * @param memo       수정 · 철회 · 정정 사유. 없으면 null
      */
     public static AdvisoryHistory operatorTransition(long id, Advisory advisory, AdvisoryStatus fromStatus, long operatorId, String memo) {
         return new AdvisoryHistory(id, advisory.id(), fromStatus, advisory.status(), advisory.title(), advisory.body(), operatorId, null, null, memo, null);

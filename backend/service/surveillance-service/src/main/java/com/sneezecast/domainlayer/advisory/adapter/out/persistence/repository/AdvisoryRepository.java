@@ -36,6 +36,9 @@ public interface AdvisoryRepository extends JpaRepository<AdvisoryEntity, Long> 
     /** 운영자 검토 후보(#266) — 여러 동네 · 한 주의 모든 상태 안내. 잠그지 않는다. */
     List<AdvisoryEntity> findAllByDistrictCodeInAndIsoWeek(Collection<String> districtCodes, String isoWeek);
 
+    /** 운영자 발행 이력(#267) — 여러 주 · 모든 동네의 안내 중 {@code statuses} 인 것. {@code iso_week} 앞 컬럼 인덱스가 없어 전체 스캔이다. 잠그지 않는다. */
+    List<AdvisoryEntity> findAllByIsoWeekInAndStatusIn(Collection<String> isoWeeks, Collection<AdvisoryStatus> statuses);
+
     interface DistrictWeekView {
 
         String getDistrictCode();
