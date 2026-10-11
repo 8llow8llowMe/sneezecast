@@ -6,12 +6,14 @@ import com.sneezecast.domainlayer.report.application.exception.ReportErrorCode;
 import com.sneezecast.domainlayer.report.application.exception.ReportException;
 import com.sneezecast.domainlayer.report.application.mapper.WeeklyReportMapper;
 import com.sneezecast.domainlayer.report.application.port.out.WeeklyReportRepositoryPort;
+import com.sneezecast.domainlayer.report.application.port.out.query.WeeklyReportCountQueryResult;
 import com.sneezecast.domainlayer.report.domain.enums.SymptomGroup;
 import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
 import com.sneezecast.domainlayer.report.domain.model.WeeklyReport;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -82,6 +84,19 @@ public class WeeklyReportRepositoryAdapter implements WeeklyReportRepositoryPort
     @Transactional(propagation = Propagation.MANDATORY)
     public int deleteAllByReporterKey(String reporterKey) {
         return weeklyReportRepository.deleteAllByReporterKey(reporterKey);
+    }
+
+    @Override
+    public List<WeeklyReportCountQueryResult> countByDistrictAndSymptoms(ReportWeek isoWeek) {
+        return weeklyReportRepository.countByDistrictAndSymptomMask(isoWeek.value()).stream()
+            .map(row -> new WeeklyReportCountQueryResult(row.getDistrictCode(), weeklyReportMapper.toSymptoms(row.getSymptomMask()),
+                Math.toIntExact(row.getReportCount()), Math.toIntExact(row.getRevisedReportCount())))
+            .toList();
+    }
+
+    @Override
+    public List<ReportWeek> findReportedWeeks(ReportWeek fromInclusive, ReportWeek toExclusive) {
+        return weeklyReportRepository.findDistinctIsoWeeksBetween(fromInclusive.value(), toExclusive.value()).stream().map(ReportWeek::parse).toList();
     }
 
     /** MySQL 은 {@code for key 'weekly_report.uk_...'}, H2 는 {@code PUBLIC.UK_... ON ...} 로 싣는다 — 대소문자를 무시하고 본다. */
