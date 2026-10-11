@@ -30,7 +30,7 @@ public class AdvisoryExceptionHandler {
             .body(Response.fail(exception.getErrorCode().getCode(), exception.getMessage()));
     }
 
-    /** 쿼리 파라미터({@code @ModelAttribute} record) 검증 실패 — 필드별 코드 ADVISORY_101~. */
+    /** 쿼리 파라미터({@code @ModelAttribute} record) · 운영자 요청 본문({@code @RequestBody}) 검증 실패 — 필드별 코드 ADVISORY_101~. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Response<Void>> handleValidation(MethodArgumentNotValidException exception) {
         return ValidationErrorSupport.toResponse(exception, AdvisoryErrorCode.INVALID_REQUEST.getCode());
@@ -46,7 +46,7 @@ public class AdvisoryExceptionHandler {
         return ValidationErrorSupport.toResponse(exception, AdvisoryErrorCode.INVALID_REQUEST.getCode());
     }
 
-    /** 공개 안내 API 에는 요청 본문이 없지만, 봉투 없는 Spring 기본 400 이 나갈 틈을 남기지 않는다. */
+    /** 운영자 요청 본문이 없거나 JSON 이 아니거나 값의 타입이 틀리면(예: version 이 숫자가 아님) ADVISORY_100 이다 — 봉투 없는 Spring 기본 400 을 남기지 않는다. */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Response<Void>> handleUnreadableBody(HttpMessageNotReadableException exception) {
         return ValidationErrorSupport.toResponse(exception, AdvisoryErrorCode.INVALID_REQUEST.getCode());

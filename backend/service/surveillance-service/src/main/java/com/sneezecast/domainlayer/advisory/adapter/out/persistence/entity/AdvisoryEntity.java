@@ -39,7 +39,7 @@ import org.springframework.data.domain.Persistable;
         // 공개 목록 — 동네의 발행 안내 (#215)
         @Index(name = "idx_advisory_district_code_status_published_at", columnList = "districtCode, status, publishedAt"),
         @Index(name = "idx_advisory_aggregate_id", columnList = "aggregateId"),
-        // 정정 발행이 잇는 이전 안내 → 정정한 안내 (#246 정정됨 판정)
+        // 정정 발행이 잇는 이전 안내 → 정정한 안내 (#267 정정됨 판정)
         @Index(name = "idx_advisory_corrects_advisory_id", columnList = "correctsAdvisoryId")
     })
 public class AdvisoryEntity extends BaseEntity implements Persistable<Long> {

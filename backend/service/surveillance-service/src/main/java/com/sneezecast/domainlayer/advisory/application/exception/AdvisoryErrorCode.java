@@ -29,6 +29,8 @@ public enum AdvisoryErrorCode {
     DISTRICT_NOT_FOUND("ADVISORY_008", "존재하지 않는 행정동입니다.", HttpStatus.NOT_FOUND),
     // 공개 동네 안내 — 형식은 맞지만 조회할 수 없는 주(미래 주, 현재 주 ~ 51주 전 밖, 그 해에 없는 주). 공개 집계 AGGREGATE_002 와 같은 창이다.
     WEEK_NOT_QUERYABLE("ADVISORY_009", "조회할 수 없는 주입니다. (조회할 수 있는 주: %s ~ %s)", HttpStatus.BAD_REQUEST),
+    // 운영자 초안 생성 — 형식(YYYY-Www, W01~W53)은 맞지만 표현할 수 없는 주(53주가 없는 해의 W53, 연도 1000 미만 — ReportWeek 가 받지 않는다). 형식은 ADVISORY_104 가 먼저 본다.
+    WEEK_NOT_FOUND("ADVISORY_010", "없는 주입니다. (%s)", HttpStatus.BAD_REQUEST),
 
     // 요청 검증 대역 — 필드별 코드(ADVISORY_101~)는 AdvisoryValidationMessage 에 있다.
     INVALID_REQUEST("ADVISORY_100", "요청 값이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
