@@ -2,6 +2,7 @@ package com.sneezecast.domainlayer.aggregate.domain.model;
 
 import com.sneezecast.domainlayer.aggregate.domain.enums.AggregateLevel;
 import com.sneezecast.domainlayer.aggregate.domain.enums.InsufficientReason;
+import com.sneezecast.domainlayer.report.domain.enums.SymptomGroup;
 import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
 import java.time.LocalDateTime;
 import java.util.Objects;
@@ -80,5 +81,18 @@ public record DistrictWeeklyAggregate(
     /** 주 마감이 끝났는지. 마감된 행만 다음 주들의 기준선이 될 수 있다. */
     public boolean finalized() {
         return finalizedAt != null;
+    }
+
+    /** 수치를 보여도 되는 단계인지. INSUFFICIENT 면 행에 숫자가 있어도 공개 응답에 비율 · 수치를 싣지 않는다. */
+    public boolean measured() {
+        return level != AggregateLevel.INSUFFICIENT;
+    }
+
+    /** 증상군별 보고 수. 증상군이 늘면 이 switch 가 컴파일에서 실패해 집계 컬럼을 함께 늘리게 한다. */
+    public int groupCount(SymptomGroup group) {
+        return switch (group) {
+            case RESPIRATORY -> respiratoryCount;
+            case ENTERIC -> entericCount;
+        };
     }
 }

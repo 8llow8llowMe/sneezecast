@@ -27,6 +27,14 @@ class AggregateEnumsTest {
     }
 
     @Test
+    @DisplayName("증상군 변화는 DOWN / FLAT / SLIGHT / HIGH 이고 라벨이 프론트 증상별 변화(TREND_LABEL)와 같다")
+    void trendsMatchFrontend() {
+        assertThat(Arrays.stream(GroupTrend.values()).map(Enum::name)).containsExactly("DOWN", "FLAT", "SLIGHT", "HIGH");
+        assertThat(Arrays.stream(GroupTrend.values()).map(trend -> trend.toMetadata().name()))
+            .containsExactly("조금 줄었어요", "비슷해요", "조금 늘었어요", "많이 늘었어요");
+    }
+
+    @Test
     @DisplayName("이름은 VARCHAR(20) 에 들어간다")
     void namesFitColumn() {
         assertThat(Arrays.stream(AggregateLevel.values())).allSatisfy(level -> assertThat(level.name().length()).isLessThanOrEqualTo(20));

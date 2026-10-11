@@ -22,6 +22,12 @@ public interface DistrictWeeklyAggregateRepository extends JpaRepository<Distric
     /** {@code idx_district_weekly_aggregate_iso_week} 를 탄다. 기준선 · 전주 행을 한 번에 읽는다. */
     List<DistrictWeeklyAggregateEntity> findAllByIsoWeekIn(Collection<String> isoWeeks);
 
+    /** UK {@code (district_code, iso_week)} 를 탄다. 공개 조회가 동네 몇 개의 이번 주 · 전주 행을 한 번에 읽는다. */
+    List<DistrictWeeklyAggregateEntity> findAllByDistrictCodeInAndIsoWeekIn(Collection<String> districtCodes, Collection<String> isoWeeks);
+
+    /** {@code idx_district_weekly_aggregate_iso_week} 를 탄다. */
+    boolean existsByIsoWeekAndFinalizedAtIsNotNull(String isoWeek);
+
     /** 마감 안 된 행이 남은 지난 주. {@code YYYY-Www} 문자열 정렬이 시간 순이라 문자열로 비교한다. */
     @Query("select distinct a.isoWeek from DistrictWeeklyAggregateEntity a where a.finalizedAt is null and a.isoWeek < :isoWeek order by a.isoWeek")
     List<String> findUnfinalizedIsoWeeksBefore(String isoWeek);

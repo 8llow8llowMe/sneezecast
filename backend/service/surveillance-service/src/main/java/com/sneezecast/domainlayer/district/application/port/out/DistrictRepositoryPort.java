@@ -19,4 +19,7 @@ public interface DistrictRepositoryPort {
 
     /** 폐지 여부와 무관하게 코드로 찾는다. 폐지 판정은 호출자가 {@link District#isActive()} 로 한다. */
     Optional<District> findByCode(String code);
+
+    /** 시군구(SGIS 코드 5자리) 안의 현행 행정동을 코드 오름차순으로. 폐지된 동은 넣지 않는다. 없으면 빈 목록이다. */
+    List<District> findActiveBySigunguCode(String sigunguCode);
 }

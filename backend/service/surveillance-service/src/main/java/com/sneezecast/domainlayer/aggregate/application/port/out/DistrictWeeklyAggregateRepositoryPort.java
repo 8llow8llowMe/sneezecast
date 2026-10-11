@@ -27,6 +27,15 @@ public interface DistrictWeeklyAggregateRepositoryPort {
     List<DistrictWeeklyAggregate> findAllByIsoWeekIn(Collection<ReportWeek> isoWeeks);
 
     /**
+     * 주어진 행정동 × 주의 행 — 공개 조회가 동네 몇 개의 이번 주 · 전주를 한 번에 읽는다. 행이 없는 칸은 결과에 없다. 어느 쪽이든 빈 목록이면 조회하지 않고
+     * 빈 결과다.
+     */
+    List<DistrictWeeklyAggregate> findAllByDistrictCodeInAndIsoWeekIn(Collection<String> districtCodes, Collection<ReportWeek> isoWeeks);
+
+    /** 그 주에 마감된 행이 하나라도 있는지 — 마감은 주 단위 벌크라 이 값이 그 주의 마감 여부다. */
+    boolean existsFinalizedRow(ReportWeek isoWeek);
+
+    /**
      * 새 행을 저장한다. {@code id} 는 호출자가 Snowflake 로 정하고, 마감 전 행이어야 한다 ({@link DistrictWeeklyAggregate#newAggregate}).
      * INSERT 를 바로 내보내(flush) 제약 위반을 이 호출에서 드러낸다.
      *

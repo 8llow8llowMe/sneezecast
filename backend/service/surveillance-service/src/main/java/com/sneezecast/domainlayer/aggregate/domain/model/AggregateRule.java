@@ -1,6 +1,7 @@
 package com.sneezecast.domainlayer.aggregate.domain.model;
 
 import com.sneezecast.domainlayer.aggregate.domain.enums.AggregateLevel;
+import com.sneezecast.domainlayer.aggregate.domain.enums.GroupTrend;
 import com.sneezecast.domainlayer.aggregate.domain.enums.InsufficientReason;
 import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
 import java.time.LocalDateTime;
@@ -140,6 +141,32 @@ public record AggregateRule(
         return AggregateJudgement.judged(level, Math.toIntExact(baselineParticipants), Math.toIntExact(baselineSymptomatic));
     }
 
+    /**
+     * 증상군 비율의 전주 대비 변화 (공개 집계 응답, 저장하지 않는다). Δ = 이번 주 비율 − 전주 비율. Δ ≥ {@code highDeltaPp}%p → HIGH,
+     * ≥ {@code slightDeltaPp}%p → SLIGHT, ≤ −{@code slightDeltaPp}%p → DOWN, 그 사이 → FLAT. 단계 판정과 같은 정수 곱셈 비교다.
+     *
+     * <p>두 주가 모두 수치가 있는 단계(INSUFFICIENT 아님)인지는 호출자가 본다 — 자료 부족 주와 견준 변화는 위험을 암시한다.
+     *
+     * @throws IllegalArgumentException 분모가 0 이하인 경우
+     */
+    public GroupTrend trend(int count, int participants, int previousCount, int previousParticipants) {
+        if (participants <= 0 || previousParticipants <= 0) {
+            throw new IllegalArgumentException("변화를 계산할 참여자가 없습니다. participants=" + participants + ", previous=" + previousParticipants);
+        }
+        long scaledDelta = scaledDelta(count, participants, previousCount, previousParticipants);
+        long scale = Math.multiplyExact((long) participants, previousParticipants);
+        if (scaledDelta >= Math.multiplyExact(highDeltaPp, scale)) {
+            return GroupTrend.HIGH;
+        }
+        if (scaledDelta >= Math.multiplyExact(slightDeltaPp, scale)) {
+            return GroupTrend.SLIGHT;
+        }
+        if (scaledDelta <= Math.multiplyExact(-slightDeltaPp, scale)) {
+            return GroupTrend.DOWN;
+        }
+        return GroupTrend.FLAT;
+    }
+
     // 직전 lookback 주의 행만 주별로 모은다.
     private Map<ReportWeek, DistrictWeeklyAggregate> window(String districtCode, ReportWeek isoWeek, Collection<DistrictWeeklyAggregate> history) {
         Set<ReportWeek> weeks = new HashSet<>();
@@ -169,8 +196,7 @@ public record AggregateRule(
 
     // Δ ≥ pp%p  ⇔  sym/part − bSym/bPart ≥ pp/100  ⇔  100 × (sym × bPart − bSym × part) ≥ pp × part × bPart  (part, bPart > 0)
     private AggregateLevel level(long symptomatic, long participants, long baselineSymptomatic, long baselineParticipants) {
-        long scaledDelta = Math.multiplyExact(PERCENT,
-            Math.subtractExact(Math.multiplyExact(symptomatic, baselineParticipants), Math.multiplyExact(baselineSymptomatic, participants)));
+        long scaledDelta = scaledDelta(symptomatic, participants, baselineSymptomatic, baselineParticipants);
         long scale = Math.multiplyExact(participants, baselineParticipants);
         if (scaledDelta >= Math.multiplyExact(highDeltaPp, scale)) {
             return AggregateLevel.HIGH;
@@ -179,6 +205,11 @@ public record AggregateRule(
             return AggregateLevel.SLIGHT;
         }
         return AggregateLevel.NORMAL;
+    }
+
+    // 100 × (a / aWhole − b / bWhole) × aWhole × bWhole = 100 × (a × bWhole − b × aWhole). 넘치면 ArithmeticException.
+    private static long scaledDelta(long count, long whole, long otherCount, long otherWhole) {
+        return Math.multiplyExact(PERCENT, Math.subtractExact(Math.multiplyExact(count, otherWhole), Math.multiplyExact(otherCount, whole)));
     }
 
     private static void requirePositive(String key, int value) {

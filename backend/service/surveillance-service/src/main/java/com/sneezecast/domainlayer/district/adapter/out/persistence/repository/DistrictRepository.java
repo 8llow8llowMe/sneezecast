@@ -2,6 +2,7 @@ package com.sneezecast.domainlayer.district.adapter.out.persistence.repository;
 
 import com.sneezecast.domainlayer.district.adapter.out.persistence.entity.DistrictEntity;
 import com.sneezecast.domainlayer.district.adapter.out.persistence.repository.custom.DistrictCustomRepository;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.repository.Repository;
 
@@ -13,4 +14,7 @@ public interface DistrictRepository extends Repository<DistrictEntity, Long>, Di
 
     /** {@code uk_district_code} 로 찾는다. 폐지 여부와 무관하다. */
     Optional<DistrictEntity> findByCode(String code);
+
+    /** {@code idx_district_sigungu_code} 를 탄다. 현행({@code valid_to_year IS NULL})만, 코드 오름차순. */
+    List<DistrictEntity> findAllBySigunguCodeAndValidToYearIsNullOrderByCodeAsc(String sigunguCode);
 }
