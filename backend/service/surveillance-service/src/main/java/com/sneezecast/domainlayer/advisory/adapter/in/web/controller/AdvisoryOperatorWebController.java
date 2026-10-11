@@ -4,9 +4,11 @@ import com.sneezecast.common.dto.Response;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryDraftCreateRequest;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryEditRequest;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryRetractRequest;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryReviewCandidateRequest;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.request.AdvisoryVersionRequest;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorDetailResponse;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorResponse;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryReviewCandidateListResponse;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryDraftCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryEditCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryRetractCommand;
@@ -21,10 +23,12 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -35,7 +39,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 운영자 예방 안내 API (#246). 게이트웨이 라우트 {@code /api/v1/advisories/**} 안의 {@code /admin} 아래에 둔다(라우트 추가 없음). URL 수준은
  * security-core 가 전부 열어 두므로 보호는 <b>클래스에 건 {@code @PreAuthorize}</b> 에 달려 있다 — 운영 API 는 OPERATOR · ADMIN 이 연다
- * ({@code SecurityRole}). 검토 후보(#266) · 정정 · 발행 이력(#267)도 이 컨트롤러에 메서드를 더해 같은 보호를 받는다.
+ * ({@code SecurityRole}). 검토 후보(#266) · 정정 · 발행 이력(#267)도 이 컨트롤러에 메서드를 더해 같은 보호를 받는다. 리터럴 경로
+ * {@code /candidates} 는 {@code /{advisoryId}} 보다 먼저 맞는다(변수가 적은 패턴이 우선).
  *
  * <p>운영자는 토큰 {@code sub} 로만 알고(클라이언트 헤더 · 본문으로 받지 않는다) 이력 {@code operator_id} 에 남는다. 전이 요청은 화면이 읽은 {@code version}
  * 을 싣는다. 자동 발행 · AI 초안 경로는 없다.
@@ -44,7 +49,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/advisories/admin")
 @PreAuthorize(AdvisoryOperatorWebController.OPERATOR_AUTHORITY)
-@Tag(name = "운영자 예방 안내", description = "운영자의 예방 안내 초안 생성 · 수정 · 승인 · 발행 · 철회 · 상세 API (OPERATOR · ADMIN)")
+@Tag(name = "운영자 예방 안내", description = "운영자의 예방 안내 검토 후보 · 초안 생성 · 수정 · 승인 · 발행 · 철회 · 상세 API (OPERATOR · ADMIN)")
 public class AdvisoryOperatorWebController {
 
     /** 운영 API 권한 — security-core {@code SecurityRole}: ADMIN 은 운영 업무도 할 수 있다. authority 는 역할 이름 그대로(ROLE_ 접두어 없음). */
@@ -70,6 +75,29 @@ public class AdvisoryOperatorWebController {
     public ResponseEntity<Response<AdvisoryOperatorResponse>> createDraft(@AuthenticationPrincipal MemberLoginActive loginActive,
         @Valid @RequestBody AdvisoryDraftCreateRequest request) {
         return ResponseEntity.ok(Response.success(advisoryOperatorWebUseCase.createDraft(loginActive.memberId(), toCommand(request))));
+    }
+
+    @Operation(summary = "검토 후보", description = """
+        한 주의 예방 안내 검토 후보를 돌려줍니다. 신호는 조회 때 그 주 · 전주 집계로 계산합니다(저장하지 않습니다).
+        - **기준선 대비 변화(BASELINE)**: 집계 단계가 조금 늘었어요(SLIGHT) · 많이 늘었어요(HIGH).
+        - **참여 급증(SURGE)**: 이번 주 · 전주가 모두 참여 부족이 아니고 참여자가 전주보다 `surgeChangePercent`(30)% 이상 늘었다.
+        - **반복 보고 의심(REPEAT)**: 참여 부족이 아니고 수정된 보고가 참여자의 `repeatRevisedPercent`(20)% 이상이다.
+
+        신호가 하나라도 있거나, 신호가 없어도 그 주에 안내가 있는 동네가 후보입니다. **자료 부족 동네도 급증 · 반복 신호가 있으면 후보**이고 참여 · 전주 참여 ·
+        수정 수만 싣습니다 — 증상 수 · 비율 · 기준선 · 증상군 키가 없고 `draftable` 이 false 입니다. 참여 부족(LOW_SAMPLE) 칸은 신호가 나지 않습니다.
+        `advisory` 는 그 동네 · 주의 안내 하나(발행 중 → 검토 중(가장 최근) → 가장 최근 철회)의 ID · 상태 · 버전이고 없으면 null 입니다.
+
+        """ + AUTH_NOTE + """
+
+        **선택: week(YYYY-Www)** — 생략하면 현재 주 − 1(마감될 수 있는 가장 최근 주). 형식이 틀리면 ADVISORY_104, 미래 주 · 51주보다 이전 · 그 해에 없는 주는
+        ADVISORY_009(400).
+
+        호출 예: `GET /api/v1/advisories/admin/candidates?week=2026-W40`""",
+        security = @SecurityRequirement(name = "bearerAuth"))
+    @GetMapping("/candidates")
+    public ResponseEntity<Response<AdvisoryReviewCandidateListResponse>> getCandidates(
+        @ParameterObject @Valid @ModelAttribute AdvisoryReviewCandidateRequest request) {
+        return ResponseEntity.ok(Response.success(advisoryOperatorWebUseCase.getCandidates(request.week())));
     }
 
     @Operation(summary = "안내 상세", description = """

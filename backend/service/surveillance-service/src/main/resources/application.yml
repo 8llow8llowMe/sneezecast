@@ -36,6 +36,16 @@ aggregate:
   baseline-weeks: 4
   baseline-lookback-weeks: 8
 
+# 예방 안내 검토 후보 신호 (advisory 컨텍스트, entity-design §2-2 "검토 후보"). 조회 때 계산하고 저장하지 않는다. 잘못되면 기동 실패
+# (ReviewCandidateRule 이 검사한다). 이 파일이 정본이다 — 자리표시자를 두지 않고 배포 설정에 ADVISORY_REVIEW_CANDIDATE_* 를 넣지 않는다.
+# 참여 부족(LOW_SAMPLE) 칸은 신호가 나지 않는다. 비교는 정수다(정확히 30% · 20% 면 후보).
+advisory:
+  review-candidate:
+    # 참여 급증 — 참여자 수가 전주보다 이 %(0 초과) 이상 늘었다. 전주가 참여 부족이거나 없으면 보지 않는다. (2026-10-11 결정)
+    surge-change-percent: 30
+    # 반복 보고 — 그 주에 수정된 보고 수가 참여자의 이 %(1 ~ 100) 이상이다. (2026-10-11 결정)
+    repeat-revised-percent: 20
+
 # 집계 재계산 · 주 마감 스케줄 (aggregate 컨텍스트, entity-design §2-2). 판정 결과가 아니라 언제 도는지만 정하므로 위 aggregate.* 와 달리 env 로 바꿔도 된다.
 # env 이름은 SURVEILLANCE_AGGREGATE_JOB_* 다 (AGGREGATE_* 는 판정 규칙을 덮을 수 있어 쓰지 않는다). 잘못된 값이면 기동 실패 (AggregateJobProperties).
 surveillance:

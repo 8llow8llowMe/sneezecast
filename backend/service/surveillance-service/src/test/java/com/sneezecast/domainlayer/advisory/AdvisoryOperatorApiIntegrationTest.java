@@ -114,8 +114,8 @@ class AdvisoryOperatorApiIntegrationTest extends DistrictH2TestSupport {
      * 하나에 달려 있어(URL 수준은 열려 있다) 메서드를 더하거나 어노테이션을 옮기면 여기서 드러난다 — 목록이 컨트롤러의 핸들러 수와 같은지도 본다.
      */
     @ParameterizedTest(name = "{0}")
-    @ValueSource(strings = {"create", "detail", "edit", "approve", "publish", "retract"})
-    @DisplayName("운영 API 6개 모두 — 유효한 요청이어도 비회원 401 SECURITY_001, 일반 회원(동의 scope 포함) 403 SECURITY_006 이고 안내 · 이력이 바뀌지 않는다")
+    @ValueSource(strings = {"candidates", "create", "detail", "edit", "approve", "publish", "retract"})
+    @DisplayName("운영 API 7개 모두 — 유효한 요청이어도 비회원 401 SECURITY_001, 일반 회원(동의 scope 포함) 403 SECURITY_006 이고 안내 · 이력이 바뀌지 않는다")
     void everyEndpointRejectsNonOperators(String endpoint) throws Exception {
         insertAggregate("HIGH", null, true);
         long id = advisoryId(create(OPERATOR));
@@ -139,7 +139,7 @@ class AdvisoryOperatorApiIntegrationTest extends DistrictH2TestSupport {
         long handlers = handlerMapping.getHandlerMethods().values().stream()
             .filter(handler -> handler.getBeanType() == AdvisoryOperatorWebController.class)
             .count();
-        assertThat(handlers).isEqualTo(6);
+        assertThat(handlers).isEqualTo(7);
     }
 
     @Test
@@ -312,6 +312,7 @@ class AdvisoryOperatorApiIntegrationTest extends DistrictH2TestSupport {
     /** 권한 회귀 테스트용 — 엔드포인트마다 검증을 지나는 요청. */
     private MockHttpServletRequestBuilder endpointRequest(String endpoint, long id) throws Exception {
         return switch (endpoint) {
+            case "candidates" -> get(BASE + "/candidates").param("week", week.value());
             case "create" -> json(post(BASE), draftBody(TITLE, BODY));
             case "detail" -> get(BASE + "/{id}", id);
             case "edit" -> json(put(BASE + "/{id}", id), Map.of("title", TITLE, "body", BODY, "version", 0));

@@ -211,6 +211,22 @@ class AdvisoryRepositoryAdapterTest extends SurveillanceH2TestSupport {
     }
 
     @Test
+    @DisplayName("검토 후보 조회는 동네 코드 IN × 한 주의 모든 상태를 읽는다 — 다른 주 · 다른 동네는 빠지고, 동네 코드가 비면 빈 목록이다")
+    void candidateQueryReadsAllStatusesOfWeek() {
+        adapter.insert(draft(1L));
+        adapter.insert(draft(2L).approve());
+        adapter.insert(draft(3L).approve().publish(PUBLISHED_AT));
+        adapter.insert(draft(4L).approve().publish(PUBLISHED_AT).retract(PUBLISHED_AT.plusDays(1)));
+        adapter.insert(draft(5L).toBuilder().isoWeek(W40.previous()).build());
+        adapter.insert(draft(6L).toBuilder().districtCode("11240670").build());
+        adapter.insert(draft(7L).toBuilder().districtCode("11240680").build());
+
+        assertThat(adapter.findAllByDistrictCodeInAndIsoWeek(List.of(GARAK_1, "11240670"), W40)).extracting(Advisory::id)
+            .containsExactlyInAnyOrder(1L, 2L, 3L, 4L, 6L);
+        assertThat(adapter.findAllByDistrictCodeInAndIsoWeek(List.of(), W40)).isEmpty();
+    }
+
+    @Test
     @DisplayName("이력은 운영자 ID 와 함께 쌓이고, 안내별로 오래된 것부터 읽힌다")
     void historyInsertAndOrder() {
         Advisory draft = draft(1L);
