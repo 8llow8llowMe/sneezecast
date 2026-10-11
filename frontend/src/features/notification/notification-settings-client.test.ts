@@ -17,7 +17,7 @@ beforeEach(() => {
 })
 
 describe('알림 설정 클라이언트 (실데이터)', () => {
-  it('BE 미정이라 요청하지 않고 불러올 수 없음 · 저장할 수 없음이다 — 켠 것처럼 보이지 않는다', async () => {
+  it('연동 전(백엔드 #218 API 는 있음)이라 요청하지 않고 불러올 수 없음 · 저장할 수 없음이다 — 켠 것처럼 보이지 않는다', async () => {
     expect(await getNotificationSettings('api')).toEqual({ status: 'unavailable' })
     expect(await updateNotificationSetting('weeklyReport', true, 'api')).toEqual({
       status: 'unavailable',
