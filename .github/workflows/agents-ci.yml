@@ -1,0 +1,48 @@
+name: agents-ci
+
+# **에이전트 공용 설정이 호스트마다 갈라지지 않았는지 검사한다.**
+#
+# - 스킬 정본(`.agents/skills/`)과 Claude Code 미러(`.claude/skills/`)가 byte 단위로 같은가
+# - Claude Code 역할(`.claude/agents/`)과 Codex 대응 파일(`.codex/agents/`)의 이름 · effort · 권한이 맞는가
+#
+# 런타임은 sh 뿐이다. 두 스크립트 모두 Python 없이 돈다(개발 PC 와 같은 조건).
+
+on:
+  pull_request:
+    paths:
+      - '.agents/**'
+      - '.claude/**'
+      - '.codex/**'
+      - 'scripts/sync-agent-skills.sh'
+      - 'scripts/check-claude-agents.sh'
+      - '.github/workflows/agents-ci.yml'
+  push:
+    branches:
+      - develop
+    paths:
+      - '.agents/**'
+      - '.claude/**'
+      - '.codex/**'
+      - 'scripts/sync-agent-skills.sh'
+      - 'scripts/check-claude-agents.sh'
+      - '.github/workflows/agents-ci.yml'
+
+concurrency:
+  group: agents-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 스킬 미러 동기화 검사
+        run: sh scripts/sync-agent-skills.sh --check
+
+      - name: 역할 에이전트 정합성 검사
+        run: sh scripts/check-claude-agents.sh

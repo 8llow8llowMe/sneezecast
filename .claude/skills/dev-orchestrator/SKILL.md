@@ -6,7 +6,8 @@ argument-hint: "[작업 내용]"
 
 # Development Orchestrator
 
-메인 실행자가 작업을 분류하고 필요한 역할만 선택한다. 역할 정의의 정본은 `.claude/agents/*.md` 이다.
+메인 실행자가 작업을 분류하고 필요한 역할만 선택한다. 역할 정의의 정본은 `.claude/agents/*.md` 이고, Codex 역할 파일(`.codex/agents/*.toml`)은 그 본문을 읽어 따른다.
+이 스킬의 정본은 `.agents/skills/dev-orchestrator/` 다. `.claude/skills/` 는 동기화 사본이므로 직접 고치지 않는다 ([docs/agent-skills.md](../../../docs/agent-skills.md)).
 agent 기능이 없는 호스트에서는 메인 실행자가 같은 역할을 순서대로 수행한다.
 
 ## 역할과 모델 (2026-09 기준)
@@ -34,6 +35,24 @@ agent 기능이 없는 호스트에서는 메인 실행자가 같은 역할을 �
 
 - 읽기 전용은 frontmatter `tools: Read, Grep, Glob, Bash` 로 강제한다 (Write/Edit 미부여). 쓰기 역할은 `tools` 를 생략해 전체 도구를 상속한다.
 - Haiku 4.5 는 현재 기본 역할에 쓰지 않는다. Sonnet 5.5 `low` 가 탐색 정확도 대비 비용이 낫다. 대량 반복 조회 전용 역할을 새로 만들 때만 검토한다.
+
+### 호스트별 역할 이름
+
+작업 분류와 역할 선택은 호스트가 같다. 다른 것은 역할을 부르는 이름과 모델을 고정하는 수단이다.
+
+| 역할 | Claude Code (`.claude/agents/`) | Codex (`.codex/agents/`) | Cursor |
+|------|-------------------------------|---------------------------|--------|
+| 탐색 | `explorer` | `explorer` | Ask 모드 |
+| 단순 구현 | `crud-implementer` | `crud_implementer` | Agent 모드 |
+| 일반 구현 | `implementer` | `implementer` | Agent 모드 |
+| 원인 분석 | `bug-investigator` | `bug_investigator` | Ask → Plan 모드 |
+| 최종 검토 | `reviewer` | `reviewer` | 구현과 분리한 Ask 모드 검토 |
+| 리팩토링 | `refactorer` | `refactorer` | Plan → Agent 모드 |
+| 설계 | `architect` | `architect` | Plan 모드 |
+
+- Codex 는 snake_case 이름을 쓰고, 역할 파일의 `model_reasoning_effort` 가 Claude 역할의 `effort` 와 같다. 모델 대응과 호출 방법은 [adapters/codex.md](adapters/codex.md).
+- Cursor 는 전용 역할 파일이 없다. 같은 분류를 모드와 검토 분리로 적용한다. [adapters/cursor.md](adapters/cursor.md).
+- 한 호스트의 모델 ID 를 다른 호스트에 복사하지 않는다.
 
 ### 세션 모델과 하위 에이전트 모델
 
@@ -129,5 +148,6 @@ agent 기능이 없는 호스트에서는 메인 실행자가 같은 역할을 �
 
 - 새 역할 파일에도 `model` 과 `effort` 를 반드시 적는다. 빠뜨리면 세션 모델·세션 effort 를 상속해 비용이 튄다.
 - 읽기 전용 역할은 `tools` 를 명시한다. `tools` 를 생략하면 조용히 쓰기 권한을 갖는다.
-- 이 문서의 역할 표와 루트 `CLAUDE.md` 의 "작업별 역할 · 모델 배정" 표를 함께 갱신한다.
+- 이 문서의 역할 표 · 호스트별 역할 이름 표와 루트 `CLAUDE.md` 의 "작업별 역할 · 모델 배정" 표를 함께 갱신한다.
+- Codex 대응 파일 `.codex/agents/<snake_case>.toml` 을 함께 만들고 `sh scripts/check-claude-agents.sh` 로 검사한다.
 - 사용자 전역(`~/.claude/agents/`)에 같은 이름의 에이전트가 있어도 **이 저장소의 프로젝트 스코프 정의가 우선한다.**
