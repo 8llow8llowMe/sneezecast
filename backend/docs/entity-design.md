@@ -276,14 +276,20 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | cited_enteric_count | INT | N | 인용 장관 보고 수 |
 | cited_level | VARCHAR(20) | N | 인용 단계. **INSUFFICIENT 는 들어갈 수 없다** |
 | cited_rule_version | VARCHAR(20) | N | 인용 집계의 판정 규칙 버전 |
-| published_at | TIMESTAMP | Y | 발행 시각 |
-| retracted_at | TIMESTAMP | Y | 철회 시각 |
-| version | BIGINT | N | 낙관적 락 (`@Version`). 운영자 두 명이 동시에 고쳐 한쪽 수정이 사라지는 것을 막는다 |
+| corrects_advisory_id | BIGINT | Y | 이 안내가 정정한 이전 안내 (FK: advisory.id). 정정 발행(#246)이 아니면 null |
+| published_at | TIMESTAMP | Y | 발행 시각. PUBLISHED · RETRACTED 에만 있다 |
+| retracted_at | TIMESTAMP | Y | 철회 시각. RETRACTED 에만 있다 |
+| version | BIGINT | N | 낙관적 락 (`@Version`, 0 부터). 운영자 두 명이 동시에 고쳐 한쪽 수정이 사라지는 것을 막는다 |
 
-- 인덱스: `idx_advisory_district_code_status_published_at` (공개 목록), `idx_advisory_aggregate_id`
-- **초안 생성 전제**: 근거 집계가 **마감됐고**(`finalized_at` not null) level 이 INSUFFICIENT 가 아니어야 한다. "충분한 자료가 있을 때에만 예방 정보를 전한다" 는 불변식을 초안 단계에서 막는다.
-- 인용값을 복사해 두는 이유: 운영자가 검토한 수치와 발행문 수치가 같아야 한다. 집계가 재계산돼도 안내는 바뀌지 않는다.
-- **자동 발행 경로는 없다.** PUBLISHED 로 가는 전이는 OPERATOR 요청으로만 일어난다.
+- 인덱스: `idx_advisory_district_code_status_published_at` (공개 목록), `idx_advisory_aggregate_id`, `idx_advisory_corrects_advisory_id` (이전 안내 → 정정한 안내, #246 의 `정정됨` 판정)
+- **초안 생성 전제**: 근거 집계가 **마감됐고**(`finalized_at` not null) level 이 INSUFFICIENT 가 아니어야 한다. "충분한 자료가 있을 때에만 예방 정보를 전한다" 는 불변식을 초안 단계에서 막는다. 근거 집계는 **동네 · 주**로 찾는다(UK `(district_code, iso_week)` — 검토 후보가 동네 · 주 단위다). 행 없음 `ADVISORY_002`(404), 마감 전 `ADVISORY_003` · 자료 부족 `ADVISORY_004`(409). 집계는 `AdvisoryAggregateQueryPort` → aggregate 저장 포트로만 읽는다(advisory 는 aggregate 영속 계층을 import 하지 않는다).
+- 인용값을 복사해 두는 이유: 운영자가 검토한 수치와 발행문 수치가 같아야 한다. 집계가 재계산돼도 안내는 바뀌지 않는다. 근거 집계 · 동네 · 주 · `cited_*` 는 생성 뒤 고치지 않는다 — 수정은 상태 · 제목 · 본문 · 발행 · 철회 시각만 바꾸고, 엔티티 매핑도 그 컬럼을 `updatable = false` 로 둬 UPDATE 에 싣지 않는다.
+- 제목은 공백이 아닌 100자(코드포인트) 이하, 본문은 공백이 아니어야 한다(도메인 검사. 요청 검증 코드 · 본문 상한은 운영자 API #246 이 정한다). `published_at` · `retracted_at` 은 집계 시각과 같은 기준(JVM 기본 시간대 지역 시각, 순간은 `Clock` 빈)이고 **초 단위로 자른다** — MySQL `TIMESTAMP` 가 초 정밀도라 응답과 다시 읽은 값이 같게 한다.
+- **동시 처리 — 동네 · 주 잠금**: 모든 전이 · 수정은 먼저 대상 안내의 동네 · 주만 스칼라로 읽고(엔티티를 올리지 않는다), 그 동네 · 주의 안내 전부를 `SELECT … FOR UPDATE`(`AdvisoryRepository#findAllByDistrictCodeAndIsoWeek`, `PESSIMISTIC_WRITE`)로 읽는다. 잠금을 기다린 뒤의 최신 커밋 값(current read)으로 버전 · 전이 · 발행 중 여부를 판단하므로 같은 동네 · 주의 처리는 줄을 선다. MySQL REPEATABLE READ 에서 잠그지 않는 읽기는 트랜잭션 첫 읽기의 스냅샷이라 이 판단에 쓰지 않는다. 잠금은 `idx_advisory_district_code_status_published_at` 앞 컬럼(`district_code`)을 타 InnoDB 가 **그 동네의 다른 주 행까지** 잠근다 — 같은 동네 처리끼리 직렬화되지만 1단계 운영자 수에서는 문제없고 DDL 을 바꾸지 않는다. 모든 전이가 같은 인덱스 범위를 같은 순서로 잠그고, 대상 행을 PK 로 먼저 잠그는 경로가 없어 전이끼리 교착하지 않는다. 잠금 대기 초과(`innodb_lock_wait_timeout`) · 교착 희생은 `ADVISORY_006` 이다.
+- **동시 수정 — 버전**: 전이 · 수정 요청은 화면이 읽은 `version` 을 싣는다. 잠근 뒤 본 버전과 다르면 409 `ADVISORY_006` 이다(기다리는 사이 다른 운영자가 커밋한 처리도 여기서 드러난다). `@Version` 은 안전망이다 — 같은 트랜잭션에서 잠그지 않고 먼저 읽은 엔티티(옛 값)로 고치면 `update … where version = ?` 가 0건이 되는데, 저장 어댑터(`AdvisoryRepositoryAdapter#update`)가 그 자리에서 flush 해 `OptimisticLockingFailureException` 을 같은 `ADVISORY_006` 으로 바꾼다(커밋까지 미루면 트랜잭션 프록시 밖에서 그대로 터진다). 다시 시도하지 않는다 — 화면이 다시 읽는다. 수정은 조회한 엔티티를 바꿔 변경 감지로 한다(coding-conventions §8-1).
+- **같은 동네 · 주에 발행 중(PUBLISHED)인 안내는 하나뿐이다.** 이미 있으면 발행은 409 `ADVISORY_007` — 바꾸려면 그 안내를 철회(정정)한다. 동네 안내(#215)가 한 동네 · 주에 안내 하나를 보이게 한다. 초안 · 승인은 여럿이어도 된다(철회 뒤 새 안내 · 정정). 판단은 위 동네 · 주 잠금 읽기의 결과로 하므로, 서로 다른 두 안내를 동시에 발행하면 뒤에 선 쪽이 앞 쪽의 커밋된 PUBLISHED 를 보고 거부된다. 초안 생성은 이 잠금을 잡지 않는다(INSERT 는 발행 중 여부를 바꾸지 않는다).
+- **정정 발행(#246)**: PUBLISHED 본문은 고치지 않는다. 이전 안내를 철회(RETRACTED, `memo` = 정정 사유)하고 같은 동네 · 주 · 근거 집계로 새 안내를 만들어 `corrects_advisory_id` 로 잇는다. 새 안내의 `cited_*` 는 **이전 안내에서 옮긴다**(마감 집계는 바뀌지 않으므로 같은 값이고, 운영자가 검토한 수치를 그대로 잇는다). 새 안내가 승인 · 발행 단계를 어떻게 거칠지와 철회 · 발행 순서(발행 중 하나 규칙상 철회가 먼저)는 #246 이 한 트랜잭션으로 정한다.
+- **자동 발행 경로는 없다.** PUBLISHED 로 가는 전이는 OPERATOR 요청으로만 일어난다 — 모든 처리가 운영자 ID 를 받는다(`AdvisoryOperatorUseCase`).
 - 공개 API 는 PUBLISHED 만 읽는다.
 
 ### 2-4. advisory_history — 상태 전이 · 수정 이력
@@ -301,10 +307,12 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | operator_id | BIGINT | N | 요청한 운영자 (auth `member.id`). AI 초안도 **요청한 운영자**를 남긴다 |
 | ai_model | VARCHAR(60) | Y | AI 초안을 만든 모델 id. AI_DRAFTED 전이에만 |
 | prompt_version | VARCHAR(20) | Y | AI 초안에 쓴 프롬프트 버전 (설정). AI_DRAFTED 전이에만 |
-| memo | VARCHAR(500) | Y | 수정 · 철회 사유 |
+| memo | VARCHAR(500) | Y | 수정 · 철회 사유 (수정은 선택, 철회는 필수) |
 
 - 인덱스: `idx_advisory_history_advisory_id`
-- `created_at` 이 전이 시각이다.
+- `created_at` 이 전이 시각이다. 안내 하나의 이력은 `created_at`, 같으면 `id`(Snowflake, 시간 순) 오름차순으로 읽는다 — 한 요청에서 이어 쌓인 행은 생성 시각이 같을 수 있다.
+- 초안 생성(`from_status` null → DRAFT)부터 모든 전이 · 수정이 한 행씩이고, 안내 갱신과 **같은 트랜잭션**이라 함께 커밋되거나 함께 롤백된다(충돌 · 거부된 요청은 이력을 남기지 않는다). `title` · `body` 는 바뀐 뒤의 값이다.
+- `operator_id` 는 인증 주체의 회원 ID(양수)다. 로그에는 남기지 않는다(회원 식별정보) — 처리 로그는 안내 ID · 상태 · 버전뿐이다.
 
 ### 2-5. advisory 상태 전이
 
@@ -312,14 +320,16 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 |------|------|------|------|
 | (없음) | DRAFT | OPERATOR | §2-3 초안 생성 전제 |
 | DRAFT | AI_DRAFTED | OPERATOR 요청 → AI | 입력은 인용값 스냅샷뿐 (트랜잭션 밖 동기 호출, timeout 명시) |
-| DRAFT · AI_DRAFTED | EDITED | OPERATOR | 본문 · 제목 수정 |
+| DRAFT · AI_DRAFTED · EDITED | EDITED | OPERATOR | 본문 · 제목 수정. EDITED → EDITED 는 다시 수정이다(한 번 고친 뒤 또 고치려고 승인부터 할 필요가 없다) |
 | DRAFT · AI_DRAFTED · EDITED | APPROVED | OPERATOR | 운영자가 현재 본문을 검토 · 승인 |
 | APPROVED | EDITED | OPERATOR | **승인 뒤 수정하면 다시 승인받아야 한다** |
-| APPROVED | PUBLISHED | OPERATOR | 발행. `published_at` 기록 |
-| PUBLISHED | RETRACTED | OPERATOR | 철회. `retracted_at` · 사유(`memo`) 기록 |
+| APPROVED | PUBLISHED | OPERATOR | 발행. `published_at` 기록. 같은 동네 · 주에 발행 중인 안내가 있으면 409 `ADVISORY_007` (§2-3) |
+| PUBLISHED | RETRACTED | OPERATOR | 철회. `retracted_at` · 사유(`memo`, 필수) 기록 |
 
-- 표에 없는 전이는 409. PUBLISHED 본문은 고치지 않는다 — 철회하고 새 안내를 만든다.
-- RETRACTED 는 끝 상태다.
+- 표에 없는 전이는 409 `ADVISORY_005`(메시지에 지금 상태 → 요청 상태). PUBLISHED 본문은 고치지 않는다 — 철회하고 새 안내를 만든다(정정, §2-3).
+- RETRACTED 는 끝 상태다. 어느 상태에서도 DRAFT 로 돌아가지 않는다(DRAFT 는 생성뿐).
+- 표의 정본은 `AdvisoryStatus#canTransitionTo` 한 곳이고 `AdvisoryStatusTest` 가 36칸 전부를 못 박는다. 처리 계층(`AdvisoryOperatorUseCase` → `AdvisoryOperatorFacade`(트랜잭션) → `AdvisoryCommandProcessor`)의 확인 순서는 동네 · 주 잠금(§2-3) → 안내 없음 404 `ADVISORY_001` → 요청 버전 불일치 409 `ADVISORY_006` → 표에 없는 전이 409 `ADVISORY_005` 다. 옛 화면이 보낸 요청이면 "다시 읽어라" 가 맞는 답이라 버전을 먼저 본다.
+- DRAFT → AI_DRAFTED 는 표에만 있고 경로는 아직 없다(AI 이슈 — 외부 호출이라 트랜잭션을 Processor 단위로 좁힌 별도 경로가 된다).
 
 ---
 
