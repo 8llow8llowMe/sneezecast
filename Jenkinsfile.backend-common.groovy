@@ -590,7 +590,10 @@ Map<String, String> serviceOnlyKeyOwners() {
         'SURVEILLANCE_DB_PASSWORD': 'surveillance-service',
         'BATCH_DB_URL'            : 'batch-service',
         'BATCH_DB_USERNAME'       : 'batch-service',
-        'BATCH_DB_PASSWORD'       : 'batch-service'
+        'BATCH_DB_PASSWORD'       : 'batch-service',
+        'SGIS_CONSUMER_KEY'       : 'batch-service',
+        'SGIS_CONSUMER_SECRET'    : 'batch-service',
+        'KDCA_API_SERVICE_KEY'    : 'batch-service'
     ]
 }
 

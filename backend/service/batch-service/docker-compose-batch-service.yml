@@ -51,6 +51,12 @@ x-batch-service-environment: &batch_service_environment
   BATCH_DB_URL: ${BATCH_DB_URL}
   BATCH_DB_USERNAME: ${BATCH_DB_USERNAME}
   BATCH_DB_PASSWORD: ${BATCH_DB_PASSWORD}
+  # 외부 원천 인증키 (batch-service 경로 전용 — 파이프라인 serviceOnlyKeyOwners). 넘기지 않으면 Vault 에 넣어도
+  # 컨테이너에 닿지 않는다(#67). 비어 있으면 기동은 하고 잡을 실행할 때 *_CREDENTIALS_MISSING 으로 실패한다.
+  # KDCA_API_SERVICE_KEY 는 공공데이터포털 인증키 Decoding 값이다(Encoding 값이면 KDCA_SERVICE_KEY_LOOKS_ENCODED).
+  SGIS_CONSUMER_KEY: ${SGIS_CONSUMER_KEY:-}
+  SGIS_CONSUMER_SECRET: ${SGIS_CONSUMER_SECRET:-}
+  KDCA_API_SERVICE_KEY: ${KDCA_API_SERVICE_KEY:-}
 
 x-logging: &default-logging
   driver: "json-file"
