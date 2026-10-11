@@ -5,7 +5,8 @@ import type { MeasuredNoticeStats, PublishedRegionNotice, RegionNoticeBody } fro
 /**
  * 동네 안내 목 데이터. 값은 시안(Guide-published · Guide-none · Guide-corrected)의 예시 값이다. 철회(`retracted`)는 시안이 없다(#225).
  *
- * **API 연동 전까지만 쓴다.** 연동 이슈(`GET /api/notices/{admCd}?week=`)에서 이 파일을 지우고 API 매핑으로 바꾼다.
+ * **API 연동 전까지만 쓴다.** 연동 이슈(`GET /api/v1/advisories?districtCode=&week=`, 백엔드 #215 로 확정)에서 이 파일을 지우고
+ * API 매핑으로 바꾼다.
  */
 
 /**
@@ -83,7 +84,7 @@ export const NOTICE_MOCKS: Record<NoticeMockKey, NoticeMock> = {
     stats: HIGH_STATS,
   },
   // 발행 시안의 안내를 철회한 주. 집계는 그 주 집계라 발행 · 정정 시안과 같다(마감 집계는 다시 계산되지 않는다).
-  // 사유는 없다 — 철회 사유(운영자 메모)를 공개 응답에 내릴지는 백엔드 #215 에서 정한다. 사유가 있는 모양은 테스트가 그린다
+  // 사유는 없다 — 백엔드 #215 는 철회 사유(운영자 메모)를 공개 응답에 내리지 않는다. 사유가 있는 모양은 테스트가 그린다
   retracted: {
     notice: null,
     retraction: { retractedOn: '2025-11-20' },

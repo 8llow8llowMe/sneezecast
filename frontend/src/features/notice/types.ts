@@ -2,7 +2,8 @@ import type { SymptomGroup } from '@/features/home/types'
 import type { MeasuredStatus } from '@/lib/status'
 
 /**
- * S07 동네 안내 화면 데이터. API(`GET /api/notices/{admCd}?week=`, docs/api-contract-draft.md)를 화면용으로 옮긴 모양이다.
+ * S07 동네 안내 화면 데이터. API(`GET /api/v1/advisories?districtCode=&week=`, docs/api-contract-draft.md "동네 안내" — 백엔드 #215 로
+ * 확정, 화면은 아직 목)와 행정동 주간 집계를 화면용으로 옮긴 모양이다.
  *
  * **발행된 안내는 수치가 있는 주에만 있다** — 백엔드도 `자료 부족` 집계로는 안내 초안을 만들지 않는다
  * (`backend/docs/entity-design.md` advisory "초안 생성 전제"). 타입으로 막아 `자료 부족` 주에 안내를 그릴 수 없게 한다.
@@ -16,7 +17,7 @@ export type RegionNotice = RegionNoticeCommon & RegionNoticeBody
  * **철회된 안내는 발행된 안내(`notice`)가 아니다** — 안내가 없는 갈래에 철회 표시(`retraction`)만 둔다(#225). 철회된 안내의
  * 제목 · 할 일 · 근거 · 인용 수치는 타입에 아예 없어, 화면이 내린 안내를 다시 퍼뜨리거나 `data.notice` 만 보는 곳이 철회된 안내를
  * 발행 중인 안내로 그릴 수 없다. 안내가 없는 갈래의 `stats` 는 그 주 집계(시민 자가보고)이고 철회된 안내가 인용한 값이 아니다 —
- * 그래서 `자료 부족` 일 수도 있다(백엔드와 정할 것 — docs/api-contract-draft.md "동네 안내").
+ * 그래서 `자료 부족` 일 수도 있다(안내 API 는 집계를 싣지 않아 행정동 주간 집계에서 읽는다 — docs/api-contract-draft.md "동네 안내").
  */
 export type RegionNoticeBody =
   | { notice: PublishedRegionNotice; retraction: null; stats: MeasuredNoticeStats }
@@ -63,8 +64,8 @@ export type NoticeCorrection = {
 
 /**
  * 철회 표시. 운영자가 발행한 안내를 내렸다(백엔드 advisory PUBLISHED → RETRACTED, `retracted_at` — 끝 상태).
- * 정정 표시(`NoticeCorrection`)와 같은 모양이고 사유만 선택 값이다 — 철회 사유(advisory_history `memo`)를 공개 응답에 내릴지는
- * 백엔드 #215 에서 정한다. 없으면 화면이 사유 줄을 뺀다
+ * 정정 표시(`NoticeCorrection`)와 같은 모양이고 사유만 선택 값이다 — 백엔드 #215 는 철회 사유(advisory_history `memo`)를 공개
+ * 응답에 내리지 않는다(docs/api-contract-draft.md "동네 안내" 결정). 없으면 화면이 사유 줄을 뺀다
  */
 export type NoticeRetraction = {
   /** 철회일 (`YYYY-MM-DD`, 한국 날짜) */
