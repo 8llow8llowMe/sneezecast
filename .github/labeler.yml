@@ -7,7 +7,7 @@
 # **더하기만 한다** (`label.yml` 의 `sync-labels: false`). 사람이 손으로 붙인 라벨을 지우지 않는다 —
 # 지우기 시작하면 아래 `backend-core` 주석처럼 의도적으로 넓힌 스코프가 사라진다.
 #
-# 여기 없는 경로(루트 문서 · `.github/**` · `.claude/**`)는 라벨이 붙지 않는다.
+# 여기 없는 경로(루트 문서 · `.github/**` · `.agents/**` · `.claude/**` · `.codex/**` · `.cursor/**`)는 라벨이 붙지 않는다.
 # 모듈이 아직 없는 라벨(`backend-guidance-service` · `backend-ai-service`)은 모듈이 생길 때 매핑을 추가한다.
 
 frontend-web:
