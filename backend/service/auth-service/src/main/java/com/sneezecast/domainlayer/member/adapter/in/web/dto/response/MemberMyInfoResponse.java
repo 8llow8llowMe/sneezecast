@@ -5,7 +5,7 @@ import java.util.List;
 import lombok.Builder;
 
 @Builder
-@Schema(description = "내 정보 응답 DTO (S10). 내 동네 · 프로필 이미지는 아직 싣지 않는다")
+@Schema(description = "내 정보 응답 DTO (S10). 내 동네는 싣지 않는다(내 동네 API 로 따로 읽는다)")
 public record MemberMyInfoResponse(
     @Schema(description = "회원 아이디", example = "1843956734582784")
     String memberId,
@@ -15,6 +15,10 @@ public record MemberMyInfoResponse(
 
     @Schema(description = "닉네임", example = "재채기탐정")
     String nickname,
+
+    @Schema(description = "프로필 이미지 주소(nullable). 직접 올린 이미지의 공개 URL 이 소셜 제공자 URL 보다 앞서고, 둘 다 없으면 null — 화면은 기본 이미지를 보여 준다",
+        example = "https://minio.8llow8llowme.com/sneezecast/members/profiles/1843956734582784/2026/10/3f2a9c11-0e4b-4a1f-9c3d-0b8e2f7a5d61.png")
+    String profileImageUrl,
 
     @Schema(description = "로그인 방법 EMAIL · KAKAO — 카카오를 연결한 이메일 계정도 KAKAO 다. 비밀번호 로그인 가능 여부는 hasPassword 로 본다", example = "EMAIL")
     String provider,

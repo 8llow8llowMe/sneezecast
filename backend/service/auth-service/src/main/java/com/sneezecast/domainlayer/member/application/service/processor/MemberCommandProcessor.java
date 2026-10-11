@@ -5,6 +5,7 @@ import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.port.out.MemberRepositoryPort;
 import com.sneezecast.domainlayer.member.domain.enums.OAuthProvider;
 import com.sneezecast.domainlayer.member.domain.model.Member;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,8 +56,34 @@ public class MemberCommandProcessor {
         return memberRepositoryPort.updateProvider(memberId, provider).orElseThrow(() -> new MemberException(MemberErrorCode.MEMBER_NOT_FOUND));
     }
 
+    /**
+     * 프로필 이미지를 업로드한 오브젝트 키로 바꾸고 소셜 URL 은 비운다. 업로드(원격 I/O)는 호출자가 트랜잭션 밖에서 먼저 끝낸다.
+     *
+     * <p>이전 key 는 잠금 읽기로 본 커밋된 값이다 — 같은 회원의 업로드가 겹쳐도 뒤 요청이 앞 요청의 key 를 이전 key 로 받아 지우므로 고아가 남지 않는다.
+     *
+     * @return 바꾸기 전에 쓰던 업로드 오브젝트 키. 없었으면(소셜 URL 이거나 이미지 없음) empty — 호출자가 커밋 뒤에 지운다
+     * @throws MemberException 회원 없음 {@code MEMBER_NOT_FOUND} · 탈퇴 {@code WITHDRAWN_MEMBER} · 정지 {@code SUSPENDED_MEMBER}
+     */
+    @Transactional
+    public Optional<String> changeProfileImage(long memberId, String profileImageKey) {
+        Member locked = lockActiveMember(memberId);
+        memberRepositoryPort.updateProfileImage(memberId, profileImageKey).orElseThrow(() -> new MemberException(MemberErrorCode.MEMBER_NOT_FOUND));
+        return Optional.ofNullable(locked.profileImageKey());
+    }
+
+    /**
+     * 프로필 이미지(업로드 key · 소셜 URL)를 비운다. 이미지가 없어도 같은 결과로 끝난다(멱등).
+     *
+     * @return 지우기 전에 쓰던 업로드 오브젝트 키. 없었으면 empty — 호출자가 커밋 뒤에 지운다
+     * @throws MemberException 회원 없음 · 탈퇴 · 정지
+     */
+    @Transactional
+    public Optional<String> removeProfileImage(long memberId) {
+        return changeProfileImage(memberId, null);
+    }
+
     /** 회원 행을 쓰기 잠금으로 다시 읽어(커밋된 최신 값) ACTIVE 인지 본다 — {@link MemberQueryProcessor#getActiveMember} 와 같은 판정이다. */
-    private void lockActiveMember(long memberId) {
-        MemberQueryProcessor.requireActive(memberRepositoryPort.findByIdForUpdate(memberId));
+    private Member lockActiveMember(long memberId) {
+        return MemberQueryProcessor.requireActive(memberRepositoryPort.findByIdForUpdate(memberId));
     }
 }

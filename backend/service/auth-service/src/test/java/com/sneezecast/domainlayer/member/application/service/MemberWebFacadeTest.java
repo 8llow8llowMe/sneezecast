@@ -2,6 +2,7 @@ package com.sneezecast.domainlayer.member.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -19,6 +20,7 @@ import static org.mockito.Mockito.when;
 import com.sneezecast.domainlayer.auth.application.service.support.ReportScopePolicy;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberConsentStatusResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberProfileImageResponse;
 import com.sneezecast.domainlayer.member.adapter.out.auth.MemberReportScopeAdapter;
 import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
@@ -39,6 +41,12 @@ import com.sneezecast.domainlayer.member.domain.enums.OAuthProvider;
 import com.sneezecast.domainlayer.member.domain.model.Member;
 import com.sneezecast.global.properties.LoginAttemptProperties;
 import com.sneezecast.security.common.enums.SecurityRole;
+import com.sneezecast.storage.client.ObjectStorageClient;
+import com.sneezecast.storage.exception.StorageErrorCode;
+import com.sneezecast.storage.exception.StorageException;
+import com.sneezecast.storage.model.FileUploadCommand;
+import com.sneezecast.storage.model.StorageDomain;
+import com.sneezecast.storage.model.StoredObject;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -50,6 +58,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.TransactionSystemException;
+import org.springframework.transaction.UnexpectedRollbackException;
 
 /**
  * 내 정보 · 비밀번호 변경 · 설정의 오케스트레이션. 조회 · 비밀번호 규칙 처리기는 실제 객체이고, 저장소 · 세션 폐기 · DB 쓰기는 mock 이다.
@@ -59,6 +69,9 @@ class MemberWebFacadeTest {
     private static final String SESSION_ID = "3f2a9c11-0e4b-4a1f-9c3d-0b8e2f7a5d61";
     private static final String PASSWORD = "P@ssw0rd!";
     private static final String NEW_PASSWORD = "Sneeze2026!";
+    private static final String PUBLIC_BASE = "https://minio.example.com/sneezecast/";
+    private static final String OLD_KEY = "members/profiles/42/2026/09/0b8e2f7a-5d61-4a1f-9c3d-3f2a9c110e4b.png";
+    private static final String NEW_KEY = "members/profiles/42/2026/10/3f2a9c11-0e4b-4a1f-9c3d-0b8e2f7a5d61.webp";
 
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
     private MemberRepositoryPort memberRepositoryPort;
@@ -66,6 +79,7 @@ class MemberWebFacadeTest {
     private MemberCommandProcessor memberCommandProcessor;
     private MemberSessionRevokePort memberSessionRevokePort;
     private MemberWithdrawalProcessor memberWithdrawalProcessor;
+    private ObjectStorageClient objectStorageClient;
     private MemberWebFacade facade;
 
     @BeforeEach
@@ -79,10 +93,130 @@ class MemberWebFacadeTest {
         when(attemptPort.increaseFailureCount(anyLong(), any())).thenReturn(1L);
         when(memberConsentProcessor.currentStatus(anyLong())).thenReturn(MemberConsentStatusInfo.builder().healthInfoAgreed(true).build());
         MemberReportScopeAdapter reportScopeAdapter = new MemberReportScopeAdapter(new ReportScopePolicy());
-        MemberQueryProcessor queryProcessor = new MemberQueryProcessor(memberRepositoryPort, memberConsentProcessor, reportScopeAdapter);
+        objectStorageClient = mock(ObjectStorageClient.class);
+        when(objectStorageClient.toPublicUrl(anyString())).thenAnswer(invocation -> PUBLIC_BASE + invocation.getArgument(0));
+        MemberQueryProcessor queryProcessor = new MemberQueryProcessor(memberRepositoryPort, memberConsentProcessor, reportScopeAdapter, objectStorageClient);
         facade = new MemberWebFacade(queryProcessor, memberCommandProcessor,
             new MemberPasswordProcessor(passwordEncoder, attemptPort, new LoginAttemptProperties(5, Duration.ofMinutes(10), 30, Duration.ofHours(1))),
-            memberConsentProcessor, memberWithdrawalProcessor, reportScopeAdapter, memberSessionRevokePort, passwordEncoder, new MemberPresenter());
+            memberConsentProcessor, memberWithdrawalProcessor, reportScopeAdapter, memberSessionRevokePort, passwordEncoder, new MemberPresenter(),
+            objectStorageClient);
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 업로드 — 상태 확인 → 업로드(트랜잭션 밖) → key 연결(커밋) → 쓰던 이미지 삭제 순서이고, 응답은 새 공개 URL 이다")
+    void changeProfileImageDeletesPreviousAfterCommit() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        FileUploadCommand image = new FileUploadCommand(new byte[] {1, 2, 3}, "profile.png");
+        when(objectStorageClient.uploadImage(StorageDomain.MEMBER_PROFILE, 42L, image)).thenReturn(stored(NEW_KEY));
+        when(memberCommandProcessor.changeProfileImage(42L, NEW_KEY)).thenReturn(Optional.of(OLD_KEY));
+
+        MemberProfileImageResponse response = facade.changeProfileImage(42L, image);
+
+        InOrder order = inOrder(memberRepositoryPort, objectStorageClient, memberCommandProcessor);
+        order.verify(memberRepositoryPort).findById(42L);
+        order.verify(objectStorageClient).uploadImage(StorageDomain.MEMBER_PROFILE, 42L, image);
+        order.verify(memberCommandProcessor).changeProfileImage(42L, NEW_KEY);
+        order.verify(objectStorageClient).deleteQuietly(OLD_KEY);
+        verify(objectStorageClient, never()).deleteQuietly(NEW_KEY);
+        assertThat(response.profileImageUrl()).isEqualTo(PUBLIC_BASE + NEW_KEY);
+    }
+
+    @Test
+    @DisplayName("쓰던 업로드 이미지가 없었으면(소셜 URL · 이미지 없음) 지우지 않는다")
+    void changeProfileImageWithoutPreviousDeletesNothing() {
+        givenMember(socialMember());
+        when(objectStorageClient.uploadImage(any(), anyLong(), any())).thenReturn(stored(NEW_KEY));
+        when(memberCommandProcessor.changeProfileImage(42L, NEW_KEY)).thenReturn(Optional.empty());
+
+        facade.changeProfileImage(42L, new FileUploadCommand(new byte[] {1}, "a.png"));
+
+        verify(objectStorageClient, never()).deleteQuietly(anyString());
+    }
+
+    @Test
+    @DisplayName("key 연결 실패가 확정이면(그사이 탈퇴 MEMBER_002 · 롤백 확정 · 쓰기 오류) 방금 올린 오브젝트를 지우고 같은 예외를 다시 던진다 — 쓰던 이미지는 그대로다")
+    void changeProfileImageRollsBackUploadWhenLinkFails() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        when(objectStorageClient.uploadImage(any(), anyLong(), any())).thenReturn(stored(NEW_KEY));
+        MemberException withdrawn = new MemberException(MemberErrorCode.WITHDRAWN_MEMBER);
+        when(memberCommandProcessor.changeProfileImage(42L, NEW_KEY)).thenThrow(withdrawn);
+
+        assertThat(catchThrowable(() -> facade.changeProfileImage(42L, new FileUploadCommand(new byte[] {1}, "a.png")))).isSameAs(withdrawn);
+
+        verify(objectStorageClient).deleteQuietly(NEW_KEY);
+        verify(objectStorageClient, times(1)).deleteQuietly(anyString());
+
+        UnexpectedRollbackException rolledBack = new UnexpectedRollbackException("rolled back");
+        doThrow(rolledBack).when(memberCommandProcessor).changeProfileImage(42L, NEW_KEY);
+        assertThat(catchThrowable(() -> facade.changeProfileImage(42L, new FileUploadCommand(new byte[] {1}, "a.png")))).isSameAs(rolledBack);
+        IllegalStateException writeFailure = new IllegalStateException("write failed");
+        doThrow(writeFailure).when(memberCommandProcessor).changeProfileImage(42L, NEW_KEY);
+        assertThat(catchThrowable(() -> facade.changeProfileImage(42L, new FileUploadCommand(new byte[] {1}, "a.png")))).isSameAs(writeFailure);
+        verify(objectStorageClient, times(3)).deleteQuietly(NEW_KEY);
+    }
+
+    @Test
+    @DisplayName("커밋 결과를 알 수 없는 커밋 단계 예외면 새 오브젝트를 지우지 않고 남긴 채 예외를 다시 던진다 — 고아면 정리(#278)가 DB 참조를 보고 회수한다")
+    void changeProfileImageKeepsUploadWhenCommitOutcomeUnknown() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        when(objectStorageClient.uploadImage(any(), anyLong(), any())).thenReturn(stored(NEW_KEY));
+        TransactionSystemException commitFailure = new TransactionSystemException("commit failed");
+        when(memberCommandProcessor.changeProfileImage(42L, NEW_KEY)).thenThrow(commitFailure);
+
+        assertThat(catchThrowable(() -> facade.changeProfileImage(42L, new FileUploadCommand(new byte[] {1}, "a.png")))).isSameAs(commitFailure);
+
+        verify(objectStorageClient, never()).deleteQuietly(any());
+    }
+
+    @Test
+    @DisplayName("업로드가 실패하면(형식 STORAGE_003 · 저장소 장애) DB 를 건드리지 않고, 탈퇴 · 정지 회원이면 업로드하지 않는다")
+    void changeProfileImageUploadFailureOrInactiveMemberKeepsDb() {
+        givenMember(emailMember(MemberStatus.ACTIVE));
+        StorageException unsupported = new StorageException(StorageErrorCode.UNSUPPORTED_FILE_TYPE);
+        when(objectStorageClient.uploadImage(any(), anyLong(), any())).thenThrow(unsupported);
+
+        assertThat(catchThrowable(() -> facade.changeProfileImage(42L, new FileUploadCommand(new byte[] {1}, "a.png")))).isSameAs(unsupported);
+
+        givenMember(emailMember(MemberStatus.WITHDRAWN));
+        assertThat(failure(() -> facade.changeProfileImage(42L, new FileUploadCommand(new byte[] {1}, "a.png")))).isEqualTo(MemberErrorCode.WITHDRAWN_MEMBER);
+
+        verify(objectStorageClient, times(1)).uploadImage(any(), anyLong(), any());
+        verify(memberCommandProcessor, never()).changeProfileImage(anyLong(), any());
+        verify(objectStorageClient, never()).deleteQuietly(any());
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 삭제 — 비우기(커밋) 뒤 쓰던 업로드 이미지를 지우고, 없었으면 아무것도 지우지 않는다(멱등)")
+    void removeProfileImageDeletesPreviousOnlyWhenPresent() {
+        when(memberCommandProcessor.removeProfileImage(42L)).thenReturn(Optional.of(OLD_KEY));
+        facade.removeProfileImage(42L);
+        InOrder order = inOrder(memberCommandProcessor, objectStorageClient);
+        order.verify(memberCommandProcessor).removeProfileImage(42L);
+        order.verify(objectStorageClient).deleteQuietly(OLD_KEY);
+
+        when(memberCommandProcessor.removeProfileImage(42L)).thenReturn(Optional.empty());
+        facade.removeProfileImage(42L);
+        verify(objectStorageClient, times(1)).deleteQuietly(anyString());
+    }
+
+    @Test
+    @DisplayName("내 정보의 profileImageUrl — 업로드 key 의 공개 URL 이 소셜 URL 보다 앞서고, 소셜 URL 만 있으면 그것, 둘 다 없으면 null 이다")
+    void myInfoProfileImageUrlPriority() {
+        Member base = emailMember(MemberStatus.ACTIVE);
+        givenMember(Member.builder().id(42L).email(base.email()).password(base.password()).nickname(base.nickname()).role(SecurityRole.USER)
+            .status(MemberStatus.ACTIVE).profileImageKey(OLD_KEY).profileImageUrl("https://k.kakaocdn.net/profile.jpg").build());
+        assertThat(facade.getMyInfo(42L).profileImageUrl()).isEqualTo(PUBLIC_BASE + OLD_KEY);
+
+        givenMember(Member.builder().id(42L).email(base.email()).password(base.password()).nickname(base.nickname()).role(SecurityRole.USER)
+            .status(MemberStatus.ACTIVE).profileImageUrl("https://k.kakaocdn.net/profile.jpg").build());
+        assertThat(facade.getMyInfo(42L).profileImageUrl()).isEqualTo("https://k.kakaocdn.net/profile.jpg");
+
+        givenMember(base);
+        assertThat(facade.getMyInfo(42L).profileImageUrl()).isNull();
+    }
+
+    private static StoredObject stored(String key) {
+        return new StoredObject(key, PUBLIC_BASE + key, "image/png", 3);
     }
 
     @Test
@@ -95,11 +229,26 @@ class MemberWebFacadeTest {
         InOrder order = inOrder(memberWithdrawalProcessor, memberSessionRevokePort);
         order.verify(memberWithdrawalProcessor).withdraw(42L);
         order.verify(memberSessionRevokePort).revokeAllSessions(42L, "access-jti", expiresAt);
+        verify(objectStorageClient, never()).deleteQuietly(any());
     }
 
     @Test
-    @DisplayName("탈퇴 커밋 뒤 로그아웃이 실패해도(MEMBER_009 · 예상 밖 오류) 탈퇴는 성공이다 — 이미 커밋돼 되돌릴 수 없다")
+    @DisplayName("탈퇴한 회원의 업로드 이미지는 커밋(처리기 반환) · 로그아웃 뒤에 지운다 — 트랜잭션 밖이라 DB 커넥션을 잡지 않는다")
+    void memberWithdrawalDeletesProfileImageAfterCommit() {
+        when(memberWithdrawalProcessor.withdraw(42L)).thenReturn(Optional.of(OLD_KEY));
+
+        facade.withdraw(42L, "access-jti", null);
+
+        InOrder order = inOrder(memberWithdrawalProcessor, memberSessionRevokePort, objectStorageClient);
+        order.verify(memberWithdrawalProcessor).withdraw(42L);
+        order.verify(memberSessionRevokePort).revokeAllSessions(42L, "access-jti", null);
+        order.verify(objectStorageClient).deleteQuietly(OLD_KEY);
+    }
+
+    @Test
+    @DisplayName("탈퇴 커밋 뒤 로그아웃이 실패해도(MEMBER_009 · 예상 밖 오류) 탈퇴는 성공이고 이미지도 지운다 — 이미 커밋돼 되돌릴 수 없다")
     void memberWithdrawalToleratesPostCommitRevokeFailure() {
+        when(memberWithdrawalProcessor.withdraw(42L)).thenReturn(Optional.of(OLD_KEY));
         doThrow(new MemberException(MemberErrorCode.SESSION_REVOKE_UNAVAILABLE)).when(memberSessionRevokePort).revokeAllSessions(anyLong(), any(), any());
         assertThatCode(() -> facade.withdraw(42L, "access-jti", null)).doesNotThrowAnyException();
 
@@ -107,15 +256,20 @@ class MemberWebFacadeTest {
         assertThatCode(() -> facade.withdraw(42L, "access-jti", null)).doesNotThrowAnyException();
 
         verify(memberWithdrawalProcessor, times(2)).withdraw(42L);
+        verify(objectStorageClient, times(2)).deleteQuietly(OLD_KEY);
     }
 
     @Test
-    @DisplayName("탈퇴가 막히면(이미 탈퇴 MEMBER_002 · 롤백) 세션을 건드리지 않는다")
+    @DisplayName("탈퇴가 막히면(이미 탈퇴 MEMBER_002 · 롤백) 세션 · 이미지를 건드리지 않는다")
     void rejectedMemberWithdrawalKeepsSessions() {
         doThrow(new MemberException(MemberErrorCode.WITHDRAWN_MEMBER)).when(memberWithdrawalProcessor).withdraw(42L);
 
         assertThat(failure(() -> facade.withdraw(42L, "access-jti", null))).isEqualTo(MemberErrorCode.WITHDRAWN_MEMBER);
+        doThrow(new IllegalStateException("settings store down")).when(memberWithdrawalProcessor).withdraw(42L);
+        assertThat(catchThrowable(() -> facade.withdraw(42L, "access-jti", null))).isInstanceOf(IllegalStateException.class);
+
         verify(memberSessionRevokePort, never()).revokeAllSessions(anyLong(), any(), any());
+        verify(objectStorageClient, never()).deleteQuietly(any());
     }
 
     @Test

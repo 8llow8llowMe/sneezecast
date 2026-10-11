@@ -132,6 +132,15 @@ public class MemberRepositoryAdapter implements MemberRepositoryPort {
         });
     }
 
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<Member> updateProfileImage(long memberId, String profileImageKey) {
+        return memberRepository.findById(memberId).map(entity -> {
+            entity.changeProfileImage(profileImageKey);
+            return memberMapper.toDomainFromEntity(entity);
+        });
+    }
+
     /** MySQL 은 {@code for key 'member.uk_member_email'}, H2 는 {@code PUBLIC.UK_MEMBER_EMAIL ...} 로 싣는다 — 대소문자를 무시하고 본다. */
     private boolean isEmailUniqueViolation(DataIntegrityViolationException exception) {
         String message = exception.getMostSpecificCause().getMessage();

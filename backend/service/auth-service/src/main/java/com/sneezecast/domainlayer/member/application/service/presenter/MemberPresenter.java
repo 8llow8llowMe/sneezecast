@@ -3,6 +3,7 @@ package com.sneezecast.domainlayer.member.application.service.presenter;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberConsentStatusResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberNotificationSettingResponse;
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberProfileImageResponse;
 import com.sneezecast.domainlayer.member.application.info.MemberConsentStatusInfo;
 import com.sneezecast.domainlayer.member.application.info.MemberMyInfo;
 import com.sneezecast.domainlayer.member.application.info.MemberNotificationSettingInfo;
@@ -22,12 +23,18 @@ public class MemberPresenter {
             .memberId(String.valueOf(info.memberId()))
             .email(info.email())
             .nickname(info.nickname())
+            .profileImageUrl(info.profileImageUrl())
             .provider(info.provider() == null ? EMAIL_PROVIDER : info.provider().name())
             .hasPassword(info.hasPassword())
             .role(info.role().name())
             .pendingConsents(info.pendingConsents().stream().map(Enum::name).toList())
             .reportWritable(info.reportWritable())
             .build();
+    }
+
+    /** @param profileImageUrl 방금 올린 이미지의 공개 URL */
+    public MemberProfileImageResponse toProfileImageResponse(String profileImageUrl) {
+        return new MemberProfileImageResponse(profileImageUrl);
     }
 
     /** @param reportWritable 같은 상태로 계산한 보고 가능 여부(auth 의 scope 정책) */

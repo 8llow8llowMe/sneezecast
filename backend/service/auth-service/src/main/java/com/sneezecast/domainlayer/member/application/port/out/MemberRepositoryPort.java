@@ -65,4 +65,12 @@ public interface MemberRepositoryPort {
      * @return 바꾼 회원. 행이 없으면 empty
      */
     Optional<Member> updateProvider(long memberId, OAuthProvider provider);
+
+    /**
+     * 기존 회원 행의 프로필 이미지를 업로드한 오브젝트 키로 바꾸고 소셜 URL 은 비운다(둘은 배타적). key 가 null 이면 둘 다 비운다. 엔티티를 조회해 변경
+     * 감지로 고친다 — <b>호출자 트랜잭션이 있어야 한다.</b>
+     *
+     * @return 바꾼 회원. 행이 없으면 empty
+     */
+    Optional<Member> updateProfileImage(long memberId, String profileImageKey);
 }

@@ -6,6 +6,7 @@ import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.sneezecast.domainlayer.member.adapter.out.persistence.MemberConsentRepositoryAdapter;
 import com.sneezecast.domainlayer.member.adapter.out.persistence.MemberNotificationSettingRepositoryAdapter;
@@ -44,6 +45,7 @@ import com.sneezecast.global.properties.WithdrawnEmailProperties;
 import com.sneezecast.persistence.config.JpaAuditConfig;
 import com.sneezecast.persistence.util.SnowflakeIdGenerator;
 import com.sneezecast.security.common.enums.SecurityRole;
+import com.sneezecast.storage.client.ObjectStorageClient;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -64,6 +66,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -141,6 +144,10 @@ class MemberWithdrawalTransactionTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    /** 조회 처리기가 URL 조립에 쓴다. 탈퇴 트랜잭션은 오브젝트 스토리지를 건드리지 않아야 한다(삭제는 커밋 뒤 Facade 몫). */
+    @MockitoBean
+    private ObjectStorageClient objectStorageClient;
+
     @AfterEach
     void cleanUp() {
         memberNotificationSettingRepository.deleteAll();
@@ -164,7 +171,7 @@ class MemberWithdrawalTransactionTest {
         givenInterestRegion(100L, OTHER_MEMBER_ID, "11110515", 1);
         givenNotificationSetting(201L, OTHER_MEMBER_ID);
 
-        processor.withdraw(MEMBER_ID);
+        assertThat(processor.withdraw(MEMBER_ID)).as("잠금 읽기로 본 이전 key 를 돌려준다").contains("profile/" + MEMBER_ID + ".png");
 
         MemberEntity withdrawn = memberRepository.findById(MEMBER_ID).orElseThrow();
         assertThat(withdrawn.getStatus()).isEqualTo(MemberStatus.WITHDRAWN);
@@ -189,6 +196,7 @@ class MemberWithdrawalTransactionTest {
         assertThat(memberNotificationSettingRepository.findAll()).singleElement().satisfies(setting -> assertThat(setting.getMemberId()).isEqualTo(OTHER_MEMBER_ID));
         assertThat(memberConsentRepository.findAllByMemberId(MEMBER_ID)).as("동의 이력은 회원 파기(#244) 때 지운다").hasSize(1);
         assertThat(memberRepository.findById(OTHER_MEMBER_ID).orElseThrow().getStatus()).isEqualTo(MemberStatus.ACTIVE);
+        verifyNoInteractions(objectStorageClient);
     }
 
     @Test
@@ -206,7 +214,7 @@ class MemberWithdrawalTransactionTest {
     }
 
     @Test
-    @DisplayName("마지막 단계(알림 설정 삭제)가 실패하면 전부 롤백된다 — 회원은 ACTIVE · 원문 이메일 그대로, 파기 요청 · 관심 동네 · 설정도 그대로")
+    @DisplayName("마지막 단계(알림 설정 삭제)가 실패하면 전부 롤백된다 — 회원은 ACTIVE · 원문 이메일 그대로, 파기 요청 · 관심 동네 · 설정 · 프로필 이미지 오브젝트도 그대로")
     void failureInLastStepRollsBackEverything() {
         givenMember(MEMBER_ID, EMAIL);
         givenMemberData(MEMBER_ID);
@@ -223,6 +231,8 @@ class MemberWithdrawalTransactionTest {
         assertThat(reportPurgeRequestRepository.count()).isZero();
         assertThat(memberInterestRegionRepository.count()).isEqualTo(2);
         assertThat(memberNotificationSettingRepository.count()).isEqualTo(1);
+        assertThat(member.getProfileImageKey()).isEqualTo("profile/" + MEMBER_ID + ".png");
+        verifyNoInteractions(objectStorageClient);
     }
 
     @Test

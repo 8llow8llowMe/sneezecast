@@ -2,6 +2,7 @@ package com.sneezecast.domainlayer.member.application.service;
 
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberConsentStatusResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberProfileImageResponse;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.info.MemberConsentStatusInfo;
 import com.sneezecast.domainlayer.member.application.port.in.MemberConsentWithdrawResult;
@@ -16,15 +17,22 @@ import com.sneezecast.domainlayer.member.application.service.processor.MemberQue
 import com.sneezecast.domainlayer.member.application.service.processor.MemberWithdrawalProcessor;
 import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
 import com.sneezecast.domainlayer.member.domain.model.Member;
+import com.sneezecast.storage.client.ObjectStorageClient;
+import com.sneezecast.storage.model.FileUploadCommand;
+import com.sneezecast.storage.model.StorageDomain;
+import com.sneezecast.storage.model.StoredObject;
 import java.time.Instant;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.HeuristicCompletionException;
+import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 내 정보 · 비밀번호 변경 · 동의(재동의 · 건강정보 동의 · 철회) · 탈퇴 오케스트레이션. 카카오로만 로그인하는 회원은 비밀번호가 없고 따로 정하지도 않는다(#61 — 설정 API 를 두지 않는다).
+ * 내 정보 · 프로필 이미지 · 비밀번호 변경 · 동의(재동의 · 건강정보 동의 · 철회) · 탈퇴 오케스트레이션. 카카오로만 로그인하는 회원은 비밀번호가 없고 따로 정하지도 않는다(#61 — 설정 API 를 두지 않는다).
  *
  * <p>내 정보 조회 · 수정은 DB 만 쓰므로 Facade 에 트랜잭션을 건다. 비밀번호 변경은 BCrypt(CPU)와 세션 저장소(Redis) 왕복이 섞여 Facade 에
  * 걸지 않고, DB 쓰기만 {@link MemberCommandProcessor#changePassword} 로 좁힌다 (architecture-guide §3-1).
@@ -43,12 +51,60 @@ public class MemberWebFacade implements MemberWebUseCase {
     private final MemberSessionRevokePort memberSessionRevokePort;
     private final PasswordEncoder passwordEncoder;
     private final MemberPresenter memberPresenter;
+    private final ObjectStorageClient objectStorageClient;
 
     @Override
     @Transactional(readOnly = true)
     public MemberMyInfoResponse getMyInfo(long memberId) {
         Member member = memberQueryProcessor.getActiveMember(memberId);
         return memberPresenter.toMyInfoResponse(memberQueryProcessor.getMyInfo(member));
+    }
+
+    /**
+     * 상태 확인 → 업로드(원격 I/O, 트랜잭션 밖) → key 연결(DB 트랜잭션, 커밋) → 쓰던 이미지 삭제. 오브젝트 스토리지를 기다리는 동안 커넥션을 잡지 않게
+     * Facade 에는 트랜잭션을 걸지 않고 DB 구간만 {@link MemberCommandProcessor#changeProfileImage} 로 좁힌다 (architecture-guide §3-1).
+     *
+     * <ul>
+     *   <li>업로드 전에 회원 상태를 본다 — 탈퇴 · 정지 회원의 남은 access 로 오브젝트를 올리지 않는다. 연결 트랜잭션이 잠금 읽기로 한 번 더 본다.</li>
+     *   <li>업로드가 실패하면(형식 · 크기 · 저장소 장애) DB 는 그대로다.</li>
+     *   <li>연결이 실패하면 같은 예외를 다시 던진다. 실패가 확정이면(그사이 탈퇴 · 검증 · 롤백) 방금 올린 오브젝트를 지우고, 커밋 단계 예외라 커밋 결과를 알 수
+     *       없으면 지우지 않는다({@link #commitOutcomeUnknown}).</li>
+     *   <li>쓰던 이미지는 연결이 커밋된 뒤에 지운다 — 먼저 지우고 연결이 롤백되면 회원이 깨진 이미지를 가리킨다. 지우기 실패는 로그만 남긴다.</li>
+     * </ul>
+     */
+    @Override
+    public MemberProfileImageResponse changeProfileImage(long memberId, FileUploadCommand image) {
+        memberQueryProcessor.getActiveMember(memberId);
+        StoredObject stored = objectStorageClient.uploadImage(StorageDomain.MEMBER_PROFILE, memberId, image);
+        Optional<String> previousKey;
+        try {
+            previousKey = memberCommandProcessor.changeProfileImage(memberId, stored.objectKey());
+        } catch (RuntimeException exception) {
+            if (commitOutcomeUnknown(exception)) {
+                log.warn("profile image link commit outcome unknown, uploaded object kept memberId={} reason={}", memberId,
+                    exception.getClass().getSimpleName());
+            } else {
+                objectStorageClient.deleteQuietly(stored.objectKey());
+            }
+            throw exception;
+        }
+        previousKey.ifPresent(objectStorageClient::deleteQuietly);
+        return memberPresenter.toProfileImageResponse(stored.publicUrl());
+    }
+
+    /**
+     * 커밋 단계에서 난 예외라 DB 에 key 가 남았는지 알 수 없는가. 커밋이 실제로는 반영됐는데 오브젝트를 지우면 회원이 없는 이미지를 가리키므로 이때는 남긴다 —
+     * 정말 고아라면 고아 이미지 정리(#278 — 아직 없다)가 DB 참조를 확인한 뒤 회수한다. 그 밖의 예외(회원 상태 · 쓰기 실패 · 롤백 확정
+     * {@code UnexpectedRollbackException})는 key 가 반영되지 않은 것이 확정이라 바로 지운다.
+     */
+    private static boolean commitOutcomeUnknown(RuntimeException exception) {
+        return exception instanceof TransactionSystemException || exception instanceof HeuristicCompletionException;
+    }
+
+    /** key · URL 비우기(DB 트랜잭션, 커밋) → 쓰던 이미지 삭제. 이미지가 없었으면 지울 것도 없다(멱등). 트랜잭션 경계는 업로드와 같다. */
+    @Override
+    public void removeProfileImage(long memberId) {
+        memberCommandProcessor.removeProfileImage(memberId).ifPresent(objectStorageClient::deleteQuietly);
     }
 
     /** 상태 확인 → 조회한 엔티티의 닉네임을 바꿔 변경 감지로 저장 → 바뀐 내 정보. */
@@ -117,10 +173,13 @@ public class MemberWebFacade implements MemberWebUseCase {
      *       파기 요청의 완료 경계(요청 시각 + access 수명 + 여유) 뒤의 2차 파기가 지운다(entity-design §1-5). region 쓰기(관심 동네 추가 등)는 회원 상태를
      *       보지 않아 막지 못하고, 남은 행은 회원 파기(#244)가 지운다.</li>
      * </ul>
+     *
+     * <p>로그아웃 뒤에 업로드했던 프로필 이미지 오브젝트를 지운다 — 커밋(처리기 반환) 뒤라 DB 커넥션을 잡지 않고, 롤백이면 처리기가 예외로 빠져 여기까지 오지
+     * 않는다. 삭제는 실패해도 예외를 내지 않는다({@code deleteQuietly}) — 남은 오브젝트는 고아 이미지 정리(#278 — 아직 없다)가 회수한다.
      */
     @Override
     public void withdraw(long memberId, String accessTokenId, Instant accessExpiresAt) {
-        memberWithdrawalProcessor.withdraw(memberId);
+        Optional<String> profileImageKey = memberWithdrawalProcessor.withdraw(memberId);
         try {
             memberSessionRevokePort.revokeAllSessions(memberId, accessTokenId, accessExpiresAt);
         } catch (MemberException exception) {
@@ -128,6 +187,7 @@ public class MemberWebFacade implements MemberWebUseCase {
         } catch (RuntimeException exception) {
             log.error("member withdrawal post-commit session revoke failed, tolerated memberId={} reason={}", memberId, exception.getClass().getSimpleName());
         }
+        profileImageKey.ifPresent(objectStorageClient::deleteQuietly);
     }
 
     private MemberConsentStatusResponse consentStatus(long memberId) {
