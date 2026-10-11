@@ -129,7 +129,6 @@ export function toHomeWeekly(
     participants: district.participantCount,
     publicThreshold: week.publicThreshold,
     notice: publishedNotice(district),
-    official: null,
   }
   if (status === 'insufficient') {
     return { ...common, status, summary: AGGREGATE_SUMMARY.insufficient }

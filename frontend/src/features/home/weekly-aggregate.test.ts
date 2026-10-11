@@ -138,10 +138,6 @@ describe('toHomeWeekly — 수치가 있는 동네', () => {
     })
   })
 
-  it('공식 정보 요약은 응답에 없어 null 이다', () => {
-    expect(toHomeWeekly(WEEK, HIGH, NOW).official).toBeNull()
-  })
-
   it('수치 단계인데 수치 키가 없으면 던진다 — 지어낸 값으로 채우지 않는다', () => {
     const missing = { ...HIGH }
     delete missing.symptomRate

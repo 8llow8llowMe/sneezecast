@@ -3,9 +3,6 @@ import Link from 'next/link'
 import { Badge } from '@/components/badge'
 import { ChevronRightIcon } from '@/components/icons'
 import { ListRow } from '@/components/list-row'
-import { Section } from '@/components/section'
-
-import type { OfficialSummary } from './types'
 
 /**
  * 질병관리청 공식 정보. **시민 자가보고와 한 UI 요소에 섞지 않는다** — 상태 카드와 떨어진 자리에
@@ -16,72 +13,47 @@ import type { OfficialSummary } from './types'
 const OFFICIAL_PATH = '/official'
 
 /**
- * 요약이 없을 때(실데이터 — 공식 정보 연동 #253 전) 행의 글자. 발표 단계 · 감염병을 지어내지 않고 출처와 갈 곳만 밝힌다
+ * 목데이터 홈에서 공식 정보 화면을 열 때 고르는 목 상태. 공식 정보 화면의 목 기본값은 `받은 자료 없음`이라, 수치가 있는 예시 응답
+ * (`?mock=published`)으로 이어 목 홈에서도 공식 정보 예시를 볼 수 있게 한다. 실데이터는 목 상태를 붙이지 않는다
  */
-const OFFICIAL_ROW_FALLBACK = {
-  headline: '질병관리청 공식 정보',
-  sourceLine: '감염병 발생 현황 · 시민 자가보고와 따로 봐요',
-}
+const OFFICIAL_MOCK_PATH = `${OFFICIAL_PATH}?mock=published`
 
 /**
  * 공식 정보 이동 행 (모바일은 띠 사이, 태블릿 · 데스크톱은 헤더 아래). S08 공식 정보 화면(`/official`)으로 간다.
+ * 발표 단계 · 감염병 요약은 두지 않는다 — 공식 정보 화면이 질병관리청 표본감시 수치를 그대로 보이고 단계를 매기지 않아,
+ * 홈은 출처와 갈 곳만 밝힌다. 목 · 실데이터가 같은 모양이다.
  * `navSearch`(둘러보기 동네 `region=<코드>`)는 메뉴 링크처럼 뒤에 붙여 공식 정보 화면에서도 동네를 잃지 않게 한다.
- * 요약이 없으면(`null`, 실데이터) 단계 없이 `질병관리청 공식 정보` 로 가는 행만 그린다.
  */
 export function OfficialRow({
-  official,
   navSearch,
+  mock = false,
 }: {
-  official: OfficialSummary | null
   navSearch?: string | undefined
+  /** 목데이터 홈이면 공식 정보 목 예시(`?mock=published`)로 잇는다 */
+  mock?: boolean
 }) {
-  const text = official ?? OFFICIAL_ROW_FALLBACK
   return (
     <Link
-      href={officialHref(official, navSearch)}
+      href={officialHref(navSearch, mock)}
       className="block bg-bg px-page-mobile tablet:px-page-tablet desktop:px-page-desktop"
     >
       <ListRow
         kind="link"
         leading={<Badge kind="official" />}
-        title={text.headline}
-        description={text.sourceLine}
+        title="질병관리청 공식 정보"
+        description="감염병 발생 현황 · 시민 자가보고와 따로 봐요"
         trailing={<ChevronRightIcon className="shrink-0 text-fg-muted" />}
       />
     </Link>
   )
 }
 
-/** 공식 정보 요약 섹션 (태블릿 2열 격자의 한 칸) */
-export function OfficialPanel({ official }: { official: OfficialSummary }) {
-  return (
-    <Section title="공식 정보" layout="panel">
-      <dl className="flex flex-col">
-        <OfficialItem term={official.disease} detail={official.stage} />
-        <OfficialItem term="기준" detail={official.basis} />
-      </dl>
-      <p className="pt-2.5 text-caption leading-normal text-fg-sub">
-        의료기관 표본감시 자료라 시민 자가보고와 조사 대상·지역 단위·발표 시점이 달라요
-      </p>
-    </Section>
-  )
-}
-
 /**
- * 공식 정보 화면 주소. 홈의 두 진입점(공식 정보 행 · 동네 안내의 `공식 예방수칙 보기`)이 같은 주소를 쓴다.
+ * 공식 정보 화면 주소. 홈의 두 진입점(공식 정보 행 · 동네 안내의 `질병관리청 공식 정보 보기`)이 같은 주소를 쓴다.
  * `navSearch` 는 주소 뒤에 붙이고, 주소에 이미 쿼리가 있으면(목 `?mock=`) `&` 로 잇는다
  */
-export function officialHref(official: OfficialSummary | null, navSearch?: string): string {
-  const href = official?.href ?? OFFICIAL_PATH
+export function officialHref(navSearch?: string, mock = false): string {
+  const href = mock ? OFFICIAL_MOCK_PATH : OFFICIAL_PATH
   if (!navSearch) return href
   return `${href}${href.includes('?') ? '&' : '?'}${navSearch}`
-}
-
-function OfficialItem({ term, detail }: { term: string; detail: string }) {
-  return (
-    <div className="flex min-h-13 items-center justify-between border-b border-divider">
-      <dt className="text-body text-fg">{term}</dt>
-      <dd className="text-sub font-medium text-fg-sub">{detail}</dd>
-    </div>
-  )
 }

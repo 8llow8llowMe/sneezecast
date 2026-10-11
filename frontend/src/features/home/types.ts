@@ -25,11 +25,6 @@ type HomeCommon = {
   /** 수치를 공개하는 참여 기준. 백엔드가 내려 준다 (시범 운영 초기값 100명) */
   publicThreshold: number
   notice: PublishedNotice | null
-  /**
-   * 질병관리청 공식 정보 요약. **실데이터는 null** 이다 — 집계 API 에 없고 공식 정보 연동(#253) 전이라, 홈은 단계 · 요약 없이
-   * 공식 정보 화면으로 가는 행만 그린다(`official.tsx`). 목데이터는 시안 예시 요약이다
-   */
-  official: OfficialSummary | null
 }
 
 export type MeasuredWeek = {
@@ -96,21 +91,4 @@ export type PublishedNotice = {
   items?: string[]
   /** 근거. 예: "질병관리청 예방수칙" */
   source?: string
-}
-
-/**
- * 질병관리청 공식 정보 요약. 시민 자가보고와 **한 UI 요소에 섞지 않는다** — 화면에서 항상 따로 그린다.
- */
-export type OfficialSummary = {
-  /** 예: "전국 인플루엔자 유행주의보" */
-  headline: string
-  /** 예: "질병관리청 · 전국 · 주간 발표 기준" */
-  sourceLine: string
-  /** 예: "인플루엔자" */
-  disease: string
-  /** 예: "유행주의보 · 전국" */
-  stage: string
-  /** 예: "질병관리청 주간 표본감시" */
-  basis: string
-  href: string
 }

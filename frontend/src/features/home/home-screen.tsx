@@ -33,7 +33,7 @@ import {
 } from './home-sheets'
 import { MapPlaceholder } from './map-placeholder'
 import { NoticeSection } from './notice-section'
-import { officialHref, OfficialPanel, OfficialRow } from './official'
+import { officialHref, OfficialRow } from './official'
 import { HOME_TOP_NOTICE_CLASS, PushInappNotice } from './push-inapp-notice'
 import {
   guardReportEntry,
@@ -117,7 +117,8 @@ export function HomeScreen({
   const loaded = data ?? (live?.status === 'ready' ? live.week : null)
   // 집계를 그릴 수 없는 동안의 안내(실데이터)
   const pending = loaded === null && live !== null && live.status !== 'ready' ? live : null
-  const official = loaded?.official ?? null
+  // 목데이터(서버 페이지가 `week` 를 넘김)면 공식 정보 행이 공식 정보 목 예시로 잇는다
+  const mockData = data !== null
   // 보이는 동네: 둘러보기 동네가 있으면 그 동네, 없으면 내 동네. 보고는 늘 내 동네다(모르면 보이는 동네 그대로)
   const baseName = loaded?.regionName ?? regionName
   const shownName = regionCode || !memberRegion ? baseName : memberRegion.name
@@ -239,7 +240,7 @@ export function HomeScreen({
       )}
 
       <div className="hidden border-b border-divider tablet:block tablet:border-t desktop:border-t-0">
-        <OfficialRow official={official} navSearch={navSearch} />
+        <OfficialRow navSearch={navSearch} mock={mockData} />
       </div>
 
       {/* 오프라인 띠가 알림 대체 안내보다 위다. 띠의 live 영역은 온라인일 때도 빈 채로 그려 두고, 여백은 띠 상자에만 붙는다 */}
@@ -269,7 +270,7 @@ export function HomeScreen({
 
           <SectionBand className="tablet:hidden" />
           <div className="tablet:hidden">
-            <OfficialRow official={official} navSearch={navSearch} />
+            <OfficialRow navSearch={navSearch} mock={mockData} />
           </div>
 
           {week && (
@@ -282,17 +283,10 @@ export function HomeScreen({
 
               <NoticeSection
                 notice={week.notice}
-                officialHref={officialHref(official, navSearch)}
+                officialHref={officialHref(navSearch, mockData)}
                 navSearch={navSearch}
               />
             </>
-          )}
-
-          {/* 공식 정보 요약은 목에만 있다(실데이터는 공식 정보 연동 #253 전이라 행만) */}
-          {official && (
-            <div className="hidden tablet:block desktop:hidden">
-              <OfficialPanel official={official} />
-            </div>
           )}
         </div>
 
