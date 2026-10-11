@@ -64,8 +64,8 @@ public class ObjectStorageClient {
                 .contentType(imageFileType.contentType())
                 .build());
         } catch (Exception exception) {
-            log.error("파일 업로드에 실패했습니다. domain={} memberId={} originalFilename={}",
-                domain, memberId, command.originalFilename(), exception);
+            // 원본 파일명은 남기지 않는다 — 사용자가 정한 문자열이라 이름 등 식별정보가 들어갈 수 있다(coding-conventions §10). 회원은 가명 ID(memberId)로만 남긴다.
+            log.error("object upload failed domain={} memberId={} size={}", domain, memberId, content.length, exception);
             throw new StorageException(StorageErrorCode.FILE_UPLOAD_FAILED, exception);
         }
 
@@ -78,7 +78,7 @@ public class ObjectStorageClient {
      * 객체를 삭제한다. 실패해도 예외를 던지지 않는다.
      *
      * <p>삭제 실패로 본 요청(회원 프로필 수정 등)을 되돌리는 것은 사용자에게 손해다.
-     * 남은 객체는 고아 정리 배치가 회수한다.
+     * 남은 객체는 고아 이미지 정리 스케줄러가 회수한다(#278 — 아직 없다).
      */
     public void deleteQuietly(String objectKey) {
         if (objectKey == null || objectKey.isBlank()) {

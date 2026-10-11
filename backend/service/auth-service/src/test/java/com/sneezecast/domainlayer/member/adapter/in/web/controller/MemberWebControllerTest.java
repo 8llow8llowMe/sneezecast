@@ -1,5 +1,6 @@
 package com.sneezecast.domainlayer.member.adapter.in.web.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
@@ -14,6 +15,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -22,8 +24,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberConsentStatusResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberProfileImageResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.exception.MemberExceptionHandler;
 import com.sneezecast.domainlayer.member.adapter.in.web.exception.MemberRequestExceptionHandler;
+import com.sneezecast.domainlayer.member.adapter.in.web.exception.MemberStorageExceptionHandler;
 import com.sneezecast.domainlayer.member.application.exception.MemberErrorCode;
 import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.port.in.MemberConsentWithdrawResult;
@@ -32,13 +36,18 @@ import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
 import com.sneezecast.security.common.dto.MemberLoginActive;
 import com.sneezecast.security.common.enums.SecurityRole;
 import com.sneezecast.security.common.jwt.JwtAuthentication;
+import com.sneezecast.storage.exception.StorageErrorCode;
+import com.sneezecast.storage.exception.StorageException;
+import com.sneezecast.storage.model.FileUploadCommand;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
@@ -61,7 +70,7 @@ class MemberWebControllerTest {
     void setUp() {
         memberWebUseCase = mock(MemberWebUseCase.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new MemberWebController(memberWebUseCase))
-            .setControllerAdvice(new MemberRequestExceptionHandler(), new MemberExceptionHandler())
+            .setControllerAdvice(new MemberRequestExceptionHandler(), new MemberStorageExceptionHandler(), new MemberExceptionHandler())
             .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
             .build();
         MemberLoginActive principal = MemberLoginActive.builder().memberId(42L).role(SecurityRole.USER).tokenId("access-jti").sessionId(SESSION_ID)
@@ -89,6 +98,67 @@ class MemberWebControllerTest {
             .andExpect(jsonPath("$.dataBody.role").value("USER"))
             .andExpect(jsonPath("$.dataBody.pendingConsents[0]").value("PRIVACY_POLICY"))
             .andExpect(jsonPath("$.dataBody.reportWritable").value(false));
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 업로드는 multipart 파트 imageFile 의 내용 · 파일명을 유스케이스에 넘기고 공개 URL 을 돌려준다")
+    void changeProfileImage() throws Exception {
+        byte[] content = {(byte) 0x89, 'P', 'N', 'G'};
+        when(memberWebUseCase.changeProfileImage(eq(42L), any())).thenReturn(new MemberProfileImageResponse("https://minio.example.com/sneezecast/k.png"));
+
+        mockMvc.perform(multipart("/api/v1/members/me/profile-image").file(new MockMultipartFile("imageFile", "me.png", "image/png", content)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataHeader.success").value(true))
+            .andExpect(jsonPath("$.dataBody.profileImageUrl").value("https://minio.example.com/sneezecast/k.png"));
+
+        ArgumentCaptor<FileUploadCommand> command = ArgumentCaptor.forClass(FileUploadCommand.class);
+        verify(memberWebUseCase).changeProfileImage(eq(42L), command.capture());
+        assertThat(command.getValue().content()).isEqualTo(content);
+        assertThat(command.getValue().originalFilename()).isEqualTo("me.png");
+    }
+
+    @Test
+    @DisplayName("파트가 없거나 빈 파일이면 유스케이스를 부르지 않고 400 STORAGE_001 봉투다")
+    void missingOrEmptyProfileImageIsStorage001() throws Exception {
+        mockMvc.perform(multipart("/api/v1/members/me/profile-image"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("STORAGE_001"));
+        mockMvc.perform(multipart("/api/v1/members/me/profile-image").file(new MockMultipartFile("imageFile", "me.png", "image/png", new byte[0])))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("STORAGE_001"));
+        mockMvc.perform(multipart("/api/v1/members/me/profile-image").file(new MockMultipartFile("file", "me.png", "image/png", new byte[] {1})))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("STORAGE_001"));
+
+        verifyNoInteractions(memberWebUseCase);
+    }
+
+    @Test
+    @DisplayName("스토리지 예외는 STORAGE 봉투다 — 형식 400 STORAGE_003 · 저장소 장애 500 STORAGE_004")
+    void storageErrorsAreEnveloped() throws Exception {
+        when(memberWebUseCase.changeProfileImage(eq(42L), any()))
+            .thenThrow(new StorageException(StorageErrorCode.UNSUPPORTED_FILE_TYPE))
+            .thenThrow(new StorageException(StorageErrorCode.FILE_UPLOAD_FAILED));
+        MockMultipartFile file = new MockMultipartFile("imageFile", "me.png", "image/png", new byte[] {1});
+
+        mockMvc.perform(multipart("/api/v1/members/me/profile-image").file(file))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.dataHeader.success").value(false))
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("STORAGE_003"));
+        mockMvc.perform(multipart("/api/v1/members/me/profile-image").file(file))
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("STORAGE_004"));
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 삭제는 주체의 회원 ID 로 지우고 200 · dataBody null 이다")
+    void removeProfileImage() throws Exception {
+        mockMvc.perform(delete("/api/v1/members/me/profile-image"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataHeader.success").value(true))
+            .andExpect(jsonPath("$.dataBody").value(nullValue()));
+
+        verify(memberWebUseCase).removeProfileImage(42L);
     }
 
     @Test

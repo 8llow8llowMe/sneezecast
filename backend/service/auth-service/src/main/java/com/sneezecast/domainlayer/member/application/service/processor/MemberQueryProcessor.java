@@ -7,6 +7,7 @@ import com.sneezecast.domainlayer.member.application.info.MemberMyInfo;
 import com.sneezecast.domainlayer.member.application.port.out.MemberReportScopePort;
 import com.sneezecast.domainlayer.member.application.port.out.MemberRepositoryPort;
 import com.sneezecast.domainlayer.member.domain.model.Member;
+import com.sneezecast.storage.client.ObjectStorageClient;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ public class MemberQueryProcessor {
     private final MemberRepositoryPort memberRepositoryPort;
     private final MemberConsentProcessor memberConsentProcessor;
     private final MemberReportScopePort memberReportScopePort;
+    private final ObjectStorageClient objectStorageClient;
 
     /**
      * 인증 주체의 회원을 돌려준다. 행이 없으면(파기됨) {@code MEMBER_NOT_FOUND}, 탈퇴 · 정지면 상태별 코드(MEMBER_002 · 003)다 — 남은 access(15분
@@ -60,11 +62,23 @@ public class MemberQueryProcessor {
             .memberId(member.id())
             .email(member.email())
             .nickname(member.nickname())
+            .profileImageUrl(profileImageUrl(member))
             .provider(member.provider())
             .hasPassword(member.password() != null)
             .role(member.role())
             .pendingConsents(consentStatus.pendingRequiredConsents())
             .reportWritable(memberReportScopePort.isReportWritable(consentStatus))
             .build();
+    }
+
+    /**
+     * 표시할 프로필 이미지 주소 — 업로드한 오브젝트 키가 있으면 그 공개 URL(키만 저장하고 응답 때 조립한다), 없으면 소셜 제공자가 준 URL, 둘 다 없으면 null.
+     * 공개 URL 조립은 문자열 결합이라 원격 I/O 가 없다.
+     */
+    private String profileImageUrl(Member member) {
+        if (member.profileImageKey() != null) {
+            return objectStorageClient.toPublicUrl(member.profileImageKey());
+        }
+        return member.profileImageUrl();
     }
 }

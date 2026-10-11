@@ -105,6 +105,15 @@ public class MemberEntity extends BaseEntity {
     }
 
     /**
+     * 조회한 엔티티의 프로필 이미지를 직접 업로드한 오브젝트 키로 바꾼다 — 트랜잭션 안에서 변경 감지로 UPDATE 된다. key 와 소셜 URL 은 배타적이라 URL 은 늘
+     * 비운다. key 가 null 이면 프로필 이미지를 지운 상태가 된다.
+     */
+    public void changeProfileImage(String profileImageKey) {
+        this.profileImageKey = profileImageKey;
+        this.profileImageUrl = null;
+    }
+
+    /**
      * 조회한 엔티티를 탈퇴 상태로 바꾼다 — 트랜잭션 안에서 변경 감지로 UPDATE 된다 (entity-design §1-1). 이메일 원문은 다이제스트로 바꾸고 비밀번호 ·
      * 소셜 제공자 · 프로필 이미지를 비우며, 닉네임(not null)은 고정 마스킹 값으로 바꾼다. 행은 보고 파기가 끝날 때까지 남는다(회원 파기는 #244).
      *

@@ -8,6 +8,7 @@ import com.sneezecast.domainlayer.member.application.port.out.MemberRepositoryPo
 import com.sneezecast.domainlayer.member.application.service.support.WithdrawnEmailHasher;
 import com.sneezecast.domainlayer.member.domain.model.Member;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,17 +41,19 @@ public class MemberWithdrawalProcessor {
      *   <li><b>회원 행을 쓰기 잠금으로 읽고 상태를 본다.</b> 같은 회원의 탈퇴 두 건이 겹치면 뒤 요청은 앞 트랜잭션이 끝날 때까지 기다렸다가 WITHDRAWN 을
      *       보고 {@code MEMBER_002} 로 끝난다 — 회원 행 갱신 · 파기 요청이 두 번 생기지 않는다.</li>
      *   <li>회원 행: 이메일 원문 → 다이제스트(회원 ID 를 섞은 HMAC — {@link WithdrawnEmailHasher}), 비밀번호 · 소셜 제공자 · 프로필 이미지 → null, 닉네임 →
-     *       {@link #WITHDRAWN_NICKNAME}, 상태 WITHDRAWN, 탈퇴 시각. 원문 이메일이 사라져 같은 이메일로 바로 다시 가입할 수 있다. 업로드한 프로필 이미지
-     *       오브젝트는 여기서 지우지 않는다(트랜잭션 안에서 외부 저장소를 기다리지 않는다 — 고아 이미지 정리 #112 가 맡는다).</li>
+     *       {@link #WITHDRAWN_NICKNAME}, 상태 WITHDRAWN, 탈퇴 시각. 원문 이메일이 사라져 같은 이메일로 바로 다시 가입할 수 있다.</li>
+     *   <li>업로드한 프로필 이미지 오브젝트는 여기서 지우지 않고 잠금 읽기로 본 key 를 돌려준다 — 호출자(Facade)가 이 메서드가 돌아온 뒤(커밋 뒤, 커넥션을
+     *       돌려준 뒤) 지운다. 롤백이면 예외로 빠져 key 를 받지 못하므로 지우지 않는다.</li>
      *   <li>파기 요청은 사유를 보는 판정이라 철회 파기가 미완료로 남아 있어도 {@code WITHDRAWAL} 행이 생긴다. 요청 시각은 탈퇴 시각과 같다.</li>
      *   <li>관심 동네 · 알림 설정은 지금 지운다(탈퇴한 회원에게 쓸 데가 없다). 동의 이력 · 내 동네는 남기고 회원 파기(#244) 때 지운다 — 동의 이력은 파기 전까지의
      *       증빙이다.</li>
      * </ul>
      *
+     * @return 탈퇴 전에 쓰던 업로드 프로필 이미지 오브젝트 키. 없었으면 empty — 호출자가 커밋 뒤에 지운다
      * @throws MemberException 회원 행이 없으면 {@code MEMBER_NOT_FOUND}(404), 이미 탈퇴 {@code WITHDRAWN_MEMBER}(403) · 정지 {@code SUSPENDED_MEMBER}(403)
      */
     @Transactional
-    public void withdraw(long memberId) {
+    public Optional<String> withdraw(long memberId) {
         Member member = memberQueryProcessor.getActiveMemberForUpdate(memberId);
         LocalDateTime withdrawnAt = LocalDateTime.now();
         memberRepositoryPort.withdraw(memberId, withdrawnEmailHasher.hash(memberId, member.email()), WITHDRAWN_NICKNAME, withdrawnAt)
@@ -58,5 +61,6 @@ public class MemberWithdrawalProcessor {
         reportPurgeRequestProcessor.requestWithdrawalIfAbsent(memberId, withdrawnAt);
         memberRegionCleanupPort.deleteInterestRegions(memberId);
         memberNotificationSettingRepositoryPort.deleteByMemberId(memberId);
+        return Optional.ofNullable(member.profileImageKey());
     }
 }

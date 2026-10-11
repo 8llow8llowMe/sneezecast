@@ -23,6 +23,7 @@ import com.sneezecast.domainlayer.member.domain.enums.MemberStatus;
 import com.sneezecast.domainlayer.member.domain.model.Member;
 import com.sneezecast.global.properties.WithdrawnEmailProperties;
 import com.sneezecast.security.common.enums.SecurityRole;
+import com.sneezecast.storage.client.ObjectStorageClient;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,7 @@ class MemberWithdrawalProcessorTest {
     private ReportPurgeRequestProcessor reportPurgeRequestProcessor;
     private MemberRegionCleanupPort memberRegionCleanupPort;
     private MemberNotificationSettingRepositoryPort notificationSettingPort;
+    private ObjectStorageClient objectStorageClient;
     private MemberWithdrawalProcessor processor;
 
     @BeforeEach
@@ -52,9 +54,24 @@ class MemberWithdrawalProcessorTest {
         reportPurgeRequestProcessor = mock(ReportPurgeRequestProcessor.class);
         memberRegionCleanupPort = mock(MemberRegionCleanupPort.class);
         notificationSettingPort = mock(MemberNotificationSettingRepositoryPort.class);
-        MemberQueryProcessor queryProcessor = new MemberQueryProcessor(memberRepositoryPort, mock(MemberConsentProcessor.class), status -> true);
+        objectStorageClient = mock(ObjectStorageClient.class);
+        MemberQueryProcessor queryProcessor = new MemberQueryProcessor(memberRepositoryPort, mock(MemberConsentProcessor.class), status -> true, objectStorageClient);
         processor = new MemberWithdrawalProcessor(queryProcessor, memberRepositoryPort, hasher, reportPurgeRequestProcessor, memberRegionCleanupPort,
             notificationSettingPort);
+    }
+
+    @Test
+    @DisplayName("업로드한 프로필 이미지가 있으면 잠금 읽기로 본 key 를 돌려주고 지우지는 않는다 — 삭제는 커밋 뒤 Facade 몫이다. 없으면 empty")
+    void returnsProfileImageKeyWithoutDeleting() {
+        when(memberRepositoryPort.findByIdForUpdate(MEMBER_ID)).thenReturn(Optional.of(Member.builder().id(MEMBER_ID).email("user@example.com")
+            .nickname("재채기탐정").profileImageKey("members/profiles/42/2026/10/a.png").role(SecurityRole.USER).status(MemberStatus.ACTIVE).build()));
+        when(memberRepositoryPort.withdraw(anyLong(), anyString(), anyString(), any())).thenAnswer(invocation -> Optional.of(member(MemberStatus.WITHDRAWN)));
+
+        assertThat(processor.withdraw(MEMBER_ID)).contains("members/profiles/42/2026/10/a.png");
+        verifyNoInteractions(objectStorageClient);
+
+        givenLockedMember(MemberStatus.ACTIVE);
+        assertThat(processor.withdraw(MEMBER_ID)).isEmpty();
     }
 
     @Test

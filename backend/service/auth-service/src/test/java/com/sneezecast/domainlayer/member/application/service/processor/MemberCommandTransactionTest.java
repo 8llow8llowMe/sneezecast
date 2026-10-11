@@ -75,6 +75,36 @@ class MemberCommandTransactionTest {
     }
 
     @Test
+    @DisplayName("프로필 이미지 key 를 바꾸면 소셜 URL 은 비워지고 이전 key 가 돌아온다 — 지우면 둘 다 비고, 다시 지워도 이전 key 없이 성공한다(멱등)")
+    void changesAndRemovesProfileImage() {
+        memberRepositoryAdapter.save(member(42L, MemberStatus.ACTIVE, "https://k.kakaocdn.net/profile.jpg"));
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+
+        assertThat(processor.changeProfileImage(42L, "members/profiles/42/2026/10/a.png")).as("소셜 URL 만 있었으면 지울 key 가 없다").isEmpty();
+        assertThat(jdbc.queryForMap("select profile_image_key, profile_image_url from member where id = 42"))
+            .containsEntry("PROFILE_IMAGE_KEY", "members/profiles/42/2026/10/a.png").containsEntry("PROFILE_IMAGE_URL", null);
+
+        assertThat(processor.changeProfileImage(42L, "members/profiles/42/2026/10/b.png")).contains("members/profiles/42/2026/10/a.png");
+        assertThat(processor.removeProfileImage(42L)).contains("members/profiles/42/2026/10/b.png");
+        assertThat(jdbc.queryForMap("select profile_image_key, profile_image_url from member where id = 42"))
+            .containsEntry("PROFILE_IMAGE_KEY", null).containsEntry("PROFILE_IMAGE_URL", null);
+        assertThat(processor.removeProfileImage(42L)).isEmpty();
+        assertThat(jdbc.queryForObject("select count(*) from member", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("탈퇴한 회원의 프로필 이미지는 바꾸거나 지울 수 없다(MEMBER_002) — 잠금 읽기로 본 상태로 판정한다")
+    void withdrawnMemberCannotChangeProfileImage() {
+        memberRepositoryAdapter.save(member(42L, MemberStatus.WITHDRAWN, null));
+
+        assertThatThrownBy(() -> processor.changeProfileImage(42L, "members/profiles/42/2026/10/a.png"))
+            .isInstanceOfSatisfying(MemberException.class, e -> assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.WITHDRAWN_MEMBER));
+        assertThatThrownBy(() -> processor.removeProfileImage(42L))
+            .isInstanceOfSatisfying(MemberException.class, e -> assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.WITHDRAWN_MEMBER));
+        assertThat(new JdbcTemplate(dataSource).queryForObject("select profile_image_key from member where id = 42", String.class)).isNull();
+    }
+
+    @Test
     @DisplayName("행이 없으면 MEMBER_004 다")
     void missingMemberIsNotFound() {
         assertThatThrownBy(() -> processor.changeNickname(99L, "새닉네임"))
@@ -90,11 +120,17 @@ class MemberCommandTransactionTest {
 
         assertThatThrownBy(() -> memberRepositoryAdapter.updateNickname(42L, "새닉네임")).isInstanceOf(IllegalTransactionStateException.class);
         assertThatThrownBy(() -> memberRepositoryAdapter.updatePassword(42L, "$2a$10$newHash")).isInstanceOf(IllegalTransactionStateException.class);
+        assertThatThrownBy(() -> memberRepositoryAdapter.updateProfileImage(42L, "members/profiles/42/2026/10/a.png"))
+            .isInstanceOf(IllegalTransactionStateException.class);
         assertThat(new JdbcTemplate(dataSource).queryForObject("select nickname from member where id = 42", String.class)).isEqualTo("닉네임");
     }
 
     private static Member member(long id) {
-        return Member.builder().id(id).email("user@example.com").password("$2a$10$oldHash").nickname("닉네임").role(SecurityRole.USER)
-            .status(MemberStatus.ACTIVE).build();
+        return member(id, MemberStatus.ACTIVE, null);
+    }
+
+    private static Member member(long id, MemberStatus status, String profileImageUrl) {
+        return Member.builder().id(id).email("user@example.com").password("$2a$10$oldHash").nickname("닉네임").profileImageUrl(profileImageUrl)
+            .role(SecurityRole.USER).status(status).build();
     }
 }

@@ -6,11 +6,13 @@ import com.sneezecast.domainlayer.member.adapter.in.web.dto.request.MemberMyInfo
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.request.MemberPasswordChangeRequest;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberConsentStatusResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberProfileImageResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.support.MemberRefreshCookie;
 import com.sneezecast.domainlayer.member.application.port.in.MemberConsentWithdrawResult;
 import com.sneezecast.domainlayer.member.application.port.in.MemberWebUseCase;
 import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
 import com.sneezecast.security.common.dto.MemberLoginActive;
+import com.sneezecast.storage.support.MultipartFileSupport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -28,12 +30,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/members")
-@Tag(name = "회원", description = "내 정보 조회 · 수정, 비밀번호 변경, 동의 · 철회, 탈퇴 API")
+@Tag(name = "회원", description = "내 정보 조회 · 수정, 프로필 이미지, 비밀번호 변경, 동의 · 철회, 탈퇴 API")
 public class MemberWebController {
 
     private final MemberWebUseCase memberWebUseCase;
@@ -43,7 +47,8 @@ public class MemberWebController {
         비밀번호 로그인 가능 여부는 `hasPassword`), 비밀번호가 있는지(`hasPassword`), 역할.
         `hasPassword` 가 true 면 비밀번호 변경을 보여 주고, false 면(카카오로만 로그인하는 계정) 비밀번호 메뉴를 보여 주지 않습니다 — 카카오 회원은
         비밀번호가 필요 없습니다.
-        `pendingConsents` · `reportWritable` 은 로그인 · 재발급 응답과 같은 계산입니다. 내 동네 · 프로필 이미지는 아직 싣지 않습니다.
+        `pendingConsents` · `reportWritable` 은 로그인 · 재발급 응답과 같은 계산입니다. 내 동네는 싣지 않습니다(내 동네 API).
+        `profileImageUrl` 은 직접 올린 이미지의 공개 URL 이 소셜 제공자 URL 보다 앞서고, 둘 다 없으면 null 입니다.
 
         회원 행이 없으면 MEMBER_004(404), 탈퇴 MEMBER_002 · 정지 MEMBER_003(403).
 
@@ -70,6 +75,42 @@ public class MemberWebController {
     public ResponseEntity<Response<MemberMyInfoResponse>> updateMyInfo(@AuthenticationPrincipal MemberLoginActive loginActive,
         @Valid @RequestBody MemberMyInfoUpdateRequest request) {
         return ResponseEntity.ok(Response.success(memberWebUseCase.updateMyInfo(loginActive.memberId(), request.nickname())));
+    }
+
+    @Operation(summary = "프로필 이미지 업로드", description = """
+        프로필 이미지를 올리고 내 프로필 이미지로 정합니다. `multipart/form-data` 의 파트 `imageFile` 하나로 보냅니다.
+        형식은 jpg · png · gif · webp 이고 **파일 내용(매직 바이트)으로 판정합니다** — 확장자 · Content-Type 은 보지 않습니다. 크기는 5MiB 까지입니다.
+        응답은 `{profileImageUrl}` 이고 내 정보 조회의 `profileImageUrl` 과 같은 값입니다. 이전에 올린 이미지는 서버가 지우고, 카카오 프로필 URL 은 비웁니다.
+
+        파일 · 파트가 없거나 비었으면 STORAGE_001, 크기 초과 STORAGE_002, 지원하지 않는 형식 STORAGE_003(400), 저장소 장애 STORAGE_004(500).
+        5MiB 초과는 STORAGE_002 이지만, 요청 상한(6MB — nginx · 서블릿)을 넘으면 봉투 없는 413 이니 화면이 보내기 전에 5MiB 를 확인합니다.
+        회원 상태 오류는 내 정보 조회와 같습니다.
+
+        **인증 필요: Authorization 헤더. 필수: multipart 파트 imageFile.**
+
+        호출 예: `POST /api/v1/members/me/profile-image` (multipart, `imageFile=@profile.png`)""",
+        security = @SecurityRequirement(name = "bearerAuth"))
+    @PostMapping("/me/profile-image")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Response<MemberProfileImageResponse>> changeProfileImage(@AuthenticationPrincipal MemberLoginActive loginActive,
+        @Parameter(description = "[필수] 프로필 이미지 파일 (jpg · png · gif · webp, 5MiB 이하)") @RequestPart(value = "imageFile", required = false) MultipartFile imageFile) {
+        // 파트가 없을 때도 봉투 응답(STORAGE_001)이 나가게 required=false 로 받고 변환에서 거른다 — required 면 봉투 밖의 Spring 기본 400 이다.
+        return ResponseEntity.ok(Response.success(memberWebUseCase.changeProfileImage(loginActive.memberId(), MultipartFileSupport.toCommand(imageFile))));
+    }
+
+    @Operation(summary = "프로필 이미지 삭제", description = """
+        프로필 이미지를 지웁니다(직접 올린 이미지 · 카카오 프로필 URL 모두). 성공하면 `dataBody` 는 null 이고, 내 정보 조회의 `profileImageUrl` 이 null 이 됩니다.
+        **이미지가 없어도 200 입니다(멱등).** 회원 상태 오류는 내 정보 조회와 같습니다.
+
+        **인증 필요: Authorization 헤더.** 파라미터 · 본문은 없습니다.
+
+        호출 예: `DELETE /api/v1/members/me/profile-image`""",
+        security = @SecurityRequirement(name = "bearerAuth"))
+    @DeleteMapping("/me/profile-image")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Response<Void>> removeProfileImage(@AuthenticationPrincipal MemberLoginActive loginActive) {
+        memberWebUseCase.removeProfileImage(loginActive.memberId());
+        return ResponseEntity.ok(Response.success());
     }
 
     @Operation(summary = "비밀번호 변경", description = """

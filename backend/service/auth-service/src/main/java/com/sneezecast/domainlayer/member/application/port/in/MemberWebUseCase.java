@@ -2,12 +2,24 @@ package com.sneezecast.domainlayer.member.application.port.in;
 
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberConsentStatusResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberProfileImageResponse;
 import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
+import com.sneezecast.storage.model.FileUploadCommand;
 import java.time.Instant;
 
 public interface MemberWebUseCase {
 
     MemberMyInfoResponse getMyInfo(long memberId);
+
+    /**
+     * 프로필 이미지를 올리고 회원에 연결한다. 쓰던 업로드 이미지는 연결이 커밋된 뒤 지운다.
+     *
+     * @param image 어댑터 경계에서 {@code MultipartFile} 을 바꾼 업로드 자료 — 형식(매직 바이트) · 크기는 스토리지 클라이언트가 검증한다
+     */
+    MemberProfileImageResponse changeProfileImage(long memberId, FileUploadCommand image);
+
+    /** 프로필 이미지를 지운다(업로드 key · 소셜 URL 모두). 이미지가 없어도 성공한다(멱등). */
+    void removeProfileImage(long memberId);
 
     /** @param nickname 검증을 통과한 닉네임(앞뒤 공백은 여기서 지운다) */
     MemberMyInfoResponse updateMyInfo(long memberId, String nickname);
