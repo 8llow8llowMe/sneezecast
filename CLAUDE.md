@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `backend/` | Spring Cloud MSA + Hexagonal | [`backend/CLAUDE.md`](backend/CLAUDE.md) (빌드 · 테스트 명령 포함) |
 | `frontend/` | 모바일 웹(PWA) · 화면 설계 | [`frontend/CLAUDE.md`](frontend/CLAUDE.md) (시안 · 디자인 규칙 · 명령 포함) |
 
-**CI**: `backend/**` 를 바꾼 PR 과 develop 푸시에서 `backend-ci` 가 전 모듈 `./gradlew check` 를 돌리고 실행된 테스트 건수를 요약에 남긴다. `frontend/**` 를 바꾼 PR 과 develop 푸시에서 `frontend-ci` 가 `qa:verify` 와 같은 검사(format:check → lint → typecheck → test → build)를 돌린다. 문서만 바뀌면 format:check 만 돈다(`scripts/classify-frontend-changes.sh`). `label` 워크플로가 변경 경로로 PR 라벨(배포 대상)을 붙인다(`.github/labeler.yml`, dependabot PR 은 제외). dependabot 이 매주 월요일 프론트엔드 의존성 갱신 PR 을 묶어 올린다. 브랜치 보호가 걸려 있지 않으므로 **`backend-ci` · `frontend-ci` 가 빨간불인 PR 은 머지하지 않는다.**
+**CI**: `backend/**` 를 바꾼 PR 과 develop 푸시에서 `backend-ci` 가 전 모듈 `./gradlew check` 를 돌리고 실행된 테스트 건수를 요약에 남긴다. `frontend/**` 를 바꾼 PR 과 develop 푸시에서 `frontend-ci` 가 `qa:verify` 와 같은 검사(format:check → lint → typecheck → test → build)를 돌린다. 문서만 바뀌면 format:check 만 돈다(`scripts/classify-frontend-changes.sh`). `.agents/**` · `.claude/**` · `.codex/**` 를 바꾼 PR 과 develop 푸시에서 `agents-ci` 가 스킬 사본 동기화와 역할 에이전트 정합성을 검사한다. `label` 워크플로가 변경 경로로 PR 라벨(배포 대상)을 붙인다(`.github/labeler.yml`, dependabot PR 은 제외). dependabot 이 매주 월요일 프론트엔드 의존성 갱신 PR 을 묶어 올린다. 브랜치 보호가 걸려 있지 않으므로 **`backend-ci` · `frontend-ci` · `agents-ci` 가 빨간불인 PR 은 머지하지 않는다.**
 
 작업 시작 시 해당 워크스페이스의 엔트리 문서를 먼저 읽는다. 로컬 인프라는 두지 않고 팀 개발 서버에 배포해서 개발한다 (팀 인프라 레포 `8llow8llowMe/Infra`).
 
@@ -66,6 +66,7 @@ CORS 허용 오리진은 웹 도메인 두 개 + FE 로컬(`http://localhost:*`)
 
 ## Claude Code 에이전트 구성
 
+- 스킬 정본은 `.agents/skills/` 이고 `.claude/skills/` 는 동기화 사본이다. **정본만 고치고** `sh scripts/sync-agent-skills.sh --write` 로 사본을 갱신한다. Codex · Cursor 도 같은 스킬과 역할을 쓴다 — 엔트리 [`AGENTS.md`](AGENTS.md), 관리 규칙 [`docs/agent-skills.md`](docs/agent-skills.md).
 - 비단순 개발 작업의 진입점은 `/dev-orchestrator` 스킬이다. 작업을 SIMPLE / FEATURE / BUG / REFACTOR / ARCHITECTURE / LARGE_FEATURE 로 분류하고 `.claude/agents/` 의 역할 7종(explorer, crud-implementer, implementer, bug-investigator, reviewer, refactorer, architect)에 모델·effort 를 맞춰 분배한다. 분류 흐름의 정본은 그 스킬 문서, 모델 · effort 의 정본은 역할 파일 frontmatter 다.
 - 역할 파일의 `model` 은 별칭(`fable` / `opus` / `sonnet`)으로 적어 최신 모델을 따라가게 한다. 새 역할에는 `model` 과 `effort` 를 반드시 적고, 읽기 전용 역할은 `tools: Read, Grep, Glob, Bash` 로 쓰기 권한을 막는다.
 - 병렬 실행은 읽기 전용 역할에만, 쓰기 역할은 한 번에 하나만. 하위 에이전트는 커밋·푸시·이슈·PR 을 만들지 않는다.
@@ -87,7 +88,7 @@ CORS 허용 오리진은 웹 도메인 두 개 + FE 로컬(`http://localhost:*`)
 - 하위 에이전트는 **이 저장소의 역할로만** 부른다. 내장 `general-purpose` · `Explore` · `Plan` 은 역할 파일의 `model` · `effort` 를 따르지 않으므로(세션 설정을 물려받음) 쓰지 않는다. 맞는 역할이 없으면 메인 실행자가 직접 하거나 역할을 새로 만든다.
 - `Agent` 호출에서 `model` 을 덮어쓰지 않는다. 계정에 그 모델이 없을 때만 예외로 덮어쓰고 보고에 적는다.
 - 위임 비용이 더 큰 일(한두 줄 수정, 이미 연 파일의 작은 편집)은 역할을 부르지 않고 메인 실행자가 한다.
-- 역할 · 모델을 바꾸면 역할 파일, `/dev-orchestrator` 스킬 표, 이 표를 함께 고친다.
+- 역할 · 모델을 바꾸면 역할 파일, Codex 대응 파일(`.codex/agents/<snake_case>.toml`), `/dev-orchestrator` 스킬 표, 이 표, `docs/claude-agents.md` · `docs/codex-agents.md` 의 역할 표를 함께 고치고 `sh scripts/check-claude-agents.sh` 로 검사한다 ([`docs/claude-agents.md`](docs/claude-agents.md)).
 
 ## 파일 규칙
 
