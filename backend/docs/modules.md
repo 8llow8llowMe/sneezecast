@@ -46,7 +46,7 @@ backend/
 
 ## core/persistence-core
 
-- `entity.BaseEntity` — `createdAt` / `updatedAt` Auditing
+- `entity.BaseEntity` — `createdAt` / `updatedAt` Auditing, 새 행 판정(`Persistable<Long>`, `isNew()` = `createdAt == null` — [coding-conventions.md §8-1](coding-conventions.md#8-1-엔티티))
 - `config.QuerydslConfigurer` — `JPAQueryFactory` 빈
 - `config.SnowflakeConfigurer`, `util.SnowflakeIdGenerator`
 - `dto.SliceResponse` — 무한 스크롤 응답
@@ -162,7 +162,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 탈퇴 회원은 30일 보존 후 스케줄러가 파기한다(#244). **보고 파기 요청이 모두 완료된 회원만** 지운다. 고아 프로필 이미지는 정리 스케줄러가 지운다(#112 — 탈퇴한 회원의 업로드 이미지 오브젝트도 여기서 지운다).
 - 테이블 · 컬럼 정본은 [entity-design.md §1](entity-design.md#1-auth--회원).
 - enum 컬럼은 `@Enumerated(STRING)` 에 `@JdbcTypeCode(SqlTypes.VARCHAR)` 를 함께 건다. 빠지면 Hibernate 6 이 MySQL 네이티브 `enum(...)` 을 만들어 값을 늘릴 때마다 ALTER 가 필요하고, dev `ddl-auto: update` 는 기존 컬럼을 고치지 않아 새 값 INSERT 가 실패한다.
-- auth 엔티티는 `Persistable<Long>` 을 구현하고 `isNew()` = `createdAt == null` 이다. Snowflake 로 ID 를 미리 정해 기본 판정이 merge 로 가면 INSERT 전 SELECT 가 나가고 겹치는 ID 를 조용히 덮어쓰기 때문이다. 그래서 **기존 행을 고칠 때는 엔티티를 조회해 변경 감지로 바꾼다** — 도메인에서 새로 매핑한 엔티티를 `save` 하면 PK 위반이다.
+- auth 엔티티의 새 행 판정은 `BaseEntity` 가 한다(`isNew()` = `createdAt == null`, [coding-conventions.md §8-1](coding-conventions.md#8-1-엔티티)). Snowflake 로 ID 를 미리 정해 기본 판정이 merge 로 가면 INSERT 전 SELECT 가 나가고 겹치는 ID 를 조용히 덮어쓰기 때문이다. 그래서 **기존 행을 고칠 때는 엔티티를 조회해 변경 감지로 바꾼다** — 도메인에서 새로 매핑한 엔티티를 `save` 하면 PK 위반이다.
 
 **가입 흐름** (`auth` 컨텍스트가 받고, 회원 · 동의 저장은 `member` 의 포트 · `MemberConsentProcessor` 를 쓴다)
 
