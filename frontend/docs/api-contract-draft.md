@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역)는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자는 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역) · 행정동 주간 집계(홈 · 지도)는 백엔드에 구현돼 있어 확정**이고, 안내 · 공식 정보 · 운영자는 **BE 미정**이라 아래 초안은 프론트 제안이다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -225,7 +225,7 @@ PATCH /api/v1/members/me/notification-settings  { weeklyReport?, regionNotice? }
 - 요청 `districtCode` 는 SGIS 숫자 8자리, `symptomGroups` 는 `RESPIRATORY`(호흡기: 발열 · 기침 · 인후통) · `ENTERIC`(장관: 구토 · 설사) 목록이다. **증상 없음은 빈 배열**이고 정상 보고다(건강한 보고가 집계의 분모). null · null 원소 · 중복은 거부된다.
 - `WeeklyReport` = `{ isoWeek, districtCode, symptomGroups: [{ code, name, description }], reportedAt, updatedAt }`. `isoWeek` 는 `2026-W40` 처럼 KST 달력 기준 ISO 주(월요일 시작)이고 서버가 정한다. `symptomGroups` 는 선언 순서(호흡기 → 장관). `reportedAt` 은 이번 주 첫 보고 시각, `updatedAt` 은 마지막 수정 시각(ISO-8601 UTC, 초 단위 — 고친 적이 없으면 같다).
 - **보고 주는 서버가 받은 시각(KST)으로 정한다**(`ReportWeekCalculator` · `ReportWeek`). 일요일 23:59 KST 에 흐름을 열어 월요일 00:00 KST 뒤에 보내면 새 주로 저장된다. 프론트는 주를 계산하지 않고, 응답 `isoWeek` 가 정본이다.
-  - 화면에 보이는 주 라벨(`ReportWeek` 의 `weekRangeLabel` · `reportPeriodLabel`)은 아직 홈 주간 집계 목(`features/home/mock.ts`, BE 미정)의 예시 값(`11월 17일(월)~23일(일)`)이라 **서버 `isoWeek` 와 무관하다** — 지금은 늘 어긋날 수 있다. 주간 집계 API 연동 때 응답 주로 바꾸고, 그 뒤에도 일요일 자정 근처에는 연 시점의 라벨과 저장된 주가 다를 수 있다(받은 보고의 `isoWeek` 로 고칠지는 그때 정한다).
+  - 화면에 보이는 주 라벨(`ReportWeek` 의 `weekRangeLabel` · `reportPeriodLabel`)은 아직 홈 주간 집계 목(`features/home/mock.ts` — API 는 아래 "행정동 주간 집계" 로 확정, 프론트 연동 전)의 예시 값(`11월 17일(월)~23일(일)`)이라 **서버 `isoWeek` 와 무관하다** — 지금은 늘 어긋날 수 있다. 주간 집계 API 연동 때 응답 주로 바꾸고, 그 뒤에도 일요일 자정 근처에는 연 시점의 라벨과 저장된 주가 다를 수 있다(받은 보고의 `isoWeek` 로 고칠지는 그때 정한다).
 - **프론트 연동 (#165)**:
   - 요청 · 응답 옮기기는 `features/report/report-api.ts`. 화면 증상 `respiratory` ↔ `RESPIRATORY`, `gastrointestinal` ↔ `ENTERIC`. 보내는 값은 고른 증상뿐이고 주 · 회원 · 위치는 싣지 않는다. 받은 보고는 `SubmittedReport { answer, reportedLabel }` 이고 `reportedLabel` 은 `reportedAt` 을 **KST 날짜** "10월 2일" 로 쓴다(`Intl` `timeZone: 'Asia/Seoul'` — 브라우저 시간대와 무관, UTC 15:00 부터 다음 날). **모르는 증상군 코드가 오면 버리지 않고 실패로 본다** — 버리면 증상 보고가 다른 증상 · 증상 없음으로 보이고, 그대로 고쳐 보내면 서버의 증상이 지워진다.
   - `submitReport` · `updateReport(answer, districtCode, source)` 은 같은 `PUT` 이다. 보고 동네는 **내 동네**(`useMemberRegion()` 의 코드 — 둘러보기 동네가 아님)다. 세션이 회원이 아니거나 동네가 없으면 요청 없이 거부한다. 결과: `ok`(응답을 이번 주 보고 저장소에 바로 넣음) · `consent-required`(`SECURITY_006` — `refreshSession()` 으로 재발급해 세션 요약을 맞춘 뒤) · `region-changed`(`REPORT_003` · `002` — 내 동네를 다시 읽게 한 뒤, `reloadMemberRegion()`). 그 밖(`REPORT_001` · 검증 `REPORT_100`~`105` · 일시 장애)은 거부하고 화면은 "보내지 못했어요. 잠시 뒤 다시 보내 주세요." 다. `REPORT_001` 은 서버가 이미 한 번 다시 했으므로 프론트는 자동으로 다시 보내지 않는다.
@@ -256,15 +256,40 @@ GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:writ
 - 오류는 `/reports/current` 와 같다: 토큰 없음 `SECURITY_001`(401), 동의 전 `SECURITY_006`(403). 받는 파라미터가 없어 검증 오류는 없다.
 - 프론트 함수: `features/report/report-history.ts` 의 `listPastReports(source)`. **프론트 연동 전까지 실데이터는 요청하지 않고 `unavailable`**(화면은 "지난 보고는 아직 불러올 수 없어요")이다 — 건강정보라 실제 회원에게 예시 이력을 보이지 않는다(conventions.md "데이터 출처" 의 예외). 목은 예시 이력이다.
 
+## 행정동 주간 집계 `/api/v1/districts/…/weekly-aggregate(s)` (확정 — 백엔드 #212)
+
+홈(동네 하나)과 지도(시군구 하나)가 한 주의 동네 상태를 읽는다. **인증 불필요**(비회원 둘러보기 · 지도) — 행정동 API 처럼 `auth: false` 로 Authorization 없이 보낸다(만료된 access 로 게이트웨이가 거절하지 않게). 보고자 · 회원 정보는 싣지 않는다. 게이트웨이 라우트는 기존 `/api/v1/districts/**` 다.
+
+| 요청                                                        | → `dataBody`                                                                                  | 주요 오류                                                                                                                       |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /{code}/weekly-aggregate?week=` (홈)                   | `{ isoWeek, finalized, publicThreshold, slightDeltaPp, highDeltaPp, district: 동네 집계 }`    | `AGGREGATE_001` 없는 코드(404), `002` 조회할 수 없는 주(400), 검증 `101` 코드 형식(숫자 8자리) · `102` 주 형식                  |
+| `GET /weekly-aggregates?sigunguCode=&include=&week=` (지도) | `{ isoWeek, finalized, publicThreshold, slightDeltaPp, highDeltaPp, districts: 동네 집계[] }` | `AGGREGATE_001` 없는 `include`(404), `002`, 검증 `103` 시군구 코드 없음 · `104` 형식(숫자 5자리) · `101` `include` 형식 · `102` |
+
+- **동네 집계** = `{ code, name, sigungu, active, level, insufficientReason?, participantCount, calculatedAt?, symptomaticCount?, symptomRate?, baselineRate?, groups? }`. `level` · `insufficientReason` · 증상군 · 변화는 `{ code, name, description }` 이다.
+  - `level` 은 `NORMAL` · `SLIGHT` · `HIGH` · `INSUFFICIENT` 이고 프론트 `status`(normal · slight · high · insufficient)와 1:1 이다.
+  - **`INSUFFICIENT` 면 `symptomaticCount` · `symptomRate` · `baselineRate` · `groups` 가 응답에 아예 없다**(키가 없다 — null 이 아니다). 집계 행에 숫자가 있어도 서버가 뺀다. 프론트는 이 값이 없을 때 수치 · 상태색을 그리지 않는다.
+  - `insufficientReason` 은 `INSUFFICIENT` 일 때만 있고 `LOW_SAMPLE`(참여 100명 미만) · `UNSTABLE`(마감 판정에서 전주 대비 참여 급변) · `NO_BASELINE`(기준선을 만들 마감 4주 부족)이다. **화면은 셋 모두 같은 `자료 부족` 으로 그린다**(이유를 문구로 갈라 보이지 않는다).
+  - 그 주 보고가 한 번도 없던 동(집계 행 없음)은 `INSUFFICIENT` · `LOW_SAMPLE` · `participantCount: 0` 이고 `calculatedAt` 이 없다. 오류가 아니다.
+  - `participantCount` 는 그 주 참여자 수(증상 없음 보고 포함 — 비율의 분모)이고 자료 부족이어도 있다(참여 진행 막대 `41 / 100명`). `calculatedAt` 은 마지막 재계산 시각(ISO-8601 UTC, 초 단위 — 화면의 `오늘 09:00 갱신`).
+  - 비율(`symptomRate` · `baselineRate` · `groups[].rate`)은 **퍼센트, 소수 첫째 자리 반올림(HALF_UP)** 이다(`16.7` = 16.7%). 단계 · 변화 판정은 서버가 센 수끼리 정수로 하므로, 반올림한 두 값의 차가 경계(3.0)처럼 보여도 단계가 다를 수 있다 — 프론트는 다시 계산하지 않는다.
+  - `baselineRate` 는 판정에 쓴 기준선(직전 8주 중 마감 · 표본 충분 · 급변 아닌 최근 4주의 합산 비율 — 화면의 `지난 4주 평균`)이다.
+  - `groups` = `[{ group, rate, trend? }]`, 호흡기(`RESPIRATORY` — 화면 `respiratory`) → 장관(`ENTERIC` — 화면 `gastrointestinal`) 순서다.
+  - `trend` 는 그 증상군 비율의 **전주 대비** 변화 `DOWN` · `FLAT` · `SLIGHT` · `HIGH`(화면 `down` · `flat` · `slight` · `high`, 이름은 `TREND_LABEL` 과 같다)다. 이번 주 − 전주가 `highDeltaPp`(8)%p 이상 HIGH, `slightDeltaPp`(3)%p 이상 SLIGHT, −`slightDeltaPp`%p 이하 DOWN, 그 사이 FLAT(경계 포함). **이번 주와 전주가 모두 수치가 있는 단계일 때만** 있고, 전주 행이 없거나 전주가 자료 부족이면 키가 없다. 한계: 현재 주는 참여가 쌓이는 중인 주이고 전주는 다 찬 주라, 주 초반에는 변화가 크게 흔들릴 수 있다(참여 100명을 넘어야 수치가 나오는 것으로 폭을 줄인다).
+  - `active` 는 행정동 단건 조회와 같다 — 폐지된 코드도 200 이고 `false` 다.
+- `week` 는 `YYYY-Www`(W01~W53)이고 **생략하면 현재 주**(KST, 보고 주와 같은 정의)다. 조회할 수 있는 주는 **현재 주 ~ 51주 전**(원시 보고 보관 52주와 같은 창)이다. 미래 주 · 그보다 오래된 주 · 그 해에 없는 주(53주가 없는 해의 W53)는 `AGGREGATE_002` 이고 메시지에 조회할 수 있는 범위(`2025-W43 ~ 2026-W42`)가 있다. 응답 `isoWeek` 가 정본이다.
+- `finalized` 는 그 주가 마감됐는지다(월요일 00:10 KST 에 지난 주 마감). `false` 면 진행 중인 주이거나 아직 마감 전이라 값이 바뀔 수 있다.
+- `publicThreshold`(100) · `slightDeltaPp`(3) · `highDeltaPp`(8)는 백엔드 판정 설정값(`aggregate.*`)이다 — 판단 기준 시트(`thresholds`)에 그대로 쓴다. 규칙 버전이 바뀌면 지난 주 행은 옛 값으로 판정됐을 수 있다(1단계는 규칙 하나).
+- **지도 범위는 시군구**다. `sigunguCode` 는 행정동 코드 앞 5자리(SGIS)라 처음 고른 동네 코드에서 바로 만든다. `districts` 는 그 시군구의 **현행** 동 전부(코드 오름차순, 폐지 동 제외)이고, 집계 행이 없는 동도 자료 부족으로 담긴다.
+  - **`include`(찾은 동네 · 처음 고른 동네)는 반드시 담긴다**(#204) — 시군구 밖이거나 폐지된 코드여도 목록 맨 앞에 더하고, 이미 목록에 있으면 그 자리 그대로다. 보고가 없으면 자료 부족(참여 0)이다.
+  - `districts` 가 빈 배열인 것은 그 시군구에 현행 동이 없고 `include` 도 없을 때뿐이다. 지도의 "자료 없음"(이번 주 동네 자료가 하나도 없음)을 따로 알리는 값은 없다 — 모든 동이 `participantCount: 0` 이면 그렇게 볼 수 있다.
+- **아직 없는 것**: 발행 안내 여부(지도의 `이 동네 안내 보기`)는 안내 API(#214 · #215)가 생기면 그 이슈에서 더한다 — 지금은 키가 없고, 없다는 것을 "발행 안내 없음" 으로 읽지 않는다. 증상군의 최근 주별 비율(`series`, 작은 막대)은 이 응답에 없다. 회원의 내 동네를 서버가 알아서 범위로 쓰지 않는다(프론트가 `include` · `sigunguCode` 로 보낸다).
+- **프론트 연동**: 아직 하지 않았다 — 홈(`features/home/mock.ts`) · 지도(`features/map/mock.ts`)는 목 데이터다. 연동 이슈에서 `HomeWeekly` · `MapWeek` 로 옮긴다.
+
 ## BE 미정 — 프론트 초안
 
-백엔드에 아직 없다(게이트웨이 라우트 `/api/v1/advisories/**` 는 열려 있다). 아래는 화면을 만들며 가정한 모양이고, 연동 이슈에서 백엔드와 맞춘다. 지역 키 `admCd` 는 행정동 `code`(SGIS 8자리)다.
+백엔드에 아직 없다(게이트웨이 라우트 `/api/v1/advisories/**` 는 열려 있다). 아래는 화면을 만들며 가정한 모양이고, 연동 이슈에서 백엔드와 맞춘다. 지역 키 `admCd` 는 행정동 `code`(SGIS 8자리)다. 동네 주간 집계는 위 "행정동 주간 집계" 로 확정됐다.
 
 ```text
-GET  /api/regions/{admCd}/weekly?week=     → { status: normal|slight|high|insufficient,
-                                                participants, publicThreshold,
-                                                symptomRate?, baselineRate?,   // insufficient면 없음
-                                                groups: [{ key, trend, series: number[] }] }
 GET  /api/notices/{admCd}?week=            → 발행된 안내 | null (정정 이력 · 철회 표시 포함) — 아래 "동네 안내 (#215)"
 GET  /api/official/latest                  → 질병관리청 단계·기준 주·요약·원문 링크
 GET  /api/v1/admin/review-candidates?week=  → 후보 목록 (운영자) — 아래 "운영자 검토 (#219)"
@@ -272,8 +297,7 @@ GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — �
 (운영자 처리 경로 · 동사는 아래 "운영자 검토 (#219)" · "발행 이력 · 정정 · 철회 (#220)" 가 정본이다)
 ```
 
-- `insufficient` 응답에는 `symptomRate` · `baselineRate` 가 없다. 프론트는 이 값이 없을 때 수치·상태색을 그리지 않는다.
-- 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 홈 주간 집계 · 공식 정보는 목 데이터다(보고는 위 "주간 보고" 로 확정). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
+- 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 공식 정보는 목 데이터다(보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계" 로 확정 — 화면 연동 전이라 아직 목). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
 
 ### 동네 안내 (#215, 프론트 초안)
 
