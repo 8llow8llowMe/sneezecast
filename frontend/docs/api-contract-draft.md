@@ -289,7 +289,10 @@ GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:writ
   - **옮기는 값**: `level` → `status`(1:1), `INSUFFICIENT` 는 수치 필드가 없는 갈래(`InsufficientWeek`)라 화면이 수치를 그릴 수 없다. 요약 문장은 단계로 정한다(`AGGREGATE_SUMMARY` — 수치 단계는 "증상 보고가 지난 4주보다 조금/많이 늘었어요" · "지난 4주와 비슷한 수준이에요", 자료 부족은 이유와 무관하게 "아직 변화를 판단할 자료가 부족해요"). `symptomaticCount` → `symptomReports`, `slightDeltaPp` · `highDeltaPp` → `thresholds`, `publicThreshold` · `participantCount` 그대로. `groups` → `{ key, rate, trend? }`(`RESPIRATORY` → `respiratory`, `ENTERIC` → `gastrointestinal`, `trend` 키가 없으면 변화 글자를 빼고 그린다). 주차 · 집계 기간 · 보고 기간은 응답 `isoWeek` 로(`11월 3주` · `11월 17일~23일` · `11월 17일(월)~23일(일)`), 갱신 문구는 `calculatedAt` 의 한국 시각(같은 한국 날짜면 `오늘 09:00 갱신`, 아니면 `11월 20일 09:00 갱신`, 없으면 `아직 집계 전`)이다. 오프라인 띠의 받은 시각은 응답을 받은 시각이다.
   - **응답에 없어 비우는 것**: 증상군 주별 비율(`series`) — 실데이터는 작은 막대 대신 `이번 주 14.1%` 글자다. 공식 정보 요약(`official` null — 아래 "공식 정보", #253). 안내의 할 일 목록 · 근거(아래 "동네 안내" 의 "화면 모델과 다른 점").
   - `publishedAdvisory` → `PublishedNotice { publishedLabel: "11월 18일 발행"(publishedAt 의 한국 날짜), title }`. 키가 없으면 null. **동네 안내 화면으로 가는 주소(`href`)는 두지 않는다** — 그 화면(`getRegionNotice`)의 안내 내용이 아직 출처와 무관하게 목이라, 열면 실제 동네에 지어낸 안내 · 집계가 보인다. 안내 본문 연동(#256)에서 `/notice/{code}/{publishedAdvisory.isoWeek}` 로 연다.
-  - **지도는 아직 목**이다(`features/map/mock.ts`, 남은 일). `toHomeWeekly` 는 동네 집계 한 칸을 옮기므로 지도 응답의 `districts[]` 에도 쓸 수 있다.
+- **프론트 연동 (#257 — 지도)**: `features/map/weekly-aggregates.ts` 의 `fetchMapWeek(code)` 가 `GET /weekly-aggregates?sigunguCode=<code 앞 5자리>&include=<code>`(`week` 생략 — 현재 주)를 `auth: false` 로 부르고, `districts[]` 각 칸을 홈과 같은 `toHomeWeekly` 로 옮겨 `MapWeek { weekLabel, mineCode, mineName, districts }` 를 만든다(`mineName` 은 `include` 칸의 `name`, `weekLabel` 은 응답 `isoWeek`, 동네 순서는 응답 그대로). `code` 는 처음 고른 동네 — 둘러보기 동네(`?region=` — 찾아서 고른 동네도 이 값으로 온다), 없으면 회원의 내 동네다.
+  - **누가 읽나 · 실패**: 홈과 같다. 실데이터면 서버 페이지(`app/map/page.tsx`)가 목 지도를 넘기지 않고(`map={null}`, `?region=` 은 모양만) 화면이 읽는다(`useRegionWeekly` — 홈의 `useHomeWeekly` 와 같은 훅). 형식이 틀린 코드는 요청 없이, `AGGREGATE_001` · `include` 칸이 폐지(`active: false`)면 null(동네 고르기 안내)이고, 그 밖의 실패 · 계약과 다른 응답(`include` 칸이 목록에 없음 · 모르는 `level` · 읽을 수 없는 `isoWeek` · 수치 단계인데 수치 키 없음)은 거부한다(빨강 상자 + `다시 시도`). 목데이터는 지금처럼 `pickMapMock`(`?mock=`)이다.
+  - **자료 없음**: 모든 칸이 `participantCount: 0` 이면 `districts: []`(지도의 "자료 없음")로 옮긴다 — 주 초 첫 보고 전처럼 집계 행이 하나도 없으면 회색 `자료 부족` 만 늘어선 목록 대신 안내 하나다. 이때는 칸에 `publishedAdvisory` 가 있어도 보이지 않는다(한계).
+  - **발행 안내**: 홈과 같이 `href` 없이 제목 · 발행일만 옮긴다 — 지도 동네 정보는 `이 동네 안내 보기` 대신 `운영자 검토` 배지 · 발행일 · 제목만 보이고, 안내 본문 연동(#256)에서 링크를 연다.
 
 ## 공식 정보 `/api/v1/official/latest` (확정 — 백엔드 #213, 화면 S08)
 
@@ -402,7 +405,7 @@ GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — �
 (운영자 처리 경로 · 동사는 아래 "운영자 검토 (#219)" · "발행 이력 · 정정 · 철회 (#220)" 가 정본이다)
 ```
 
-- 프론트 함수: 보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계", 공식 정보는 위 "공식 정보", 동네 안내는 위 "동네 안내" 로 확정이다(지도 집계 · 동네 안내 본문은 화면 연동 전이라 아직 목 — #257 · #256). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
+- 프론트 함수: 보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계", 공식 정보는 위 "공식 정보", 동네 안내는 위 "동네 안내" 로 확정이다(동네 안내 본문은 화면 연동 전이라 아직 목 — #256). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
 
 ### 운영자 검토 (#219, 프론트 초안)
 
