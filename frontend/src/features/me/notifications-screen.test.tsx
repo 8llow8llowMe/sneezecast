@@ -7,13 +7,20 @@ import { resetMockSession } from '@/features/auth/auth-client'
 import type * as notificationClient from '@/features/notification/notification-settings-client'
 import {
   getNotificationSettings,
-  type NotificationSettingsResult,
+  type NotificationSettings,
   resetMockNotificationSettings,
   updateNotificationSetting,
 } from '@/features/notification/notification-settings-client'
 import { setSession } from '@/lib/session/session-store'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
-import { holdRequests, memberToken, resetApiSession, selectApiSource } from '@/test/api-session'
+import {
+  errorResponse,
+  holdRequests,
+  memberToken,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
 import { MeTrailProvider } from './me-trail'
 import { NotificationsScreen } from './notifications-screen'
@@ -49,6 +56,8 @@ async function renderScreen(regionCode?: string) {
 const weekly = () => screen.getByRole('switch', { name: '주간 보고 요청' })
 const regionNotice = () => screen.getByRole('switch', { name: '검토를 마친 동네 안내' })
 const LEAD = '켠 알림만 보내요. 알림을 켜지 않아도 검토를 마친 동네 안내는 홈에서 볼 수 있어요.'
+const NOT_SENT =
+  '알림은 아직 보내지 않아요. 고른 값은 저장해 두고, 알림을 보내기 시작하면 다시 알려 드려요.'
 
 beforeEach(() => {
   // jsdom 은 푸시 API 가 없어 미지원으로 보인다. 지원되는 기기는 덮어쓰기로 흉내 낸다
@@ -88,8 +97,8 @@ describe('NotificationsScreen 알림 설정 (목)', () => {
     expect(weekly().getAttribute('aria-checked')).toBe('true')
     expect(regionNotice().getAttribute('aria-checked')).toBe('false')
     expect(await getNotificationSettings('mock')).toEqual({
-      status: 'ready',
-      settings: { weeklyReport: true, regionNotice: false },
+      weeklyReport: true,
+      regionNotice: false,
     })
 
     await user.click(weekly())
@@ -97,7 +106,7 @@ describe('NotificationsScreen 알림 설정 (목)', () => {
   })
 
   it('보내는 중에는 스위치를 모두 누를 수 없고(aria-disabled) 더 보내지 않는다', async () => {
-    let finish: (result: NotificationSettingsResult) => void = () => {}
+    let finish: (settings: NotificationSettings) => void = () => {}
     vi.mocked(updateNotificationSetting).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -113,7 +122,7 @@ describe('NotificationsScreen 알림 설정 (목)', () => {
     await user.click(regionNotice())
     expect(updateNotificationSetting).toHaveBeenCalledTimes(1)
 
-    act(() => finish({ status: 'ready', settings: { weeklyReport: true, regionNotice: false } }))
+    act(() => finish({ weeklyReport: true, regionNotice: false }))
     await act(async () => {})
     expect(weekly().getAttribute('aria-checked')).toBe('true')
     expect(weekly().getAttribute('aria-disabled')).toBeNull()
@@ -225,44 +234,123 @@ describe('NotificationsScreen 실데이터', () => {
     resetApiSession()
   })
 
-  it('알림 설정 API 가 없어 요청하지 않고, 스위치는 꺼진 모양으로 두고 아직 준비하고 있다고 알린다', async () => {
-    search = 'mock-push=needs-install&mock-notifications=on'
+  const PATH = 'GET /api/v1/members/me/notification-settings'
+  const PATCH = 'PATCH /api/v1/members/me/notification-settings'
+
+  it('읽는 동안 안내 문장을 두고, 받은 설정으로 스위치를 그린다(목 재현은 듣지 않는다). 아직 보내지 않는다고 알린다', async () => {
+    search = 'mock-push=supported&mock-notifications=on'
     selectApiSource()
     const server = holdRequests()
     act(() => setSession(memberToken()))
     await renderScreen()
 
-    expect(
-      screen.getByText(
-        '알림은 아직 준비하고 있어요. 지금은 켜고 끌 수 없어요. 검토를 마친 동네 안내는 홈에서 볼 수 있어요.',
-      ),
-    ).toBeDefined()
-    // 설치하면 켤 수 있다는 미지원 상자 · 고를 수 있다는 안내는 두지 않는다 — 위 상자와 다른 말을 하지 않게
-    expect(screen.queryByText(/알림을 받을 수 없어요/)).toBeNull()
-    expect(screen.queryByText(LEAD)).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('알림 설정을 불러오고 있어요')
+    expect(screen.queryByRole('switch')).toBeNull()
 
+    act(() => {
+      server.reply(PATH, okResponse({ weeklyReport: false, regionNotice: true }))
+    })
+    await act(async () => {})
+    expect(screen.queryByText('알림 설정을 불러오고 있어요')).toBeNull()
     expect(weekly().getAttribute('aria-checked')).toBe('false')
-    expect(weekly().getAttribute('aria-disabled')).toBe('true')
-    await userEvent.setup().click(weekly())
-    expect(updateNotificationSetting).not.toHaveBeenCalled()
-    expect(server.requests().filter((request) => request.includes('notification'))).toEqual([])
+    expect(regionNotice().getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByText(LEAD)).toBeDefined()
+    expect(screen.getByText(NOT_SENT)).toBeDefined()
   })
 
-  it('알림을 받을 수 있는 기기여도 안내 문장 없이 스위치를 누를 수 없고 요청하지 않는다', async () => {
+  it('누르면 그 항목만 PATCH 하고 응답(설정 전부)으로 그린다', async () => {
     search = 'mock-push=supported'
     selectApiSource()
     const server = holdRequests()
     act(() => setSession(memberToken()))
     await renderScreen()
+    act(() => {
+      server.reply(PATH, okResponse({ weeklyReport: false, regionNotice: false }))
+    })
+    await act(async () => {})
 
-    expect(screen.getByText(/알림은 아직 준비하고 있어요/)).toBeDefined()
-    expect(screen.queryByText(LEAD)).toBeNull()
-    for (const item of [weekly(), regionNotice()]) {
-      expect(item.getAttribute('aria-checked')).toBe('false')
-      expect(item.getAttribute('aria-disabled')).toBe('true')
-    }
+    await userEvent.setup().click(weekly())
+    expect(weekly().getAttribute('aria-disabled')).toBe('true')
+    const [, init] = server.fetchMock.mock.calls.at(-1) as [string, RequestInit]
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ weeklyReport: true })
+
+    // 다른 탭에서 바꾼 항목도 응답대로 맞춘다
+    act(() => {
+      server.reply(PATCH, okResponse({ weeklyReport: true, regionNotice: true }))
+    })
+    await act(async () => {})
+    expect(weekly().getAttribute('aria-checked')).toBe('true')
+    expect(regionNotice().getAttribute('aria-checked')).toBe('true')
+    expect(weekly().getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('바꾸지 못하면 빨강 상자로 알리고 값은 그대로다', async () => {
+    search = 'mock-push=supported'
+    selectApiSource()
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    await renderScreen()
+    act(() => {
+      server.reply(PATH, okResponse({ weeklyReport: false, regionNotice: false }))
+    })
+    await act(async () => {})
+
     await userEvent.setup().click(regionNotice())
-    expect(updateNotificationSetting).not.toHaveBeenCalled()
-    expect(server.requests().filter((request) => request.includes('notification'))).toEqual([])
+    act(() => {
+      server.reply(PATCH, errorResponse('MEMBER_112', 400))
+    })
+    await act(async () => {})
+    expect(
+      screen.getByText('알림 설정을 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.'),
+    ).toBeDefined()
+    expect(regionNotice().getAttribute('aria-checked')).toBe('false')
+    expect(regionNotice().getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('읽지 못하면 스위치 없이 빨강 상자와 다시 시도를 두고, 다시 시도하면 다시 읽는다', async () => {
+    search = 'mock-push=supported'
+    selectApiSource()
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    await renderScreen()
+    act(() => {
+      server.reply(PATH, errorResponse('MEMBER_004', 404))
+    })
+    await act(async () => {})
+
+    expect(
+      screen.getByText('알림 설정을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.'),
+    ).toBeDefined()
+    expect(screen.queryByRole('switch')).toBeNull()
+    expect(screen.queryByText(LEAD)).toBeNull()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(screen.getByRole('status').textContent).toBe('알림 설정을 불러오고 있어요')
+    act(() => {
+      server.reply(PATH, okResponse({ weeklyReport: true, regionNotice: false }))
+    })
+    await act(async () => {})
+    expect(weekly().getAttribute('aria-checked')).toBe('true')
+    expect(screen.queryByText(/불러오지 못했어요/)).toBeNull()
+  })
+
+  it('알림을 받을 수 없는 기기면 미지원 상자를 두고, 저장된 값과 무관하게 꺼진 스위치는 눌러도 보내지 않는다', async () => {
+    search = 'mock-push=needs-install'
+    selectApiSource()
+    const server = holdRequests()
+    act(() => setSession(memberToken()))
+    await renderScreen()
+    act(() => {
+      server.reply(PATH, okResponse({ weeklyReport: true, regionNotice: true }))
+    })
+    await act(async () => {})
+
+    expect(screen.getByText(/알림을 받을 수 없어요/)).toBeDefined()
+    expect(screen.queryByText(LEAD)).toBeNull()
+    expect(screen.queryByText(NOT_SENT)).toBeNull()
+    expect(weekly().getAttribute('aria-checked')).toBe('false')
+    await userEvent.setup().click(weekly())
+    expect(server.requests()).toEqual([PATH])
   })
 })
