@@ -25,6 +25,13 @@ public final class MemberValidationMessage {
     public static final String DOCUMENT_VERSION_REQUIRED = "MEMBER_109:문서 버전은 필수입니다.";
     // 상한은 member_consent.document_version 컬럼 길이다. 저장값은 서버 설정이고 요청값은 현재 버전과 같은지(MEMBER_011)만 본다.
     public static final String DOCUMENT_VERSION_LENGTH_INVALID = "MEMBER_110:문서 버전은 20자 이하여야 합니다.";
+    // 알림 설정 변경(PATCH) — 보낸 항목만 바꾸므로 항목이 하나도 없는 본문({})은 받지 않는다. field 는 본문 전체를 뜻하는 request 다.
+    public static final String NOTIFICATION_SETTINGS_REQUIRED = "MEMBER_111:바꿀 알림 설정을 하나 이상 보내야 합니다.";
+    // JSON true / false 만 받는다 — 문자열 "true" · 숫자 · null 을 boolean 으로 바꿔 주지 않는다(null 은 "보내지 않음" 과 헷갈린다).
+    public static final String WEEKLY_REPORT_SETTING_INVALID = "MEMBER_112:weeklyReport 는 true 또는 false 여야 합니다.";
+    public static final String REGION_NOTICE_SETTING_INVALID = "MEMBER_113:regionNotice 는 true 또는 false 여야 합니다.";
+    // 모르는 항목을 조용히 버리면 오타(weeklyReports 등)가 성공처럼 보인다. field 는 unknownItems 다(받은 항목 이름은 응답에 되돌려 싣지 않는다).
+    public static final String NOTIFICATION_SETTING_UNKNOWN = "MEMBER_114:알 수 없는 알림 설정 항목입니다. weeklyReport · regionNotice 만 보낼 수 있습니다.";
 
     /** 문서 버전 상한 — member_consent.document_version VARCHAR(20) · legal.*-version 설정 상한과 같다. */
     public static final int DOCUMENT_VERSION_MAX_LENGTH = 20;

@@ -2,8 +2,10 @@ package com.sneezecast.domainlayer.member.application.service.presenter;
 
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberConsentStatusResponse;
 import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberMyInfoResponse;
+import com.sneezecast.domainlayer.member.adapter.in.web.dto.response.MemberNotificationSettingResponse;
 import com.sneezecast.domainlayer.member.application.info.MemberConsentStatusInfo;
 import com.sneezecast.domainlayer.member.application.info.MemberMyInfo;
+import com.sneezecast.domainlayer.member.application.info.MemberNotificationSettingInfo;
 import org.springframework.stereotype.Component;
 
 /**
@@ -35,6 +37,13 @@ public class MemberPresenter {
             .healthInfoAgreed(status.healthInfoAgreed())
             .reportWritable(reportWritable)
             .purgePending(status.purgePending())
+            .build();
+    }
+
+    public MemberNotificationSettingResponse toNotificationSettingResponse(MemberNotificationSettingInfo info) {
+        return MemberNotificationSettingResponse.builder()
+            .weeklyReport(info.weeklyReport())
+            .regionNotice(info.regionNotice())
             .build();
     }
 }
