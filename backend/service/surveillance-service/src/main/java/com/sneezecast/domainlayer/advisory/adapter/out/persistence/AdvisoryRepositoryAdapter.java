@@ -65,6 +65,17 @@ public class AdvisoryRepositoryAdapter implements AdvisoryRepositoryPort {
             .toList();
     }
 
+    @Override
+    public List<Advisory> findAllPublicByIsoWeekIn(Collection<ReportWeek> isoWeeks) {
+        if (isoWeeks.isEmpty()) {
+            return List.of();
+        }
+        List<String> weeks = isoWeeks.stream().map(ReportWeek::value).toList();
+        return advisoryRepository.findAllByIsoWeekInAndStatusIn(weeks, PUBLIC_STATUSES).stream()
+            .map(advisoryMapper::toDomainFromEntity)
+            .toList();
+    }
+
     /**
      * 동네 · 주는 스칼라로 먼저 읽고(엔티티를 올리지 않는다), 그 동네 · 주를 {@code FOR UPDATE} 로 읽는다 — 잠금을 기다린 뒤의 최신 커밋 값이 엔티티로
      * 올라온다. 대상 행부터 PK 로 잠그지 않는 것은 모든 전이가 같은 인덱스 범위를 같은 순서로 잠가 서로 교착하지 않게 하려는 것이다.

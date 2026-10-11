@@ -74,6 +74,34 @@ class AdvisoryTest {
     }
 
     @Test
+    @DisplayName("정정의 새 안내는 APPROVED · 버전 0 이고 근거 집계 · 동네 · 주 · 인용 수치를 철회된 이전 안내에서 옮겨 그 안내를 가리킨다 — 바로 발행할 수 있다")
+    void newCorrectionCopiesFromRetracted() {
+        Advisory retracted = draft().approve().publish(PUBLISHED_AT).retract(RETRACTED_AT);
+
+        Advisory correction = Advisory.newCorrection(2L, retracted, "고친 제목", "고친 본문");
+
+        assertThat(correction.status()).isEqualTo(AdvisoryStatus.APPROVED);
+        assertThat(correction.version()).isZero();
+        assertThat(correction.correctsAdvisoryId()).isEqualTo(1L);
+        assertThat(correction).extracting(Advisory::id, Advisory::aggregateId, Advisory::districtCode, Advisory::isoWeek, Advisory::citation, Advisory::title,
+            Advisory::body).containsExactly(2L, 7L, "11240660", W40, CITATION, "고친 제목", "고친 본문");
+        assertThat(correction.publishedAt()).isNull();
+        assertThat(correction.publish(RETRACTED_AT).status()).isEqualTo(AdvisoryStatus.PUBLISHED);
+    }
+
+    @Test
+    @DisplayName("정정은 철회된 안내로만 만든다 — 발행 중 · 승인 안내로 부르면 IllegalStateException(철회가 먼저). 제목 · 본문 조건은 같다")
+    void newCorrectionRequiresRetractedPrevious() {
+        Advisory published = draft().approve().publish(PUBLISHED_AT);
+
+        assertThatThrownBy(() -> Advisory.newCorrection(2L, published, "제목", "본문")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> Advisory.newCorrection(2L, draft().approve(), "제목", "본문")).isInstanceOf(IllegalStateException.class);
+        Advisory retracted = published.retract(RETRACTED_AT);
+        assertThatThrownBy(() -> Advisory.newCorrection(2L, retracted, " ", "본문")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> Advisory.newCorrection(2L, retracted, "제목", "")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("제목은 공백이 아닌 100자(코드포인트) 이하, 본문은 공백이 아니어야 한다")
     void contentRules() {
         String hundredEmoji = "😷".repeat(Advisory.TITLE_MAX_LENGTH);

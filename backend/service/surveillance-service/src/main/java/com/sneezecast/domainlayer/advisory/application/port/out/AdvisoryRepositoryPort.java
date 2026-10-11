@@ -38,6 +38,15 @@ public interface AdvisoryRepositoryPort {
     List<Advisory> findAllByDistrictCodeInAndIsoWeek(Collection<String> districtCodes, ReportWeek isoWeek);
 
     /**
+     * 운영자 발행 이력(#267)이 읽는 여러 주의 <b>발행됨(PUBLISHED) · 철회됨(RETRACTED)</b> 안내 — 모든 동네. 순서는 정하지 않는다. {@code isoWeeks} 가 비면 빈
+     * 목록이다. 잠그지 않는다.
+     *
+     * <p>{@code iso_week} 를 앞 컬럼으로 하는 인덱스가 없어 전체 스캔이다 — 1단계 규모(발행 안내 수백 건)에서는 그대로 두고, 늘면 {@code idx_advisory_iso_week}
+     * 를 둔다(entity-design §2-3).
+     */
+    List<Advisory> findAllPublicByIsoWeekIn(Collection<ReportWeek> isoWeeks);
+
+    /**
      * {@code advisoryId} 안내와 같은 동네 · 주의 모든 안내(자신 포함)를 잠금 읽기로 가져온다. 잠금은 트랜잭션 끝까지 간다. 그 안내가 없으면 빈 목록이다.
      *
      * <p><b>호출자 트랜잭션이 있어야 한다.</b> 같은 트랜잭션에서 그 안내를 이미 잠그지 않고 읽었다면 영속성 컨텍스트의 값(옛 값일 수 있다)이 돌아온다 — 그때도

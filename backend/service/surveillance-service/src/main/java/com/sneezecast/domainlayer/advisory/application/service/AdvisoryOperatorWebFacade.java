@@ -2,13 +2,16 @@ package com.sneezecast.domainlayer.advisory.application.service;
 
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorDetailResponse;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorResponse;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryPublicationHistoryResponse;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryReviewCandidateListResponse;
+import com.sneezecast.domainlayer.advisory.application.command.AdvisoryCorrectCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryDraftCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryEditCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryRetractCommand;
 import com.sneezecast.domainlayer.advisory.application.port.in.AdvisoryOperatorWebUseCase;
 import com.sneezecast.domainlayer.advisory.application.service.presenter.AdvisoryOperatorPresenter;
 import com.sneezecast.domainlayer.advisory.application.service.processor.AdvisoryCommandProcessor;
+import com.sneezecast.domainlayer.advisory.application.service.processor.AdvisoryPublicationHistoryQueryProcessor;
 import com.sneezecast.domainlayer.advisory.application.service.processor.AdvisoryQueryProcessor;
 import com.sneezecast.domainlayer.advisory.application.service.processor.AdvisoryReviewCandidateQueryProcessor;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +33,7 @@ public class AdvisoryOperatorWebFacade implements AdvisoryOperatorWebUseCase {
     private final AdvisoryCommandProcessor advisoryCommandProcessor;
     private final AdvisoryQueryProcessor advisoryQueryProcessor;
     private final AdvisoryReviewCandidateQueryProcessor advisoryReviewCandidateQueryProcessor;
+    private final AdvisoryPublicationHistoryQueryProcessor advisoryPublicationHistoryQueryProcessor;
     private final AdvisoryOperatorPresenter advisoryOperatorPresenter;
 
     @Override
@@ -62,6 +66,13 @@ public class AdvisoryOperatorWebFacade implements AdvisoryOperatorWebUseCase {
         return advisoryOperatorPresenter.toResponse(advisoryCommandProcessor.retract(operatorId, advisoryId, command));
     }
 
+    /** 철회 · 새 안내 insert · 승인 · 발행과 이력 세 행이 한 트랜잭션이다 — 어느 단계가 실패해도 철회까지 함께 롤백된다. */
+    @Override
+    @Transactional
+    public AdvisoryOperatorResponse correct(long operatorId, long advisoryId, AdvisoryCorrectCommand command) {
+        return advisoryOperatorPresenter.toResponse(advisoryCommandProcessor.correct(operatorId, advisoryId, command));
+    }
+
     @Override
     @Transactional(readOnly = true)
     public AdvisoryOperatorDetailResponse getDetail(long advisoryId) {
@@ -73,5 +84,12 @@ public class AdvisoryOperatorWebFacade implements AdvisoryOperatorWebUseCase {
     @Transactional(readOnly = true)
     public AdvisoryReviewCandidateListResponse getCandidates(String week) {
         return advisoryOperatorPresenter.toCandidateListResponse(advisoryReviewCandidateQueryProcessor.getCandidates(week));
+    }
+
+    /** 안내 · 이력 · 행정동을 한 읽기 트랜잭션(한 스냅샷)에서 읽는다. 잠그지 않는다. */
+    @Override
+    @Transactional(readOnly = true)
+    public AdvisoryPublicationHistoryResponse getPublicationHistory(String week) {
+        return advisoryOperatorPresenter.toPublicationHistoryResponse(advisoryPublicationHistoryQueryProcessor.getPublicationHistory(week));
     }
 }

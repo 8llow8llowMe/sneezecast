@@ -10,6 +10,7 @@ import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.item.AdvisoryHisto
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.item.AdvisoryOperatorCitationItem;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorDetailResponse;
 import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorResponse;
+import com.sneezecast.domainlayer.advisory.application.command.AdvisoryCorrectCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryDraftCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryEditCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryRetractCommand;
@@ -292,6 +293,114 @@ class AdvisoryOperatorWebFacadeTest extends SurveillanceH2TestSupport {
         }
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM advisory WHERE status = 'PUBLISHED'", Integer.class)).isEqualTo(1);
         assertThat(useCase.getDetail(id(second)).advisory().status()).isEqualTo(AdvisoryStatus.APPROVED.toMetadata());
+    }
+
+    @Test
+    @DisplayName("정정 발행은 한 번에 — 이전 안내 RETRACTED(사유 메모) + 새 안내 PUBLISHED(인용 수치 복사 · 이전 안내를 가리킴), 이력은 철회 → (없음) → APPROVED → PUBLISHED")
+    void correctRetractsAndPublishesTogether() {
+        insertAggregate(100L, AggregateLevel.HIGH, null, true);
+        AdvisoryOperatorResponse published = publishedAdvisory();
+        // 정정은 이전 안내의 인용값을 옮긴다 — 그 사이 집계가 바뀌어도 운영자가 검토한 근거를 잇는다.
+        jdbcTemplate.update("UPDATE district_weekly_aggregate SET participant_count = 400, symptomatic_count = 90, respiratory_count = 60,"
+            + " enteric_count = 40, rule_version = '2027-01-01' WHERE id = 100");
+
+        AdvisoryOperatorResponse correction = useCase.correct(OTHER_OPERATOR, id(published),
+            new AdvisoryCorrectCommand(published.version(), "고친 제목", "고친 본문", "참여자 수 표기 오류"));
+
+        assertThat(correction.advisoryId()).isNotEqualTo(published.advisoryId());
+        assertThat(status(correction.status())).isEqualTo(AdvisoryStatus.PUBLISHED);
+        assertThat(correction.version()).as("insert 0 → 발행 1").isEqualTo(1L);
+        assertThat(correction.correctsAdvisoryId()).isEqualTo(published.advisoryId());
+        assertThat(correction).extracting(AdvisoryOperatorResponse::districtCode, AdvisoryOperatorResponse::isoWeek, AdvisoryOperatorResponse::title,
+            AdvisoryOperatorResponse::body).containsExactly(GARAK_1, W40.value(), "고친 제목", "고친 본문");
+        assertThat(citation(correction)).isEqualTo(citation(published));
+        assertThat(jdbcTemplate.queryForList("SELECT aggregate_id FROM advisory", Long.class)).containsOnly(100L);
+
+        AdvisoryOperatorDetailResponse previous = useCase.getDetail(id(published));
+        assertThat(status(previous.advisory().status())).isEqualTo(AdvisoryStatus.RETRACTED);
+        assertThat(previous.advisory().version()).isEqualTo(published.version() + 1);
+        assertThat(previous.advisory().retractedAt()).as("철회 시각 = 새 안내의 발행 시각(정정 시각)").isEqualTo(correction.publishedAt());
+        assertThat(previous.histories().getLast())
+            .extracting(history -> status(history.fromStatus()), history -> status(history.toStatus()), history -> Long.parseLong(history.operatorId()),
+                AdvisoryHistoryItem::memo)
+            .containsExactly(AdvisoryStatus.PUBLISHED, AdvisoryStatus.RETRACTED, OTHER_OPERATOR, "참여자 수 표기 오류");
+        assertThat(useCase.getDetail(id(correction)).histories())
+            .extracting(history -> status(history.fromStatus()), history -> status(history.toStatus()), history -> Long.parseLong(history.operatorId()),
+                AdvisoryHistoryItem::memo, AdvisoryHistoryItem::body)
+            .containsExactly(
+                tuple(null, AdvisoryStatus.APPROVED, OTHER_OPERATOR, "참여자 수 표기 오류", "고친 본문"),
+                tuple(AdvisoryStatus.APPROVED, AdvisoryStatus.PUBLISHED, OTHER_OPERATOR, null, "고친 본문"));
+        // 한 요청이 쌓은 세 행의 순서 — 철회가 먼저다.
+        assertThat(jdbcTemplate.queryForList("SELECT to_status FROM advisory_history WHERE operator_id = ? ORDER BY created_at, id", String.class,
+            OTHER_OPERATOR)).containsExactly("RETRACTED", "APPROVED", "PUBLISHED");
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM advisory WHERE status = 'PUBLISHED'", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("정정의 정정 — 새 안내도 발행 중이라 다시 정정할 수 있고 사슬이 이어진다")
+    void correctionCanBeCorrected() {
+        insertAggregate(100L, AggregateLevel.HIGH, null, true);
+        AdvisoryOperatorResponse first = publishedAdvisory();
+        AdvisoryOperatorResponse second = useCase.correct(OPERATOR, id(first), new AdvisoryCorrectCommand(first.version(), TITLE, "두 번째 본문", "첫 정정"));
+
+        AdvisoryOperatorResponse third = useCase.correct(OPERATOR, id(second), new AdvisoryCorrectCommand(second.version(), TITLE, "세 번째 본문", "두 번째 정정"));
+
+        assertThat(third.correctsAdvisoryId()).isEqualTo(second.advisoryId());
+        assertThat(status(useCase.getDetail(id(second)).advisory().status())).isEqualTo(AdvisoryStatus.RETRACTED);
+        assertThat(jdbcTemplate.queryForList("SELECT status FROM advisory ORDER BY id", String.class)).containsExactly("RETRACTED", "RETRACTED", "PUBLISHED");
+    }
+
+    @Test
+    @DisplayName("정정 거부는 아무것도 바꾸지 않는다 — 없음 001 · 옛 버전 006 · 발행 중이 아님(승인 · 철회) 005 · 같은 동네 · 주에 다른 발행 중 안내 007")
+    void correctRejectionsChangeNothing() {
+        insertAggregate(100L, AggregateLevel.HIGH, null, true);
+        // 철회된 안내를 먼저 만든다 — 발행 중인 안내가 있으면 그 발행이 ADVISORY_007 이다.
+        AdvisoryOperatorResponse retracted = advisoryIn(AdvisoryStatus.RETRACTED);
+        AdvisoryOperatorResponse published = publishedAdvisory();
+        AdvisoryOperatorResponse approved = advisoryIn(AdvisoryStatus.APPROVED);
+        List<String> before = advisorySnapshot();
+        int historyBefore = count("advisory_history");
+
+        assertErrorCode(() -> useCase.correct(OPERATOR, 404L, correctCommand(0L)), AdvisoryErrorCode.ADVISORY_NOT_FOUND);
+        assertErrorCode(() -> useCase.correct(OPERATOR, id(published), correctCommand(published.version() - 1)), AdvisoryErrorCode.CONCURRENT_MODIFICATION);
+        assertErrorCode(() -> useCase.correct(OPERATOR, id(approved), correctCommand(approved.version())), AdvisoryErrorCode.INVALID_TRANSITION);
+        assertErrorCode(() -> useCase.correct(OPERATOR, id(retracted), correctCommand(retracted.version())), AdvisoryErrorCode.INVALID_TRANSITION);
+        assertThat(advisorySnapshot()).isEqualTo(before);
+        assertThat(count("advisory_history")).isEqualTo(historyBefore);
+
+        // 같은 동네 · 주에 발행 중인 안내가 둘인 행(규칙 위반 데이터)에서 정정하면 발행 중이 둘로 남는다 — 막는다.
+        jdbcTemplate.update("UPDATE advisory SET status = 'PUBLISHED', published_at = ? WHERE id = ?", Timestamp.valueOf(FINALIZED_AT), id(approved));
+        List<String> violated = advisorySnapshot();
+        assertErrorCode(() -> useCase.correct(OPERATOR, id(published), correctCommand(published.version())), AdvisoryErrorCode.ALREADY_PUBLISHED);
+
+        assertThat(advisorySnapshot()).isEqualTo(violated);
+        assertThat(count("advisory_history")).isEqualTo(historyBefore);
+    }
+
+    @Test
+    @DisplayName("철회를 저장한 뒤 새 안내 단계에서 실패해도 철회까지 함께 롤백된다 — 이전 안내는 발행 중 그대로, 새 행 · 이력 없음")
+    void correctFailureAfterRetractRollsBackEverything() {
+        insertAggregate(100L, AggregateLevel.HIGH, null, true);
+        AdvisoryOperatorResponse published = publishedAdvisory();
+        List<String> before = advisorySnapshot();
+        int historyBefore = count("advisory_history");
+
+        // 101자 제목 — 웹 경계(ADVISORY_106)를 거치지 않으면 철회를 flush 한 뒤 새 안내를 만들 때 도메인이 거부한다.
+        assertThatThrownBy(() -> useCase.correct(OPERATOR, id(published), new AdvisoryCorrectCommand(published.version(), "가".repeat(101), BODY, "사유")))
+            .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(advisorySnapshot()).isEqualTo(before);
+        assertThat(count("advisory_history")).isEqualTo(historyBefore);
+        assertThat(useCase.getDetail(id(published)).advisory().status()).isEqualTo(AdvisoryStatus.PUBLISHED.toMetadata());
+    }
+
+    private static AdvisoryCorrectCommand correctCommand(long version) {
+        return new AdvisoryCorrectCommand(version, TITLE, "고친 본문", "정정 사유");
+    }
+
+    /** 안내 행마다 {@code id:status:version} — 거부 · 롤백 전후 비교용. */
+    private List<String> advisorySnapshot() {
+        return jdbcTemplate.queryForList("SELECT CONCAT(id, ':', status, ':', version) FROM advisory ORDER BY id", String.class);
     }
 
     /** 다른 세션의 잠금을 기다리는 H2 세션이 생길 때까지 본다 (최대 5초). H2 LOCK_TIMEOUT 보다 짧은 간격으로 확인한다. */

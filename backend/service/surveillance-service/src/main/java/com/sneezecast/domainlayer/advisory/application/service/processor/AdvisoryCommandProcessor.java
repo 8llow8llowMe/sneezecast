@@ -1,5 +1,6 @@
 package com.sneezecast.domainlayer.advisory.application.service.processor;
 
+import com.sneezecast.domainlayer.advisory.application.command.AdvisoryCorrectCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryDraftCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryEditCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryRetractCommand;
@@ -105,6 +106,34 @@ public class AdvisoryCommandProcessor {
     }
 
     /**
+     * 정정 발행(#267) — 발행 중인 안내를 철회하고 고친 제목 · 본문으로 새 안내를 발행해 {@code corrects_advisory_id} 로 잇는다. <b>한 트랜잭션</b>이라 공개
+     * 화면은 철회와 발행 사이("철회된 안내")를 보지 않는다.
+     *
+     * <p>순서: 동네 · 주 잠금 → 없음 {@code 001} → 버전 {@code 006} → 발행 중이 아님 {@code 005} → 같은 동네 · 주에 다른 발행 중 안내 {@code 007} → 이전 안내
+     * RETRACTED(메모 = 사유) → 새 안내 insert(근거 집계 · 동네 · 주 · 인용 수치를 이전 안내에서 복사, 상태 APPROVED) → 이력 (없음) → APPROVED → 발행
+     * APPROVED → PUBLISHED. 정정 요청 자체를 운영자 승인으로 본다(entity-design §2-5 "(없음) → APPROVED"). 철회 시각과 새 안내의 발행 시각은 같은 순간이다
+     * — 공개 동네 안내의 정정 시각(정정한 쪽의 발행 시각)이 철회 시각과 같다.
+     *
+     * <p>사유는 이전 안내의 철회 이력과 새 안내의 생성 이력에 함께 남는다 — 어느 쪽 상세에서도 왜 바뀌었는지 보인다. 저장소가 던지는 {@code 001} ·
+     * {@code 006} 은 잡지 않는다(트랜잭션이 rollback-only 다). 도중에 무엇이 실패하든 철회까지 함께 롤백된다.
+     *
+     * @return 새 안내 (PUBLISHED)
+     */
+    public AdvisoryInfo correct(long operatorId, long advisoryId, AdvisoryCorrectCommand command) {
+        LockedDistrictWeek locked = lockForTransition(operatorId, advisoryId, command.expectedVersion(), AdvisoryStatus.RETRACTED);
+        Advisory current = locked.target();
+        // 대상이 발행 중이면 다른 발행 중 안내는 규칙 위반 데이터다 — 정정이 발행 중 안내를 둘로 남기지 않게 막는다.
+        if (locked.hasOtherPublished()) {
+            throw new AdvisoryException(AdvisoryErrorCode.ALREADY_PUBLISHED, current.districtCode(), current.isoWeek().value());
+        }
+        LocalDateTime at = now();
+        Advisory retracted = persist(current, current.retract(at), operatorId, command.reason());
+        Advisory approved = advisoryRepositoryPort.insert(Advisory.newCorrection(snowflakeIdGenerator.generateId(), retracted, command.title(), command.body()));
+        record(approved, null, operatorId, command.reason());
+        return save(approved, approved.publish(at), operatorId, null);
+    }
+
+    /**
      * 같은 동네 · 주의 안내를 모두 잠그고(잠금 순서를 모든 전이에서 같게 — 교착 방지) 최신 값으로 확인한다. 잠근 뒤에 버전 · 전이를 보므로, 기다리는 사이
      * 다른 운영자가 커밋한 처리는 버전 불일치로 드러난다.
      */
@@ -134,9 +163,13 @@ public class AdvisoryCommandProcessor {
 
     /** 저장소가 충돌을 {@code ADVISORY_006} 으로 바꿔 던지면 이력도 남지 않는다 (같은 트랜잭션이 롤백된다). */
     private AdvisoryInfo save(Advisory current, Advisory next, long operatorId, String memo) {
+        return AdvisoryInfo.from(persist(current, next, operatorId, memo));
+    }
+
+    private Advisory persist(Advisory current, Advisory next, long operatorId, String memo) {
         Advisory saved = advisoryRepositoryPort.update(next);
         record(saved, current.status(), operatorId, memo);
-        return AdvisoryInfo.from(saved);
+        return saved;
     }
 
     private void record(Advisory advisory, AdvisoryStatus fromStatus, long operatorId, String memo) {

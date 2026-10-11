@@ -1,6 +1,7 @@
 package com.sneezecast.domainlayer.advisory.adapter.out.persistence.repository;
 
 import com.sneezecast.domainlayer.advisory.adapter.out.persistence.entity.AdvisoryHistoryEntity;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -11,4 +12,7 @@ public interface AdvisoryHistoryRepository extends JpaRepository<AdvisoryHistory
      * 가른다.
      */
     List<AdvisoryHistoryEntity> findAllByAdvisoryIdOrderByCreatedAtAscIdAsc(Long advisoryId);
+
+    /** 여러 안내의 이력을 한 번에(발행 이력 #267) — 같은 인덱스 · 같은 순서(생성 시각, 같으면 ID). */
+    List<AdvisoryHistoryEntity> findAllByAdvisoryIdInOrderByCreatedAtAscIdAsc(Collection<Long> advisoryIds);
 }

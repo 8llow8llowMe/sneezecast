@@ -25,7 +25,10 @@ public enum AdvisoryStatus implements CodeNameDescribable {
     private final String displayName;
     private final String description;
 
-    /** 이 상태에서 {@code next} 로 갈 수 있는지 (§2-5 표). 생성(→ DRAFT)은 전이가 아니므로 어느 상태에서도 false 다. */
+    /**
+     * 이 상태에서 {@code next} 로 갈 수 있는지 (§2-5 표). 생성(초안 → DRAFT, 정정 발행의 새 안내 → APPROVED)은 전이가 아니라 여기서 보지 않는다 — 어느
+     * 상태에서도 DRAFT 로는 false 다.
+     */
     public boolean canTransitionTo(AdvisoryStatus next) {
         return nextStatuses().contains(next);
     }
