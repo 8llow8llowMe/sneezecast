@@ -3,9 +3,9 @@ import { parseIsoWeek } from '@/lib/iso-week'
 
 import type { ReportAnswer, ReportSymptom, SubmittedReport } from './types'
 
-/* ── 주간 보고 API (`/api/v1/reports/current`, 실데이터) ─────────────────────────────────────
+/* ── 주간 보고 API (`/api/v1/reports/current` · `/me`, 실데이터) ─────────────────────────────────────
  *
- * 본인의 **이번 주** 보고 하나를 쓰고 · 읽고 · 지운다(docs/api-contract-draft.md "주간 보고"). 세 요청 모두 access 를 싣고
+ * 본인의 **이번 주** 보고 하나를 쓰고 · 읽고 · 지운다(docs/api-contract-draft.md "주간 보고"). 지난 보고 내역(`/api/v1/reports/me`)도 읽는다. 모든 요청이 access 를 싣고
  * 건강정보 동의(scope `report:write`)가 있어야 한다 — 없으면 `SECURITY_006`(403)이다.
  *
  * - **보고 주는 보내지 않는다.** 서버가 받은 시각(KST)으로 ISO 주를 정한다. 같은 주는 `PUT` 하나로 처음 보내기 · 고치기를 함께 한다
@@ -16,6 +16,9 @@ import type { ReportAnswer, ReportSymptom, SubmittedReport } from './types'
  */
 
 export const CURRENT_REPORT_PATH = '/api/v1/reports/current'
+
+/** 지난 보고 내역(#216). 이번 주를 뺀 보관 창 안의 보고, 최근 주부터 */
+export const PAST_REPORTS_PATH = '/api/v1/reports/me'
 
 /** backend `SymptomGroup` 이름 */
 type SymptomGroupCode = 'RESPIRATORY' | 'ENTERIC'
@@ -75,6 +78,20 @@ export function kstDateLabel(instant: string): string {
   return `${month}월 ${day}일`
 }
 
+/** 응답의 증상군을 보고 답으로. 모르는 증상군 코드면 `ReportResponseError` 다(아래 `toReceivedReport` 의 이유) */
+function toAnswer(groups: WeeklyReportResponse['symptomGroups']): ReportAnswer {
+  const symptoms: ReportSymptom[] = []
+  for (const group of groups) {
+    const symptom = Object.hasOwn(SYMPTOM_BY_GROUP, group.code)
+      ? SYMPTOM_BY_GROUP[group.code as SymptomGroupCode]
+      : undefined
+    if (!symptom) throw new ReportResponseError('unknown symptom group')
+    if (!symptoms.includes(symptom)) symptoms.push(symptom)
+  }
+  const [first, ...rest] = symptoms
+  return first ? { kind: 'symptom', symptoms: [first, ...rest] } : { kind: 'none' }
+}
+
 /** 받은 이번 주 보고. 화면 모델과 함께 서버가 정한 주 · 처음 저장인지를 싣는다 */
 export type ReceivedReport = Readonly<{
   report: SubmittedReport
@@ -94,18 +111,7 @@ export type ReceivedReport = Readonly<{
  * `reportedLabel` 은 첫 보고 시각(`reportedAt`)의 KST 날짜다(고쳐도 바뀌지 않는다)
  */
 function toReceivedReport(response: WeeklyReportResponse): ReceivedReport {
-  const symptoms: ReportSymptom[] = []
-  for (const group of response.symptomGroups) {
-    const symptom = Object.hasOwn(SYMPTOM_BY_GROUP, group.code)
-      ? SYMPTOM_BY_GROUP[group.code as SymptomGroupCode]
-      : undefined
-    if (!symptom) throw new ReportResponseError('unknown symptom group')
-    if (!symptoms.includes(symptom)) symptoms.push(symptom)
-  }
-  const [first, ...rest] = symptoms
-  const answer: ReportAnswer = first
-    ? { kind: 'symptom', symptoms: [first, ...rest] }
-    : { kind: 'none' }
+  const answer = toAnswer(response.symptomGroups)
   if (!parseIsoWeek(response.isoWeek)) throw new ReportResponseError('unreadable report week')
   const reportedAt = Date.parse(response.reportedAt)
   const updatedAt = Date.parse(response.updatedAt)
@@ -139,4 +145,22 @@ export async function fetchCurrentReport(): Promise<ReceivedReport | null> {
 /** 이번 주 보고를 지운다(멱등 — 없어도 성공). 실패는 거부한다 */
 export async function deleteCurrentReport(): Promise<void> {
   await apiRequest<null>(CURRENT_REPORT_PATH, { method: 'DELETE' })
+}
+
+/** 지난 보고 하나 — 주와 보고 답만 옮긴다(동네 · 시각은 화면이 쓰지 않는다) */
+export type ReceivedPastReport = Readonly<{ isoWeek: string; answer: ReportAnswer }>
+
+/**
+ * 지난 보고(이번 주 제외, 최근 주부터 — 서버 순서 그대로). `SliceResponse` 의 `contents` 만 본다(한 번에 모두 주고 `hasNext` 는 늘 false).
+ * 한 줄이라도 옮길 수 없으면(모르는 증상군 · 읽을 수 없는 주) 목록 전체를 `ReportResponseError` 로 거부한다 — 그 주를 빼면 보고하지 않은
+ * 주로, 증상을 버리면 다른 보고로 보인다. 실패는 거부한다
+ */
+export async function fetchPastReports(): Promise<ReceivedPastReport[]> {
+  const { contents } = await apiRequest<{ contents: WeeklyReportResponse[]; hasNext: boolean }>(
+    PAST_REPORTS_PATH,
+  )
+  return contents.map((report) => {
+    if (!parseIsoWeek(report.isoWeek)) throw new ReportResponseError('unreadable report week')
+    return Object.freeze({ isoWeek: report.isoWeek, answer: toAnswer(report.symptomGroups) })
+  })
 }

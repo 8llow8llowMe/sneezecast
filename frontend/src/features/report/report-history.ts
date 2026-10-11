@@ -1,16 +1,18 @@
+import { classifyApiError } from '@/lib/api/error-kind'
 import type { DataSource } from '@/lib/data-source'
 import { isoWeekMonday, kstIsoWeek, parseIsoWeek } from '@/lib/iso-week'
+import { refreshSession } from '@/lib/session/session-store'
 
+import { fetchPastReports } from './report-api'
 import type { ReportAnswer } from './types'
 
-/* ── 지난 보고 내역 (S10 `/me/reports`, #194) ─────────────────────────────────────────────────
+/* ── 지난 보고 내역 (S10 `/me/reports`, #194 · 연동 #251) ─────────────────────────────────────────
  *
- * **백엔드는 확정(#216), 프론트 연동 전이다.** 계약은 docs/api-contract-draft.md "지난 보고 내역 `/api/v1/reports/me` (확정)"
- * (이번 주를 뺀 지난 보고, 최근 주부터)다.
+ * 계약은 백엔드 #216 의 `GET /api/v1/reports/me`(이번 주를 뺀 지난 보고, 최근 주부터 — docs/api-contract-draft.md "지난 보고 내역")다.
+ * 이번 주 보고는 화면이 이번 주 보고 저장소(`use-submitted-report.ts`)에서 따로 읽는다.
  *
- * - 실데이터: 요청하지 않고 `unavailable` 이다. 연동 전 API 는 보통 출처와 무관하게 목이지만(docs/conventions.md "데이터 출처"),
- *   보고 이력은 건강정보(민감정보)라 **실제 회원에게 지어낸 과거 보고를 보이지 않는다.** 이번 주 보고는 화면이
- *   이번 주 보고 저장소(`use-submitted-report.ts`)에서 따로 읽는다
+ * - 실데이터: `fetchPastReports`(`report-api.ts`). 실패 · 옮길 수 없는 응답은 거부한다 — 화면은 "불러오지 못했어요" + `다시 시도` 다.
+ *   권한 없음(`SECURITY_006`)이면 이번 주 보고(`current-report.ts`)와 같게 세션 요약을 다시 맞춘다(`refreshSession`)
  * - 목: 지금 KST 주의 앞 주들 예시(`MOCK_PAST_ANSWERS`). 보고하지 않은 주가 하나 끼어 있다. `?mock-reports=empty` 면 빈 목록이다
  *
  * 보고 내용은 브라우저 저장소 · 주소 · 로그에 남기지 않는다.
@@ -28,11 +30,6 @@ export type PastReport = Readonly<{
   isoWeek: string
   answer: ReportAnswer
 }>
-
-export type PastReports =
-  | { status: 'ready'; reports: readonly PastReport[] }
-  /** 실데이터 — 지난 보고를 읽을 API 가 아직 없다 */
-  | { status: 'unavailable' }
 
 /** 지난 주부터 거꾸로 본 목 예시. null 은 보고하지 않은 주다 */
 const MOCK_PAST_ANSWERS: readonly (ReportAnswer | null)[] = [
@@ -55,18 +52,25 @@ function weeksBefore(isoWeek: string, weeks: number): string {
 }
 
 /**
- * 이번 주를 뺀 지난 보고(최근 주부터). `now` 는 지금 시각(테스트가 정한다), `empty` 는 목 빈 목록 재현이다
+ * 이번 주를 뺀 지난 보고(최근 주부터). `now` 는 목의 지금 시각(테스트가 정한다), `empty` 는 목 빈 목록 재현이다 — 실데이터는 둘 다
+ * 보지 않는다(이번 주는 서버가 정한다). 실패하면 거부한다
  */
 export function listPastReports(
   source: DataSource,
   { now = new Date(), empty = false }: { now?: Date; empty?: boolean } = {},
-): PastReports {
-  if (source === 'api') return { status: 'unavailable' }
-  if (empty) return { status: 'ready', reports: [] }
+): Promise<readonly PastReport[]> {
+  if (source === 'api') {
+    return fetchPastReports().catch((error: unknown) => {
+      // 권한 없음(동의 철회 직후 등)이면 이번 주 보고와 같게 요약을 다시 맞춘다 — 보고할 수 없다고 바뀌면 화면이 내 정보로 돌아간다
+      if (classifyApiError(error) === 'forbidden') void refreshSession()
+      throw error
+    })
+  }
+  if (empty) return Promise.resolve([])
   const thisWeek = kstIsoWeek(now)
   const reports: PastReport[] = []
   MOCK_PAST_ANSWERS.forEach((answer, index) => {
     if (answer) reports.push({ isoWeek: weeksBefore(thisWeek, index + 1), answer })
   })
-  return { status: 'ready', reports }
+  return Promise.resolve(reports)
 }
