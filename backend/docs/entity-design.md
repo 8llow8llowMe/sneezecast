@@ -295,13 +295,17 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | version | BIGINT | N | 낙관적 락 (`@Version`, 0 부터). 운영자 두 명이 동시에 고쳐 한쪽 수정이 사라지는 것을 막는다 |
 
 - 인덱스: `idx_advisory_district_code_status_published_at` (공개 목록), `idx_advisory_aggregate_id`, `idx_advisory_corrects_advisory_id` (이전 안내 → 정정한 안내, #267 의 `정정됨` 판정)
+  - `iso_week` 를 앞 컬럼으로 하는 인덱스는 **없다**. 운영자 발행 이력(#267 — 4주 × 모든 동네 × PUBLISHED · RETRACTED)은 그래서 전체 스캔이다. 4주 범위를 기존 인덱스로 탈 길도 없다 — `idx_advisory_district_code_status_published_at` 은 동네가 앞 컬럼이고, 근거 집계 ID(`idx_advisory_aggregate_id`)로 돌아가면 집계를 한 번 더 읽고 동네 수만큼의 IN 이 된다. 1단계 규모(발행 안내 수백 건)에서는 그대로 두고, 늘면 `idx_advisory_iso_week` 를 둔다.
 - **초안 생성 전제**: 근거 집계가 **마감됐고**(`finalized_at` not null) level 이 INSUFFICIENT 가 아니어야 한다. "충분한 자료가 있을 때에만 예방 정보를 전한다" 는 불변식을 초안 단계에서 막는다. 근거 집계는 **동네 · 주**로 찾는다(UK `(district_code, iso_week)` — 검토 후보가 동네 · 주 단위다). 행 없음 `ADVISORY_002`(404), 마감 전 `ADVISORY_003` · 자료 부족 `ADVISORY_004`(409). 집계는 `AdvisoryAggregateQueryPort` → aggregate 저장 포트로만 읽는다(advisory 는 aggregate 영속 계층을 import 하지 않는다).
 - 인용값을 복사해 두는 이유: 운영자가 검토한 수치와 발행문 수치가 같아야 한다. 집계가 재계산돼도 안내는 바뀌지 않는다. 근거 집계 · 동네 · 주 · `cited_*` 는 생성 뒤 고치지 않는다 — 수정은 상태 · 제목 · 본문 · 발행 · 철회 시각만 바꾸고, 엔티티 매핑도 그 컬럼을 `updatable = false` 로 둬 UPDATE 에 싣지 않는다.
 - 제목은 공백이 아닌 100자(코드포인트) 이하, 본문은 공백이 아니어야 한다(도메인 검사 — 프로그래밍 오류 안전망이다). 운영자 API(#246)는 웹 경계에서 같은 조건과 본문 16,383자(`TEXT` 65,535 바이트 ÷ utf8mb4 4바이트) · 메모 · 사유 500자 상한을 400(`ADVISORY_105`~`113`)으로 먼저 거른다 — 사용자 입력이 도메인 `IllegalArgumentException` 으로 500 이 되지 않게. `published_at` · `retracted_at` 은 집계 시각과 같은 기준(JVM 기본 시간대 지역 시각, 순간은 `Clock` 빈)이고 **초 단위로 자른다** — MySQL `TIMESTAMP` 가 초 정밀도라 응답과 다시 읽은 값이 같게 한다.
 - **동시 처리 — 동네 · 주 잠금**: 모든 전이 · 수정은 먼저 대상 안내의 동네 · 주만 스칼라로 읽고(엔티티를 올리지 않는다), 그 동네 · 주의 안내 전부를 `SELECT … FOR UPDATE`(`AdvisoryRepository#findAllByDistrictCodeAndIsoWeek`, `PESSIMISTIC_WRITE`)로 읽는다. 잠금을 기다린 뒤의 최신 커밋 값(current read)으로 버전 · 전이 · 발행 중 여부를 판단하므로 같은 동네 · 주의 처리는 줄을 선다. MySQL REPEATABLE READ 에서 잠그지 않는 읽기는 트랜잭션 첫 읽기의 스냅샷이라 이 판단에 쓰지 않는다. 잠금은 `idx_advisory_district_code_status_published_at` 앞 컬럼(`district_code`)을 타 InnoDB 가 **그 동네의 다른 주 행까지** 잠근다 — 같은 동네 처리끼리 직렬화되지만 1단계 운영자 수에서는 문제없고 DDL 을 바꾸지 않는다. 모든 전이가 같은 인덱스 범위를 같은 순서로 잠그고, 대상 행을 PK 로 먼저 잠그는 경로가 없어 전이끼리 교착하지 않는다. 잠금 대기 초과(`innodb_lock_wait_timeout`) · 교착 희생은 `ADVISORY_006` 이다.
 - **동시 수정 — 버전**: 전이 · 수정 요청은 화면이 읽은 `version` 을 싣는다. 잠근 뒤 본 버전과 다르면 409 `ADVISORY_006` 이다(기다리는 사이 다른 운영자가 커밋한 처리도 여기서 드러난다). `@Version` 은 안전망이다 — 같은 트랜잭션에서 잠그지 않고 먼저 읽은 엔티티(옛 값)로 고치면 `update … where version = ?` 가 0건이 되는데, 저장 어댑터(`AdvisoryRepositoryAdapter#update`)가 그 자리에서 flush 해 `OptimisticLockingFailureException` 을 같은 `ADVISORY_006` 으로 바꾼다(커밋까지 미루면 트랜잭션 프록시 밖에서 그대로 터진다). 다시 시도하지 않는다 — 화면이 다시 읽는다. 수정은 조회한 엔티티를 바꿔 변경 감지로 한다(coding-conventions §8-1).
 - **같은 동네 · 주에 발행 중(PUBLISHED)인 안내는 하나뿐이다.** 이미 있으면 발행은 409 `ADVISORY_007` — 바꾸려면 그 안내를 철회(정정)한다. 동네 안내(#215)가 한 동네 · 주에 안내 하나를 보이게 한다. 초안 · 승인은 여럿이어도 된다(철회 뒤 새 안내 · 정정). 판단은 위 동네 · 주 잠금 읽기의 결과로 하므로, 서로 다른 두 안내를 동시에 발행하면 뒤에 선 쪽이 앞 쪽의 커밋된 PUBLISHED 를 보고 거부된다. 초안 생성은 이 잠금을 잡지 않는다(INSERT 는 발행 중 여부를 바꾸지 않는다).
-- **정정 발행(#267)**: PUBLISHED 본문은 고치지 않는다. 이전 안내를 철회(RETRACTED, `memo` = 정정 사유)하고 같은 동네 · 주 · 근거 집계로 새 안내를 만들어 `corrects_advisory_id` 로 잇는다. 새 안내의 `cited_*` 는 **이전 안내에서 옮긴다**(마감 집계는 바뀌지 않으므로 같은 값이고, 운영자가 검토한 수치를 그대로 잇는다). 새 안내가 승인 · 발행 단계를 어떻게 거칠지와 철회 · 발행 순서(발행 중 하나 규칙상 철회가 먼저)는 #267 이 한 트랜잭션으로 정한다.
+- **정정 발행(#267)**: PUBLISHED 본문은 고치지 않는다. 이전 안내를 철회(RETRACTED, `memo` = 정정 사유)하고 같은 동네 · 주 · 근거 집계로 새 안내를 만들어 `corrects_advisory_id` 로 잇는다. 새 안내의 `aggregate_id` · 동네 · 주 · `cited_*` 는 **이전 안내에서 옮긴다**(`Advisory#newCorrection`) — 집계 행을 다시 읽지 않으므로 집계가 다시 계산돼도 운영자가 검토한 같은 근거를 잇는다. 운영자가 본문의 숫자를 고쳐도 인용값은 바뀌지 않는다(본문 숫자를 검증하지 않는다 — 본문은 운영자가 승인한 문장이다).
+  - **한 요청 · 한 트랜잭션**(`POST /api/v1/advisories/admin/{id}/correct` `{title, body, reason, version}` → 새 안내) — 공개 화면이 철회와 발행 사이의 "철회된 안내" 를 보지 않는다. 순서: 동네 · 주 잠금 → 없음 `ADVISORY_001` → 버전 `006` → 대상이 PUBLISHED 아님 `005`(메시지는 `지금 상태 → RETRACTED` — 정정의 첫 단계가 철회다) → 같은 동네 · 주에 다른 PUBLISHED(규칙 위반 데이터) `007` → 이전 안내 RETRACTED(`memo` = 사유) → 새 안내 insert(APPROVED) → 이력 (없음) → APPROVED(`memo` = 사유) → 발행 APPROVED → PUBLISHED. **정정 요청 자체를 운영자의 승인으로 본다**(§2-5 "(없음) → APPROVED"). 철회 시각과 새 안내의 발행 시각은 같은 순간이다(공개 정정 시각 = 이전 안내 철회 시각).
+  - 철회가 먼저인 것은 "발행 중 하나" 규칙 때문이다(새 안내 발행이 이전 안내의 PUBLISHED 와 겹치지 않게). 도중에 어느 단계가 실패해도 철회까지 함께 롤백된다. 저장소가 던지는 `001` · `006` 은 잡지 않고 그대로 올린다(잡으면 트랜잭션이 rollback-only 라 커밋에서 실패한다).
+  - 새 안내도 PUBLISHED 라 다시 정정할 수 있다 — 사슬이 길어지고 공개 동네 안내는 정정 시각을 최근 것부터 모두 보인다. 사유는 운영자 응답(상세 · 발행 이력의 이력 `memo`)에만 있고 공개하지 않는다.
 - **자동 발행 경로는 없다.** PUBLISHED 로 가는 전이는 OPERATOR 요청으로만 일어난다 — 모든 처리가 운영자 ID(토큰 `sub`)를 받는다(`AdvisoryOperatorWebUseCase`).
 - **공개 API(#215)는 발행된 안내만 읽는다.** 동네 안내(`GET /api/v1/advisories`)는 동네 · 주의 PUBLISHED · RETRACTED 만 잠그지 않고 읽어(`AdvisoryRepositoryPort#findAllPublicByDistrictCodeAndIsoWeek`) 셋 중 하나로 보인다 — ① PUBLISHED 가 있으면 그 안내(제목 · 본문 · `cited_*` · 발행 시각)와 `corrects_advisory_id` 를 거꾸로 따라간 정정 시각(정정한 쪽의 `published_at`, 최근 것부터), ② 없고 다른 공개 안내가 정정하지 않은 RETRACTED 가 있으면 가장 최근 `retracted_at` 만(제목 · 본문 · 인용 수치는 싣지 않는다), ③ 그 밖은 안내 없음. 초안 · AI 초안 · 수정 · 승인 단계는 저장소 밖으로 나오지 않는다. 공개 집계(홈 · 지도)의 발행 안내 요약은 요청 주의 PUBLISHED, 없으면 직전 주의 PUBLISHED 만 본다(modules.md "공개 집계 조회"). 철회 · 정정 사유(`advisory_history.memo`)와 운영자 · 버전 · 안내 ID 는 공개하지 않는다. PUBLISHED 가 여럿인 행(규칙 위반)은 500 대신 가장 최근 `published_at`(같으면 id) 하나를 고르고 WARN 을 남긴다(`Advisory#PUBLICATION_ORDER`).
 
@@ -320,11 +324,11 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | operator_id | BIGINT | N | 요청한 운영자 (auth `member.id`). AI 초안도 **요청한 운영자**를 남긴다 |
 | ai_model | VARCHAR(60) | Y | AI 초안을 만든 모델 id. AI_DRAFTED 전이에만 |
 | prompt_version | VARCHAR(20) | Y | AI 초안에 쓴 프롬프트 버전 (설정). AI_DRAFTED 전이에만 |
-| memo | VARCHAR(500) | Y | 수정 · 철회 사유 (수정은 선택, 철회는 필수) |
+| memo | VARCHAR(500) | Y | 수정 · 철회 · 정정 사유 (수정은 선택, 철회 · 정정은 필수). 정정 사유는 이전 안내의 철회 행과 새 안내의 생성 행(null → APPROVED) 둘 다에 남는다 |
 
 - 인덱스: `idx_advisory_history_advisory_id`
 - `created_at` 이 전이 시각이다. 안내 하나의 이력은 `created_at`, 같으면 `id`(Snowflake, 시간 순) 오름차순으로 읽는다 — 한 요청에서 이어 쌓인 행은 생성 시각이 같을 수 있다.
-- 초안 생성(`from_status` null → DRAFT)부터 모든 전이 · 수정이 한 행씩이고, 안내 갱신과 **같은 트랜잭션**이라 함께 커밋되거나 함께 롤백된다(충돌 · 거부된 요청은 이력을 남기지 않는다). `title` · `body` 는 바뀐 뒤의 값이다.
+- 초안 생성(`from_status` null → DRAFT, 정정 발행의 새 안내는 null → APPROVED)부터 모든 전이 · 수정이 한 행씩이고, 안내 갱신과 **같은 트랜잭션**이라 함께 커밋되거나 함께 롤백된다(충돌 · 거부된 요청은 이력을 남기지 않는다). `title` · `body` 는 바뀐 뒤의 값이다.
 - `operator_id` 는 인증 주체의 회원 ID(양수)다. 로그에는 남기지 않는다(회원 식별정보) — 처리 로그는 안내 ID · 상태 · 버전뿐이다.
 
 ### 2-5. advisory 상태 전이
@@ -332,6 +336,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | 현재 | 다음 | 누가 | 조건 |
 |------|------|------|------|
 | (없음) | DRAFT | OPERATOR | §2-3 초안 생성 전제 |
+| (없음) | APPROVED | OPERATOR | **정정 발행에서만**(§2-3, #267). 정정 요청 자체가 승인이다 — 같은 트랜잭션에서 이전 안내를 철회한 뒤 만들고 바로 PUBLISHED 로 간다 |
 | DRAFT | AI_DRAFTED | OPERATOR 요청 → AI | 입력은 인용값 스냅샷뿐 (트랜잭션 밖 동기 호출, timeout 명시) |
 | DRAFT · AI_DRAFTED · EDITED | EDITED | OPERATOR | 본문 · 제목 수정. EDITED → EDITED 는 다시 수정이다(한 번 고친 뒤 또 고치려고 승인부터 할 필요가 없다) |
 | DRAFT · AI_DRAFTED · EDITED | APPROVED | OPERATOR | 운영자가 현재 본문을 검토 · 승인 |
@@ -341,12 +346,14 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 - 표에 없는 전이는 409 `ADVISORY_005`(메시지에 지금 상태 → 요청 상태). PUBLISHED 본문은 고치지 않는다 — 철회하고 새 안내를 만든다(정정, §2-3).
 - RETRACTED 는 끝 상태다. 어느 상태에서도 DRAFT 로 돌아가지 않는다(DRAFT 는 생성뿐).
+- (없음) → APPROVED 는 전이가 아니라 생성이다(`Advisory#newCorrection` — 철회된 이전 안내로만 만든다). 초안 생성처럼 `canTransitionTo` 표에 들지 않는다.
 - 표의 정본은 `AdvisoryStatus#canTransitionTo` 한 곳이고 `AdvisoryStatusTest` 가 36칸 전부를 못 박는다. 처리 계층(`AdvisoryOperatorWebUseCase` → `AdvisoryOperatorWebFacade`(트랜잭션) → `AdvisoryCommandProcessor`)의 확인 순서는 동네 · 주 잠금(§2-3) → 안내 없음 404 `ADVISORY_001` → 요청 버전 불일치 409 `ADVISORY_006` → 표에 없는 전이 409 `ADVISORY_005` 다. 옛 화면이 보낸 요청이면 "다시 읽어라" 가 맞는 답이라 버전을 먼저 본다.
 - DRAFT → AI_DRAFTED 는 표에만 있고 경로는 아직 없다(AI 이슈 — 외부 호출이라 트랜잭션을 Processor 단위로 좁힌 별도 경로가 된다).
 - **화면 동작과의 대응 (운영자 API #246)**: 처리 하나가 요청 하나 · 표의 한 행이다(`/api/v1/advisories/admin/**`, modules.md "운영자 안내 API"). 초안 만들기 = 생성(→ DRAFT), 수정 저장 = 수정(→ EDITED), 승인(→ APPROVED), 발행(→ PUBLISHED), 철회(→ RETRACTED).
   - **"승인하고 발행" 은 두 요청이다**(승인 → 발행). 한 요청으로 묶지 않는다 — 운영자가 승인한 본문과 발행이 이력 두 행으로 따로 남고, 발행이 거부되면(`ADVISORY_007` — 같은 동네 · 주에 발행 중인 안내가 있다) 안내는 APPROVED 로 남아 그 안내를 철회 · 정정한 뒤 다시 발행한다. 화면에 저장하지 않은 수정이 있으면 수정 → 승인 → 발행 순서로 부르고 앞 응답의 `version` 을 다음 요청에 싣는다.
   - **보류는 상태가 아니다** — 1단계에서는 서버 처리가 없고 **기록되지 않는다**. 후보 처리 기록(보류 · 대기 · 검토 중)과 그 이력은 `review_signal`(2단계, §6)이 맡는다. 보류한 동네 · 주에 안내가 있으면 그 상태 그대로 남는다(발행하지 않으면 공개되지 않는다).
-  - 정정(발행된 안내를 바로잡는 새 안내)은 #267 이 한 요청 · 한 트랜잭션으로 정한다(§2-3).
+  - **정정 발행 = 한 요청**(`correct` — #267, §2-3). 승인하고 발행과 달리 묶는다 — 철회와 새 안내 발행 사이를 공개 화면에 보이지 않게 하려는 것이고, 정정 요청이 곧 운영자 승인이다. 이력은 이전 안내 PUBLISHED → RETRACTED, 새 안내 (없음) → APPROVED → PUBLISHED 세 행이다.
+  - 발행 중인 안내가 있는 동네 · 주에서 새 초안을 만들 수는 있지만(초안 생성은 잠그지 않는다) 그 안내를 철회하기 전에는 발행할 수 없고(`007`) 검토 후보에도 발행 중인 안내가 보인다. 발행된 안내를 바꾸는 길은 정정이므로 1단계에서는 이 경로를 따로 두지 않는다(modules.md "운영자 검토 후보" — #266 리뷰 메모).
 
 ---
 
@@ -490,6 +497,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | 이번 주 동네별 집계 목록 (검토 후보 계산 포함) | `district_weekly_aggregate` UK `(district_code, iso_week)` + 전주 행 |
 | 동네의 발행 안내 목록 | `idx_advisory_district_code_status_published_at` |
 | 안내 한 건의 전 이력 | `idx_advisory_history_advisory_id` |
+| 운영자 발행 이력 (4주, #267) | `advisory` 전체 스캔(`iso_week` 인덱스 없음 — 1단계 그대로, §2-3) + `idx_advisory_history_advisory_id`(안내 ID IN) |
 | 미완료 보고 파기 | `idx_report_purge_request_completed_at` (`completed_at is null`) |
 | 원천별 마지막 적재 결과 | `idx_official_source_snapshot_request_key_created_at` 최신 행 |
 | 공식 자료 최근 기간 | `idx_official_surveillance_program_period_start` |
