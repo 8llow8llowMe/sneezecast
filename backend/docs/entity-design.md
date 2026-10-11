@@ -431,7 +431,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - 표시 대상(감염병 · 병원체 목록)은 서버 설정으로 거르지 않는다 — 공식 정보 조회가 적재된 주 단위 계열을 모두 내리고 화면이 고른다(#213). 연 단위(시도) 행은 그 조회에 싣지 않는다.
 - **스키마 공백**: 화면(S08)의 발표 단계(유행주의보 발령 · 해제)와 쉬운 요약 문장은 이 테이블에 출처가 없다. 지어내지 않고 조회에도 싣지 않는다 — 단계는 출처가 확정된 뒤, 요약은 운영자 검토를 거치는 AI 초안 흐름(루트 CLAUDE.md)에서 정한다.
 - 라이선스 **공공누리 제4유형(출처표시 · 상업적 이용금지 · 변경금지)** — 화면에 출처를 밝히고 원값을 그대로 보인다. 파생값(예: 전주 대비)을 보이면 파생값임을 밝힌다.
-- 정본은 surveillance `domainlayer/official` 의 `OfficialSurveillanceEntity` (§3-3 은 `OfficialSourceSnapshotEntity`). `id` 는 batch 가 Snowflake 로 할당하고 surveillance 는 이 두 테이블을 `save` 하지 않으므로 `Persistable` 을 구현하지 않는다 — [coding-conventions.md §8-1](coding-conventions.md#8-1-엔티티) 의 판정은 `save` 경로에서만 의미가 있다 (#74 가 `BaseEntity` 로 올리면 함께 적용된다). enum 은 같은 패키지 `domain/enums` 에 두고, 저장 값(`name()`)이 batch 와의 DB 계약이라 테스트로 고정한다.
+- 정본은 surveillance `domainlayer/official` 의 `OfficialSurveillanceEntity` (§3-3 은 `OfficialSourceSnapshotEntity`). `id` 는 batch 가 Snowflake 로 할당하고 surveillance 는 이 두 테이블을 `save` 하지 않는다 — `BaseEntity` 의 새 행 판정([coding-conventions.md §8-1](coding-conventions.md#8-1-엔티티))은 `save` 경로에서만 의미가 있어 이 테이블에는 영향이 없다. enum 은 같은 패키지 `domain/enums` 에 두고, 저장 값(`name()`)이 batch 와의 DB 계약이라 테스트로 고정한다.
 
 ### 3-3. official_source_snapshot — 외부 원천 적재 이력
 
