@@ -86,7 +86,7 @@ export function CandidateDetail({
   onAction: (action: CandidateAction, draft: string) => void
 }) {
   const id = useId()
-  const [draft, setDraft] = useState(candidate.draft)
+  const [draft, setDraft] = useState(candidate.draft ?? '')
   const [checked, setChecked] = useState<readonly boolean[]>(() => PUBLISH_CHECKS.map(() => false))
   const [draftProblem, setDraftProblem] = useState<string | null>(null)
   const [checksMissing, setChecksMissing] = useState(false)
@@ -98,7 +98,8 @@ export function CandidateDetail({
   const meta = [
     week,
     `참여 ${candidate.participants}명`,
-    `증상 보고 ${candidate.symptomRate}%${baseline !== undefined ? ` (기준선 ${baseline}%)` : ''}`,
+    candidate.symptomRate !== undefined &&
+      `증상 보고 ${candidate.symptomRate}%${baseline !== undefined ? ` (기준선 ${baseline}%)` : ''}`,
     symptom,
   ]
     .filter(Boolean)
@@ -135,7 +136,8 @@ export function CandidateDetail({
           tabIndex={-1}
           className="text-screen-title font-bold text-fg focus:outline-none"
         >
-          {candidate.districtName} · {CANDIDATE_KIND_TITLE[candidate.kind]}
+          {candidate.districtName}
+          {candidate.kind && ` · ${CANDIDATE_KIND_TITLE[candidate.kind]}`}
         </h2>
         <p className="text-body-strong text-fg-sub">{meta}</p>
       </div>
@@ -221,7 +223,7 @@ export function CandidateDetail({
             {draftProblem}
           </p>
         )}
-        {candidate.guides.length > 0 && (
+        {candidate.guides && candidate.guides.length > 0 && (
           <span className="text-caption text-fg-sub">
             연결된 예방수칙: {candidate.guides.join(' · ')} (질병관리청)
           </span>
