@@ -97,6 +97,8 @@ x-auth-service-environment: &auth_service_environment
   KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
   KAKAO_CONNECT_TIMEOUT: ${KAKAO_CONNECT_TIMEOUT:-PT1S}
   KAKAO_READ_TIMEOUT: ${KAKAO_READ_TIMEOUT:-PT2S}
+  # 탈퇴 회원 이메일 다이제스트 pepper (member.withdrawn-email.pepper). 기본값이 없다(파이프라인 필수 키, 비거나 32자 미만이면 기동 실패). 교체 금지.
+  WITHDRAWN_EMAIL_PEPPER: ${WITHDRAWN_EMAIL_PEPPER}
   # 카카오 로그인 state · 가입표 · 연결 확인표 수명과 인가 요청 IP 상한 (auth.oauth.*). 0 이하면 기동 실패. 기본값은 application.yml 과 같다.
   AUTH_OAUTH_STATE_TTL: ${AUTH_OAUTH_STATE_TTL:-PT10M}
   AUTH_OAUTH_SIGNUP_TICKET_TTL: ${AUTH_OAUTH_SIGNUP_TICKET_TTL:-PT30M}

@@ -107,7 +107,9 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
     "MAIL_PASSWORD=context-test-password",
     "KAKAO_CLIENT_ID=context-test-kakao-client-id",
     "KAKAO_CLIENT_SECRET=context-test-kakao-client-secret",
-    "KAKAO_REDIRECT_URI=https://dev.sneezecast.com/login/kakao/callback"
+    "KAKAO_REDIRECT_URI=https://dev.sneezecast.com/login/kakao/callback",
+    // 탈퇴 이메일 다이제스트 pepper 도 기본값이 없는 필수 설정이다(#154, 비거나 32자 미만이면 기동 실패).
+    "WITHDRAWN_EMAIL_PEPPER=sneezecast-test-withdrawn-email-pepper-0123456789"
 })
 @AutoConfigureMockMvc
 @Import(AuthServiceApplicationTests.MethodSecurityProbeController.class)
@@ -283,8 +285,9 @@ class AuthServiceApplicationTests {
         "PATCH | /api/v1/members/me | {\"nickname\":\"재채기탐정\"}",
         "POST | /api/v1/members/me/password | {\"currentPassword\":\"P@ssw0rd!\",\"newPassword\":\"Sneeze2026!\"}",
         "POST | /api/v1/members/me/consents | {\"type\":\"SENSITIVE_HEALTH_INFO\",\"documentVersion\":\"2026-10-01\"}",
-        "DELETE | /api/v1/members/me/consents/SENSITIVE_HEALTH_INFO | "})
-    @DisplayName("내 정보 · 비밀번호 변경 · 동의 · 철회 API 는 토큰이 없으면 401 SECURITY_001 봉투다 — @PreAuthorize 가 실제로 걸려 있다")
+        "DELETE | /api/v1/members/me/consents/SENSITIVE_HEALTH_INFO | ",
+        "POST | /api/v1/members/me/withdraw | "})
+    @DisplayName("내 정보 · 비밀번호 변경 · 동의 · 철회 · 탈퇴 API 는 토큰이 없으면 401 SECURITY_001 봉투다 — @PreAuthorize 가 실제로 걸려 있다")
     void memberApisRequireAuthentication(String method, String path, String body) throws Exception {
         MockHttpServletRequestBuilder request = switch (method) {
             case "POST" -> post(path);

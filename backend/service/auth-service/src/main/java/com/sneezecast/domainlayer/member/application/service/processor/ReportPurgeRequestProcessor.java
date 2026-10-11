@@ -29,8 +29,8 @@ public class ReportPurgeRequestProcessor {
      * 미완료 요청이 없을 때만 새 요청을 남긴다. 이미 있으면 그 요청이 아직 돌지 않았거나 재시도 중이라, 끝날 때 그 시각까지의 보고가 함께 지워진다
      * — 둘째 행은 같은 파기를 한 번 더 부를 뿐이다.
      *
-     * <p><b>건강정보 동의 철회 전용이다.</b> 중복 판정이 사유를 보지 않으므로, 탈퇴(#154)가 이 메서드를 그대로 쓰면 철회 파기가 남아 있는 회원에게
-     * {@code WITHDRAWAL} 행이 생기지 않는다. 탈퇴는 hard delete 판정이 사유에 기대므로 #154 에서 사유를 보는 판정을 따로 둔다.
+     * <p><b>건강정보 동의 철회 전용이다.</b> 중복 판정이 사유를 보지 않으므로, 탈퇴가 이 메서드를 그대로 쓰면 철회 파기가 남아 있는 회원에게
+     * {@code WITHDRAWAL} 행이 생기지 않는다. 탈퇴는 {@link #requestWithdrawalIfAbsent} 를 쓴다.
      *
      * @return 새 요청을 남겼으면 true
      */
@@ -38,6 +38,29 @@ public class ReportPurgeRequestProcessor {
         if (reportPurgeRequestRepositoryPort.existsIncompleteByMemberId(memberId)) {
             return false;
         }
+        save(memberId, reason, requestedAt);
+        return true;
+    }
+
+    /**
+     * 탈퇴 파기 요청({@code WITHDRAWAL})을 남긴다. 중복 판정은 <b>같은 사유의 미완료 요청만</b> 본다 — 건강정보 동의 철회 요청이 미완료로 남아 있어도
+     * {@code WITHDRAWAL} 행은 반드시 생긴다. 탈퇴 사실과 그 시각(완료 경계의 기준)이 파기 증빙으로 남아야 하고, 회원 파기(#244)가 탈퇴 요청의 완료를
+     * 보고 판정하기 때문이다.
+     *
+     * <p>같은 회원의 탈퇴는 회원 행 잠금으로 차례로 처리되고 둘째는 상태 확인에서 막히므로 이 판정이 실제로 걸리는 일은 없다. 그래도 중복 행이 생기지 않는
+     * 마지막 보루로 둔다.
+     *
+     * @return 새 요청을 남겼으면 true
+     */
+    public boolean requestWithdrawalIfAbsent(long memberId, LocalDateTime requestedAt) {
+        if (reportPurgeRequestRepositoryPort.existsIncompleteByMemberIdAndReason(memberId, PurgeReason.WITHDRAWAL)) {
+            return false;
+        }
+        save(memberId, PurgeReason.WITHDRAWAL, requestedAt);
+        return true;
+    }
+
+    private void save(long memberId, PurgeReason reason, LocalDateTime requestedAt) {
         reportPurgeRequestRepositoryPort.save(ReportPurgeRequest.builder()
             .id(snowflakeIdGenerator.generateId())
             .memberId(memberId)
@@ -45,6 +68,5 @@ public class ReportPurgeRequestProcessor {
             .requestedAt(requestedAt)
             .attemptCount(0)
             .build());
-        return true;
     }
 }

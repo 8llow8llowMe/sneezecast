@@ -32,6 +32,7 @@ import com.sneezecast.domainlayer.member.application.service.processor.MemberCom
 import com.sneezecast.domainlayer.member.application.service.processor.MemberConsentProcessor;
 import com.sneezecast.domainlayer.member.application.service.processor.MemberPasswordProcessor;
 import com.sneezecast.domainlayer.member.application.service.processor.MemberQueryProcessor;
+import com.sneezecast.domainlayer.member.application.service.processor.MemberWithdrawalProcessor;
 import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
 import com.sneezecast.domainlayer.member.domain.enums.MemberStatus;
 import com.sneezecast.domainlayer.member.domain.enums.OAuthProvider;
@@ -64,6 +65,7 @@ class MemberWebFacadeTest {
     private MemberConsentProcessor memberConsentProcessor;
     private MemberCommandProcessor memberCommandProcessor;
     private MemberSessionRevokePort memberSessionRevokePort;
+    private MemberWithdrawalProcessor memberWithdrawalProcessor;
     private MemberWebFacade facade;
 
     @BeforeEach
@@ -72,6 +74,7 @@ class MemberWebFacadeTest {
         memberConsentProcessor = mock(MemberConsentProcessor.class);
         memberCommandProcessor = mock(MemberCommandProcessor.class);
         memberSessionRevokePort = mock(MemberSessionRevokePort.class);
+        memberWithdrawalProcessor = mock(MemberWithdrawalProcessor.class);
         MemberPasswordAttemptPort attemptPort = mock(MemberPasswordAttemptPort.class);
         when(attemptPort.increaseFailureCount(anyLong(), any())).thenReturn(1L);
         when(memberConsentProcessor.currentStatus(anyLong())).thenReturn(MemberConsentStatusInfo.builder().healthInfoAgreed(true).build());
@@ -79,7 +82,40 @@ class MemberWebFacadeTest {
         MemberQueryProcessor queryProcessor = new MemberQueryProcessor(memberRepositoryPort, memberConsentProcessor, reportScopeAdapter);
         facade = new MemberWebFacade(queryProcessor, memberCommandProcessor,
             new MemberPasswordProcessor(passwordEncoder, attemptPort, new LoginAttemptProperties(5, Duration.ofMinutes(10), 30, Duration.ofHours(1))),
-            memberConsentProcessor, reportScopeAdapter, memberSessionRevokePort, passwordEncoder, new MemberPresenter());
+            memberConsentProcessor, memberWithdrawalProcessor, reportScopeAdapter, memberSessionRevokePort, passwordEncoder, new MemberPresenter());
+    }
+
+    @Test
+    @DisplayName("탈퇴하면 커밋(처리기 반환) 뒤에 요청 access 를 포함해 모든 기기를 로그아웃시킨다")
+    void memberWithdrawalRevokesAllSessionsAfterCommit() {
+        Instant expiresAt = Instant.now().plusSeconds(600);
+
+        facade.withdraw(42L, "access-jti", expiresAt);
+
+        InOrder order = inOrder(memberWithdrawalProcessor, memberSessionRevokePort);
+        order.verify(memberWithdrawalProcessor).withdraw(42L);
+        order.verify(memberSessionRevokePort).revokeAllSessions(42L, "access-jti", expiresAt);
+    }
+
+    @Test
+    @DisplayName("탈퇴 커밋 뒤 로그아웃이 실패해도(MEMBER_009 · 예상 밖 오류) 탈퇴는 성공이다 — 이미 커밋돼 되돌릴 수 없다")
+    void memberWithdrawalToleratesPostCommitRevokeFailure() {
+        doThrow(new MemberException(MemberErrorCode.SESSION_REVOKE_UNAVAILABLE)).when(memberSessionRevokePort).revokeAllSessions(anyLong(), any(), any());
+        assertThatCode(() -> facade.withdraw(42L, "access-jti", null)).doesNotThrowAnyException();
+
+        doThrow(new IllegalStateException("unexpected")).when(memberSessionRevokePort).revokeAllSessions(anyLong(), any(), any());
+        assertThatCode(() -> facade.withdraw(42L, "access-jti", null)).doesNotThrowAnyException();
+
+        verify(memberWithdrawalProcessor, times(2)).withdraw(42L);
+    }
+
+    @Test
+    @DisplayName("탈퇴가 막히면(이미 탈퇴 MEMBER_002 · 롤백) 세션을 건드리지 않는다")
+    void rejectedMemberWithdrawalKeepsSessions() {
+        doThrow(new MemberException(MemberErrorCode.WITHDRAWN_MEMBER)).when(memberWithdrawalProcessor).withdraw(42L);
+
+        assertThat(failure(() -> facade.withdraw(42L, "access-jti", null))).isEqualTo(MemberErrorCode.WITHDRAWN_MEMBER);
+        verify(memberSessionRevokePort, never()).revokeAllSessions(anyLong(), any(), any());
     }
 
     @Test

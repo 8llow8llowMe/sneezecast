@@ -29,4 +29,13 @@ public interface MemberWebUseCase {
      * @param accessExpiresAt 요청 access 의 만료 시각
      */
     MemberConsentWithdrawResult withdrawConsent(long memberId, ConsentType type, String accessTokenId, Instant accessExpiresAt);
+
+    /**
+     * 회원 탈퇴. 회원 행 갱신 · 보고 파기 요청 · 관심 동네 · 알림 설정 삭제를 한 트랜잭션으로 커밋한 뒤 모든 기기를 로그아웃시킨다(요청한 access 포함).
+     * 로그아웃이 실패해도 탈퇴는 이미 끝났으므로 성공으로 끝난다.
+     *
+     * @param accessTokenId   요청 access 의 jti
+     * @param accessExpiresAt 요청 access 의 만료 시각
+     */
+    void withdraw(long memberId, String accessTokenId, Instant accessExpiresAt);
 }

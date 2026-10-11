@@ -11,6 +11,7 @@ import com.sneezecast.global.properties.OAuthLoginProperties;
 import com.sneezecast.global.properties.PasswordResetProperties;
 import com.sneezecast.global.properties.RegionInterestProperties;
 import com.sneezecast.global.properties.ReportPurgeProperties;
+import com.sneezecast.global.properties.WithdrawnEmailProperties;
 import com.sneezecast.persistence.config.SnowflakePropertiesConfig;
 import com.sneezecast.redis.config.RedisPropertiesConfig;
 import com.sneezecast.security.auth.config.JwtAuthPropertiesConfig;
@@ -30,7 +31,7 @@ import org.springframework.context.annotation.Import;
 @EnableConfigurationProperties({
     AuthMailProperties.class, EmailSendLimitProperties.class, LegalDocumentProperties.class, LoginAttemptProperties.class, AuthSessionProperties.class,
     PasswordResetProperties.class, OAuthLoginProperties.class, KakaoOAuthProperties.class, RegionInterestProperties.class,
-    ReportPurgeProperties.class
+    ReportPurgeProperties.class, WithdrawnEmailProperties.class
 })
 public class AuthServicePropertiesConfig {
 

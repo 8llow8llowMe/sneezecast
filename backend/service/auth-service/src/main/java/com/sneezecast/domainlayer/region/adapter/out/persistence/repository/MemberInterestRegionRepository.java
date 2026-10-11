@@ -20,4 +20,14 @@ public interface MemberInterestRegionRepository extends JpaRepository<MemberInte
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from MemberInterestRegionEntity r where r.memberId = :memberId and r.districtCode = :districtCode")
     int deleteByMemberIdAndDistrictCode(Long memberId, String districtCode);
+
+    /**
+     * 회원의 관심 동네를 벌크 DELETE 로 모두 지운다(탈퇴 정리용). 파생 {@code deleteBy...} 를 쓰지 않는 이유는 위와 같다 — 겹친 삭제(같은 회원의 관심 동네
+     * 삭제 요청)가 먼저 지운 행 때문에 실패하지 않고, 0건도 정상이다. {@code uk_member_interest_region_member_id_district_code} 의 앞 컬럼을 탄다.
+     *
+     * @return 지운 행 수
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("delete from MemberInterestRegionEntity r where r.memberId = :memberId")
+    int deleteAllByMemberId(Long memberId);
 }

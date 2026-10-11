@@ -5,6 +5,7 @@ import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthSessionsR
 import com.sneezecast.domainlayer.auth.adapter.in.web.dto.response.AuthTokenResponse;
 import com.sneezecast.domainlayer.auth.application.command.AuthGeneralLoginCommand;
 import com.sneezecast.domainlayer.auth.application.command.AuthGeneralSignupCommand;
+import com.sneezecast.domainlayer.auth.application.exception.AuthErrorCode;
 import com.sneezecast.domainlayer.auth.application.exception.AuthException;
 import com.sneezecast.domainlayer.auth.application.info.AuthCookieResult;
 import com.sneezecast.domainlayer.auth.application.info.AuthTokenInfo;
@@ -16,6 +17,7 @@ import com.sneezecast.domainlayer.auth.application.service.processor.EmailVerifi
 import com.sneezecast.domainlayer.auth.application.service.processor.GeneralLoginProcessor;
 import com.sneezecast.domainlayer.auth.application.service.processor.GeneralSignupProcessor;
 import com.sneezecast.domainlayer.auth.application.service.processor.PasswordResetProcessor;
+import com.sneezecast.domainlayer.member.application.exception.MemberException;
 import com.sneezecast.domainlayer.member.application.service.processor.MemberCommandProcessor;
 import com.sneezecast.domainlayer.member.application.service.support.EmailNormalizer;
 import com.sneezecast.domainlayer.member.domain.model.Member;
@@ -124,6 +126,8 @@ public class AuthWebFacade implements AuthWebUseCase {
      *   <li>폐기 뒤 저장이 실패하면 모든 기기만 로그아웃된 채 비밀번호는 그대로다 — 안전한 쪽의 실패라 되돌리지 않는다.</li>
      *   <li>저장이 커밋된 뒤 같은 범위(전부)로 한 번 더 끊는다 ({@link #revokeAllSessionsAfterCommit}).</li>
      *   <li>로그인 잠금은 저장이 끝난 뒤에 푼다 — 비밀번호가 바뀌지 않았는데 잠금만 풀리지 않게.</li>
+     *   <li>토큰을 소비한 뒤 저장 전에 회원이 탈퇴 · 정지됐으면(저장 처리기가 회원 행을 잠그고 다시 본다) 토큰의 정상 회원이 없는 것과 같은
+     *       {@code PASSWORD_RESET_EXPIRED} 다 — 탈퇴한 행에 비밀번호를 다시 쓰지 않고, 상태를 응답으로 드러내지 않는다.</li>
      * </ul>
      */
     @Override
@@ -131,7 +135,11 @@ public class AuthWebFacade implements AuthWebUseCase {
         Member member = passwordResetProcessor.consumeToken(resetToken, clientIp);
         String encodedPassword = passwordEncoder.encode(newPassword);
         authSessionProcessor.revokeAllSessions(member.id());
-        memberCommandProcessor.changePassword(member.id(), encodedPassword);
+        try {
+            memberCommandProcessor.changePassword(member.id(), encodedPassword);
+        } catch (MemberException exception) {
+            throw new AuthException(AuthErrorCode.PASSWORD_RESET_EXPIRED, exception);
+        }
         revokeAllSessionsAfterCommit(member.id());
         passwordResetProcessor.releaseLoginLock(member.email());
     }

@@ -1,6 +1,7 @@
 package com.sneezecast.domainlayer.member.adapter.out.persistence.repository;
 
 import com.sneezecast.domainlayer.member.adapter.out.persistence.entity.ReportPurgeRequestEntity;
+import com.sneezecast.domainlayer.member.domain.enums.PurgeReason;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
@@ -12,6 +13,9 @@ public interface ReportPurgeRequestRepository extends JpaRepository<ReportPurgeR
 
     // idx_report_purge_request_member_id 를 탄다.
     boolean existsByMemberIdAndCompletedAtIsNull(Long memberId);
+
+    // idx_report_purge_request_member_id 를 탄다(회원당 행이 몇 개뿐이라 사유 · 완료 여부는 그 안에서 거른다).
+    boolean existsByMemberIdAndReasonAndCompletedAtIsNull(Long memberId, PurgeReason reason);
 
     /**
      * 이번 회차에 부를 미완료 요청 — 1차(아직 성공 없음)는 바로, 2차는 요청 시각이 {@code secondCallDueAt} 이하일 때만. 그 사이에 부르는 호출은

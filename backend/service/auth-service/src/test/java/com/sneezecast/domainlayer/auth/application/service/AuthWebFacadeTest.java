@@ -140,6 +140,20 @@ class AuthWebFacadeTest {
     }
 
     @Test
+    @DisplayName("토큰을 소비한 뒤 저장 전에 탈퇴했으면(저장 처리기의 잠금 판정 MEMBER_002) 정상 회원이 없는 것과 같은 AUTH_018 이고 잠금을 풀지 않는다")
+    void withdrawnBeforeSaveIsResetExpired() {
+        Member member = Member.builder().id(42L).email(EMAIL).role(SecurityRole.USER).status(MemberStatus.ACTIVE).build();
+        when(passwordResetProcessor.consumeToken("reset-token", "203.0.113.10")).thenReturn(member);
+        doThrow(new MemberException(MemberErrorCode.WITHDRAWN_MEMBER)).when(memberCommandProcessor).changePassword(eq(42L), anyString());
+
+        assertThatThrownBy(() -> facade.resetPassword("reset-token", "Sneeze2026!", "203.0.113.10"))
+            .isInstanceOfSatisfying(AuthException.class, e -> assertThat(e.getErrorCode()).isEqualTo(AuthErrorCode.PASSWORD_RESET_EXPIRED));
+
+        verify(authSessionProcessor, times(1)).revokeAllSessions(42L);
+        verify(passwordResetProcessor, never()).releaseLoginLock(anyString());
+    }
+
+    @Test
     @DisplayName("재설정 코드 발송 · 확인은 이메일을 정규화해 넘기고, 확인 응답에 토큰을 싣는다")
     void resetCodeNormalizesEmail() {
         when(passwordResetProcessor.verifyCode(EMAIL, "482913", "203.0.113.10")).thenReturn("reset-token");

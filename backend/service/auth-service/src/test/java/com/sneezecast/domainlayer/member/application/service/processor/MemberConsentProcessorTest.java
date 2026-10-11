@@ -77,6 +77,11 @@ class MemberConsentProcessorTest {
                 return purgeRequests.stream().anyMatch(request -> request.memberId() == memberId && request.completedAt() == null);
             }
 
+            @Override
+            public boolean existsIncompleteByMemberIdAndReason(long memberId, PurgeReason reason) {
+                return purgeRequests.stream().anyMatch(request -> request.memberId() == memberId && request.reason() == reason && request.completedAt() == null);
+            }
+
             // 아래는 파기 스케줄러(#155) 몫이라 동의 처리에서 부르지 않는다.
             @Override
             public Optional<ReportPurgeRequest> findById(long id) {
