@@ -392,9 +392,10 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - 인덱스: `idx_official_surveillance_program_period_start` (최근 기간 조회), `idx_official_surveillance_source_snapshot_id` (FK 조회)
 - **인플루엔자 절기 → 연도**: 절기 `startYear`–`endYear` 의 36 ~ 52(53)주는 `period_year = startYear`, 01 ~ 35주는 `endYear` 로 넣는다. 열 제목(`headerList`)의 주차만 보고 연도를 정하면 1년 어긋난다.
 - 원천은 **잠정 통계**라 과거 주 값이 바뀐다. 적재 잡은 최근 N주(설정)를 다시 받아 덮어쓴다. 값 변경 이력은 두지 않고, 어느 실행이 마지막으로 썼는지만 `source_snapshot_id` 로 남긴다.
-- **전수신고 주별은 신고 지연으로 최근 주 값이 계속 늘어난다** (진행 중인 주까지 온다, [data-api-analysis.md §2-3](data-api-analysis.md#2-3-신고-지연--최근-주는-값이-계속-늘어난다)). 적재는 하되, 화면의 기준 주는 **현재 주에서 2주 전**(설정 `official.notifiable.display-lag-weeks`, 기본 2)으로 하고 그보다 최근 주는 보이지 않는다.
+- **전수신고 주별은 신고 지연으로 최근 주 값이 계속 늘어난다** (진행 중인 주까지 온다, [data-api-analysis.md §2-3](data-api-analysis.md#2-3-신고-지연--최근-주는-값이-계속-늘어난다)). 적재는 하되, 화면의 기준 주는 **현재 주에서 2주 전**(설정 `official.notifiable.display-lag-weeks`, 기본 2)으로 하고 그보다 최근 주는 보이지 않는다. 현재 주는 질병관리청 주(일요일 시작, KST 날짜)다 — 공식 정보 조회(`GET /api/v1/official/latest`, [modules.md](modules.md#servicesurveillance-service) `official`)가 이 한도를 건다.
 - 전수신고 응답의 `계` 행(주별 합)은 적재하지 않는다. 시도 값을 더해 전국 · 권역을 만들지 않는다 (광주 · 전남 · 전남광주 코드가 기간에 따라 겹친다).
-- 표시 대상(감염병 · 병원체 목록)은 1단계에서 설정값으로 둔다.
+- 표시 대상(감염병 · 병원체 목록)은 서버 설정으로 거르지 않는다 — 공식 정보 조회가 적재된 주 단위 계열을 모두 내리고 화면이 고른다(#213). 연 단위(시도) 행은 그 조회에 싣지 않는다.
+- **스키마 공백**: 화면(S08)의 발표 단계(유행주의보 발령 · 해제)와 쉬운 요약 문장은 이 테이블에 출처가 없다. 지어내지 않고 조회에도 싣지 않는다 — 단계는 출처가 확정된 뒤, 요약은 운영자 검토를 거치는 AI 초안 흐름(루트 CLAUDE.md)에서 정한다.
 - 라이선스 **공공누리 제4유형(출처표시 · 상업적 이용금지 · 변경금지)** — 화면에 출처를 밝히고 원값을 그대로 보인다. 파생값(예: 전주 대비)을 보이면 파생값임을 밝힌다.
 - 정본은 surveillance `domainlayer/official` 의 `OfficialSurveillanceEntity` (§3-3 은 `OfficialSourceSnapshotEntity`). `id` 는 batch 가 Snowflake 로 할당하고 surveillance 는 이 두 테이블을 `save` 하지 않으므로 `Persistable` 을 구현하지 않는다 — [coding-conventions.md §8-1](coding-conventions.md#8-1-엔티티) 의 판정은 `save` 경로에서만 의미가 있다 (#74 가 `BaseEntity` 로 올리면 함께 적용된다). enum 은 같은 패키지 `domain/enums` 에 두고, 저장 값(`name()`)이 batch 와의 DB 계약이라 테스트로 고정한다.
 

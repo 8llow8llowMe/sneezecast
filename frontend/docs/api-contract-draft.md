@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역) · 행정동 주간 집계(홈 · 지도)는 백엔드에 구현돼 있어 확정**이고, 안내 · 공식 정보 · 운영자는 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역) · 행정동 주간 집계(홈 · 지도) · 공식 정보는 백엔드에 구현돼 있어 확정**이고, 안내 · 운영자는 **BE 미정**이라 아래 초안은 프론트 제안이다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -8,7 +8,7 @@
 
 ## 공통 (확정)
 
-- 주소: 게이트웨이 `https://api-dev.sneezecast.com`(dev) · `https://api.sneezecast.com`(prod) + `/api/v1/...`. 프론트는 `clientEnv.apiBaseUrl` 로 읽는다. 게이트웨이 라우트는 `/api/v1/auth/**` · `/api/v1/members/**`(auth) · `/api/v1/districts/**` · `/api/v1/reports/**` · `/api/v1/advisories/**`(surveillance) 이다. `/internal/**` 은 라우팅하지 않는다.
+- 주소: 게이트웨이 `https://api-dev.sneezecast.com`(dev) · `https://api.sneezecast.com`(prod) + `/api/v1/...`. 프론트는 `clientEnv.apiBaseUrl` 로 읽는다. 게이트웨이 라우트는 `/api/v1/auth/**` · `/api/v1/members/**`(auth) · `/api/v1/districts/**` · `/api/v1/reports/**` · `/api/v1/advisories/**` · `/api/v1/official/**`(surveillance) 이다. `/internal/**` 은 라우팅하지 않는다.
 - CORS: 웹 도메인 두 개 + `http://localhost:*`, `allowCredentials=true`.
 - 응답 봉투 (모든 응답, 게이트웨이 오류 포함):
 
@@ -285,19 +285,90 @@ GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:writ
 - **아직 없는 것**: 발행 안내 여부(지도의 `이 동네 안내 보기`)는 안내 API(#214 · #215)가 생기면 그 이슈에서 더한다 — 지금은 키가 없고, 없다는 것을 "발행 안내 없음" 으로 읽지 않는다. 증상군의 최근 주별 비율(`series`, 작은 막대)은 이 응답에 없다. 회원의 내 동네를 서버가 알아서 범위로 쓰지 않는다(프론트가 `include` · `sigunguCode` 로 보낸다).
 - **프론트 연동**: 아직 하지 않았다 — 홈(`features/home/mock.ts`) · 지도(`features/map/mock.ts`)는 목 데이터다. 연동 이슈에서 `HomeWeekly` · `MapWeek` 로 옮긴다.
 
+## 공식 정보 `/api/v1/official/latest` (확정 — 백엔드 #213, 화면 S08)
+
+공식 정보 화면(`/official`)과 홈의 공식 정보 행이 쓸 API 다. **백엔드에 구현돼 있어 확정**이다(`OfficialWebController#getLatest`). 게이트웨이 라우트 `/api/v1/official/**`(surveillance) 안이다. **인증 불필요** — 비회원 둘러보기에서도 부른다. 파라미터가 없다.
+
+```text
+GET /api/v1/official/latest   → { programs: OfficialProgram[] }   (자료가 없으면 programs: [])
+```
+
+```json
+{
+  "programs": [
+    {
+      "program": {
+        "code": "ARI",
+        "name": "급성호흡기감염증",
+        "description": "급성호흡기감염증 병원체별 신고 수"
+      },
+      "source": {
+        "code": "KDCA_SENTINEL",
+        "name": "질병관리청 표본감시",
+        "description": "감염병포털 표본감시 통계에서 받은 자료"
+      },
+      "sourceUrl": "https://dportal.kdca.go.kr/pot/is/st/ari.do",
+      "diseases": [
+        {
+          "diseaseKey": "ND0704",
+          "diseaseName": "호흡기세포융합바이러스",
+          "diseaseGroup": "바이러스",
+          "metric": { "code": "CASE_COUNT", "name": "발생 수", "description": "신고된 발생 건수" },
+          "regionLevel": {
+            "code": "NATION",
+            "name": "전국",
+            "description": "전국 단위 값. 지역 코드는 00"
+          },
+          "regionCode": "00",
+          "regionName": "전국",
+          "periodYear": 2026,
+          "periodWeek": 38,
+          "periodStart": "2026-09-13",
+          "periodEnd": "2026-09-19",
+          "syncedAt": "2026-09-24T21:00:04Z",
+          "values": [
+            {
+              "ageGroup": {
+                "code": "ALL",
+                "name": "전체",
+                "description": "연령 구분 없는 전체 값. 기본값"
+              },
+              "value": 152.0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+- **질병관리청 자료만 싣는다.** 시민 자가보고(참여 · 증상 비율 · 단계)는 이 응답에 없고, 집계 API 와 섞지 않는다.
+- `programs` 는 batch 가 적재한 프로그램 중 자료가 있는 것만, `NOTIFIABLE`(전수신고) → `INFLUENZA_ILI`(인플루엔자 의사환자 분율) → `ARI`(급성호흡기감염증) → `ENTERIC`(장관감염증) 순이다. `diseases` 는 감염병 키 순, `values` 는 연령대 순(`ALL` 먼저). **무엇을 몇 개 보일지는 화면이 고른다** — 서버는 적재된 주 단위 계열을 모두 준다(전수신고는 감염병 67개 안팎, 표본감시는 병원체별 값과 `TOTAL`(계)).
+- 계열(감염병)마다 **가장 최근 기준 주 하나**다. 계열끼리 기준 주가 다를 수 있다(표본감시는 질병관리청이 아직 `집계 중` 인 칸을 적재하지 않는다).
+- 기준 주는 **질병관리청 주차**(`periodYear` · `periodWeek`, 일요일 시작 · 1월 1일이 든 주가 1주)와 날짜(`periodStart` 일요일 ~ `periodEnd` 토요일)다. 시민 자가보고의 `isoWeek`(월요일 시작)와 하루 어긋나므로 섞지 않는다. 시안의 "47주" · "11월 17일~23일" 은 이 값으로 만든다.
+- 집계 단위는 `regionLevel` · `regionName` 이고 지금은 전국(`NATION`, `00`)뿐이다(행정동 단위가 아니다).
+- 값(`values[].value`)은 원값 그대로이고 단위는 `metric`(`CASE_COUNT` 신고 수 · `ILI_PER_1000` 외래 1,000명당 의사환자 분율)이다. 원천이 빈 칸이면 `null` 이다(0 과 다름). 인플루엔자 분율은 연령대별 7개만 오고 전체(`ALL`) 값이 없다. 공공누리 제4유형이라 출처(`source.name`)를 밝히고, 전주 대비 같은 파생값을 보이면 파생값임을 밝힌다(서버는 파생값을 만들지 않는다).
+- **전수신고는 지금 주에서 2주 전까지만** 준다 — 신고 지연으로 최근 주 값이 낮게 나와 감소 추세처럼 보이기 때문이다(백엔드 설정 `official.notifiable.display-lag-weeks`). 표본감시는 지연을 두지 않는다.
+- `sourceUrl` 은 확인된 원문 화면(감염병포털 표본감시 화면)만 싣는다. **전수신고는 `null`** 이다(원천이 공공데이터포털 API 라 같은 값을 보이는 화면을 확인하지 않았다) — `원문 보기` 를 그리지 않는다.
+- `syncedAt` 은 그 값을 **우리가 마지막으로 적재한 시각**(ISO-8601 UTC, 초 단위)이다. 질병관리청 발표일이 아니다. 적재가 실패 · 지연되면 마지막으로 적재된 값과 그 시각이 그대로 온다 — 서버는 "오래됨" 을 판정하지 않으므로 화면이 시각으로 판단한다(적재는 표본감시 매주 금 · 전수신고 매주 화, 설정).
+- 자료가 하나도 없으면 200 + `{ programs: [] }` 이다(`dataBody` 는 null 이 아니다). 화면의 `empty`(받은 발표 없음)에 대응한다.
+- **화면 초안과 다른 점(스키마 공백)**: 발표 단계("유행주의보 발령 중") · 쉬운 요약 문장 · 발표일은 **응답에 없다** — `official_surveillance` 에 출처가 없어 지어내지 않는다. 단계는 출처가 확정된 뒤, 요약은 운영자 검토를 거치는 AI 초안 흐름에서 정한다(루트 CLAUDE.md "공식 정보와 안내"). 연동 때 화면은 단계 · 요약 없이 수치 · 기준 주 · 출처로 그리는 모양이 필요하다([SCREENS.md](design/SCREENS.md) "공식 정보 (S08)").
+- 오류: 받는 파라미터가 없어 검증 오류가 없다. 공통 오류(게이트웨이 · 일시 장애)만 있다.
+- 프론트 함수: 아직 없다. **화면은 연동 전까지 목 데이터**(`features/official/mock.ts`)다.
+
 ## BE 미정 — 프론트 초안
 
 백엔드에 아직 없다(게이트웨이 라우트 `/api/v1/advisories/**` 는 열려 있다). 아래는 화면을 만들며 가정한 모양이고, 연동 이슈에서 백엔드와 맞춘다. 지역 키 `admCd` 는 행정동 `code`(SGIS 8자리)다. 동네 주간 집계는 위 "행정동 주간 집계" 로 확정됐다.
 
 ```text
 GET  /api/notices/{admCd}?week=            → 발행된 안내 | null (정정 이력 · 철회 표시 포함) — 아래 "동네 안내 (#215)"
-GET  /api/official/latest                  → 질병관리청 단계·기준 주·요약·원문 링크
 GET  /api/v1/admin/review-candidates?week=  → 후보 목록 (운영자) — 아래 "운영자 검토 (#219)"
 GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — 아래 "발행 이력 (#220)"
 (운영자 처리 경로 · 동사는 아래 "운영자 검토 (#219)" · "발행 이력 · 정정 · 철회 (#220)" 가 정본이다)
 ```
 
-- 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 공식 정보는 목 데이터다(보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계" 로 확정 — 화면 연동 전이라 아직 목). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
+- 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계", 공식 정보는 위 "공식 정보" 로 확정이다(집계 · 공식 정보는 화면 연동 전이라 아직 목). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
 
 ### 동네 안내 (#215, 프론트 초안)
 
