@@ -241,7 +241,7 @@ PATCH /api/v1/members/me/notification-settings  { weeklyReport?, regionNotice? }
     - 다른 기기에서 바꾸면 이 탭이 다시 보일 때(`visibilitychange` → visible · `focus`) 다시 읽는다. 마지막으로 읽은 지 60초가 지났을 때만이고, 읽는 동안 · 실패해도 지금 값을 둔다(낡았는지 모른다).
     - 남은 한계: 화면을 띄워 둔 채(포커스 그대로) 다른 기기에서 바꾸거나, 다시 보인 지 60초 안에 다른 기기에서 바꾸면 다음에 다시 읽을 때까지 낡은 동네로 보낸다. `BroadcastChannel` 이 없는 브라우저는 탭 알림 없이 다시 보일 때 읽기만 남는다. 보내기 직전에는 확인하지 않는다. 근본 해결은 서버가 보고 동네를 회원의 내 동네(`member_region`)로 정하는 것인데 auth ↔ surveillance 계약 변경이라 이 범위 밖이다.
 
-## 지난 보고 내역 `/api/v1/reports/me` (확정 — 백엔드 #216, 화면 #194)
+## 지난 보고 내역 `/api/v1/reports/me` (확정 — 백엔드 #216, 화면 #194, 연동 #251)
 
 최근 보고 내역 화면(`/me/reports`)이 쓰는 API 다. **백엔드에 구현돼 있어 확정**이다(`ReportWebController#getMyPastReports`). 경로 · 권한 · 응답 관례는 위 "주간 보고"(`/api/v1/reports/current`)와 같다. 게이트웨이 라우트 `/api/v1/reports/**` 안이다.
 
@@ -254,7 +254,7 @@ GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:writ
 - **보관 창 안의 주만 준다**: 지난 주부터 보관 기간(52주, 이번 주 포함)의 가장 오래된 주까지라 많아야 51건이다. 삭제 스케줄러가 늦어도 보관이 끝난 주는 나오지 않는다.
 - 목록은 관례대로 `SliceResponse { contents, hasNext }` 다(architecture-guide §8). 한 번에 모두 준다 — 페이지 파라미터를 두지 않고 `hasNext` 는 늘 false 다(프론트는 보지 않는다). 지난 보고가 없으면 `contents: []` 이고 `dataBody` 가 null 이 아니다. 배열(`List`) 예외(행정동 검색 `DistrictWebController` 선례)는 쓰지 않았다 — 자동완성처럼 프론트 계약이 배열로 정해진 것이 아니고, 보관 기간이 늘면 페이지를 나눌 수 있게 둔다.
 - 오류는 `/reports/current` 와 같다: 토큰 없음 `SECURITY_001`(401), 동의 전 `SECURITY_006`(403). 받는 파라미터가 없어 검증 오류는 없다.
-- 프론트 함수: `features/report/report-history.ts` 의 `listPastReports(source)`. **프론트 연동 전까지 실데이터는 요청하지 않고 `unavailable`**(화면은 "지난 보고는 아직 불러올 수 없어요")이다 — 건강정보라 실제 회원에게 예시 이력을 보이지 않는다(conventions.md "데이터 출처" 의 예외). 목은 예시 이력이다.
+- 프론트 함수: `features/report/report-history.ts` 의 `listPastReports(source, { now, empty })`(실데이터는 `report-api.ts` 의 `fetchPastReports`). `contents` 를 서버 순서 그대로 `{ isoWeek, answer }` 로 옮기고 동네 · 시각은 버린다. 한 줄이라도 옮길 수 없으면(모르는 증상군 · 읽을 수 없는 주) `ReportResponseError` 로 목록 전체를 거부하고, 요청 실패도 거부한다(화면은 "지난 보고를 불러오지 못했어요" + `다시 시도`). 목은 예시 이력이다(실데이터에서는 보이지 않는다).
 
 ## 행정동 주간 집계 `/api/v1/districts/…/weekly-aggregate(s)` (확정 — 백엔드 #212)
 
