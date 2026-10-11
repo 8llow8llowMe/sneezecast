@@ -103,6 +103,52 @@ class WeeklyReportRepositoryAdapterTest extends SurveillanceH2TestSupport {
     }
 
     @Test
+    @DisplayName("주 범위 조회는 양 끝을 포함하고 최근 주부터 주며, 그 키의 행만 본다")
+    void findAllInWeekRangeIsInclusiveNewestFirstAndScopedToKey() {
+        ReportWeek w38 = ReportWeek.parse("2026-W38");
+        ReportWeek w39 = ReportWeek.parse("2026-W39");
+        adapter.insert(WeeklyReport.newReport(1L, KEY_A, w38, YEOKSAM_1, Set.of()));
+        adapter.insert(WeeklyReport.newReport(2L, KEY_A, W40, GARAK_1, Set.of(ENTERIC)));
+        adapter.insert(WeeklyReport.newReport(3L, KEY_A, w39, YEOKSAM_1, Set.of(RESPIRATORY)));
+        adapter.insert(WeeklyReport.newReport(4L, KEY_A, W41, YEOKSAM_1, Set.of()));
+        adapter.insert(WeeklyReport.newReport(5L, KEY_B, w39, YEOKSAM_1, Set.of()));
+
+        List<WeeklyReport> found = adapter.findAllByReporterKeyAndIsoWeekBetween(KEY_A, w39, W40);
+
+        assertThat(found).extracting(WeeklyReport::id).containsExactly(2L, 3L);
+        assertThat(found.get(0).districtCode()).isEqualTo(GARAK_1);
+        assertThat(found.get(0).symptoms()).containsExactly(ENTERIC);
+        assertThat(found.get(1).symptoms()).containsExactly(RESPIRATORY);
+        assertThat(found).allSatisfy(report -> assertThat(report.reporterKey()).isEqualTo(KEY_A));
+    }
+
+    @Test
+    @DisplayName("주 범위 조회는 ISO 연도 경계(53주가 있는 해)를 넘어도 시간 순으로 자른다 — 저장 값 문자열 비교가 시간 순이다")
+    void findAllInWeekRangeAcrossWeekBasedYear() {
+        ReportWeek w2026w52 = ReportWeek.parse("2026-W52");
+        ReportWeek w2026w53 = ReportWeek.parse("2026-W53");
+        ReportWeek w2027w01 = ReportWeek.parse("2027-W01");
+        ReportWeek w2027w02 = ReportWeek.parse("2027-W02");
+        adapter.insert(WeeklyReport.newReport(1L, KEY_A, w2027w01, YEOKSAM_1, Set.of()));
+        adapter.insert(WeeklyReport.newReport(2L, KEY_A, w2026w52, YEOKSAM_1, Set.of()));
+        adapter.insert(WeeklyReport.newReport(3L, KEY_A, w2027w02, YEOKSAM_1, Set.of()));
+        adapter.insert(WeeklyReport.newReport(4L, KEY_A, w2026w53, YEOKSAM_1, Set.of()));
+
+        assertThat(adapter.findAllByReporterKeyAndIsoWeekBetween(KEY_A, w2026w53, w2027w01))
+            .extracting(WeeklyReport::isoWeek)
+            .containsExactly(w2027w01, w2026w53);
+    }
+
+    @Test
+    @DisplayName("주 범위 조회는 행이 없거나 범위가 뒤집혀 있으면 빈 목록이다")
+    void findAllInWeekRangeEmpty() {
+        adapter.insert(WeeklyReport.newReport(1L, KEY_A, W40, YEOKSAM_1, Set.of()));
+
+        assertThat(adapter.findAllByReporterKeyAndIsoWeekBetween(KEY_B, W40, W41)).isEmpty();
+        assertThat(adapter.findAllByReporterKeyAndIsoWeekBetween(KEY_A, W41, W40)).isEmpty();
+    }
+
+    @Test
     @DisplayName("같은 키 · 같은 주 두 번째 insert 는 REPORT_001 동시 제출 예외다 — 원인 예외도, Hibernate SQL 오류 로그도 가명 키를 싣지 않는다")
     void secondInsertForSameWeekIsConcurrentSubmission(CapturedOutput output) {
         adapter.insert(WeeklyReport.newReport(1L, KEY_A, W40, YEOKSAM_1, Set.of()));

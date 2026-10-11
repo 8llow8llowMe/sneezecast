@@ -16,7 +16,7 @@ import org.hibernate.annotations.Comment;
 import org.springframework.data.domain.Persistable;
 
 /**
- * 주간 건강 보고 원시 행 (entity-design §2-1). 민감정보(건강)라 이 테이블 밖으로 행을 내보내는 API 는 없다 — 조회는 본인 이번 주 보고와 집계뿐이다.
+ * 주간 건강 보고 원시 행 (entity-design §2-1). 민감정보(건강)라 이 테이블 밖으로 행을 내보내는 API 는 없다 — 조회는 본인 보고(이번 주 · 지난 보고 내역)와 집계뿐이다.
  *
  * <p><b>{@code member_id} 컬럼을 두지 않는다.</b> 보고자는 {@code reporter_key} 로만 식별한다 (architecture-guide §6). 개별 증상 · 자유 서술 ·
  * 좌표 컬럼도 만들지 않는다.

@@ -8,9 +8,9 @@ import java.util.Set;
 import lombok.Builder;
 
 /**
- * 본인의 이번 주 보고. <b>보고 ID · 가명 키 · 수정 횟수를 담지 않는다</b> — 응답에 내리지 않는 값은 Presenter 까지 가져가지 않는다.
+ * 본인의 한 주 보고 (이번 주 · 지난 보고 내역). <b>보고 ID · 가명 키 · 수정 횟수를 담지 않는다</b> — 응답에 내리지 않는 값은 Presenter 까지 가져가지 않는다.
  *
- * @param reportedAt 이번 주 첫 보고 시각 ({@code created_at}, JVM 기본 시간대의 지역 시각)
+ * @param reportedAt 그 주 첫 보고 시각 ({@code created_at}, JVM 기본 시간대의 지역 시각)
  * @param updatedAt  마지막 수정 시각 ({@code updated_at}, 같은 기준)
  */
 @Builder

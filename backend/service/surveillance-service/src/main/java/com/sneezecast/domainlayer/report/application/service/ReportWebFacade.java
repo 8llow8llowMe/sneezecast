@@ -10,12 +10,13 @@ import com.sneezecast.domainlayer.report.application.service.presenter.ReportPre
 import com.sneezecast.domainlayer.report.application.service.processor.ReportCommandProcessor;
 import com.sneezecast.domainlayer.report.application.service.processor.ReportQueryProcessor;
 import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
+import com.sneezecast.persistence.dto.SliceResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 본인 이번 주 보고 오케스트레이션. <b>이 Facade 에는 트랜잭션을 걸지 않는다</b> — 같은 주 첫 보고가 동시에 들어와 진 쪽은 그 트랜잭션이
+ * 본인 주간 보고 오케스트레이션. <b>이 Facade 에는 트랜잭션을 걸지 않는다</b> — 같은 주 첫 보고가 동시에 들어와 진 쪽은 그 트랜잭션이
  * rollback-only 라, 재시도는 트랜잭션 밖인 여기서 새 트랜잭션으로 해야 한다. 트랜잭션은 Processor 메서드마다 하나씩 건다 (architecture-guide §3-1).
  *
  * <p>회원 ID 는 가명 키를 만드는 데만 쓰고 아래 계층으로 넘기지 않는다. 회원 ID · 가명 키 · 증상은 로그에 남기지 않는다.
@@ -64,5 +65,10 @@ public class ReportWebFacade implements ReportWebUseCase {
     @Override
     public void cancelCurrent(long memberId) {
         reportCommandProcessor.cancel(reporterKeyGenerator.reporterKey(memberId), reportWeekCalculator.currentWeek());
+    }
+
+    @Override
+    public SliceResponse<WeeklyReportResponse> getPastReports(long memberId) {
+        return reportPresenter.toSliceResponse(reportQueryProcessor.findPast(reporterKeyGenerator.reporterKey(memberId), reportWeekCalculator.currentWeek()));
     }
 }

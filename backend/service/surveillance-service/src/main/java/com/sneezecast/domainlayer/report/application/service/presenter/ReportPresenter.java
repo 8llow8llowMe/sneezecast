@@ -3,10 +3,12 @@ package com.sneezecast.domainlayer.report.application.service.presenter;
 import com.sneezecast.domainlayer.report.adapter.in.web.dto.response.WeeklyReportResponse;
 import com.sneezecast.domainlayer.report.application.info.ReportInfo;
 import com.sneezecast.domainlayer.report.domain.enums.SymptomGroup;
+import com.sneezecast.persistence.dto.SliceResponse;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import org.springframework.stereotype.Component;
 
 /**
@@ -37,6 +39,11 @@ public class ReportPresenter {
             .reportedAt(toInstant(report.reportedAt()))
             .updatedAt(toInstant(report.updatedAt()))
             .build();
+    }
+
+    /** 지난 보고 내역. 보관 기간(52주) 안이라 많아야 51건이고 한 번에 모두 주므로 {@code hasNext} 는 늘 false 다. 순서는 받은 그대로(최근 주부터). */
+    public SliceResponse<WeeklyReportResponse> toSliceResponse(List<ReportInfo> reports) {
+        return new SliceResponse<>(reports.stream().map(this::toResponse).toList(), false);
     }
 
     private Instant toInstant(LocalDateTime storedAt) {
