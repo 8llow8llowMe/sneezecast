@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역) · 행정동 주간 집계(홈 · 지도) · 공식 정보 · 동네 안내 · 운영자 안내 처리(초안 · 수정 · 승인 · 발행 · 철회 · 상세) · 운영자 검토 후보는 백엔드에 구현돼 있어 확정**이고, 정정 · 발행 이력(#267)은 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역) · 행정동 주간 집계(홈 · 지도) · 공식 정보 · 동네 안내 · 운영자 안내 처리(초안 · 수정 · 승인 · 발행 · 철회 · 상세) · 운영자 검토 후보 · 운영자 정정 · 발행 이력은 백엔드에 구현돼 있어 확정**이다. 절 안에 **BE 미정** 으로 적은 항목만 백엔드에 아직 없다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -387,10 +387,10 @@ GET /api/v1/advisories?districtCode=&week=   → 발행 중인 안내 | 철회 �
 - 오류: `ADVISORY_101` `districtCode` 없음 · `102` 형식(숫자 8자리) · `103` `week` 없음 · `104` 형식(`YYYY-Www`), `ADVISORY_008` 없는 코드(404), `ADVISORY_009` 조회할 수 없는 주(400 — 미래 주 · 51주보다 이전 · 그 해에 없는 주, 메시지에 범위). **폐지된 코드는 오류가 아니다**(그 주에 발행된 안내가 있으면 보인다).
 - 결정(#215 에서 정한 세 가지):
   - **철회된 안내는 남긴다** — 그 동네 · 주에 발행 중인 안내가 없고 철회된 안내가 있으면 철회 표시(`retraction`)를 준다. 운영자 철회 대화상자의 "사용자 화면에는 '철회된 안내예요'가 남아요" 와 맞는다. 정정으로 내려간 안내(새 안내가 `corrects_advisory_id` 로 이은 이전 안내)는 철회 표시가 아니라 새 안내의 `corrections` 로 보인다.
-  - **철회 · 정정 사유는 공개하지 않는다** — 사유는 운영자 메모(advisory_history `memo`)이고 공개 응답은 이력을 읽지 않는다. `NoticeRetraction.reason` · `NoticeCorrection.reason` 은 선택 값이고 실데이터는 늘 비어(키 없음) 화면이 사유 줄을 뺀다(정정은 `11월 19일 정정` 만 — #256 에서 정함, 철회와 같은 결). 운영자 입력란에는 "사용자 화면에는 보이지 않아요" 로 알린다(#246 결정, 위 "운영자 안내 처리") — 지금 A03 목의 정정 대화상자 · 결과 문구는 "사유가 함께 보여요" 이고, #267 연동 때 "사용자 화면에는 보이지 않아요" 로 바꾼다.
+  - **철회 · 정정 사유는 공개하지 않는다** — 사유는 운영자 메모(advisory_history `memo`)이고 공개 응답은 이력을 읽지 않는다. `NoticeRetraction.reason` · `NoticeCorrection.reason` 은 선택 값이고 실데이터는 늘 비어(키 없음) 화면이 사유 줄을 뺀다(정정은 `11월 19일 정정` 만 — #256 에서 정함, 철회와 같은 결). 운영자 입력란에는 "사용자 화면에는 보이지 않아요" 로 알린다(#246 결정, #267 에서 정정 사유도 같게 확정 — 아래 "운영자 정정 · 발행 이력") — 지금 A03 목의 정정 대화상자 · 결과 문구는 "사유가 함께 보여요" 이고, A03 연동 이슈에서 "사용자 화면에는 보이지 않아요" 로 바꾼다.
   - **한 동네 · 한 주에 보이는 안내는 하나** — 발행 중인 안내는 하나뿐이다(백엔드가 발행을 막는다 — `ADVISORY_007`). 철회 뒤 같은 주에 새 안내가 발행되면 새 안내만 주고 철회 표시는 주지 않는다. 철회된 안내가 여럿이면 가장 최근 철회 하나다.
 - **화면 모델과 다른 점**:
-  - 시안의 `items`(할 일 목록) · `source`(근거)는 응답에 없다 — 백엔드 안내는 `title` · `body` 한 덩어리다. **#256 에서 정함**: 화면 모델 `PublishedRegionNotice` 는 `items` · `source` 대신 `body` 를 갖고, 화면은 본문을 **줄바꿈을 지킨 문단 하나**로 그린다(`이렇게 해 주세요` 제목 · 번호 목록 · `근거:` 없음). 본문을 줄마다 할 일로 쪼개지 않는 것은 본문 형식이 정해지지 않아(운영자가 승인한 문장 그대로) 할 일이 아닌 줄을 번호 목록으로 그릴 수 있기 때문이다. 운영자 API(#246)는 `body` 한 덩어리를 유지했고, 목록 · 근거를 따로 둘지는 후속(#266 · #267)에서 정한다.
+  - 시안의 `items`(할 일 목록) · `source`(근거)는 응답에 없다 — 백엔드 안내는 `title` · `body` 한 덩어리다. **#256 에서 정함**: 화면 모델 `PublishedRegionNotice` 는 `items` · `source` 대신 `body` 를 갖고, 화면은 본문을 **줄바꿈을 지킨 문단 하나**로 그린다(`이렇게 해 주세요` 제목 · 번호 목록 · `근거:` 없음). 본문을 줄마다 할 일로 쪼개지 않는 것은 본문 형식이 정해지지 않아(운영자가 승인한 문장 그대로) 할 일이 아닌 줄을 번호 목록으로 그릴 수 있기 때문이다. **1단계는 `body` 한 덩어리를 유지한다**(#267 에서 닫음) — 운영자 처리(#246) · 검토 후보(#266) · 정정(#267) 모두 `title` · `body` 만 받고 목록 · 근거 필드를 두지 않는다. 시안의 할 일 목록 · 근거를 되살리는 것은 본문 형식을 정하는 다음 단계의 일이다.
   - 발행 중 갈래의 `stats`(인용 집계) 중 `participants` · `symptomRate` · 증상군 비율 · `status` 는 `citation` 에서 오지만, **`baselineRate`(지난 4주 평균) · 증상군 `trend` 는 인용값이 아니라 응답에 없다** — 같은 주 행정동 주간 집계에서 읽는다(안내가 있는 주는 마감 주라 그 값도 바뀌지 않는다). 안내 없음 · 철회 갈래의 `stats`(그 주 집계)도 행정동 주간 집계에서 읽는다 — 이 API 는 집계를 싣지 않는다.
   - 동네 이름은 같은 주 집계 응답의 `district.name`, `isoWeek` 는 주소로 안다(`districtCode` · `isoWeek` 는 확인용으로 되돌려 준다 — 프론트는 두 응답의 주가 주소의 주와 같은지만 본다).
   - 홈 요약 모델 `PublishedNotice` 와 집계의 `publishedAdvisory`(`{ isoWeek, title, publishedAt }`)가 다르다 — `items` · `source` 는 응답에 없다(안내 API 에도 없다). **#252 에서 정함**: `items` · `source` 는 선택 필드(목 시안 예시에만 있음)이고 `title` 을 더했다. **#256 에서 정함**: `href` 는 늘 있다 — 실데이터는 `/notice/{code}/{publishedAdvisory.isoWeek}`. 실데이터 홈 안내 섹션은 `운영자 검토` 배지 · 발행일 · 제목 · `안내 전체 보기` 를 그리고, 본문은 요약에 넣지 않는다(동네 안내 화면에서만).
@@ -402,7 +402,7 @@ GET /api/v1/advisories?districtCode=&week=   → 발행 중인 안내 | 철회 �
 
 ## 운영자 안내 처리 `/api/v1/advisories/admin` (확정 — 백엔드 #246)
 
-운영자 검토 대기 · 후보 상세(A01–A02)의 처리 동작(초안 만들기 · 수정 저장 · 승인 · 발행)과 발행 이력(A03)의 철회가 부르는 API 다. **백엔드에 구현돼 있어 확정**이다(`AdvisoryOperatorWebController`). 게이트웨이 라우트 `/api/v1/advisories/**`(surveillance) 안이다. **운영자(`OPERATOR` · `ADMIN`)만** 부른다 — 토큰 없음 401 `SECURITY_001`, 그 밖의 역할 403 `SECURITY_006`(화면 가드는 길 안내일 뿐이다). 운영자는 토큰으로만 알고 본문에 싣지 않는다. 검토 후보 목록은 아래 "운영자 검토 후보"(#266, 확정)이고, 정정 · 발행 이력 목록은 #267 이라 "BE 미정" 에 남아 있다.
+운영자 검토 대기 · 후보 상세(A01–A02)의 처리 동작(초안 만들기 · 수정 저장 · 승인 · 발행)과 발행 이력(A03)의 철회가 부르는 API 다. **백엔드에 구현돼 있어 확정**이다(`AdvisoryOperatorWebController`). 게이트웨이 라우트 `/api/v1/advisories/**`(surveillance) 안이다. **운영자(`OPERATOR` · `ADMIN`)만** 부른다 — 토큰 없음 401 `SECURITY_001`, 그 밖의 역할 403 `SECURITY_006`(화면 가드는 길 안내일 뿐이다). 운영자는 토큰으로만 알고 본문에 싣지 않는다. 검토 후보 목록은 아래 "운영자 검토 후보"(#266, 확정), 정정 발행 · 발행 이력 목록은 아래 "운영자 정정 · 발행 이력"(#267, 확정)이다.
 
 ```text
 POST /api/v1/advisories/admin                      { districtCode, isoWeek, title, body } → Advisory                  (초안 만들기 → DRAFT)
@@ -420,7 +420,7 @@ POST /api/v1/advisories/admin/{advisoryId}/retract { reason, version }          
   - 수정 저장 = `PUT`(제목 · 본문 전체를 보낸다). 승인된 안내를 고치면 EDITED 로 돌아가 다시 승인해야 한다.
   - **승인하고 발행 = 두 요청**(`approve` → `publish`). 저장하지 않은 수정이 있으면 `PUT` → `approve` → `publish` 순서로 부르고, 앞 응답의 `version` 을 다음 요청에 싣는다. 발행이 `ADVISORY_007`(같은 동네 · 주에 발행 중인 안내가 있음)로 거부되면 안내는 승인됨으로 남는다.
   - **보류는 기록되지 않는다(2단계)** — 서버 처리가 없다. 후보 처리 기록(보류 · 대기 · 검토 중)은 `review_signal`(2단계)이 맡는다. 보류한 동네 · 주의 안내는 그 상태 그대로 남는다.
-  - 철회 = `retract`(발행됨에서만). 동네 안내에는 철회 시각만 남는다. 정정은 #267(아래 "발행 이력 · 정정 · 철회 (#220)").
+  - 철회 = `retract`(발행됨에서만). 동네 안내에는 철회 시각만 남는다. 정정은 `correct`(아래 "운영자 정정 · 발행 이력", #267).
 - **사유 · 메모 입력란 안내: "사용자 화면에는 보이지 않아요"** — 철회 사유(`reason`)와 수정 메모(`memo`)는 운영자 상세 이력에만 있고 동네 안내(공개)에는 나오지 않는다.
 - `version` 은 advisory `@Version` 이다. 처리 요청은 화면이 읽은 값을 싣고, 다르면 **409** `ADVISORY_006` 이다 — 오류 봉투에 안내가 없으니 상세(`GET`)를 다시 읽어 그린다.
 - 오류: 400 — `ADVISORY_101` · `102` districtCode 없음 · 형식, `103` · `104` isoWeek 없음 · 형식, `ADVISORY_010` 형식은 맞지만 표현할 수 없는 주(53주가 없는 해의 W53, 연도 1000 미만), `105` 제목 없음 · 공백 · `106` 100자 초과, `107` 본문 없음 · 공백 · `108` 16,383자 초과, `109` 메모 500자 초과, `110` 사유 없음 · 공백 · `111` 500자 초과, `112` version 없음 · `113` 음수, `100` 본문 없음 · JSON 아님 · 타입 틀림, `198` 숫자가 아닌 ID. 404 — `001` 없는 안내, `002` 근거 집계 없음. 409 — `003` 마감 전 주, `004` 자료 부족, `005` 지금 상태에서 할 수 없는 처리, `006` 버전 다름, `007` 발행 중인 안내가 있음. 길이는 UTF-16 단위로 센다(이모지는 2자). 화면 상한(`DRAFT_MAX_LENGTH` · `REASON_MAX_LENGTH` 500자)은 서버 상한 안이다.
@@ -456,33 +456,29 @@ GET /api/v1/advisories/admin/candidates?week=   → { isoWeek, finalized, surgeC
 - AI 초안 생성(DRAFT → AI_DRAFTED)은 이 화면이 부르지 않는다(범위 밖). 목 초안은 이미 있는 것으로 둔다.
 - 프론트 함수: `features/admin/admin-review-client.ts` 의 `listReviewCandidates` · `saveCandidateDraft` · `holdCandidate` · `publishCandidate(…, source)`. **실데이터는 아직 요청하지 않고 `unavailable`**(화면은 "운영자 검토는 아직 준비하고 있어요")이다 — 연동 이슈 전에는 목 후보를 실제 집계로 알고 발행해도 시민에게 아무것도 나가지 않게 한다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다. 목 재현 `?mock-admin=empty|fail|conflict`.
 
-## BE 미정 — 프론트 초안
+## 운영자 정정 · 발행 이력 `/api/v1/advisories/admin/{advisoryId}/correct` · `/history` (확정 — 백엔드 #267)
 
-백엔드에 아직 없다. 아래는 화면을 만들며 가정한 모양이고, 연동 이슈에서 백엔드와 맞춘다. 지역 키 `admCd` 는 행정동 `code`(SGIS 8자리)다. 동네 주간 집계는 위 "행정동 주간 집계", 동네 안내는 위 "동네 안내", 운영자 처리(초안 · 수정 · 승인 · 발행 · 철회 · 상세)는 위 "운영자 안내 처리", 검토 후보는 위 "운영자 검토 후보" 로 확정됐다.
-
-```text
-GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — 아래 "발행 이력 (#220)", 백엔드 #267
-(정정 경로 · 동사는 아래 "발행 이력 · 정정 · 철회 (#220)" 가 정본이다 — 백엔드 #267)
-```
-
-- 프론트 함수: 보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계", 공식 정보는 위 "공식 정보", 동네 안내는 위 "동네 안내" 로 확정이다. 운영자 검토(위 "운영자 검토 후보") · 발행 이력(아래 "발행 이력 (#220)")은 실데이터에서 요청하지 않는다.
-
-### 발행 이력 · 정정 · 철회 (#220, 프론트 초안)
-
-운영자 발행 이력(`/admin/history`, A03)이 가정한 모양이다. **이력 목록 · 정정은 백엔드 #267 에서 만든다. 철회는 위 "운영자 안내 처리"(#246)로 확정됐다**(아래 철회 줄은 화면이 가정했던 경로다). 화면 동작 · 시안과 다른 점은 [SCREENS.md](design/SCREENS.md) "운영자 발행 이력 · 정정 · 철회" 다. 운영자(`OPERATOR` · `ADMIN`)만 부른다.
+운영자 발행 이력 · 정정 · 철회(`/admin/history`, A03 — 화면 #220)가 부르는 API 다. **백엔드에 구현돼 있어 확정**이다(`AdvisoryOperatorWebController#correct` · `#getPublicationHistory`). 권한 · 오류 봉투와 안내(`Advisory`) · 이력 한 행(`histories`)의 모양은 위 "운영자 안내 처리" 와 같다 — 운영자(`OPERATOR` · `ADMIN`)만, 토큰 없음 401 `SECURITY_001`, 그 밖의 역할 403 `SECURITY_006`. 철회는 위 "운영자 안내 처리" 의 `retract` 다. 화면 동작 · 시안과 다른 점은 [SCREENS.md](design/SCREENS.md) "운영자 발행 이력 · 정정 · 철회" 다.
 
 ```text
-GET  /api/v1/admin/advisories/history                                  → { entries: HistoryEntry[] }   (최근 처리한 것부터)
-POST /api/v1/admin/advisories/{id}/correct  { body, reason, version }   → { id }                        (정정 발행 — 새 안내 id)
-POST /api/v1/admin/advisories/{id}/retract  { reason, version }         → 204                           (철회 — 확정: POST /api/v1/advisories/admin/{advisoryId}/retract)
+GET  /api/v1/advisories/admin/history?week=                                          → { fromIsoWeek, toIsoWeek, entries: HistoryItem[] }
+POST /api/v1/advisories/admin/{advisoryId}/correct  { title, body, reason, version }  → Advisory   (정정 발행 — 새 안내, PUBLISHED)
+POST /api/v1/advisories/admin/{advisoryId}/retract  { reason, version }               → Advisory   (철회 — 위 "운영자 안내 처리")
 ```
 
-- `HistoryEntry` = `{ id, kind: baseline|surge|repeat, districtCode, districtName, isoWeek, participants, symptomRate, outcome: published|held|corrected|retracted, processedAt, edited, body, version, timeline: [{ step, at, note? }], correction?: { previousId, correctedOn, reason }, retraction?: { retractedOn, reason } }` + **1단계에 없는 선택 값** `operatorName` · `reviewMinutes`(`features/admin/types.ts`). 선택 값 · `note` 는 **없으면 빼고 보낸다** — 화면이 그 열 · 칸 · 문구를 숨긴다.
-  - 행은 안내(advisory) 하나 또는 보류한 후보 하나다. `timeline` 은 advisory_history(§2-4)의 전이를 오래된 것부터 옮긴 것이다 — `step`: `registered`(생성) · `ai-drafted`(AI_DRAFTED) · `edited`(EDITED) · `published`(PUBLISHED, 승인은 묶음) · `held`(보류) · `corrected`(정정으로 내려감) · `correction-published`(정정한 새 안내의 발행) · `retracted`(RETRACTED), `at` = `created_at`, `note` 는 정정 · 철회의 `memo` 만 백엔드에서 나온다.
-  - `edited` 는 PUBLISHED 전에 EDITED 를 거쳤는지다(요약의 수정 후 발행 비율 — 화면이 목록에서 계산한다). `correctedOn` · `retractedOn` 은 한국 날짜 `YYYY-MM-DD`(동네 안내 `NoticeCorrection` 과 같은 모양)다.
-- **정정 발행은 §2-5 에 없다**(PUBLISHED 본문은 고치지 않는다). 화면은 **이전 안내 철회(RETRACTED, `memo` = 사유) + 새 안내 발행(같은 동네 · 주 · 인용값, 고친 본문) + 둘을 잇는 값**(예: advisory `corrects_advisory_id`)을 한 요청으로 가정한다. 잇는 값이 있어야 ① 이력에서 이전 안내를 `철회` 가 아니라 `정정됨` 으로 보이고 ② 동네 안내(`GET /api/v1/advisories?districtCode=&week=`, 위 "동네 안내" 확정 절)가 지금 안내에서 이전 안내로 따라가 정정 이력(`corrections` — 정정일 · 사유, 최근 것부터)을 만든다. 새 안내는 운영자가 고친 본문이라 AI 초안 · 승인 단계를 어떻게 남길지(바로 PUBLISHED 로 만들지) 정한다.
-- 정정 · 철회는 발행 중(PUBLISHED)인 안내에만 된다. 정정됨 · 철회(끝 상태)에 보내거나 `version` 이 다르면 **409** 이고, 화면은 이력을 다시 읽어 바꿔 그린다(목은 충돌 응답에 이력을 싣는다 — 연동 때 `GET` 을 다시 부르는 쪽으로 바꾼다).
-- 검증: `reason` 필수 · 500자(`memo` VARCHAR(500)), `body` 필수 · 500자(검토 대기 `DRAFT_MAX_LENGTH` 와 같음). 검증 오류 번호는 백엔드가 정한다.
-- 정할 것 — **숫자를 바로잡는 정정의 의미**: 인용값(`cited_*`)은 초안 생성 때 마감 집계에서 복사해 고정되고(§2-3) 마감 집계는 바뀌지 않는다. 그래서 ① 정정한 새 안내의 인용값을 이전 안내에서 그대로 옮길지(목은 그렇게 한다), 정정 시점의 집계에서 다시 복사할지(마감 집계가 다시 계산될 수 있는지와 함께), ② 운영자가 본문의 숫자를 고치면 본문과 인용값이 어긋나는 문제를 어떻게 막을지(본문 숫자를 인용값에서만 만들지, 검증할지) 정한다. 화면은 지금 본문을 바꾸지 않고 사유만 남기는 정정도 받는다.
-- 정할 것: 담당 표시 이름의 출처(`operator_id` 뿐), 검토 시작 시각(검토 시간 · 평균), 보류 기록을 둘 곳(검토 대기와 같음), 이력 범위(시안 `최근 4주`) · 쪽 나누기, 정정한 새 안내의 `title`.
-- 프론트 함수: `features/admin/admin-history-client.ts` 의 `listHistory` · `correctAdvisory` · `retractAdvisory(…, source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "발행 이력은 아직 준비하고 있어요")이다(검토 대기와 같은 예외). 목은 모듈 메모리 이력이고 검토 대기 목의 보류 · 발행이 더해진다(`recordReviewOutcome`). 목 세션이 비회원이 되면 지운다. 목 재현 `?mock-admin=empty|fail|conflict`.
+- **발행 이력** — `week`(선택, 끝 주 `YYYY-Www`)로 끝나는 **4주**(끝 주 − 3 ~ 끝 주 — 시안 `최근 4주`)의 발행됨(PUBLISHED) · 철회됨(RETRACTED) 안내다. 모든 동네이고 발행 시각 최근 것부터(같으면 나중에 만든 안내 — 같은 순간의 정정이면 새 안내가 먼저), 쪽 나누기는 없다. `week` 를 생략하면 끝 주 = 현재 주 − 1 이다. 형식이 틀리면 `ADVISORY_104`, 끝 주가 미래 · 51주보다 이전 · 그 해에 없는 주면 `ADVISORY_009`(400). 초안 · 수정 · 승인 단계의 안내는 없다(검토 후보 · 상세로 본다). 응답 `fromIsoWeek` · `toIsoWeek` 는 읽은 범위다.
+  - `HistoryItem` = `{ advisory: Advisory, districtName, sigungu, correctedByAdvisoryId, histories }`. `advisory` 는 상세의 안내와 같다(인용 수치 `citation` · `correctsAdvisoryId` · `publishedAt` · `retractedAt` · `version` — 정정 · 철회 요청에 이 `version` 을 싣는다). `districtName` · `sigungu` 는 행정동 행이 없으면 `null` 이다. `histories` 는 그 안내의 전 이력이다(오래된 것부터 — 상세의 `histories` 와 같은 모양, 운영자 ID · 사유 `memo` 포함).
+  - **정정 관계는 양방향**이다. `advisory.correctsAdvisoryId` 는 이 안내가 정정한 이전 안내, `correctedByAdvisoryId` 는 이 안내를 정정한 새 안내(서버가 조회 때 만든다)다. RETRACTED 인데 `correctedByAdvisoryId` 가 있으면 `정정됨`, 없으면 `철회` 다. 정정은 같은 동네 · 주로 만들어 두 안내는 늘 같은 목록에 있다.
+- **정정 발행** — 발행 중인 안내를 철회(사유 = 이력 메모)하고 고친 `title` · `body` 로 새 안내를 발행해 `correctsAdvisoryId` 로 잇는다. **한 요청 · 한 트랜잭션**이라 동네 안내에 "철회된 안내" 가 끼지 않고, 새 안내와 그 정정 시각(`corrections[].correctedAt` = 새 안내의 `publishedAt` = 이전 안내의 `retractedAt`)이 보인다. 응답은 새 안내(`status` PUBLISHED, `version` 1, `correctsAdvisoryId` = 요청한 안내)다.
+  - **정정 요청 자체가 승인이다** — 새 안내는 초안 · 수정 · 승인 단계를 따로 거치지 않고 이력이 `(없음) → APPROVED` · `APPROVED → PUBLISHED` 두 행이다. 이전 안내에는 `PUBLISHED → RETRACTED` 한 행이 더해진다. 사유는 이전 안내의 철회 행과 새 안내의 생성 행 `memo` 에 함께 남는다.
+  - **인용값은 이전 안내에서 옮긴다**(근거 집계 · 동네 · 주 · `citation`) — 집계가 다시 계산돼도 운영자가 검토한 같은 근거다. 본문의 숫자는 검증하지 않는다(본문은 운영자가 승인한 문장이다). 본문을 바꾸지 않고 사유만 남기는 정정도 받는다.
+  - **`title` 은 필수**다(새 안내의 전체 값). 시안 대화상자에는 제목 칸이 없다 — 연동 때 지금 제목을 처음 값으로 둔 칸을 더하거나 지금 제목을 그대로 보낸다.
+  - 오류: 400 — `105` 제목 없음 · 공백 · `106` 100자 초과, `107` 본문 없음 · 공백 · `108` 16,383자 초과, `110` 사유 없음 · 공백 · `111` 500자 초과, `112` version 없음 · `113` 음수, `100` 본문 없음 · JSON 아님 · 타입 틀림, `198` 숫자가 아닌 ID. 404 — `001`. 409 — `006` 버전 다름, `005` 발행 중이 아님(정정됨 · 철회 · 검토 단계), `007` 같은 동네 · 주에 다른 발행 중인 안내가 있음(규칙 위반 데이터). 거부되면 아무것도 바뀌지 않는다 — 화면은 이력을 다시 읽어 그린다(목은 충돌 응답에 이력을 싣는다 — 연동 때 `GET` 을 다시 부르는 쪽으로 바꾼다). 화면 상한(본문 500자 · 사유 `REASON_MAX_LENGTH` 500자)은 서버 상한 안이다.
+- **사유 입력란 안내: "사용자 화면에는 보이지 않아요"** — 정정 · 철회 사유는 운영자 응답(이력 `memo`)에만 있고 동네 안내(공개)에는 나오지 않는다(#246 · #267 결정). 지금 A03 목의 정정 대화상자 · 결과 문구("사용자 화면에 정정일과 사유가 함께 보여요")는 A03 연동 이슈에서 바꾼다.
+- **화면 모델(`HistoryEntry`, `features/admin/types.ts`)과 다른 점** — 연동 때 매핑 계층이 맞춘다:
+  - 한 행이 **안내 하나**다. 보류한 후보 행(`outcome: held`)은 서버에 없다(보류는 기록되지 않는다 — 2단계 `review_signal`).
+  - `outcome`: PUBLISHED → `published`, RETRACTED 이고 `correctedByAdvisoryId` 가 있음 → `corrected`, 그 밖의 RETRACTED → `retracted`. 정정한 새 안내의 `correction` = `{ previousId: correctsAdvisoryId, correctedOn: publishedAt 의 한국 날짜, reason: 생성 행(fromStatus null)의 memo }`, `retraction` = `{ retractedOn: retractedAt 의 한국 날짜, reason: RETRACTED 행의 memo }`.
+  - `timeline` 은 `histories` 를 옮긴다 — 생성(null → DRAFT) `registered`, AI_DRAFTED `ai-drafted`, EDITED `edited`, PUBLISHED `published`(승인은 묶음 — 정정한 새 안내는 생성 행과 묶어 `correction-published`), RETRACTED 는 정정됨이면 `corrected` · 아니면 `retracted`. `at` = `createdAt`, `note` 는 정정 · 철회 `memo` 만이다.
+  - `participants` = `citation.participantCount`, `symptomRate` 는 `citation` 의 수로 계산한다(서버는 비율을 싣지 않는다 — 공개 집계와 같은 반올림). `body` · `version` 은 `advisory` 의 값, `processedAt` = `publishedAt`, `edited` = PUBLISHED 전에 EDITED 이력이 있는지.
+  - `kind`(후보 유형 baseline · surge · repeat)는 응답에 없다 — 신호는 검토 후보 조회 때 계산하고 안내에 남기지 않는다. `operatorName` · `reviewMinutes` 도 없다(`operatorId` 뿐, 검토 시작 시각을 저장하지 않는다 — 화면은 그 열 · 칸을 숨긴다).
+- 프론트 함수: `features/admin/admin-history-client.ts` 의 `listHistory` · `correctAdvisory` · `retractAdvisory(…, source)`. 계약은 확정이지만 **실데이터는 아직 요청하지 않고 `unavailable`**(화면은 "발행 이력은 아직 준비하고 있어요")이다 — 연동은 A03 연동 이슈에서 한다(검토 대기와 같은 예외). 목은 모듈 메모리 이력이고 검토 대기 목의 보류 · 발행이 더해진다(`recordReviewOutcome`). 목 세션이 비회원이 되면 지운다. 목 재현 `?mock-admin=empty|fail|conflict`.
