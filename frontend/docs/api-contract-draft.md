@@ -288,11 +288,11 @@ GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:writ
   - **누가 읽나**: 실데이터면 서버 페이지(`app/(home)/page.tsx`)가 목 주를 넘기지 않고(`week={null}`) 화면이 읽는다(`features/home/use-home-weekly.ts`). 보이는 동네가 둘러보기 동네(`?region=`)가 아니면 회원의 내 동네인데, 세션 · 내 동네는 화면에만 있어(서버는 refresh 쿠키를 받지 못한다) 서버에서 읽을 수 없기 때문이다. 서버 페이지는 `?region=` 을 모양(숫자 8자리)만 보고 넘기고 행정동 API 로 확인하지 않는다 — 이름은 집계 응답의 `district.name`(머리줄 · 제목도 이 이름), 없는 · 폐지 코드는 위 null 이다. 행정동 API 로 따로 확인하면 그 일시 장애가 "모르는 동네" 로 삼켜져(`districtFromParam`) 홈이 다시 시도 없이 내 동네로 바뀐다. 둘러보기 동네가 없으면 회원 상태가 정해지고(`useAuthSettled`) 내 동네를 읽은 뒤 그 코드로 읽는다 — 둘 다 없으면(비회원 · 내 동네 미정) 요청 없이 동네를 고르라고 안내한다. 내 동네를 읽지 못했으면 빨강 상자이고 `다시 시도` 는 내 동네를 다시 읽는다(`retryMemberInfo`). 목데이터는 지금처럼 `pickHomeMock`(`?mock=`)이다.
   - **옮기는 값**: `level` → `status`(1:1), `INSUFFICIENT` 는 수치 필드가 없는 갈래(`InsufficientWeek`)라 화면이 수치를 그릴 수 없다. 요약 문장은 단계로 정한다(`AGGREGATE_SUMMARY` — 수치 단계는 "증상 보고가 지난 4주보다 조금/많이 늘었어요" · "지난 4주와 비슷한 수준이에요", 자료 부족은 이유와 무관하게 "아직 변화를 판단할 자료가 부족해요"). `symptomaticCount` → `symptomReports`, `slightDeltaPp` · `highDeltaPp` → `thresholds`, `publicThreshold` · `participantCount` 그대로. `groups` → `{ key, rate, trend? }`(`RESPIRATORY` → `respiratory`, `ENTERIC` → `gastrointestinal`, `trend` 키가 없으면 변화 글자를 빼고 그린다). 주차 · 집계 기간 · 보고 기간은 응답 `isoWeek` 로(`11월 3주` · `11월 17일~23일` · `11월 17일(월)~23일(일)`), 갱신 문구는 `calculatedAt` 의 한국 시각(같은 한국 날짜면 `오늘 09:00 갱신`, 아니면 `11월 20일 09:00 갱신`, 없으면 `아직 집계 전`)이다. 오프라인 띠의 받은 시각은 응답을 받은 시각이다.
   - **응답에 없어 비우는 것**: 증상군 주별 비율(`series`) — 실데이터는 작은 막대 대신 `이번 주 14.1%` 글자다. 공식 정보 요약(`official` null — 아래 "공식 정보", #253). 안내의 할 일 목록 · 근거(아래 "동네 안내" 의 "화면 모델과 다른 점").
-  - `publishedAdvisory` → `PublishedNotice { publishedLabel: "11월 18일 발행"(publishedAt 의 한국 날짜), title }`. 키가 없으면 null. **동네 안내 화면으로 가는 주소(`href`)는 두지 않는다** — 그 화면(`getRegionNotice`)의 안내 내용이 아직 출처와 무관하게 목이라, 열면 실제 동네에 지어낸 안내 · 집계가 보인다. 안내 본문 연동(#256)에서 `/notice/{code}/{publishedAdvisory.isoWeek}` 로 연다.
+  - `publishedAdvisory` → `PublishedNotice { publishedLabel: "11월 18일 발행"(publishedAt 의 한국 날짜), title, href }`. 키가 없으면 null. `href` 는 `/notice/{동네 code}/{publishedAdvisory.isoWeek}` 다(#256) — 주는 요청 주가 아니라 안내의 근거 주다(요청 주에 안내가 없으면 직전 주의 안내가 붙는다). 홈 안내 섹션의 `안내 전체 보기` 가 이 주소에 둘러보기 동네(`?region=`)를 이어 간다(목 링크와 같은 `navHref`).
 - **프론트 연동 (#257 — 지도)**: `features/map/weekly-aggregates.ts` 의 `fetchMapWeek(code)` 가 `GET /weekly-aggregates?sigunguCode=<code 앞 5자리>&include=<code>`(`week` 생략 — 현재 주)를 `auth: false` 로 부르고, `districts[]` 각 칸을 홈과 같은 `toHomeWeekly` 로 옮겨 `MapWeek { weekLabel, mineCode, mineName, districts }` 를 만든다(`mineName` 은 `include` 칸의 `name`, `weekLabel` 은 응답 `isoWeek`, 동네 순서는 응답 그대로). `code` 는 처음 고른 동네 — 둘러보기 동네(`?region=` — 찾아서 고른 동네도 이 값으로 온다), 없으면 회원의 내 동네다.
   - **누가 읽나 · 실패**: 홈과 같다. 실데이터면 서버 페이지(`app/map/page.tsx`)가 목 지도를 넘기지 않고(`map={null}`, `?region=` 은 모양만) 화면이 읽는다(`useRegionWeekly` — 홈의 `useHomeWeekly` 와 같은 훅). 형식이 틀린 코드는 요청 없이, `AGGREGATE_001` · `include` 칸이 폐지(`active: false`)면 null(동네 고르기 안내)이고, 그 밖의 실패 · 계약과 다른 응답(`include` 칸이 목록에 없음 · 모르는 `level` · 읽을 수 없는 `isoWeek` · 수치 단계인데 수치 키 없음)은 거부한다(빨강 상자 + `다시 시도`). 목데이터는 지금처럼 `pickMapMock`(`?mock=`)이다.
   - **자료 없음**: 모든 칸이 `participantCount: 0` 이면 `districts: []`(지도의 "자료 없음")로 옮긴다 — 주 초 첫 보고 전처럼 집계 행이 하나도 없으면 회색 `자료 부족` 만 늘어선 목록 대신 안내 하나다. 이때는 칸에 `publishedAdvisory` 가 있어도 보이지 않는다(한계).
-  - **발행 안내**: 홈과 같이 `href` 없이 제목 · 발행일만 옮긴다 — 지도 동네 정보는 `이 동네 안내 보기` 대신 `운영자 검토` 배지 · 발행일 · 제목만 보이고, 안내 본문 연동(#256)에서 링크를 연다.
+  - **발행 안내**: 홈과 같은 `PublishedNotice`(근거 주 동네 안내 주소 포함, #256)다 — 지도 동네 정보의 `이 동네 안내 보기` 가 그 주소에 둘러보기 동네(`?region=`)를 이어 간다(목과 같다).
 
 ## 공식 정보 `/api/v1/official/latest` (확정 — 백엔드 #213, 화면 S08)
 
@@ -385,15 +385,18 @@ GET /api/v1/advisories?districtCode=&week=   → 발행 중인 안내 | 철회 �
 - 오류: `ADVISORY_101` `districtCode` 없음 · `102` 형식(숫자 8자리) · `103` `week` 없음 · `104` 형식(`YYYY-Www`), `ADVISORY_008` 없는 코드(404), `ADVISORY_009` 조회할 수 없는 주(400 — 미래 주 · 51주보다 이전 · 그 해에 없는 주, 메시지에 범위). **폐지된 코드는 오류가 아니다**(그 주에 발행된 안내가 있으면 보인다).
 - 결정(#215 에서 정한 세 가지):
   - **철회된 안내는 남긴다** — 그 동네 · 주에 발행 중인 안내가 없고 철회된 안내가 있으면 철회 표시(`retraction`)를 준다. 운영자 철회 대화상자의 "사용자 화면에는 '철회된 안내예요'가 남아요" 와 맞는다. 정정으로 내려간 안내(새 안내가 `corrects_advisory_id` 로 이은 이전 안내)는 철회 표시가 아니라 새 안내의 `corrections` 로 보인다.
-  - **철회 · 정정 사유는 공개하지 않는다** — 사유는 운영자 메모(advisory_history `memo`)이고 공개 응답은 이력을 읽지 않는다. `NoticeRetraction.reason` 은 늘 비어(키 없음) 화면이 사유 줄을 뺀다. `NoticeCorrection.reason` 도 응답에 없다 — 매핑 계층이 정정일만 채울 모양(타입의 `reason` 을 선택으로 바꾸거나 정정 줄에서 사유를 빼는 것)은 연동 이슈에서 정한다. 사유 공개는 운영자 입력란 안내("사용자 화면에 보여요")와 함께 정할 일이다(#246).
+  - **철회 · 정정 사유는 공개하지 않는다** — 사유는 운영자 메모(advisory_history `memo`)이고 공개 응답은 이력을 읽지 않는다. `NoticeRetraction.reason` · `NoticeCorrection.reason` 은 선택 값이고 실데이터는 늘 비어(키 없음) 화면이 사유 줄을 뺀다(정정은 `11월 19일 정정` 만 — #256 에서 정함, 철회와 같은 결). 사유 공개는 운영자 입력란 안내("사용자 화면에 보여요")와 함께 정할 일이다(#246).
   - **한 동네 · 한 주에 보이는 안내는 하나** — 발행 중인 안내는 하나뿐이다(백엔드가 발행을 막는다 — `ADVISORY_007`). 철회 뒤 같은 주에 새 안내가 발행되면 새 안내만 주고 철회 표시는 주지 않는다. 철회된 안내가 여럿이면 가장 최근 철회 하나다.
 - **화면 모델과 다른 점**:
-  - `items`(할 일 목록) · `source`(근거)는 응답에 없다 — 백엔드 안내는 `title` · `body` 한 덩어리다. 본문 형식(줄마다 할 일 등)이나 목록 · 근거를 따로 둘지는 연동 · 운영자 화면(#246)에서 정한다. 지어내지 않는다.
+  - 시안의 `items`(할 일 목록) · `source`(근거)는 응답에 없다 — 백엔드 안내는 `title` · `body` 한 덩어리다. **#256 에서 정함**: 화면 모델 `PublishedRegionNotice` 는 `items` · `source` 대신 `body` 를 갖고, 화면은 본문을 **줄바꿈을 지킨 문단 하나**로 그린다(`이렇게 해 주세요` 제목 · 번호 목록 · `근거:` 없음). 본문을 줄마다 할 일로 쪼개지 않는 것은 본문 형식이 정해지지 않아(운영자가 승인한 문장 그대로) 할 일이 아닌 줄을 번호 목록으로 그릴 수 있기 때문이다. 목록 · 근거를 따로 둘지는 운영자 화면(#246)과 함께 정한다.
   - 발행 중 갈래의 `stats`(인용 집계) 중 `participants` · `symptomRate` · 증상군 비율 · `status` 는 `citation` 에서 오지만, **`baselineRate`(지난 4주 평균) · 증상군 `trend` 는 인용값이 아니라 응답에 없다** — 같은 주 행정동 주간 집계에서 읽는다(안내가 있는 주는 마감 주라 그 값도 바뀌지 않는다). 안내 없음 · 철회 갈래의 `stats`(그 주 집계)도 행정동 주간 집계에서 읽는다 — 이 API 는 집계를 싣지 않는다.
-  - 동네 이름 · `isoWeek` 는 주소 · 행정동 API 로 안다(`districtCode` · `isoWeek` 는 확인용으로 되돌려 준다).
-  - 홈 요약 모델 `PublishedNotice` 와 집계의 `publishedAdvisory`(`{ isoWeek, title, publishedAt }`)가 다르다 — `items` · `source` 는 응답에 없다(안내 API 에도 없다). **#252 에서 정함**: `items` · `source` 는 선택 필드(목 시안 예시에만 있음)이고 `title` 을 더했다. `href` 도 선택 필드다(목에만 있음). 실데이터 홈 안내 섹션은 `운영자 검토` 배지 · 발행일 · 제목만 그리고 링크를 두지 않는다 — 아래 "프론트 연동" 대로 이 화면의 안내 내용이 아직 목이라서다. 링크(`/notice/[region]/[publishedAdvisory.isoWeek]`)와 할 일 목록을 본문에서 만들지는 안내 본문 연동(#256)에서 정한다.
+  - 동네 이름은 같은 주 집계 응답의 `district.name`, `isoWeek` 는 주소로 안다(`districtCode` · `isoWeek` 는 확인용으로 되돌려 준다 — 프론트는 두 응답의 주가 주소의 주와 같은지만 본다).
+  - 홈 요약 모델 `PublishedNotice` 와 집계의 `publishedAdvisory`(`{ isoWeek, title, publishedAt }`)가 다르다 — `items` · `source` 는 응답에 없다(안내 API 에도 없다). **#252 에서 정함**: `items` · `source` 는 선택 필드(목 시안 예시에만 있음)이고 `title` 을 더했다. **#256 에서 정함**: `href` 는 늘 있다 — 실데이터는 `/notice/{code}/{publishedAdvisory.isoWeek}`. 실데이터 홈 안내 섹션은 `운영자 검토` 배지 · 발행일 · 제목 · `안내 전체 보기` 를 그리고, 본문은 요약에 넣지 않는다(동네 안내 화면에서만).
 - 안내를 요약해 보이는 곳(홈 안내 섹션 · 지도 `이 동네 안내 보기`)은 위 행정동 주간 집계의 `publishedAdvisory`(요청 주, 없으면 직전 주)로 **발행 중인 안내만** 안다 — 철회된 안내는 키가 없고 `PublishedNotice` 는 `null` 이다.
-- **프론트 연동**: 아직 하지 않았다 — `features/notice/notice-client.ts` 의 `getRegionNotice` 안내 내용은 **출처와 무관하게 목**이다(동네만 출처에 따라 행정동 API 로 확인). 목 재현 `?mock=published|corrected|retracted|none|insufficient`.
+- **프론트 연동 (#256)**: `features/notice/notice-client.ts` 의 `getRegionNotice(code, week, source, mock?)` — 실데이터는 `features/notice/advisory-api.ts` 의 `fetchRegionNotice` 가 이 API 와 같은 동네 · 주의 행정동 주간 집계(`GET /api/v1/districts/{code}/weekly-aggregate?week=`)를 **동시에** `auth: false` 로 부르고 `toRegionNoticeBody` 로 옮긴다. 동네 안내 페이지(`app/notice/[region]/[week]/page.tsx`)가 서버에서 부른다(공식 정보와 같이 세션과 무관). 목데이터는 지금처럼 `?mock=published|corrected|retracted|none|insufficient` 이고 실데이터는 `?mock=` 을 듣지 않는다.
+  - **옮기는 값**: 발행 중 → `notice { title, publishedOn: publishedAt 의 한국 날짜, body, corrections: [{ correctedOn: correctedAt 의 한국 날짜 }](응답 순서 — 최근 것부터) }` · `stats { status: citation.level, participants: citation.participantCount, symptomRate: citation.symptomRate, baselineRate: 집계 baselineRate, groups: citation.groups 의 { key, rate } + 같은 증상군의 집계 trend }`(`symptomaticCount` 는 화면에 쓰지 않는다). 철회됨 → `retraction { retractedOn: retractedAt 의 한국 날짜 }` + 그 주 집계. 안내 없음 → 그 주 집계만. 그 주 집계는 홈과 같은 `toHomeWeekly` 로 읽어 자료 부족이면 수치 필드가 없는 갈래다. 읽을 수 없는 시각은 빈 날짜로 두어 화면이 그 날짜 조각을 뺀다. 모르는 증상군은 그 줄만 뺀다.
+  - **오류**: 형식이 틀린 코드는 요청 없이, 안내 `ADVISORY_008` · `009` · 검증(`101`~`104`)이나 집계 `AGGREGATE_001` · `002` · 검증(`101` · `102`) — 어느 한쪽이라도 그 동네 · 주를 모르면 null → 없는 화면(404, 주소 모양이 틀린 주와 같다). 그 밖의 실패(일시 장애 · 게이트웨이)는 거부해 루트 오류 경계(`다시 시도`)가 받는다. 계약과 다른 응답(두 응답의 주가 주소와 다름 · `advisory` · `retraction` 이 모두 null · 인용 단계가 `INSUFFICIENT` 이거나 모름 · 발행된 안내의 주 집계가 자료 부족 · 집계의 모르는 `level`)도 거부한다 — 지어낸 기준선으로 채우지 않는다.
+  - **폐지된 동네**: 백엔드와 같이 오류로 보지 않고 그 주 안내 · 집계를 보인다(전에는 행정동 API 로 확인해 404 였다). 목데이터는 행정동 목이 폐지 동네를 모르므로 그대로다.
 
 ## BE 미정 — 프론트 초안
 
@@ -405,7 +408,7 @@ GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — �
 (운영자 처리 경로 · 동사는 아래 "운영자 검토 (#219)" · "발행 이력 · 정정 · 철회 (#220)" 가 정본이다)
 ```
 
-- 프론트 함수: 보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계", 공식 정보는 위 "공식 정보", 동네 안내는 위 "동네 안내" 로 확정이다(동네 안내 본문은 화면 연동 전이라 아직 목 — #256). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
+- 프론트 함수: 보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계", 공식 정보는 위 "공식 정보", 동네 안내는 위 "동네 안내" 로 확정이다. 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
 
 ### 운영자 검토 (#219, 프론트 초안)
 
