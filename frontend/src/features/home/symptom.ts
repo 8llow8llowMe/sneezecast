@@ -46,8 +46,8 @@ const MIN_SCALE_PERCENT = 24
  * 한 주의 증상군들이 함께 쓸 세로축 범위 (%). **증상군마다 따로 맞추지 않는다** — 그러면
  * 낮은 비율의 증상군도 막대가 꽉 차 보여 두 줄을 비교할 수 없다.
  */
-export function scaleMax(groups: readonly { series: readonly number[] }[]): number {
-  return Math.max(MIN_SCALE_PERCENT, ...groups.flatMap((group) => group.series))
+export function scaleMax(groups: readonly { series?: readonly number[] }[]): number {
+  return Math.max(MIN_SCALE_PERCENT, ...groups.flatMap((group) => group.series ?? []))
 }
 
 /** 주별 비율(%)을 막대 높이(px)로 바꾼다. 범위를 넘는 값은 최대 높이로 자른다 */

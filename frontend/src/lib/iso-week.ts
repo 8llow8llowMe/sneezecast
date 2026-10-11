@@ -59,6 +59,17 @@ export function formatIsoWeekRange(value: string): string | null {
 }
 
 /**
+ * 보고 기간 — 집계 기간에 요일을 붙인다 (예: `11월 17일(월)~23일(일)`, 보고 시작 Report-start). 읽을 수 없는 주면 null 이다.
+ * ISO 주는 늘 월요일에 시작해 일요일에 끝난다.
+ */
+export function formatIsoWeekReportPeriod(value: string): string | null {
+  const range = formatIsoWeekRange(value)
+  if (!range) return null
+  const [start, end] = range.split('~')
+  return `${start}(월)~${end}(일)`
+}
+
+/**
  * 몇 월 몇째 주 (예: `11월 3주`). **그 주의 목요일이 든 달**의 몇째 주로 센다 — ISO 주가 해를 정하는 방식과 같아
  * 한 주가 두 달에 걸쳐도 한 달에만 속한다(10월 27일~11월 2일은 목요일이 10월 30일이라 `10월 5주`).
  * 읽을 수 없는 주면 null 이다.

@@ -12,17 +12,30 @@ import type { OfficialSummary } from './types'
  * `공식` 배지 · 출처 · 집계 단위 · 기준을 밝혀 따로 그린다 (루트 CLAUDE.md "공식 정보와 안내").
  */
 
+/** 공식 정보 화면 (S08) */
+const OFFICIAL_PATH = '/official'
+
+/**
+ * 요약이 없을 때(실데이터 — 공식 정보 연동 #253 전) 행의 글자. 발표 단계 · 감염병을 지어내지 않고 출처와 갈 곳만 밝힌다
+ */
+const OFFICIAL_ROW_FALLBACK = {
+  headline: '질병관리청 공식 정보',
+  sourceLine: '감염병 발생 현황 · 시민 자가보고와 따로 봐요',
+}
+
 /**
  * 공식 정보 이동 행 (모바일은 띠 사이, 태블릿 · 데스크톱은 헤더 아래). S08 공식 정보 화면(`/official`)으로 간다.
  * `navSearch`(둘러보기 동네 `region=<코드>`)는 메뉴 링크처럼 뒤에 붙여 공식 정보 화면에서도 동네를 잃지 않게 한다.
+ * 요약이 없으면(`null`, 실데이터) 단계 없이 `질병관리청 공식 정보` 로 가는 행만 그린다.
  */
 export function OfficialRow({
   official,
   navSearch,
 }: {
-  official: OfficialSummary
+  official: OfficialSummary | null
   navSearch?: string | undefined
 }) {
+  const text = official ?? OFFICIAL_ROW_FALLBACK
   return (
     <Link
       href={officialHref(official, navSearch)}
@@ -31,8 +44,8 @@ export function OfficialRow({
       <ListRow
         kind="link"
         leading={<Badge kind="official" />}
-        title={official.headline}
-        description={official.sourceLine}
+        title={text.headline}
+        description={text.sourceLine}
         trailing={<ChevronRightIcon className="shrink-0 text-fg-muted" />}
       />
     </Link>
@@ -58,9 +71,10 @@ export function OfficialPanel({ official }: { official: OfficialSummary }) {
  * 공식 정보 화면 주소. 홈의 두 진입점(공식 정보 행 · 동네 안내의 `공식 예방수칙 보기`)이 같은 주소를 쓴다.
  * `navSearch` 는 주소 뒤에 붙이고, 주소에 이미 쿼리가 있으면(목 `?mock=`) `&` 로 잇는다
  */
-export function officialHref(official: OfficialSummary, navSearch?: string): string {
-  if (!navSearch) return official.href
-  return `${official.href}${official.href.includes('?') ? '&' : '?'}${navSearch}`
+export function officialHref(official: OfficialSummary | null, navSearch?: string): string {
+  const href = official?.href ?? OFFICIAL_PATH
+  if (!navSearch) return href
+  return `${href}${href.includes('?') ? '&' : '?'}${navSearch}`
 }
 
 function OfficialItem({ term, detail }: { term: string; detail: string }) {

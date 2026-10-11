@@ -1,9 +1,9 @@
 import type { MeasuredStatus } from '@/lib/status'
 
 /**
- * 홈 화면 데이터. API(`GET /api/v1/districts/{code}/weekly-aggregate` 등, docs/api-contract-draft.md
- * "행정동 주간 집계")를 화면용으로 옮긴 모양이다. 날짜 · 주차 같은 문구는 API 연동 때 매핑 계층이 만든다 —
- * 아직 연동 전이라 목 데이터가 채운다.
+ * 홈 화면 데이터. API(`GET /api/v1/districts/{code}/weekly-aggregate`, docs/api-contract-draft.md
+ * "행정동 주간 집계")를 화면용으로 옮긴 모양이다. 실데이터는 `weekly-aggregate.ts` 가 응답에서 날짜 · 주차 문구까지 만들고,
+ * 목데이터는 `mock.ts` 가 시안 예시 값으로 채운다. **응답에 없는 값은 선택 필드로 두고 지어내지 않는다** — 아래 각 필드 주석.
  *
  * **`자료 부족` 이면 증상 비율 · 기준선 · 증상별 변화가 타입에 아예 없다.** 화면 코드가 실수로
  * 수치를 그릴 수 없게 하려는 것이다 (루트 CLAUDE.md "표본이 적으면 수치 · 색상으로 위험을 암시하지 않는다").
@@ -25,7 +25,11 @@ type HomeCommon = {
   /** 수치를 공개하는 참여 기준. 백엔드가 내려 준다 (시범 운영 초기값 100명) */
   publicThreshold: number
   notice: PublishedNotice | null
-  official: OfficialSummary
+  /**
+   * 질병관리청 공식 정보 요약. **실데이터는 null** 이다 — 집계 API 에 없고 공식 정보 연동(#253) 전이라, 홈은 단계 · 요약 없이
+   * 공식 정보 화면으로 가는 행만 그린다(`official.tsx`). 목데이터는 시안 예시 요약이다
+   */
+  official: OfficialSummary | null
 }
 
 export type MeasuredWeek = {
@@ -58,23 +62,40 @@ export type GroupTrend = 'down' | 'flat' | 'slight' | 'high'
 
 export type SymptomGroup = {
   key: SymptomGroupKey
-  trend: GroupTrend
-  /** 최근 주별 증상 보고 비율 (%), 오래된 주부터. 마지막 값이 이번 주다 */
-  series: number[]
+  /** 전주 대비 변화. 전주가 없거나 자료 부족이면 서버가 주지 않아 없다 — 화면은 변화 글자를 빼고 그린다 */
+  trend?: GroupTrend
+  /** 이번 주 이 증상군의 보고 비율 (%). 실데이터(`groups[].rate`)에만 있다 */
+  rate?: number
+  /**
+   * 최근 주별 증상 보고 비율 (%), 오래된 주부터. 마지막 값이 이번 주다. **목(시안 예시)에만 있다** — 집계 API 에 없어
+   * 실데이터는 작은 막대 대신 이번 주 비율(`rate`)을 글자로 보인다
+   */
+  series?: number[]
 }
 
 /**
- * 운영자가 검토 · 발행한 이번 주 동네 안내. 발행 전이면 null 이다. **철회된 안내도 null 이다**(#225) — 이 모양에는 철회 표시가 없어
- * 홈 안내 섹션 · 지도의 `이 동네 안내 보기` 가 철회된 안내를 발행 중인 안내로 요약할 수 없다. 연동 때 매핑 계층은 발행 중인 안내만
- * 여기에 옮긴다. 철회 사실은 동네 안내 화면(S07, `features/notice/types.ts` 의 `retraction`)에서만 보인다
+ * 운영자가 검토 · 발행한 동네 안내. 발행 전이면 null 이다. **철회된 안내도 null 이다**(#225) — 이 모양에는 철회 표시가 없어
+ * 홈 안내 섹션 · 지도의 `이 동네 안내 보기` 가 철회된 안내를 발행 중인 안내로 요약할 수 없다. 실데이터는 집계의 `publishedAdvisory`
+ * (요청 주, 없으면 직전 주의 발행 중인 안내 — 서버가 철회된 안내를 빼 준다)를 옮긴다. 철회 사실은 동네 안내 화면(S07,
+ * `features/notice/types.ts` 의 `retraction`)에서만 보인다
  */
 export type PublishedNotice = {
   /** 예: "11월 18일 발행" */
   publishedLabel: string
-  items: string[]
+  /**
+   * 동네 안내 화면(S07) 주소. **목에만 있다** — 동네 안내 화면의 안내 내용이 아직 출처와 무관하게 목이라(본문 연동 #256), 실데이터 홈에서
+   * 열면 실제 동네에 지어낸 안내 · 집계가 보인다. #256 에서 `/notice/{code}/{publishedAdvisory.isoWeek}` 로 연다
+   */
+  href?: string
+  /** 안내 제목. 실데이터(`publishedAdvisory.title`)에만 있다 */
+  title?: string
+  /**
+   * 할 일 목록 · 근거. **목(시안 예시)에만 있다** — 집계 응답에도 안내 API 에도 없다(본문은 `body` 한 덩어리, 연동 #256).
+   * 실데이터 홈은 제목 · 발행일 · `안내 보기` 로 그린다
+   */
+  items?: string[]
   /** 근거. 예: "질병관리청 예방수칙" */
-  source: string
-  href: string
+  source?: string
 }
 
 /**

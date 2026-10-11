@@ -32,6 +32,22 @@ describe('SymptomTrends', () => {
     expect(gastro?.lastElementChild?.classList).toContain('bg-muted-bar')
   })
 
+  it('주별 비율이 없으면(실데이터) 막대 대신 이번 주 비율을, 변화가 없으면 변화 글자 없이 보인다', () => {
+    const week = {
+      ...HOME_MOCKS.high,
+      groups: [
+        { key: 'respiratory' as const, rate: 14.1, trend: 'high' as const },
+        { key: 'gastrointestinal' as const, rate: 3.9 },
+      ],
+    }
+    render(<SymptomTrends week={week} />)
+
+    expect(screen.queryAllByRole('img')).toHaveLength(0)
+    expect(screen.getByText('이번 주 14.1%')).toBeDefined()
+    expect(screen.getByText('이번 주 3.9%')).toBeDefined()
+    expect(screen.getAllByText(/늘었어요|줄었어요|비슷해요/)).toHaveLength(1)
+  })
+
   it('자료 부족이면 막대 · 수치 없이 안내만 보인다', () => {
     render(<SymptomTrends week={HOME_MOCKS.insufficient} />)
 

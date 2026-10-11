@@ -5,6 +5,15 @@ import { findDistrict } from './region-client'
 import type { District } from './types'
 
 /**
+ * 주소 쿼리 `?region=` 의 첫 값이 행정동 코드 모양(숫자 8자리)이면 그 코드, 아니면 null. 있는 동네인지는 보지 않는다 —
+ * 실데이터 홈은 이름 · 존재를 주간 집계 응답으로 안다(`app/(home)/page.tsx`).
+ */
+export function districtCodeFromParam(value: string | string[] | undefined): string | null {
+  const code = Array.isArray(value) ? value[0] : value
+  return code && /^\d{8}$/.test(code) ? code : null
+}
+
+/**
  * 주소 쿼리 `?region=<행정동 코드>` 의 값을 행정동으로. 둘러보기(S02-1)에서 고른 동네를 홈이 받을 때 쓴다.
  * 출처(`source`)는 서버 페이지가 `readServerDataSource()` 로 읽어 넘긴다.
  *

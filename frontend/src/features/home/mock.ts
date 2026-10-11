@@ -5,7 +5,8 @@ import type { HomeWeekly, OfficialSummary } from './types'
 /**
  * 홈 목 데이터 4상태. 값은 시안(Home.dc.html renderVals)의 예시 값이다.
  *
- * **API 연동 전까지만 쓴다.** 연동 이슈에서 이 파일을 지우고 API 매핑으로 바꾼다.
+ * **목데이터 출처에서만 쓴다**(`?mock=` 재현). 실데이터는 행정동 주간 집계를 `weekly-aggregate.ts` 가 옮긴다(#252).
+ * 증상군 주별 비율(`series`) · 안내 할 일 목록 · 근거 · 공식 정보 요약은 시안 예시라 목에만 있다(응답에 없다).
  */
 
 const OFFICIAL: OfficialSummary = {

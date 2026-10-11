@@ -15,8 +15,8 @@ import { TabBar } from '@/components/tab-bar'
 import { ToastRegion, useToast } from '@/components/toast'
 import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { reportButtonLabel } from '@/features/home/report-gate'
-import { GROUP_LABEL, scaleMax, TREND_LABEL, TREND_TEXT_CLASS } from '@/features/home/symptom'
-import { TrendBars } from '@/features/home/symptom-trends'
+import { GROUP_LABEL } from '@/features/home/symptom'
+import { groupTrailing, trendDescription } from '@/features/home/symptom-trends'
 import { notificationsHref, regionSearch, reportHrefFor } from '@/features/me/me-paths'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
@@ -428,17 +428,14 @@ function StatTiles({
 
 /** 증상군별 변화. 홈의 증상별 변화와 같은 문구 · 막대(늘어난 경우만 상태색)다 */
 function GroupRows({ stats }: { stats: MeasuredNoticeStats }) {
-  const max = scaleMax(stats.groups)
   return (
     <div className="flex flex-col">
       {stats.groups.map((group) => (
         <ListRow
           key={group.key}
           title={GROUP_LABEL[group.key]}
-          description={
-            <span className={TREND_TEXT_CLASS[group.trend]}>{TREND_LABEL[group.trend]}</span>
-          }
-          trailing={<TrendBars group={group} max={max} />}
+          description={trendDescription(group)}
+          trailing={groupTrailing(group, stats.groups)}
           divider
         />
       ))}

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatIsoWeekOfMonth,
   formatIsoWeekRange,
+  formatIsoWeekReportPeriod,
   isoWeekMonday,
   kstIsoWeek,
   parseIsoWeek,
@@ -70,6 +71,17 @@ describe('formatIsoWeekRange', () => {
   it('읽을 수 없는 주면 null 이다', () => {
     expect(formatIsoWeekRange('2025-W53')).toBeNull()
     expect(formatIsoWeekRange('latest')).toBeNull()
+  })
+})
+
+describe('formatIsoWeekReportPeriod', () => {
+  it('집계 기간에 월 · 일 요일을 붙인다 (Report-start "11월 17일(월)~23일(일)")', () => {
+    expect(formatIsoWeekReportPeriod('2025-W47')).toBe('11월 17일(월)~23일(일)')
+    expect(formatIsoWeekReportPeriod('2025-W44')).toBe('10월 27일(월)~11월 2일(일)')
+  })
+
+  it('읽을 수 없는 주면 null 이다', () => {
+    expect(formatIsoWeekReportPeriod('2025-W53')).toBeNull()
   })
 })
 

@@ -5,8 +5,8 @@ import clsx from 'clsx'
 
 import { ListRow } from '@/components/list-row'
 import { ProgressBar } from '@/components/progress-bar'
-import { GROUP_LABEL, scaleMax, TREND_LABEL, TREND_TEXT_CLASS } from '@/features/home/symptom'
-import { TrendBars } from '@/features/home/symptom-trends'
+import { GROUP_LABEL } from '@/features/home/symptom'
+import { groupTrailing, trendDescription } from '@/features/home/symptom-trends'
 import { formatCount } from '@/lib/format'
 import { STATUS_LABEL, STATUS_TEXT_CLASS } from '@/lib/status'
 
@@ -80,7 +80,8 @@ export function DistrictPanel({
     onExpandedChange(!expanded)
   }
 
-  const noticeHref = week.notice ? withSearch(week.notice.href, navSearch) : null
+  // 링크가 없는 안내(실데이터 — 동네 안내 본문 연동 #256 전)면 `이 동네 안내 보기` 를 두지 않는다
+  const noticeHref = week.notice?.href ? withSearch(week.notice.href, navSearch) : null
 
   return (
     <section
@@ -164,12 +165,8 @@ export function DistrictPanel({
                 <ListRow
                   key={group.key}
                   title={GROUP_LABEL[group.key]}
-                  description={
-                    <span className={TREND_TEXT_CLASS[group.trend]}>
-                      {TREND_LABEL[group.trend]}
-                    </span>
-                  }
-                  trailing={<TrendBars group={group} max={scaleMax(week.groups)} />}
+                  description={trendDescription(group)}
+                  trailing={groupTrailing(group, week.groups)}
                   divider
                 />
               ))}
