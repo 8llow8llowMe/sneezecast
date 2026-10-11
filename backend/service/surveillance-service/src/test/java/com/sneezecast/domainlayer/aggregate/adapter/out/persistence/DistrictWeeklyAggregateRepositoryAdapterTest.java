@@ -238,6 +238,32 @@ class DistrictWeeklyAggregateRepositoryAdapterTest extends SurveillanceH2TestSup
     }
 
     @Test
+    @DisplayName("행정동 × 주 조회는 두 조건을 모두 건다 — 다른 동 · 다른 주는 빠지고, 빈 목록이면 빈 결과다")
+    void findAllByDistrictCodeInAndIsoWeekIn() {
+        adapter.insert(DistrictWeeklyAggregate.newAggregate(1L, calculation(GARAK_1, W52, COUNTS, SLIGHT)));
+        adapter.insert(DistrictWeeklyAggregate.newAggregate(2L, calculation(GARAK_1, W53, COUNTS, SLIGHT)));
+        adapter.insert(DistrictWeeklyAggregate.newAggregate(3L, calculation(GARAK_1, NEXT_W01, COUNTS, SLIGHT)));
+        adapter.insert(DistrictWeeklyAggregate.newAggregate(4L, calculation(YEOKSAM_1, W53, COUNTS, SLIGHT)));
+
+        assertThat(adapter.findAllByDistrictCodeInAndIsoWeekIn(List.of(GARAK_1), List.of(W53, NEXT_W01)))
+            .extracting(DistrictWeeklyAggregate::id).containsExactlyInAnyOrder(2L, 3L);
+        assertThat(adapter.findAllByDistrictCodeInAndIsoWeekIn(List.of(), List.of(W53))).isEmpty();
+        assertThat(adapter.findAllByDistrictCodeInAndIsoWeekIn(List.of(GARAK_1), List.of())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("주의 마감 여부는 마감된 행이 하나라도 있는지다")
+    void existsFinalizedRow() {
+        adapter.insert(DistrictWeeklyAggregate.newAggregate(1L, calculation(GARAK_1, W52, COUNTS, SLIGHT)));
+        adapter.insert(DistrictWeeklyAggregate.newAggregate(2L, calculation(GARAK_1, W53, COUNTS, SLIGHT)));
+        finalizeWeek(W52, FINALIZED_AT);
+
+        assertThat(adapter.existsFinalizedRow(W52)).isTrue();
+        assertThat(adapter.existsFinalizedRow(W53)).isFalse();
+        assertThat(adapter.existsFinalizedRow(NEXT_W01)).isFalse();
+    }
+
+    @Test
     @DisplayName("트랜잭션 밖에서 재계산 · 마감을 부르면 거부한다")
     void updateAndFinalizeRequireTransaction() {
         adapter.insert(DistrictWeeklyAggregate.newAggregate(1L, calculation(GARAK_1, W53, COUNTS, SLIGHT)));

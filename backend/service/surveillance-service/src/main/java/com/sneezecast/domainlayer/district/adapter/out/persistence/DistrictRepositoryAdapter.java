@@ -27,4 +27,11 @@ public class DistrictRepositoryAdapter implements DistrictRepositoryPort {
     public Optional<District> findByCode(String code) {
         return districtRepository.findByCode(code).map(districtMapper::toDomainFromEntity);
     }
+
+    @Override
+    public List<District> findActiveBySigunguCode(String sigunguCode) {
+        return districtRepository.findAllBySigunguCodeAndValidToYearIsNullOrderByCodeAsc(sigunguCode).stream()
+            .map(districtMapper::toDomainFromEntity)
+            .toList();
+    }
 }

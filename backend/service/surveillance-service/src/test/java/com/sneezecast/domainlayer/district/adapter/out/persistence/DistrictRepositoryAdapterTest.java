@@ -121,6 +121,14 @@ class DistrictRepositoryAdapterTest extends DistrictH2TestSupport {
         assertThat(districtRepositoryAdapter.findByCode("99999999")).isEmpty();
     }
 
+    @Test
+    @DisplayName("시군구 목록은 그 시군구의 현행 동만 코드 오름차순으로 준다 — 폐지된 동 · 다른 시군구는 빠지고, 없는 시군구는 빈 목록이다")
+    void listsActiveDistrictsOfSigungu() {
+        assertThat(codes(districtRepositoryAdapter.findActiveBySigunguCode("11230"))).containsExactly("11230510", "11230520");
+        assertThat(codes(districtRepositoryAdapter.findActiveBySigunguCode("21120"))).containsExactly("21120561");
+        assertThat(districtRepositoryAdapter.findActiveBySigunguCode("99999")).isEmpty();
+    }
+
     private List<District> search(String keyword) {
         return districtRepositoryAdapter.searchActive(keyword, 20);
     }

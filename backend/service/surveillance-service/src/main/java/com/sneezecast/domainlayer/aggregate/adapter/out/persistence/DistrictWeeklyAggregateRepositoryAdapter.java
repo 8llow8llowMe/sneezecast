@@ -42,6 +42,23 @@ public class DistrictWeeklyAggregateRepositoryAdapter implements DistrictWeeklyA
         return districtWeeklyAggregateRepository.findAllByIsoWeekIn(values).stream().map(districtWeeklyAggregateMapper::toDomainFromEntity).toList();
     }
 
+    @Override
+    public List<DistrictWeeklyAggregate> findAllByDistrictCodeInAndIsoWeekIn(Collection<String> districtCodes, Collection<ReportWeek> isoWeeks) {
+        if (districtCodes.isEmpty() || isoWeeks.isEmpty()) {
+            return List.of();
+        }
+        List<String> codes = districtCodes.stream().distinct().toList();
+        List<String> weeks = isoWeeks.stream().map(ReportWeek::value).distinct().toList();
+        return districtWeeklyAggregateRepository.findAllByDistrictCodeInAndIsoWeekIn(codes, weeks).stream()
+            .map(districtWeeklyAggregateMapper::toDomainFromEntity)
+            .toList();
+    }
+
+    @Override
+    public boolean existsFinalizedRow(ReportWeek isoWeek) {
+        return districtWeeklyAggregateRepository.existsByIsoWeekAndFinalizedAtIsNotNull(isoWeek.value());
+    }
+
     /** {@code saveAndFlush} 로 INSERT 를 바로 내보내 제약 위반이 이 자리에서 드러나게 한다. 위반은 바꾸지 않고 그대로 던진다 (포트 문서). */
     @Override
     public DistrictWeeklyAggregate insert(DistrictWeeklyAggregate aggregate) {

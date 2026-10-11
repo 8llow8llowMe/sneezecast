@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sneezecast.domainlayer.aggregate.domain.enums.AggregateLevel;
+import com.sneezecast.domainlayer.aggregate.domain.enums.GroupTrend;
 import com.sneezecast.domainlayer.aggregate.domain.enums.InsufficientReason;
 import com.sneezecast.domainlayer.aggregate.domain.model.AggregateRule.WeekState;
 import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
@@ -232,6 +233,30 @@ class AggregateRuleTest {
         assertThatThrownBy(() -> new AggregateRule(version.isBlank() ? version : version.strip(), minSample, unstable, slight, high, baselineWeeks, lookback))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining(key);
+    }
+
+    @ParameterizedTest(name = "전주 {2}/{3} → 이번 주 {0}/{1} = {4}")
+    @CsvSource({
+        // 전주 10% 기준. 정확히 +8%p · +3%p · −3%p 가 경계다 (분모가 달라도 정수 비교라 어긋나지 않는다).
+        "180, 1000, 20, 200, HIGH",
+        "179, 1000, 20, 200, SLIGHT",
+        "130, 1000, 20, 200, SLIGHT",
+        "129, 1000, 20, 200, FLAT",
+        "100, 1000, 20, 200, FLAT",
+        "71, 1000, 20, 200, FLAT",
+        "70, 1000, 20, 200, DOWN",
+        "0, 1000, 20, 200, DOWN"
+    })
+    @DisplayName("증상군 변화는 전주 대비 비율 차이 %p 로 정한다 — +8%p HIGH, +3%p SLIGHT, −3%p 이하 DOWN, 그 사이 FLAT (경계 포함)")
+    void trendBoundary(int count, int participants, int previousCount, int previousParticipants, GroupTrend expected) {
+        assertThat(RULE.trend(count, participants, previousCount, previousParticipants)).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("증상군 변화는 분모가 0 이면 계산하지 않는다 — 자료 부족 주와 비교하지 않는 것은 호출자 몫이다")
+    void trendRejectsEmptyDenominator() {
+        assertThatThrownBy(() -> RULE.trend(0, 0, 10, 100)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> RULE.trend(10, 100, 0, 0)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
