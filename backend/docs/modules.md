@@ -122,7 +122,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 컨텍스트 | 책임 |
 |----------|------|
 | `auth` | 이메일 + 비밀번호 가입·로그인, 카카오 소셜 로그인, 이메일 인증 코드, 비밀번호 재설정, 토큰 발급·재발급·폐기, 세션(기기) 관리 |
-| `member` | 회원 (닉네임·프로필 이미지), 내 정보 수정, 비밀번호 변경, 탈퇴 |
+| `member` | 회원 (닉네임·프로필 이미지), 내 정보 수정, 비밀번호 변경, 알림 수신 설정, 탈퇴 |
 | `consent` | (별도 컨텍스트를 두지 않는다 — 동의 · 철회 이력과 원시 보고 파기 요청은 `member` 컨텍스트가 맡는다. 알림 수신 동의는 2단계) |
 | `region` | 회원이 선택한 행정동 (내 동네 저장 · 조회, 관심 동네 조회 · 추가 · 삭제 — 코드 검증과 이름 · 폐지 여부는 surveillance 내부 API 를 Feign 으로 부른다) |
 | `notification` | PWA 푸시 구독, 안내 발행 시 팬아웃 발송, 발송 로그 (2단계) |
@@ -144,6 +144,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 동의 | `POST /me/consents` (동의 · 재동의) · `DELETE /me/consents/SENSITIVE_HEALTH_INFO` (건강정보 동의 철회) |
 | 내 동네 | `GET /me/region` · `PUT /me/region` |
 | 관심 동네 | `GET /me/interest-regions` · `POST /me/interest-regions` · `DELETE /me/interest-regions/{code}` |
+| 알림 설정 | `GET /me/notification-settings` · `PATCH /me/notification-settings` (#218) |
 
 **저장소**
 
@@ -153,6 +154,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | MySQL `member_consent` | 동의 종류 · 문서 버전 · 동의/철회 이력 |
 | MySQL `member_region` | 선택한 행정동 (회원당 1개) |
 | MySQL `member_interest_region` | 관심 동네 (회원당 `region.interest.max-count` 개까지, 기본 3) |
+| MySQL `member_notification_setting` | 알림 수신 설정 (회원당 최대 1행, 첫 변경 때 만든다 — 행이 없으면 모두 꺼짐) |
 | MySQL `report_purge_request` | 탈퇴 · 건강정보 동의 철회 시 surveillance 원시 보고 파기 요청 (완료될 때까지 재시도) |
 | Redis (TTL) | 이메일 인증 코드, 비밀번호 재설정 코드 · 재설정 토큰(해시), 로그인 · 비밀번호 확인 시도 횟수, OAuth state · 카카오 가입표 · 연결 확인표(해시), refresh 세션 |
 | MinIO | 업로드한 프로필 이미지 |
@@ -221,7 +223,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 성공 순서: 현재 비밀번호 확인 → 새 비밀번호 BCrypt(트랜잭션 밖) → **지금 기기(access `sid`)를 뺀 다른 기기 세션 폐기 + access 블랙리스트**(sid 가 없으면 전부) → 저장(커밋) → 같은 범위 2차 폐기(실패해도 로그만 — 재설정과 같은 이유). 1차 폐기가 실패하면 저장하지 않고 `MEMBER_009`(503) — member 컨트롤러에는 auth 의 예외 처리기가 걸리지 않아 auth 의 `AUTH_017` 을 member 코드로 바꿔 낸다.
 - member 요청 검증은 `MemberRequestExceptionHandler`(member 패키지 전용) 가 `MEMBER_1xx` 로 낸다. auth 검증 오류가 MEMBER 코드로 새지 않게 처리기를 나눴다.
 - **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장과 카카오 연결의 provider 변경 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향). `region` 은 다른 컨텍스트와 서로 import 하지 않는다(회원은 JWT 의 `memberId` 로만 안다). 예외 하나: 동의 철회 응답에서 refresh 쿠키를 지우려고 member 웹 계층(`MemberRefreshCookie`)에 auth 와 **같은 값**의 쿠키 이름 · 속성을 둔다 — 응답 헤더라 out 포트로 돌릴 수 없고, auth 상수를 쓰면 의존이 생긴다. 두 값이 같음은 테스트(`MemberRefreshCookieTest`)가 고정한다.
-- 오류 코드: `AUTH_018` 재설정 인증 만료(400) · `AUTH_019` 재설정 IP 상한(429) · 검증 `AUTH_115` · `116`(resetToken), `MEMBER_004` 회원 없음(404) · `005` 현재 비밀번호 불일치(400) · `006` 확인 잠금(429) · `007` 비밀번호 없는 계정(409) · `008` 비운 번호(#61 에서 최초 설정 API 를 없앰 — 재사용 금지) · `009` 세션 저장소 장애(503) · `010` 동의할 수 없는 항목(400) · `011` 동의 문서 버전 불일치(409) · `012` 철회할 수 없는 항목(400) · `100` · `198` · `199` 요청 형식, 검증 `MEMBER_101~110`.
+- 오류 코드: `AUTH_018` 재설정 인증 만료(400) · `AUTH_019` 재설정 IP 상한(429) · 검증 `AUTH_115` · `116`(resetToken), `MEMBER_004` 회원 없음(404) · `005` 현재 비밀번호 불일치(400) · `006` 확인 잠금(429) · `007` 비밀번호 없는 계정(409) · `008` 비운 번호(#61 에서 최초 설정 API 를 없앰 — 재사용 금지) · `009` 세션 저장소 장애(503) · `010` 동의할 수 없는 항목(400) · `011` 동의 문서 버전 불일치(409) · `012` 철회할 수 없는 항목(400) · `013` 알림 설정 동시 저장 경합(409, 아래 "알림 설정") · `100` · `198` · `199` 요청 형식, 검증 `MEMBER_101~114`(`111~114` 는 알림 설정).
 
 **동의 · 재동의 · 건강정보 동의 철회** (`member` 컨텍스트, 인증 필요 — #59)
 
@@ -231,6 +233,17 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 커밋 뒤 **모든 기기를 로그아웃**한다 — refresh 세션 전부 폐기 + 그 세션들의 최근 access 와 요청한 access 를 블랙리스트에 올리고, 응답에서 refresh 쿠키를 지운다(프론트 #129 요청, 시안 "모든 기기에서 로그아웃돼요"). 세션 폐기가 실패해도(Redis 장애) 철회 · 파기 요청은 이미 커밋됐으므로 로그만 남기고 200 이다 — 다음 재발급에서 scope 가 다시 계산돼 `report:write` 가 빠지고, 남은 access(최대 15분)로 들어온 보고는 #155 의 2차 파기가 지운다.
 - 두 API 모두 동의 상태 `{pendingConsents, healthInfoAgreed, reportWritable, purgePending}` 를 돌려준다. **동의 뒤 access 의 scope 는 그대로**다(토큰은 발급 때 계산) — `report:write` 를 받으려면 `POST /auth/token/reissue` 로 새 access 를 받는다.
 - 탈퇴(`WITHDRAWAL` 요청 생성 · 회원 hard delete)는 #154 다.
+
+**알림 설정** (`member` 컨텍스트, `/api/v1/members/me/notification-settings`, #218 — 정본은 [entity-design.md §1-7](entity-design.md#1-7-member_notification_setting--알림-수신-설정))
+
+- 알림을 받을지 고른 값(설정)만 다룬다. 실제로 보낼 곳(PWA 푸시 구독)과 발송은 2단계 `notification` 컨텍스트다 — 설정을 켜도 지금은 알림이 가지 않는다. 인증만 요구하고 `report:write` 는 요구하지 않는다(건강정보가 아니다). 회원 상태는 내 정보와 같게 본다(`MEMBER_004` · `002` · `003`, 쓰기와 같은 트랜잭션) — 요청이 차례로 올 때, 탈퇴 뒤에 남은 access 로 들어온 요청이 행을 다시 만들지 못하게. 탈퇴와 동시에 들어온 요청은 확인을 통과한 뒤 탈퇴가 커밋되면 행을 남길 수 있고, 그 행은 회원 파기 때 함께 지운다(entity-design §1-7, #154).
+- `GET` → `{weeklyReport, regionNotice}`. 행이 없으면(한 번도 바꾸지 않음) **모두 false** 이고 행을 만들지 않는다.
+- `PATCH {weeklyReport?, regionNotice?}` → 보낸 항목만 바꾼 뒤의 설정 전부. 동작은 둘이다.
+  - **보낸 항목만 DB 에서 바꾼다.** 행이 있으면 부분 갱신 쿼리(`set weekly_report = coalesce(?, weekly_report), region_notice = coalesce(?, region_notice), updated_at = ? where member_id = ?`)를 쓰고 같은 트랜잭션에서 다시 읽어 응답을 만든다. 엔티티 변경 감지는 두 칸을 모두 쓰는 UPDATE 를 내보내 같은 회원의 겹친 요청(다른 탭 · 기기)이 바꾼 다른 항목을 되돌리므로 쓰지 않는다. 벌크 갱신이라 `updated_at` 은 쿼리가 직접 쓴다(`LocalDateTime.now()` — Auditing 과 같은 기준).
+  - **첫 생성 경합만 한 번 다시 한다.** 행이 없으면 모두 꺼짐을 바탕으로 INSERT 한다. 같은 회원의 첫 변경 두 건이 겹치면 `uk_member_notification_setting_member_id` 에 막힌 쪽을 저장소 어댑터가 `MEMBER_013` 으로 바꾸고, 그 트랜잭션이 롤백된 뒤 `MemberNotificationSettingWebFacade` 가 **새 트랜잭션에서 한 번 다시** 한다 — 이번에는 행이 보여 부분 갱신이 된다. 조회에서 본 행이 갱신 전에 사라진 경우(갱신 0건 — 탈퇴 정리 등)도 같은 `MEMBER_013` 으로 롤백해 새 트랜잭션에서 다시 판단한다(회원 상태 확인부터 — 탈퇴했으면 `MEMBER_002`, 아니면 새 행). 다시 해도 겹치면 `MEMBER_013`(409). 행이 없을 때 UPDATE 를 먼저 시도하지 않는 이유: MySQL(REPEATABLE READ)이 없는 키에 갭 잠금을 잡아, 동시 첫 변경 둘의 INSERT 가 교착(unique 위반이 아닌 실패)이 될 수 있다. 트랜잭션은 Facade 가 아니라 `MemberNotificationSettingProcessor` 의 메서드마다 건다(그래야 다시 할 수 있다 — architecture-guide §3-1).
+- 본문은 **이 DTO 만 엄격하게** 받는다(전역 Jackson 설정은 그대로 — 모르는 항목은 버리고 문자열 `"true"` 는 boolean 으로 바꾼다). `MemberNotificationSettingUpdateRequest` 의 역직렬화기가 본문을 트리로 읽어 두 항목의 원본 값(`JsonNode`)과 나머지 항목 이름을 담고, Bean Validation 이 거른다: 항목이 하나도 없는 `{}` `MEMBER_111`(field `request`), `weeklyReport` · `regionNotice` 가 JSON `true` / `false` 가 아님(문자열 · 숫자 · `null` · 객체 · 배열) `MEMBER_112` · `113`, 모르는 항목 `MEMBER_114`(field `unknownItems`, 받은 항목 이름은 응답에 싣지 않는다 — 모르는 항목만 있으면 111 은 내지 않는다). 깨진 JSON · 객체가 아닌 본문 · 본문 없음은 `MEMBER_100`. 오류 봉투 · `fieldErrors` 는 다른 회원 요청과 같고 순서는 record 컴포넌트 순서(`weeklyReport` → `regionNotice` → `unknownItems`)다. `@JsonAnySetter` 로 모르는 항목을 모으지 않은 이유: 그 모음의 이름과 같은 항목(`unknownItems`)이 모음을 덮어 검증을 빠져나간다.
+- 켠 · 끈 이력은 남기지 않는다(동의 이력과 별개 — entity-design §1-7). 건강정보 동의를 철회해도 설정은 그대로 두고, 탈퇴 때는 행을 지운다(회원 단위 삭제 `deleteByMemberId` 는 저장소 포트에 있고, 탈퇴 흐름에서 부르는 것은 #154). 탈퇴와 겹친 변경이 남긴 행에 대비해 회원 파기 때도 함께 지운다(#154).
+- 2단계 발송 규칙(이번 범위 아님): `weeklyReport` 대상은 건강정보 동의(`report:write` 와 같은 계산) 보유 회원으로 다시 거른다. `regionNotice` 가 내 동네만인지 관심 동네도 포함하는지는 발송 대상 규칙이라 그때 정한다 — 이 설정은 스위치 하나다.
 
 **원시 보고 파기 실행** (`member` 컨텍스트, #155 — 정본은 [entity-design.md §1-5](entity-design.md#1-5-report_purge_request--원시-보고-파기-요청))
 
