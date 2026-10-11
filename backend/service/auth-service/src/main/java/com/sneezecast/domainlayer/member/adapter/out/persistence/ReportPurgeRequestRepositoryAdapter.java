@@ -4,6 +4,7 @@ import com.sneezecast.domainlayer.member.adapter.out.persistence.entity.ReportPu
 import com.sneezecast.domainlayer.member.adapter.out.persistence.repository.ReportPurgeRequestRepository;
 import com.sneezecast.domainlayer.member.application.mapper.ReportPurgeRequestMapper;
 import com.sneezecast.domainlayer.member.application.port.out.ReportPurgeRequestRepositoryPort;
+import com.sneezecast.domainlayer.member.domain.enums.PurgeReason;
 import com.sneezecast.domainlayer.member.domain.model.ReportPurgeRequest;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -29,6 +30,11 @@ public class ReportPurgeRequestRepositoryAdapter implements ReportPurgeRequestRe
     @Override
     public boolean existsIncompleteByMemberId(long memberId) {
         return reportPurgeRequestRepository.existsByMemberIdAndCompletedAtIsNull(memberId);
+    }
+
+    @Override
+    public boolean existsIncompleteByMemberIdAndReason(long memberId, PurgeReason reason) {
+        return reportPurgeRequestRepository.existsByMemberIdAndReasonAndCompletedAtIsNull(memberId, reason);
     }
 
     @Override

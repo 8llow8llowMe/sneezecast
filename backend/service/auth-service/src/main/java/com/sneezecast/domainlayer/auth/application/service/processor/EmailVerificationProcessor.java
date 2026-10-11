@@ -36,7 +36,7 @@ public class EmailVerificationProcessor {
     public void sendCode(String email, String clientIp) {
         String code = emailCodeProcessor.issue(PURPOSE, email, clientIp);
 
-        // 가입된 이메일에는 코드(미끼)를 보내지 않고 안내 메일만 보낸다. 탈퇴 회원도 파기 전까지는 이메일을 점유한다.
+        // 가입된 이메일에는 코드(미끼)를 보내지 않고 안내 메일만 보낸다. 탈퇴한 회원은 이메일이 다이제스트로 바뀌어 여기 걸리지 않는다 — 미가입처럼 코드를 받아 다시 가입할 수 있다.
         if (memberRepositoryPort.existsByEmail(email)) {
             mailSendPort.sendAlreadyRegisteredNotice(email);
             return;

@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>트랜잭션은 메서드마다 건다 — 동시 첫 변경이 unique 에 막히면 그 트랜잭션이 롤백된 뒤 호출자({@code MemberNotificationSettingWebFacade})가
  * 새 트랜잭션에서 {@link #change} 를 다시 불러야 해서다. 회원 상태 확인({@link MemberQueryProcessor#getActiveMember})도 같은 트랜잭션에서 한다 — 탈퇴 ·
  * 정지 <b>뒤에 들어온</b> 요청(남은 access)이 설정 행을 다시 만들지 못하게. 탈퇴와 <b>동시에</b> 들어온 요청은 확인을 통과한 뒤 탈퇴가 커밋되면 행을
- * 남길 수 있다 — 그 고아 행은 회원 파기 때 함께 지운다(entity-design §1-7, #154).
+ * 남길 수 있다 — 그 고아 행은 회원 파기 때 함께 지운다(entity-design §1-7, #244).
  */
 @Service
 @RequiredArgsConstructor

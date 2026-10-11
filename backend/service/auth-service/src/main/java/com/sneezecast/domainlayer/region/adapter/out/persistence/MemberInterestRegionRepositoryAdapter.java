@@ -12,6 +12,8 @@ import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -48,6 +50,13 @@ public class MemberInterestRegionRepositoryAdapter implements MemberInterestRegi
     @Override
     public int deleteByMemberIdAndDistrictCode(long memberId, String districtCode) {
         return memberInterestRegionRepository.deleteByMemberIdAndDistrictCode(memberId, districtCode);
+    }
+
+    /** 탈퇴 정리는 회원 행 처리와 한 트랜잭션이어야 해서 {@code MANDATORY} 다 — 혼자 커밋되지 않는다. */
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int deleteAllByMemberId(long memberId) {
+        return memberInterestRegionRepository.deleteAllByMemberId(memberId);
     }
 
     /** MySQL 은 {@code for key 'member_interest_region.uk_...'}, H2 는 {@code PUBLIC.UK_..._INDEX_n ...} 로 제약 이름을 싣는다. */

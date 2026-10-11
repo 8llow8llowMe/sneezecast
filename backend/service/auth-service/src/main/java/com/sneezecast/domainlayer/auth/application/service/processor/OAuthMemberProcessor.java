@@ -69,14 +69,15 @@ public class OAuthMemberProcessor {
     }
 
     /**
-     * 이메일 계정에 소셜 로그인을 연결한다(비밀번호는 그대로 — 이메일 로그인도 계속 된다). 확인표를 받은 뒤 계정이 바뀌었을 수 있어 <b>같은 트랜잭션 안에서
+     * 이메일 계정에 소셜 로그인을 연결한다(비밀번호는 그대로 — 이메일 로그인도 계속 된다). 확인표를 받은 뒤 계정이 바뀌었을 수 있어 <b>같은 트랜잭션 안에서 회원 행을
+     * 쓰기 잠금으로 읽어(겹친 탈퇴가 끝나기를 기다린 최신 값)
      * 다시 확인한다</b> — 여전히 ACTIVE 이고 제공자가 없어야 한다.
      *
      * @throws AuthException 탈퇴 · 정지 · 이미 연결 · 회원 없음은 모두 {@code OAUTH_LINK_NOT_ALLOWED}(409)
      */
     @Transactional
     public Member link(OAuthLinkTicket ticket) {
-        memberRepositoryPort.findById(ticket.memberId())
+        memberRepositoryPort.findByIdForUpdate(ticket.memberId())
             .filter(member -> member.status() == MemberStatus.ACTIVE && member.provider() == null)
             .orElseThrow(() -> new AuthException(AuthErrorCode.OAUTH_LINK_NOT_ALLOWED));
         return memberCommandProcessor.changeProvider(ticket.memberId(), ticket.provider());

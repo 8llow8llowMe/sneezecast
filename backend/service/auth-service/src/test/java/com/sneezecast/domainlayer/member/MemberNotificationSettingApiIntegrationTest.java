@@ -69,7 +69,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
     // 카카오 앱 키는 기본값이 없는 필수 설정이라(#61, 비면 기동 실패) 전체 컨텍스트 테스트도 값을 넣는다.
     "KAKAO_CLIENT_ID=region-test-kakao-client-id",
     "KAKAO_CLIENT_SECRET=region-test-kakao-client-secret",
-    "KAKAO_REDIRECT_URI=https://dev.sneezecast.com/login/kakao/callback"
+    "KAKAO_REDIRECT_URI=https://dev.sneezecast.com/login/kakao/callback",
+    // 탈퇴 이메일 다이제스트 pepper 도 기본값이 없는 필수 설정이다(#154, 비거나 32자 미만이면 기동 실패).
+    "WITHDRAWN_EMAIL_PEPPER=sneezecast-test-withdrawn-email-pepper-0123456789"
 })
 @AutoConfigureMockMvc
 class MemberNotificationSettingApiIntegrationTest {

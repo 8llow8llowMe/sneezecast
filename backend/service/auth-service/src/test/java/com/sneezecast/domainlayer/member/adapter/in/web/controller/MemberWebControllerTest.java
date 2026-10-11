@@ -2,6 +2,7 @@ package com.sneezecast.domainlayer.member.adapter.in.web.controller;
 
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -277,6 +278,34 @@ class MemberWebControllerTest {
         mockMvc.perform(delete("/api/v1/members/me/consents/HEALTH"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_198"));
+    }
+
+    @Test
+    @DisplayName("탈퇴하면 주체의 access jti · 만료를 넘기고, 본문 null 로 200 이며 refresh 쿠키를 지운다(auth 와 같은 이름 · Path · 속성, Max-Age=0)")
+    void withdrawClearsRefreshCookie() throws Exception {
+        mockMvc.perform(post("/api/v1/members/me/withdraw"))
+            .andExpect(status().isOk())
+            .andExpect(header().string(HttpHeaders.SET_COOKIE, allOf(startsWith("refreshToken=;"), containsString("Max-Age=0"),
+                containsString("Path=/api/v1/auth"), containsString("HttpOnly"), containsString("Secure"), containsString("SameSite=Strict"))))
+            .andExpect(jsonPath("$.dataHeader.success").value(true))
+            .andExpect(jsonPath("$.dataBody").value(nullValue()));
+
+        verify(memberWebUseCase).withdraw(42L, "access-jti", null);
+    }
+
+    @Test
+    @DisplayName("이미 탈퇴한 회원의 남은 access 면 403 MEMBER_002 봉투이고 쿠키를 건드리지 않는다 — 회원 없음은 404 MEMBER_004")
+    void withdrawErrorsAreEnveloped() throws Exception {
+        doThrow(new MemberException(MemberErrorCode.WITHDRAWN_MEMBER)).when(memberWebUseCase).withdraw(anyLong(), any(), any());
+        mockMvc.perform(post("/api/v1/members/me/withdraw"))
+            .andExpect(status().isForbidden())
+            .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE))
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_002"));
+
+        doThrow(new MemberException(MemberErrorCode.MEMBER_NOT_FOUND)).when(memberWebUseCase).withdraw(anyLong(), any(), any());
+        mockMvc.perform(post("/api/v1/members/me/withdraw"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.dataHeader.resultCode").value("MEMBER_004"));
     }
 
     private static MemberConsentStatusResponse consentStatus(boolean healthInfoAgreed, boolean reportWritable, boolean purgePending) {

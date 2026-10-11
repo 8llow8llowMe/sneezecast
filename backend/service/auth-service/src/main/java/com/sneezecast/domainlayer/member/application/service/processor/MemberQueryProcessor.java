@@ -7,6 +7,7 @@ import com.sneezecast.domainlayer.member.application.info.MemberMyInfo;
 import com.sneezecast.domainlayer.member.application.port.out.MemberReportScopePort;
 import com.sneezecast.domainlayer.member.application.port.out.MemberRepositoryPort;
 import com.sneezecast.domainlayer.member.domain.model.Member;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -26,7 +27,20 @@ public class MemberQueryProcessor {
      * 이하)로 들어온 요청이 내 정보를 바꾸지 못하게 한다.
      */
     public Member getActiveMember(long memberId) {
-        Member member = memberRepositoryPort.findById(memberId).orElseThrow(() -> new MemberException(MemberErrorCode.MEMBER_NOT_FOUND));
+        return requireActive(memberRepositoryPort.findById(memberId));
+    }
+
+    /**
+     * {@link #getActiveMember} 와 같은 판정을 회원 행을 <b>쓰기 잠금으로</b> 읽어서 한다 — 탈퇴처럼 상태를 바꾸는 쓰기가 같은 회원의 겹친 요청과 차례로
+     * 처리되게 한다(뒤 요청은 앞 트랜잭션이 끝난 뒤의 상태를 본다). 호출자 트랜잭션이 있어야 한다.
+     */
+    public Member getActiveMemberForUpdate(long memberId) {
+        return requireActive(memberRepositoryPort.findByIdForUpdate(memberId));
+    }
+
+    /** 회원 행이 없으면 {@code MEMBER_NOT_FOUND}, 탈퇴 · 정지면 상태별 코드. 같은 패키지의 쓰기 처리기({@link MemberCommandProcessor})도 같은 판정을 쓴다. */
+    static Member requireActive(Optional<Member> found) {
+        Member member = found.orElseThrow(() -> new MemberException(MemberErrorCode.MEMBER_NOT_FOUND));
         switch (member.status()) {
             case WITHDRAWN -> throw new MemberException(MemberErrorCode.WITHDRAWN_MEMBER);
             case SUSPENDED -> throw new MemberException(MemberErrorCode.SUSPENDED_MEMBER);

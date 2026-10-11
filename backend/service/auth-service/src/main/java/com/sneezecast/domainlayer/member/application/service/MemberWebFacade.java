@@ -13,6 +13,7 @@ import com.sneezecast.domainlayer.member.application.service.processor.MemberCom
 import com.sneezecast.domainlayer.member.application.service.processor.MemberConsentProcessor;
 import com.sneezecast.domainlayer.member.application.service.processor.MemberPasswordProcessor;
 import com.sneezecast.domainlayer.member.application.service.processor.MemberQueryProcessor;
+import com.sneezecast.domainlayer.member.application.service.processor.MemberWithdrawalProcessor;
 import com.sneezecast.domainlayer.member.domain.enums.ConsentType;
 import com.sneezecast.domainlayer.member.domain.model.Member;
 import java.time.Instant;
@@ -23,7 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 내 정보 · 비밀번호 변경 · 동의(재동의 · 건강정보 동의 · 철회) 오케스트레이션. 카카오로만 로그인하는 회원은 비밀번호가 없고 따로 정하지도 않는다(#61 — 설정 API 를 두지 않는다).
+ * 내 정보 · 비밀번호 변경 · 동의(재동의 · 건강정보 동의 · 철회) · 탈퇴 오케스트레이션. 카카오로만 로그인하는 회원은 비밀번호가 없고 따로 정하지도 않는다(#61 — 설정 API 를 두지 않는다).
  *
  * <p>내 정보 조회 · 수정은 DB 만 쓰므로 Facade 에 트랜잭션을 건다. 비밀번호 변경은 BCrypt(CPU)와 세션 저장소(Redis) 왕복이 섞여 Facade 에
  * 걸지 않고, DB 쓰기만 {@link MemberCommandProcessor#changePassword} 로 좁힌다 (architecture-guide §3-1).
@@ -37,6 +38,7 @@ public class MemberWebFacade implements MemberWebUseCase {
     private final MemberCommandProcessor memberCommandProcessor;
     private final MemberPasswordProcessor memberPasswordProcessor;
     private final MemberConsentProcessor memberConsentProcessor;
+    private final MemberWithdrawalProcessor memberWithdrawalProcessor;
     private final MemberReportScopePort memberReportScopePort;
     private final MemberSessionRevokePort memberSessionRevokePort;
     private final PasswordEncoder passwordEncoder;
@@ -101,6 +103,31 @@ public class MemberWebFacade implements MemberWebUseCase {
             }
         }
         return new MemberConsentWithdrawResult(consentStatus(memberId), withdrawn);
+    }
+
+    /**
+     * 탈퇴(DB 트랜잭션, 커밋) → 모든 기기 로그아웃(Redis). 동의 철회와 같은 경계다 — Facade 에는 트랜잭션을 걸지 않고
+     * {@link MemberWithdrawalProcessor#withdraw} 가 돌아온 시점이 커밋 뒤다.
+     *
+     * <p><b>로그아웃이 실패해도(세션 저장소 장애 · 예상 밖 오류) 로그만 남기고 성공으로 끝낸다.</b> 탈퇴는 이미 커밋돼 되돌릴 수 없고, 다시 보내면
+     * {@code MEMBER_002} 라 실패 응답은 화면을 "탈퇴 안 됨" 으로 속인다. 남은 자격은 다른 장치가 막는다.
+     * <ul>
+     *   <li>남은 refresh: 재발급({@code AuthTokenProcessor.reissue})이 회원 상태를 다시 보고, ACTIVE 가 아니면 그 회원의 모든 세션을 지우고 거절한다.</li>
+     *   <li>남은 access(최대 15분): member 컨텍스트 API 는 {@code getActiveMember} 가 막고({@code MEMBER_002}), 그 사이 보고(surveillance)로 들어온 원시 보고는
+     *       파기 요청의 완료 경계(요청 시각 + access 수명 + 여유) 뒤의 2차 파기가 지운다(entity-design §1-5). region 쓰기(관심 동네 추가 등)는 회원 상태를
+     *       보지 않아 막지 못하고, 남은 행은 회원 파기(#244)가 지운다.</li>
+     * </ul>
+     */
+    @Override
+    public void withdraw(long memberId, String accessTokenId, Instant accessExpiresAt) {
+        memberWithdrawalProcessor.withdraw(memberId);
+        try {
+            memberSessionRevokePort.revokeAllSessions(memberId, accessTokenId, accessExpiresAt);
+        } catch (MemberException exception) {
+            log.error("member withdrawal post-commit session revoke failed, tolerated memberId={} code={}", memberId, exception.getErrorCode().getCode());
+        } catch (RuntimeException exception) {
+            log.error("member withdrawal post-commit session revoke failed, tolerated memberId={} reason={}", memberId, exception.getClass().getSimpleName());
+        }
     }
 
     private MemberConsentStatusResponse consentStatus(long memberId) {

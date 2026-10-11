@@ -25,4 +25,12 @@ public interface MemberInterestRegionRepositoryPort {
      * @return 지운 행 수 (0 또는 1)
      */
     int deleteByMemberIdAndDistrictCode(long memberId, String districtCode);
+
+    /**
+     * 회원의 관심 동네를 모두 지운다 — 탈퇴 정리(#154)에 쓴다. 없어도 실패하지 않는다(멱등). 회원 행 처리와 한 트랜잭션이어야 해서 <b>호출자 트랜잭션이
+     * 있어야 한다.</b>
+     *
+     * @return 지운 행 수
+     */
+    int deleteAllByMemberId(long memberId);
 }

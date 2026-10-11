@@ -1,5 +1,6 @@
 package com.sneezecast.domainlayer.member.application.port.out;
 
+import com.sneezecast.domainlayer.member.domain.enums.PurgeReason;
 import com.sneezecast.domainlayer.member.domain.model.ReportPurgeRequest;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -11,6 +12,9 @@ public interface ReportPurgeRequestRepositoryPort {
 
     /** 회원에게 완료되지 않은({@code completed_at is null}) 파기 요청이 하나라도 있는지. */
     boolean existsIncompleteByMemberId(long memberId);
+
+    /** 회원에게 이 사유의 완료되지 않은 파기 요청이 있는지. 탈퇴 요청 판정은 철회 요청과 섞지 않으려고 사유를 본다. */
+    boolean existsIncompleteByMemberIdAndReason(long memberId, PurgeReason reason);
 
     Optional<ReportPurgeRequest> findById(long id);
 

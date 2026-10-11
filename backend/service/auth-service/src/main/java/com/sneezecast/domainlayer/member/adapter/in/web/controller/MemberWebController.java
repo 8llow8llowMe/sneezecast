@@ -33,7 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/members")
-@Tag(name = "회원", description = "내 정보 조회 · 수정, 비밀번호 변경, 동의 · 철회 API")
+@Tag(name = "회원", description = "내 정보 조회 · 수정, 비밀번호 변경, 동의 · 철회, 탈퇴 API")
 public class MemberWebController {
 
     private final MemberWebUseCase memberWebUseCase;
@@ -147,5 +147,30 @@ public class MemberWebController {
             builder.header(HttpHeaders.SET_COOKIE, MemberRefreshCookie.clear().toString());
         }
         return builder.body(Response.success(result.response()));
+    }
+
+    @Operation(summary = "회원 탈퇴", description = """
+        로그인한 회원을 탈퇴시킵니다. 본문은 없습니다. 성공하면 `dataBody` 는 null 이고, **이 기기를 포함한 모든 기기에서 로그아웃됩니다** — 모든 refresh
+        세션과 access token 을 바로 폐기하고, 응답에서 refresh 쿠키를 지웁니다(`Set-Cookie: refreshToken=; Max-Age=0`). 화면은 성공하면 비회원 상태로 바꿉니다.
+        세션 저장소 장애로 로그아웃에 실패해도 탈퇴는 이미 끝났으므로 200 입니다(쿠키도 지웁니다).
+
+        탈퇴하면 지금까지의 주간 보고 원본 파기를 요청하고, 관심 동네 · 알림 설정을 지우며, 이메일 · 비밀번호 · 닉네임 · 프로필 이미지를 회원 정보에서
+        비웁니다(같은 트랜잭션). **같은 이메일로 바로 다시 가입할 수 있습니다** — 이전 계정의 동의 · 보고 · 설정은 이어지지 않습니다.
+        탈퇴한 계정은 이메일 · 카카오 로그인에서 가입되지 않은 계정과 같게 보입니다.
+
+        이미 탈퇴한 회원의 남은 access token 이면 MEMBER_002(403), 정지 MEMBER_003(403), 회원 행이 없으면 MEMBER_004(404).
+        같은 회원의 탈퇴 요청이 겹치면 하나만 탈퇴시키고 나머지는 MEMBER_002 입니다.
+
+        **인증 필요: Authorization 헤더.** 파라미터 · 본문은 없습니다.
+
+        호출 예: `POST /api/v1/members/me/withdraw`""",
+        security = @SecurityRequirement(name = "bearerAuth"))
+    @PostMapping("/me/withdraw")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Response<Void>> withdraw(@AuthenticationPrincipal MemberLoginActive loginActive) {
+        memberWebUseCase.withdraw(loginActive.memberId(), loginActive.tokenId(), loginActive.expiresAt());
+        return ResponseEntity.ok()
+            .header(HttpHeaders.SET_COOKIE, MemberRefreshCookie.clear().toString())
+            .body(Response.success());
     }
 }
