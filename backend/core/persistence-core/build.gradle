@@ -5,4 +5,7 @@ dependencies {
     // 안전한 QueryDSL 버전 (OpenFeign 포크 사용)
     implementation 'io.github.openfeign.querydsl:querydsl-jpa:7.1'
     annotationProcessor 'io.github.openfeign.querydsl:querydsl-apt:7.1:jpa'
+
+    // BaseEntity 의 새 행 판정(Persistable)을 실제 JPA 저장으로 검증한다 (BaseEntityPersistableTest).
+    testRuntimeOnly 'com.h2database:h2'
 }
