@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주)는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자 · 지난 보고 내역은 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역)는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자는 **BE 미정**이라 아래 초안은 프론트 제안이다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -213,7 +213,7 @@ PATCH /api/v1/members/me/notification-settings  { weeklyReport?, regionNotice? }
 
 ## 주간 보고 `/api/v1/reports/current` (확정)
 
-본인의 **이번 주** 보고 하나다. 모두 인증 필요(`Authorization: Bearer`) **+ 건강정보 동의(scope `report:write`)** — 건강 · 증상은 민감정보라 조회도 쓰기와 같은 권한이다. 경로 · 본문에 주를 받지 않는다(지난 주 보고는 쓰지도 읽지도 못한다). 응답에 회원 ID · 보고자 키 · 보고 ID 를 싣지 않는다.
+본인의 **이번 주** 보고 하나다. 모두 인증 필요(`Authorization: Bearer`) **+ 건강정보 동의(scope `report:write`)** — 건강 · 증상은 민감정보라 조회도 쓰기와 같은 권한이다. 경로 · 본문에 주를 받지 않는다(지난 주 보고는 고칠 수 없고, 읽기는 아래 "지난 보고 내역" `/api/v1/reports/me`). 응답에 회원 ID · 보고자 키 · 보고 ID 를 싣지 않는다.
 
 | 요청     | 바디 → `dataBody`                                                                                     | 주요 오류                                                                                                                                                                                                                    | 프론트 함수                               |
 | -------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
@@ -240,6 +240,21 @@ PATCH /api/v1/members/me/notification-settings  { weeklyReport?, regionNotice? }
     - 같은 브라우저의 다른 탭이 저장하면(`saveRegion` 성공) 탭 사이 알림(`region-changed` — 값 없이 회원 구분만)을 받아 내 동네를 `loading` 으로 다시 읽는다. 그동안은 보내기를 막고("내 동네를 불러오고 있어요"), 다시 읽지 못하면 `failed` 라 보내지 않고 다시 읽는다("불러오지 못해 보내지 못했어요").
     - 다른 기기에서 바꾸면 이 탭이 다시 보일 때(`visibilitychange` → visible · `focus`) 다시 읽는다. 마지막으로 읽은 지 60초가 지났을 때만이고, 읽는 동안 · 실패해도 지금 값을 둔다(낡았는지 모른다).
     - 남은 한계: 화면을 띄워 둔 채(포커스 그대로) 다른 기기에서 바꾸거나, 다시 보인 지 60초 안에 다른 기기에서 바꾸면 다음에 다시 읽을 때까지 낡은 동네로 보낸다. `BroadcastChannel` 이 없는 브라우저는 탭 알림 없이 다시 보일 때 읽기만 남는다. 보내기 직전에는 확인하지 않는다. 근본 해결은 서버가 보고 동네를 회원의 내 동네(`member_region`)로 정하는 것인데 auth ↔ surveillance 계약 변경이라 이 범위 밖이다.
+
+## 지난 보고 내역 `/api/v1/reports/me` (확정 — 백엔드 #216, 화면 #194)
+
+최근 보고 내역 화면(`/me/reports`)이 쓰는 API 다. **백엔드에 구현돼 있어 확정**이다(`ReportWebController#getMyPastReports`). 경로 · 권한 · 응답 관례는 위 "주간 보고"(`/api/v1/reports/current`)와 같다. 게이트웨이 라우트 `/api/v1/reports/**` 안이다.
+
+```text
+GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:write, 이번 주를 뺀 지난 보고, 최근 주부터)
+```
+
+- `contents` 의 `WeeklyReport` 는 위 "주간 보고" 와 같은 모양(`isoWeek` · `districtCode` · `symptomGroups`(metadata `{code, name, description}`) · `reportedAt` · `updatedAt`)이다. 회원 ID · 보고 ID · 수정 횟수를 싣지 않는다. 보고하지 않은 주는 자리가 없다(빈 줄을 채우지 않는다). `districtCode` 는 그 주에 보고한 동네다 — 회원이 내 동네를 바꿔도 지난 보고의 동네는 바뀌지 않는다.
+- **이번 주는 빼고 준다 — 서버가 정한 주(KST ISO 주, `Clock` 빈) 기준이다.** 이번 주 보고는 `/reports/current` 가 정본이라 화면은 그 저장소 값으로 그린다(보내기 · 고치기 직후와 어긋나지 않게). 주 경계(월요일 0시 KST) 바로 뒤에는 지난 주였던 보고가 이 목록 맨 위로 온다.
+- **보관 창 안의 주만 준다**: 지난 주부터 보관 기간(52주, 이번 주 포함)의 가장 오래된 주까지라 많아야 51건이다. 삭제 스케줄러가 늦어도 보관이 끝난 주는 나오지 않는다.
+- 목록은 관례대로 `SliceResponse { contents, hasNext }` 다(architecture-guide §8). 한 번에 모두 준다 — 페이지 파라미터를 두지 않고 `hasNext` 는 늘 false 다(프론트는 보지 않는다). 지난 보고가 없으면 `contents: []` 이고 `dataBody` 가 null 이 아니다. 배열(`List`) 예외(행정동 검색 `DistrictWebController` 선례)는 쓰지 않았다 — 자동완성처럼 프론트 계약이 배열로 정해진 것이 아니고, 보관 기간이 늘면 페이지를 나눌 수 있게 둔다.
+- 오류는 `/reports/current` 와 같다: 토큰 없음 `SECURITY_001`(401), 동의 전 `SECURITY_006`(403). 받는 파라미터가 없어 검증 오류는 없다.
+- 프론트 함수: `features/report/report-history.ts` 의 `listPastReports(source)`. **프론트 연동 전까지 실데이터는 요청하지 않고 `unavailable`**(화면은 "지난 보고는 아직 불러올 수 없어요")이다 — 건강정보라 실제 회원에게 예시 이력을 보이지 않는다(conventions.md "데이터 출처" 의 예외). 목은 예시 이력이다.
 
 ## BE 미정 — 프론트 초안
 
@@ -275,20 +290,6 @@ GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — �
   - 같은 동네 · 주에 철회 뒤 새 안내가 발행되면 새 안내만 준다(화면은 발행된 안내가 있으면 철회 표시를 받지 않는다). 한 동네 · 한 주에 안내가 여럿일 때 규칙과 함께 정한다.
 - 안내를 요약해 보이는 곳(홈 주간 데이터의 `notice` — 홈 안내 섹션 · 지도 `이 동네 안내 보기`)은 **발행 중인 안내만** 받는다. 철회된 안내는 `null` 이다(`features/home/types.ts` 의 `PublishedNotice`).
 - 프론트 함수: `features/notice/notice-client.ts` 의 `getRegionNotice`. 안내 내용은 **출처와 무관하게 목**이다(동네만 출처에 따라 행정동 API 로 확인). 목 재현 `?mock=published|corrected|retracted|none|insufficient`.
-
-### 지난 보고 내역 (#194, 프론트 초안)
-
-최근 보고 내역 화면(`/me/reports`)이 가정한 모양이다. 백엔드 주간 보고(`/api/v1/reports/current`)의 경로 · 권한 · 응답 관례를 따른다.
-
-```text
-GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:write, 이번 주를 뺀 지난 보고, 최근 주부터)
-```
-
-- `contents` 의 `WeeklyReport` 는 위 "주간 보고" 와 같은 모양(`isoWeek` · `districtCode` · `symptomGroups` · `reportedAt` · `updatedAt`)이다. 회원 ID · 보고 ID 를 싣지 않는다. 보고하지 않은 주는 없다.
-- **이번 주는 빼고 준다 — 서버가 정한 주(KST) 기준이다.** 이번 주 보고는 `/reports/current` 가 정본이라 화면은 그 저장소 값으로 그린다(보내기 · 고치기 직후와 어긋나지 않게, 주 경계에서 두 응답이 다른 주를 이번 주로 보지 않게).
-- 목록은 관례대로 `SliceResponse { contents, hasNext }` 다(architecture-guide §8). 보관이 52주라 지난 보고는 많아야 51건이고 한 번에 모두 준다 — 페이지 파라미터를 두지 않고 `hasNext` 는 늘 false 다(프론트는 보지 않는다). 배열(`List`) 예외(행정동 검색 `DistrictWebController` 선례)는 쓰지 않았다 — 자동완성처럼 프론트 계약이 배열로 정해진 것이 아니고, 보관 기간이 늘면 페이지를 나눌 수 있게 둔다.
-- 오류는 `/reports/current` 와 같다: 토큰 없음 `SECURITY_001`, 동의 전 `SECURITY_006`(403). 받는 파라미터가 없어 검증 오류는 없다.
-- 프론트 함수: `features/report/report-history.ts` 의 `listPastReports(source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "지난 보고는 아직 불러올 수 없어요")이다 — 건강정보라 BE 미정이어도 실제 회원에게 예시 이력을 보이지 않는다(conventions.md "데이터 출처" 의 예외). 목은 예시 이력이다.
 
 ### 운영자 검토 (#219, 프론트 초안)
 

@@ -210,7 +210,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - 수정 시 `revision_count` 는 읽어서 더하지 않고 `revision_count = revision_count + 1` JPQL update 로 올린다 (동시 수정에서 증가분이 사라지지 않게). SMALLINT 상한(32767)에서는 더 올리지 않는다(포화, `CASE WHEN`) — 남용에서도 수정이 범위 초과 500 이 되지 않는다. 벌크 갱신은 Auditing 을 타지 않으므로 같은 쿼리에서 `updated_at` 을 `Clock` 빈 시각으로 쓰고, 호출자 트랜잭션을 필수로 한다.
 - 주 계산 · 수정 시각은 `Clock` 빈(KST)에서 받는다 (`ReportWeekCalculator`). 생성 시각(`created_at`)은 Auditing(JVM 기본 시간대 시스템 시각)이라, 고정 Clock 을 쓰는 테스트에서는 두 시각의 선후를 비교하지 않는다. **보고 취소는 행 삭제다** — 취소 표시 컬럼을 두지 않고, 지울 행이 없어도 실패하지 않는다(멱등).
 - 알려진 한계: 취소 뒤 같은 주에 다시 제출하면 새 행이라 `revision_count` 가 0 부터 다시 센다. 반복 보고 검토 후보가 "취소 → 재제출" 반복을 놓칠 수 있다. 운영자 검토 설계(집계 이슈)에서 신호가 더 필요하면 취소 횟수를 따로 세는 안을 검토한다.
-- 이 테이블 밖으로 행을 내보내는 API 는 없다. 조회는 본인 이번 주 보고(`reporter_key` 일치)와 집계 스케줄러뿐이다.
+- 이 테이블 밖으로 행을 내보내는 API 는 없다. 조회는 본인 보고(`reporter_key` 일치 — 이번 주 보고 · 지난 보고 내역)와 집계 스케줄러뿐이다. 지난 보고 내역은 이번 주를 빼고 보관 창(52주, 이번 주 포함) 안의 주만 `(reporter_key, iso_week)` UK 범위로 읽는다 — 삭제 스케줄러가 늦어도 보관이 끝난 주는 보이지 않는다.
 - 보관: 52주 지나면 삭제 스케줄러가 지운다. 탈퇴 · 건강정보 동의 철회 시 해당 `reporter_key` 행을 삭제한다 (§1-5). 파기는 `DELETE /internal/v1/reporters/{memberId}` 가 그 키의 **모든 주** 행을 JPQL 벌크 삭제하는 것이다(UK 선두 컬럼 `reporter_key` 를 탄다). 지운 건수와 상관없이 본문 없는 204 라 같은 회원으로 여러 번 불러도 된다(멱등).
 
 ### 2-2. district_weekly_aggregate — 행정동 × 주 집계
