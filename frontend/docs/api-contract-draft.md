@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역) · 행정동 주간 집계(홈 · 지도) · 공식 정보 · 동네 안내 · 운영자 안내 처리(초안 · 수정 · 승인 · 발행 · 철회 · 상세)는 백엔드에 구현돼 있어 확정**이고, 운영자 검토 후보(#266)와 정정 · 발행 이력(#267)은 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역) · 행정동 주간 집계(홈 · 지도) · 공식 정보 · 동네 안내 · 운영자 안내 처리(초안 · 수정 · 승인 · 발행 · 철회 · 상세) · 운영자 검토 후보는 백엔드에 구현돼 있어 확정**이고, 정정 · 발행 이력(#267)은 **BE 미정**이라 아래 초안은 프론트 제안이다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -402,7 +402,7 @@ GET /api/v1/advisories?districtCode=&week=   → 발행 중인 안내 | 철회 �
 
 ## 운영자 안내 처리 `/api/v1/advisories/admin` (확정 — 백엔드 #246)
 
-운영자 검토 대기 · 후보 상세(A01–A02)의 처리 동작(초안 만들기 · 수정 저장 · 승인 · 발행)과 발행 이력(A03)의 철회가 부르는 API 다. **백엔드에 구현돼 있어 확정**이다(`AdvisoryOperatorWebController`). 게이트웨이 라우트 `/api/v1/advisories/**`(surveillance) 안이다. **운영자(`OPERATOR` · `ADMIN`)만** 부른다 — 토큰 없음 401 `SECURITY_001`, 그 밖의 역할 403 `SECURITY_006`(화면 가드는 길 안내일 뿐이다). 운영자는 토큰으로만 알고 본문에 싣지 않는다. 검토 후보 목록은 #266, 정정 · 발행 이력 목록은 #267 이라 아래 "BE 미정" 에 남아 있다.
+운영자 검토 대기 · 후보 상세(A01–A02)의 처리 동작(초안 만들기 · 수정 저장 · 승인 · 발행)과 발행 이력(A03)의 철회가 부르는 API 다. **백엔드에 구현돼 있어 확정**이다(`AdvisoryOperatorWebController`). 게이트웨이 라우트 `/api/v1/advisories/**`(surveillance) 안이다. **운영자(`OPERATOR` · `ADMIN`)만** 부른다 — 토큰 없음 401 `SECURITY_001`, 그 밖의 역할 403 `SECURITY_006`(화면 가드는 길 안내일 뿐이다). 운영자는 토큰으로만 알고 본문에 싣지 않는다. 검토 후보 목록은 아래 "운영자 검토 후보"(#266, 확정)이고, 정정 · 발행 이력 목록은 #267 이라 "BE 미정" 에 남아 있다.
 
 ```text
 POST /api/v1/advisories/admin                      { districtCode, isoWeek, title, body } → Advisory                  (초안 만들기 → DRAFT)
@@ -424,36 +424,48 @@ POST /api/v1/advisories/admin/{advisoryId}/retract { reason, version }          
 - **사유 · 메모 입력란 안내: "사용자 화면에는 보이지 않아요"** — 철회 사유(`reason`)와 수정 메모(`memo`)는 운영자 상세 이력에만 있고 동네 안내(공개)에는 나오지 않는다.
 - `version` 은 advisory `@Version` 이다. 처리 요청은 화면이 읽은 값을 싣고, 다르면 **409** `ADVISORY_006` 이다 — 오류 봉투에 안내가 없으니 상세(`GET`)를 다시 읽어 그린다.
 - 오류: 400 — `ADVISORY_101` · `102` districtCode 없음 · 형식, `103` · `104` isoWeek 없음 · 형식, `ADVISORY_010` 형식은 맞지만 표현할 수 없는 주(53주가 없는 해의 W53, 연도 1000 미만), `105` 제목 없음 · 공백 · `106` 100자 초과, `107` 본문 없음 · 공백 · `108` 16,383자 초과, `109` 메모 500자 초과, `110` 사유 없음 · 공백 · `111` 500자 초과, `112` version 없음 · `113` 음수, `100` 본문 없음 · JSON 아님 · 타입 틀림, `198` 숫자가 아닌 ID. 404 — `001` 없는 안내, `002` 근거 집계 없음. 409 — `003` 마감 전 주, `004` 자료 부족, `005` 지금 상태에서 할 수 없는 처리, `006` 버전 다름, `007` 발행 중인 안내가 있음. 길이는 UTF-16 단위로 센다(이모지는 2자). 화면 상한(`DRAFT_MAX_LENGTH` · `REASON_MAX_LENGTH` 500자)은 서버 상한 안이다.
-- **프론트 연동**: 아직 하지 않았다 — `features/admin/` 클라이언트는 실데이터에서 요청하지 않고 `unavailable` 이다(목 재현 그대로). 검토 대기 목록이 후보 API(#266)에 기대므로 연동은 그 뒤에 한다.
+- **프론트 연동**: 아직 하지 않았다 — `features/admin/` 클라이언트는 실데이터에서 요청하지 않고 `unavailable` 이다(목 재현 그대로). 검토 대기 목록이 기대는 후보 API 도 아래 "운영자 검토 후보"(#266)로 확정됐으니 연동 이슈에서 함께 붙인다.
+
+## 운영자 검토 후보 `/api/v1/advisories/admin/candidates` (확정 — 백엔드 #266)
+
+운영자 검토 대기 · 후보 상세(`/admin/review`, A01–A02)의 **후보 목록**이다. **백엔드에 구현돼 있어 확정**이다(`AdvisoryOperatorWebController#getCandidates`). 권한 · 오류 봉투는 위 "운영자 안내 처리" 와 같다 — 운영자(`OPERATOR` · `ADMIN`)만, 토큰 없음 401 `SECURITY_001`, 그 밖의 역할 403 `SECURITY_006`. 화면 동작 · 시안과 다른 점은 [SCREENS.md](design/SCREENS.md) "운영자 검토 대기 · 후보 상세" 다.
+
+```text
+GET /api/v1/advisories/admin/candidates?week=   → { isoWeek, finalized, surgeChangePercent, repeatRevisedPercent, candidates: Candidate[] }
+```
+
+- `week`(선택, `YYYY-Www`)를 생략하면 **현재 주 − 1**(마감될 수 있는 가장 최근 주 — 현재 주는 보고를 받는 중이라 초안을 만들 수 없다)이다. 조회 창은 현재 주 ~ 51주 전(동네 안내와 같다). 형식이 틀리면 `ADVISORY_104`, 미래 주 · 51주보다 이전 · 그 해에 없는 주는 `ADVISORY_009`(400). 화면 머리줄의 기준 주는 응답 `isoWeek` 로 그린다.
+- `finalized` 는 그 주 집계가 마감됐는지다. 마감 전이면 어느 후보로도 초안을 만들 수 없다. `surgeChangePercent`(30) · `repeatRevisedPercent`(20)는 지금 쓰는 후보 기준이다 — 목록 설명 줄의 "후보 기준" 문구에 쓴다.
+- `Candidate` = `{ districtCode, districtName, sigungu, active, signals, level, insufficientReason, draftable, participantCount, previousParticipantCount, revisedReportCount, symptomaticCount?, symptomRate?, baselineRate?, baselineDeltaPp?, groups?: [{ group, count, rate }], advisory: { advisoryId, status, version } | null }`. enum(`signals` 원소 · `level` · `insufficientReason` · `group` · `status`)은 `{ code, name, description }`, ID 는 문자열, 비율 · %p 는 퍼센트 소수 첫째 자리 반올림(행정동 주간 집계와 같다). **`?` 키는 자료 부족이면 키가 없다**(0 · null 로도 싣지 않는다). 그 밖에 값이 없는 키는 `null` 이다 — `districtName` · `sigungu` 는 행정동 행이 없을 때, `insufficientReason` 은 자료 부족이 아닐 때, `previousParticipantCount` 는 전주 집계 행이 없을 때, `advisory` 는 그 주에 안내가 없을 때.
+- **신호**(`signals` — `BASELINE` → `SURGE` → `REPEAT` 순서, 저장하지 않고 조회 때 그 주 · 전주 집계로 계산한다):
+  - `BASELINE` 기준선 대비 변화(`기준선 대비 변화`) — 집계 단계가 `SLIGHT` · `HIGH`. `baselineRate` 는 판정에 쓴 기준선(직전 8주 중 4주의 합산 비율 — 집계 행의 값이고 2단계 `district_baseline` 이 아니다), `baselineDeltaPp = symptomRate − baselineRate`. 표시한 `baselineDeltaPp` 가 경계 값(3 · 8)과 같아 보여도 단계는 센 수끼리의 정수 판정이 정한다 — 반올림한 두 비율의 차라 실제보다 최대 0.1 위로 보일 수 있다(예: `3.0` 인데 `NORMAL`).
+  - `SURGE` 참여 급증(`참여 급증`) — 이번 주 · 전주가 모두 참여 부족이 아니고 참여자가 전주보다 `surgeChangePercent`% 이상 늘었다. 전주 행이 없으면 보지 않는다.
+  - `REPEAT` 반복 보고 의심(`반복 보고 의심`) — 참여 부족이 아니고 그 주에 수정된 보고(`revisedReportCount`)가 참여자의 `repeatRevisedPercent`% 이상이다.
+  - 비교는 정수라 **정확히 30% · 20% 면 후보**다. **참여 부족(LOW_SAMPLE — 참여 100명 미만) 칸은 신호가 나지 않는다.**
+- **후보**는 그 주 집계 행이 있는 동네 중 신호가 하나라도 있거나, 신호가 없어도 그 주에 안내가 있는 동네다(`signals: []` — 이어서 검토하거나 발행 상태를 본다).
+- **자료 부족 후보**: 참여 급변(UNSTABLE) · 기준선 없음(NO_BASELINE)이어도 급증 · 반복 신호가 있으면 후보다 — 큰 급증은 마감 판정에서 정의상 참여 급변이라 빼면 가장 큰 급증을 못 본다(2026-10-11 결정). 참여 · 전주 참여 · 수정 수만 있고 증상 수 · 비율 · 기준선 · 증상군 키가 없으며 `draftable: false` 다. 화면은 수치 · 상태색 없이 `자료 부족` 으로 그리고 초안 만들기 · 발행을 막는다.
+- `draftable` 은 마감됐고 자료 부족이 아닌지다 — 초안 만들기 전제(`ADVISORY_003` · `004`)와 같다.
+- `advisory` 는 그 동네 · 주의 안내 하나다 — 발행 중(PUBLISHED) → 검토 중(DRAFT · AI_DRAFTED · EDITED · APPROVED 중 가장 최근에 만든 것) → 가장 최근 철회(RETRACTED) → `null`. 제목 · 본문 · 이력은 위 "운영자 안내 처리" 의 상세(`GET /{advisoryId}`)로 읽고, 처리 요청에는 읽은 `version` 을 싣는다.
+- **정렬**: 신호가 있는 후보 → 단계(`HIGH` → `SLIGHT` → `NORMAL` → `INSUFFICIENT`) → 행정동 코드. 신호 없이 안내만 있는 동네는 맨 뒤다. 화면이 첫 후보를 먼저 연다. 쪽 나누기는 없다 — 후보 수는 배열 길이, 유형별 수는 `signals` 로 센다.
+- **화면 모델(`ReviewCandidate`)과 다른 점** — 연동 때 매핑 계층이 맞춘다:
+  - 한 행이 **동네 하나**이고 `signals` 가 여럿일 수 있다(화면 `kind` 는 하나). 후보 ID 는 없다 — 동네 · 주가 키다.
+  - 상태: `advisory` 가 `null` · RETRACTED 면 `대기`, DRAFT~APPROVED 면 `검토 중`, PUBLISHED 면 발행됨이다(서버는 싣는다 — 화면이 목록에서 뺄지 정한다). **보류는 기록되지 않는다(2단계)** — 서버 처리가 없다(#246 결정, 후보 처리 기록은 `review_signal`). 화면의 보류는 목에서만 동작한다.
+  - 초안 본문 · 제목은 상세에서 읽고, 안내가 없으면 초안 만들기(`POST`, 제목 필수)부터다. `leadingSymptom` 은 `groups` 에서 수가 큰 증상군이다(자료 부족이면 없음). `guides`(연결된 예방수칙) · `recentRates` · `burstCount` · `sameDeviceRepeatCount` · `newParticipantRate` · `reviewStartedAt` 은 응답에 없다(1단계에 출처가 없다 — 화면은 그 칸 · 행을 숨긴다). `baselineRate` · `baselineDeltaPp` 는 수치가 있는 후보에 있다.
+- 상태 전이 · `version` · 409 · **승인하고 발행 = 두 요청**은 위 "운영자 안내 처리" 를 따른다 — 화면은 오류 봉투에 후보가 없으니 목록을 다시 읽어 그 후보를 바꿔 그린다(목은 충돌 응답에 최신 후보를 싣는다 — 연동 때 `GET` 을 다시 부르는 쪽으로 바꾼다).
+- 정할 것(연동 이슈): 발행 전 확인 세 항목을 서버에 남길지, 검토 시작 시각의 출처(advisory `createdAt`?), 다른 주 고르기(화면은 지금 한 주).
+- AI 초안 생성(DRAFT → AI_DRAFTED)은 이 화면이 부르지 않는다(범위 밖). 목 초안은 이미 있는 것으로 둔다.
+- 프론트 함수: `features/admin/admin-review-client.ts` 의 `listReviewCandidates` · `saveCandidateDraft` · `holdCandidate` · `publishCandidate(…, source)`. **실데이터는 아직 요청하지 않고 `unavailable`**(화면은 "운영자 검토는 아직 준비하고 있어요")이다 — 연동 이슈 전에는 목 후보를 실제 집계로 알고 발행해도 시민에게 아무것도 나가지 않게 한다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다. 목 재현 `?mock-admin=empty|fail|conflict`.
 
 ## BE 미정 — 프론트 초안
 
-백엔드에 아직 없다. 아래는 화면을 만들며 가정한 모양이고, 연동 이슈에서 백엔드와 맞춘다. 지역 키 `admCd` 는 행정동 `code`(SGIS 8자리)다. 동네 주간 집계는 위 "행정동 주간 집계", 동네 안내는 위 "동네 안내", 운영자 처리(초안 · 수정 · 승인 · 발행 · 철회 · 상세)는 위 "운영자 안내 처리" 로 확정됐다.
+백엔드에 아직 없다. 아래는 화면을 만들며 가정한 모양이고, 연동 이슈에서 백엔드와 맞춘다. 지역 키 `admCd` 는 행정동 `code`(SGIS 8자리)다. 동네 주간 집계는 위 "행정동 주간 집계", 동네 안내는 위 "동네 안내", 운영자 처리(초안 · 수정 · 승인 · 발행 · 철회 · 상세)는 위 "운영자 안내 처리", 검토 후보는 위 "운영자 검토 후보" 로 확정됐다.
 
 ```text
-GET  /api/v1/admin/review-candidates?week=  → 후보 목록 (운영자) — 아래 "운영자 검토 (#219)", 백엔드 #266
 GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — 아래 "발행 이력 (#220)", 백엔드 #267
 (정정 경로 · 동사는 아래 "발행 이력 · 정정 · 철회 (#220)" 가 정본이다 — 백엔드 #267)
 ```
 
-- 프론트 함수: 보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계", 공식 정보는 위 "공식 정보", 동네 안내는 위 "동네 안내" 로 확정이다. 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
-
-### 운영자 검토 (#219, 프론트 초안)
-
-운영자 검토 대기 · 후보 상세(`/admin/review`, A01–A02)가 가정한 **후보 목록**의 모양이다. **후보 목록은 백엔드 #266 에서 만든다.** 처리(수정 저장 · 승인 · 발행)는 위 "운영자 안내 처리"(#246)로 확정됐다. 화면 동작 · 시안과 다른 점은 [SCREENS.md](design/SCREENS.md) "운영자 검토 대기 · 후보 상세" 다. 운영자(`OPERATOR` · `ADMIN`)만 부른다.
-
-```text
-GET  /api/v1/admin/review-candidates?week=                      → { isoWeek, candidates: ReviewCandidate[] }   (이번 주 · 발행한 후보는 뺌)
-```
-
-- `ReviewCandidate` = `{ id, kind: baseline|surge|repeat, districtCode, districtName, isoWeek, participants, symptomRate, leadingSymptom: respiratory|gastrointestinal, state: waiting|reviewing|held, draft, version, guides: string[] }` + **1단계에 없는 선택 값** `baselineRate` · `baselineDeltaPp` · `recentRates` · `burstCount` · `sameDeviceRepeatCount` · `newParticipantRate` · `reviewStartedAt`(`features/admin/types.ts`). 선택 값은 **없으면 빼고 보낸다**(0 · null 로 채우지 않는다) — 화면이 그 칸 · 행을 숨긴다. 백엔드 1단계 근거: entity-design §2-2(검토 후보 = 참여 급증 · `revised_report_count` 비율, 기준선 · `review_signal` 은 2단계).
-- 후보는 표본 100명 이상(`자료 부족` 이 아닌 마감된 집계)에서만 나온다 — advisory 초안 전제(§2-3)와 같다.
-- `version` 은 advisory `@Version` 이다. 처리 요청 · 409 는 위 "운영자 안내 처리" 를 따른다 — 화면은 오류 봉투에 후보가 없으니 목록을 다시 읽어 그 후보를 바꿔 그린다(목은 충돌 응답에 최신 후보를 싣는다 — 연동 때 `GET` 을 다시 부르는 쪽으로 바꾼다). 그사이 발행돼 목록에 없으면 목록에서 뺀다.
-- 상태 전이(§2-5)는 위 "운영자 안내 처리" 로 확정됐다 — 수정 저장 → EDITED, **승인하고 발행은 두 요청**(승인 → APPROVED, 발행 → PUBLISHED). 화면에 보이는 초안이 저장되지 않았으면 수정 저장부터 부른다(저장하지 않은 수정도 승인 대상이다).
-- **보류는 기록되지 않는다(2단계)** — 1단계에는 서버 처리가 없다(#246 결정). 후보 처리 기록(보류 · 대기 · 검토 중)과 보류 이력(누가 · 언제)은 `review_signal`(2단계)이 맡는다. 화면의 보류는 목에서만 동작한다.
-- 정할 것: 발행 전 확인 세 항목을 서버에 남길지, 검토 시작 시각의 출처(advisory 생성 시각 `createdAt`?), 다른 주 조회(`?week=` — 화면은 이번 주만) — 후보 목록(#266)에서 정한다. 제목은 필수로 정해졌다(위 확정 절).
-- AI 초안 생성(DRAFT → AI_DRAFTED)은 이 화면이 부르지 않는다(범위 밖). 목 초안은 이미 있는 것으로 둔다.
-- 프론트 함수: `features/admin/admin-review-client.ts` 의 `listReviewCandidates` · `saveCandidateDraft` · `holdCandidate` · `publishCandidate(…, source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "운영자 검토는 아직 준비하고 있어요")이다 — 목 후보를 실제 집계로 알고 발행해도 시민에게 아무것도 나가지 않는다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다. 목 재현 `?mock-admin=empty|fail|conflict`.
+- 프론트 함수: 보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계", 공식 정보는 위 "공식 정보", 동네 안내는 위 "동네 안내" 로 확정이다. 운영자 검토(위 "운영자 검토 후보") · 발행 이력(아래 "발행 이력 (#220)")은 실데이터에서 요청하지 않는다.
 
 ### 발행 이력 · 정정 · 철회 (#220, 프론트 초안)
 
