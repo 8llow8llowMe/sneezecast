@@ -17,7 +17,7 @@
 #   - discovery 는 사설 IP(SERVICE_DISCOVERY_HOSTNAME, dev 192.168.0.13) + SERVICE_DISCOVERY_PORT 로 붙는다.
 #   - MySQL(.11)은 다른 호스트라 사설 IP 로 접속한다.
 #
-# Vault: 공통 + kv/sneezecast/backend/{env}/batch-service
+# Vault: 공통 + kv/sneezecast/backend/{env}/batch-service/env
 #
 # 상주 프로세스 + Quartz
 #   주기 실행은 프로세스 안 Quartz 가 맡는다. 스위치는 BATCH_SCHEDULE_ENABLED 이고 Vault 값을 그대로 넘긴다.

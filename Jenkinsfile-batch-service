@@ -7,7 +7,7 @@
 //   dev  -> backend-1 (192.168.0.13), 호스트 포트 3080
 //   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4080
 //
-// Vault: 공통 + kv/sneezecast/backend/{env}/batch-service
+// Vault: 공통 + kv/sneezecast/backend/{env}/batch-service/env
 def backendPipeline
 node('builder-backend') {
     checkout scm

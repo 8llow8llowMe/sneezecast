@@ -6,7 +6,7 @@
 //   dev  -> backend-1 (192.168.0.13), 호스트 포트 3761
 //   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4761
 //
-// Vault: 공통 경로(kv/sneezecast/backend/{env}/env)만 읽는다. 서비스 전용 경로가 없다.
+// Vault: 공통 경로(kv/sneezecast/backend/{env}/common/env)만 읽는다. 서비스 전용 경로가 없다.
 // 클라이언트가 사설 IP + SERVICE_DISCOVERY_PORT 로 붙으므로 SERVICE_DISCOVERY_PORT 가 곧 호스트 포트다.
 def backendPipeline
 node('builder-backend') {

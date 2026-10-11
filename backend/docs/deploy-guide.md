@@ -75,7 +75,7 @@ develop 에 Rebase and merge
 | 컨테이너 | `sneezecast-<service>-<env>` | `sneezecast-auth-service-dev` |
 | compose 프로젝트 | `sneezecast-<service>` (파이프라인이 `-p` 로 명시) | `sneezecast-auth-service` |
 | 배포 경로 | `$HOME/deploy/sneezecast/backend/<group>/<service>` (agent 컨테이너 안) | `.../service/auth-service` |
-| Vault | `kv/sneezecast/backend/<env>/env` + `kv/sneezecast/backend/<env>/<service>` | §6 |
+| Vault | `kv/sneezecast/backend/<env>/common/env` + `kv/sneezecast/backend/<env>/<service>/env` | §6 |
 | MySQL DB | `sneezecast_auth`, `sneezecast_surveillance` | §8 |
 | 배포 lock | `sneezecast-backend-deploy` (Lockable Resource) | |
 
@@ -89,7 +89,7 @@ sneezecast 대역은 **dev `3xxx` / prod `4xxx`** 다 (Infra README §4 배치 �
 | 서비스 | dev 호스트 포트 (`192.168.0.13`) | prod 호스트 포트 (미니PC, IP 미정) | publish 범위 | Vault 포트 키 | Vault 위치 |
 |--------|------|------|------|------|------|
 | api-gateway | 3000 | 4000 | 사설망 (nginx `.12` → `.13:3000`) | `API_GATEWAY_PORT` | api-gateway |
-| service-discovery | 3761 | 4761 | 사설망 (클라이언트가 `.13:3761` 로 붙음) | `SERVICE_DISCOVERY_PORT` | 공통 (`env`) |
+| service-discovery | 3761 | 4761 | 사설망 (클라이언트가 `.13:3761` 로 붙음) | `SERVICE_DISCOVERY_PORT` | 공통 (`common/env`) |
 | auth-service | 3081 | 4081 | 호스트 루프백 `127.0.0.1` | `AUTH_SERVICE_PORT` | auth-service |
 | surveillance-service | 3082 | 4082 | 호스트 루프백 `127.0.0.1` | `SURVEILLANCE_SERVICE_PORT` | surveillance-service |
 | batch-service | 3080 | 4080 | 호스트 루프백 `127.0.0.1` | `BATCH_SERVICE_PORT` | batch-service |
@@ -141,12 +141,15 @@ Infra 원칙 4번(호스트 간은 사설 IP)을 따르고, 파이프라인이 �
 ### 경로 두 층
 
 ```text
-kv/sneezecast/backend/{env}/env                    # 공통 — 둘 이상의 서비스가 같은 값을 써야 하는 키
-kv/sneezecast/backend/{env}/api-gateway
-kv/sneezecast/backend/{env}/auth-service           # WITHDRAWN_EMAIL_PEPPER 는 여기에만
-kv/sneezecast/backend/{env}/surveillance-service   # REPORTER_KEY_PEPPER 는 여기에만
-kv/sneezecast/backend/{env}/batch-service
+kv/sneezecast/backend/{env}/common/env                 # 공통 — 둘 이상의 서비스가 같은 값을 써야 하는 키
+kv/sneezecast/backend/{env}/api-gateway/env
+kv/sneezecast/backend/{env}/auth-service/env           # WITHDRAWN_EMAIL_PEPPER 는 여기에만
+kv/sneezecast/backend/{env}/surveillance-service/env   # REPORTER_KEY_PEPPER 는 여기에만
+kv/sneezecast/backend/{env}/batch-service/env          # SGIS · 공공데이터포털 키(선택)
 ```
+
+secret 은 모두 `env` 로 끝난다. Web UI 의 `{env}/` 아래에 `common` 과 서비스 폴더만 보여서 공통 secret 이
+서비스 이름처럼 읽히지 않는다(#273).
 
 service-discovery 는 공통만 읽고 서비스 경로가 없다. 키를 어느 층에 둘지 · 무작위 값 생성 방법은 Infra
 `vault/README.md` sneezecast 절을 따른다. 값은 키별로 넣는다(Web UI JSON 토글 또는 `kv put` / `kv patch`).
@@ -255,7 +258,7 @@ batch 의 수동 잡 실행은 같은 상한 안에 두 번째 JVM 을 띄운다
 - [ ] **2. Vault** (Infra `vault/README.md` sneezecast 절)
   - [ ] `bootstrap-sneezecast.sh` 실행 → `jenkins-sneezecast` 정책 반영 확인
   - [ ] `rotate-approle-secret.sh jenkins-sneezecast` → `role_id` / `secret_id` 를 Jenkins credential 로 (3번)
-  - [ ] dev 경로 5개 적재: `env`, `api-gateway`, `auth-service`, `surveillance-service`, `batch-service`.
+  - [ ] dev 경로 5개 적재: `common/env`, `{api-gateway,auth-service,surveillance-service,batch-service}/env`.
         같은 키를 두 경로에 넣지 않는다. 포트 · discovery 값은 §6 "값 규칙" 대로 넣는다.
   - [ ] `JWT_ACCESS_KEY` · `JWT_REFRESH_KEY` · `REPORTER_KEY_PEPPER` · `WITHDRAWN_EMAIL_PEPPER`(auth 경로, 32자 이상) 생성. **pepper 두 개는 오프라인 사본을 한 부씩 둔다** (교체 · 분실 불가 — `WITHDRAWN_EMAIL_PEPPER` 를 잃으면 탈퇴 행 대조가 불가능하다)
 - [ ] **3. Jenkins**

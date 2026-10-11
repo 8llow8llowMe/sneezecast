@@ -18,7 +18,7 @@
 #   - discovery 는 사설 IP(SERVICE_DISCOVERY_HOSTNAME, dev 192.168.0.13) + SERVICE_DISCOVERY_PORT 로 붙는다.
 #   - MySQL(.11) · Redis Sentinel(.11/.13/.12) · MinIO(.12)는 다른 호스트라 사설 IP 로 접속한다.
 #
-# Vault: 공통 + kv/sneezecast/backend/{env}/auth-service
+# Vault: 공통 + kv/sneezecast/backend/{env}/auth-service/env
 #   **REPORTER_KEY_PEPPER 를 넘기지 않는다.** pepper 와 auth DB 계정이 한 프로세스에 모이면 회원과 가명 보고를
 #   이을 수 있다. 파이프라인은 이 잡에서 surveillance-service 경로를 읽지 않고, 여기서도 키를 매핑하지 않는다.
 

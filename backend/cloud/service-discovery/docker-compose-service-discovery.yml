@@ -12,7 +12,7 @@
 # **서비스 포트는 외부 노출 대상이 아니다.** 인그레스(nginx)는 게이트웨이(3000)만 프록시한다.
 #   이 포트는 사설망 안의 Eureka 클라이언트와 운영자 점검용이다. nginx 에 이 포트로 가는 location 을 만들지 않는다.
 #
-# Vault: 공통 경로(kv/sneezecast/backend/{env}/env)만 읽는다. 서비스 전용 경로가 없다.
+# Vault: 공통 경로(kv/sneezecast/backend/{env}/common/env)만 읽는다. 서비스 전용 경로가 없다.
 
 x-service-discovery-environment: &service_discovery_environment
   TIME_ZONE: ${TIME_ZONE:-Asia/Seoul}
