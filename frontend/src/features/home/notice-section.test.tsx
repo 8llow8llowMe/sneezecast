@@ -19,6 +19,28 @@ describe('NoticeSection', () => {
     )
   })
 
+  it('목 안내 링크에 둘러보기 동네를 잇는다', () => {
+    render(<NoticeSection notice={HOME_MOCKS.high.notice} navSearch="region=11680640" />)
+
+    expect(screen.getByRole('link', { name: '안내 전체 보기' }).getAttribute('href')).toBe(
+      '/notice/99990100/2025-W47?mock=published&region=11680640',
+    )
+  })
+
+  it('요약만 아는 안내(실데이터)는 배지 · 발행일 · 제목만 보이고 목록 · 근거 · 링크(#256 전)가 없다', () => {
+    render(
+      <NoticeSection
+        notice={{ publishedLabel: '11월 18일 발행', title: '호흡기 증상 보고가 늘었어요' }}
+      />,
+    )
+
+    expect(screen.getByText('운영자 검토')).toBeDefined()
+    expect(screen.getByText('호흡기 증상 보고가 늘었어요')).toBeDefined()
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+    expect(screen.queryByText(/근거:/)).toBeNull()
+    expect(screen.queryAllByRole('link')).toHaveLength(0)
+  })
+
   it('발행 전이면 안내 없음과 공식 예방수칙 링크를 보인다', () => {
     render(<NoticeSection notice={null} />)
 

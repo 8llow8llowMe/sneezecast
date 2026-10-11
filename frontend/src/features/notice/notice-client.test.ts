@@ -128,6 +128,8 @@ describe('홈 목의 안내 링크', () => {
     ].filter((notice) => notice !== null)
     expect(summaries.length).toBeGreaterThan(0)
     for (const { href } of summaries) {
+      // 목 요약은 늘 동네 안내 주소가 있다(실데이터만 #256 전까지 없다)
+      if (href === undefined) throw new Error('목 안내 요약에 주소가 없다')
       const opened = pickNoticeMock(
         new URL(href, 'http://localhost').searchParams.get('mock') ?? undefined,
       )

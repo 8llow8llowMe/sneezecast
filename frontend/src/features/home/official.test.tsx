@@ -12,9 +12,12 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
 }))
 
+const OFFICIAL = HOME_MOCKS.normal.official
+if (!OFFICIAL) throw new Error('홈 목에는 공식 정보 요약이 있다')
+
 describe('officialHref', () => {
   it('목 주소에 쿼리가 있으면 `&`, 없으면 `?` 로 둘러보기 동네를 잇는다', () => {
-    const official = HOME_MOCKS.normal.official
+    const official = OFFICIAL
     expect(officialHref(official)).toBe('/official?mock=published')
     expect(officialHref(official, 'region=1111051500')).toBe(
       '/official?mock=published&region=1111051500',
@@ -22,6 +25,11 @@ describe('officialHref', () => {
     expect(officialHref({ ...official, href: '/official' }, 'region=1111051500')).toBe(
       '/official?region=1111051500',
     )
+  })
+
+  it('요약이 없으면(실데이터) 공식 정보 화면 주소다', () => {
+    expect(officialHref(null)).toBe('/official')
+    expect(officialHref(null, 'region=1111051500')).toBe('/official?region=1111051500')
   })
 })
 
@@ -36,6 +44,14 @@ describe('OfficialRow', () => {
     expect(screen.getByRole('link').getAttribute('href')).toBe(
       '/official?mock=published&region=1111051500',
     )
+  })
+
+  it('요약이 없으면(실데이터) 단계 · 감염병 없이 질병관리청 공식 정보로 가는 행만 그린다', () => {
+    render(<OfficialRow official={null} />)
+    const link = screen.getByRole('link')
+    expect(link.getAttribute('href')).toBe('/official')
+    expect(link.textContent).toContain('질병관리청 공식 정보')
+    expect(link.textContent).not.toMatch(/유행|주의보|인플루엔자/)
   })
 })
 

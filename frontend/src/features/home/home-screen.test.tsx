@@ -306,6 +306,14 @@ describe('HomeScreen 보고 진입 (목 회원 상태)', () => {
     expect(dialogTitled('건강은 어땠나요?')).toBeNull()
   })
 
+  it('보고 진입 시트가 열려 있으면 ?explain=1 이 남아도 판단 기준을 함께 열지 않는다', async () => {
+    search = 'explain=1&report=login'
+    render(<HomeScreen week={HOME_MOCKS.high} />)
+
+    await waitForOpenDialog('보고는 회원만 할 수 있어요')
+    expect(dialogTitled('이렇게 판단했어요')?.open ?? false).toBe(false)
+  })
+
   it.each([
     ['report=start', '?report=login'],
     ['region=1111051500&report=confirm', '?region=1111051500&report=login'],

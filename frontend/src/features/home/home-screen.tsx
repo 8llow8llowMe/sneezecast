@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 import { AlertBox } from '@/components/alert-box'
@@ -18,7 +18,7 @@ import { useRequiredStepsGate } from '@/features/me/member-gate'
 import { useMemberRegion } from '@/features/me/member-region'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { useBrowseRegion } from '@/features/onboarding/use-browse-region'
-import { REPORT_PARAM, REPORT_STEPS } from '@/features/report/types'
+import { REPORT_PARAM, REPORT_STEPS, type ReportWeek } from '@/features/report/types'
 import { useSubmittedReport } from '@/features/report/use-submitted-report'
 import { preloadWhenIdle, SHEET_LOAD_FAILED_MESSAGE, useLazyComponent } from '@/lib/lazy-component'
 import { useModalParam } from '@/lib/use-modal-param'
@@ -47,6 +47,9 @@ import { StatusCard } from './status-card'
 import { SymptomTrends } from './symptom-trends'
 import type { HomeWeekly } from './types'
 import { EXPLAIN_PARAM, useExplainParam } from './use-explain-param'
+import { useHomeWeekly } from './use-home-weekly'
+import { currentReportLabels } from './weekly-aggregate'
+import { WeeklyLoadState } from './weekly-load-state'
 
 /**
  * S03 홈. 폭에 따라 구성이 바뀐다 (시안 Home · Tablet · Desktop).
@@ -79,19 +82,29 @@ import { EXPLAIN_PARAM, useExplainParam } from './use-explain-param'
  *
  * 홈 상단 안내 줄(모바일 주차 줄 아래, 태블릿 · 데스크톱 공식 정보 행 아래)에는 오프라인 띠(State-offline) → 알림 대체 안내
  * (State-push-inapp) 순서로 놓는다. 연결이 끊겼다는 건 아래 모든 정보(알림 대체 안내 포함)가 받아 둔 그대로라는 뜻이라 먼저 읽힌다.
+ *
+ * **동네 현황의 출처**(#252): 목데이터는 서버 페이지가 넘긴 목 주(`week`)다. 실데이터(`week` 가 null)는 화면이 보이는 동네의 행정동 주간
+ * 집계를 읽는다(`useHomeWeekly` — 내 동네는 서버가 모르는 회원 정보라 화면이 읽는다). 받기 전 · 실패 · 볼 동네 없음이면 상태 카드 ·
+ * 증상별 변화 · 동네 안내 자리에 안내(`WeeklyLoadState`)만 두고 수치 · 예시 값을 보이지 않는다. 공식 정보 행은 집계와 무관해 늘 둔다.
  */
 export function HomeScreen({
   week: data,
+  regionName = '',
   regionCode = null,
   receivedAt = null,
 }: {
-  /** 이번 주 동네 현황. 이름은 둘러보기 동네(있을 때) · 목 예시다 — 둘러보기 동네가 없으면 회원의 내 동네 이름으로 덮는다 */
-  week: HomeWeekly
+  /**
+   * 이번 주 동네 현황(목데이터 — 서버 페이지가 `?mock=` 로 고름). 이름은 둘러보기 동네(있을 때) · 목 예시다 — 둘러보기 동네가 없으면
+   * 회원의 내 동네 이름으로 덮는다. **null 이면 실데이터**라 화면이 행정동 주간 집계를 읽는다
+   */
+  week: HomeWeekly | null
+  /** 집계를 받기 전(실데이터) 머리줄 동네 이름 — 둘러보기 동네 · 목 예시. 회원의 내 동네를 알면 그 이름이다 */
+  regionName?: string
   /** 둘러보기(`?region=`)로 고른 행정동 코드. `app/(home)/page.tsx` 가 아는 코드일 때만 넘긴다 */
   regionCode?: string | null
   /**
    * 지금 보이는 홈 자료를 받은 시각(ISO). `app/(home)/page.tsx` 가 넘긴다. 오프라인 띠가 "○월 ○일 00:00에 받은 정보예요" 로 쓰고,
-   * 모르면(null) 시각 없이 "오프라인이에요" 만 보인다
+   * 모르면(null) 시각 없이 "오프라인이에요" 만 보인다. 실데이터는 화면이 집계 응답을 받은 시각을 쓴다
    */
   receivedAt?: string | null
 }) {
@@ -100,9 +113,24 @@ export function HomeScreen({
   const { toast, show, dismiss } = useToast()
   const online = useOnline()
   const memberRegion = useMemberRegion()
+  const live = useHomeWeekly(data === null, regionCode)
+  const loaded = data ?? (live?.status === 'ready' ? live.week : null)
+  // 집계를 그릴 수 없는 동안의 안내(실데이터)
+  const pending = loaded === null && live !== null && live.status !== 'ready' ? live : null
+  const official = loaded?.official ?? null
   // 보이는 동네: 둘러보기 동네가 있으면 그 동네, 없으면 내 동네. 보고는 늘 내 동네다(모르면 보이는 동네 그대로)
-  const week = regionCode || !memberRegion ? data : { ...data, regionName: memberRegion.name }
-  const reportWeek = memberRegion ? { ...data, regionName: memberRegion.name } : week
+  const baseName = loaded?.regionName ?? regionName
+  const shownName = regionCode || !memberRegion ? baseName : memberRegion.name
+  const week = loaded && { ...loaded, regionName: shownName }
+  // 보고 흐름의 주 문구는 받은 집계의 주다. 집계를 받기 전(실데이터)에도 보고할 수 있어 지금 KST 주로 적는다(`currentReportLabels`)
+  const [fallbackLabels] = useState(() => currentReportLabels(new Date()))
+  const reportLabels = loaded ?? fallbackLabels
+  const reportWeek: ReportWeek = {
+    regionName: memberRegion?.name ?? shownName,
+    weekRangeLabel: reportLabels.weekRangeLabel,
+    reportPeriodLabel: reportLabels.reportPeriodLabel,
+  }
+  const shownReceivedAt = data ? receivedAt : live?.status === 'ready' ? live.receivedAt : null
   const reportingElsewhere =
     memberRegion !== null && regionCode !== null && regionCode !== memberRegion.code
   const openBrowseRegion = useBrowseRegion(HOME_PATH, regionCode)
@@ -119,7 +147,9 @@ export function HomeScreen({
   // 시트 쿼리가 이미 있으면(같은 시트 · 다른 시트, 청크를 받는 중 포함) 새로 열지 않는다 — 시트가 뜬 뒤에는 `showModal()` 이
   // 뒤 화면을 막지만, 받는 동안에는 홈이 눌려 같은 기록이 두 번 쌓이거나 시트 둘이 겹친다. 누른 순간의 주소로 본다
   // 자료 부족이면 판단 기준 시트를 그리지 않으므로 `?explain=1` 이 남아 있어도 열린 시트로 치지 않는다(보고 버튼이 막히지 않게)
-  const explainRenderable = week.status !== 'insufficient'
+  const explainRenderable = week !== null && week.status !== 'insufficient'
+  // 보고 진입 시트가 열려 있으면 판단 기준은 열지 않는다 — `?explain=1` 로 연 채 집계를 읽는 동안 보고 시트를 열면, 받은 뒤 두 시트가 겹친다
+  const explainOpen = explain.open && explainRenderable && !isReportEntryValue(report.value)
   const openReport = () => {
     if (!modalQueryOpen(explainRenderable)) report.open(reportEntryFor(auth))
   }
@@ -169,7 +199,7 @@ export function HomeScreen({
   // 자료 부족이면 그리지 않으므로(아래) 받지도 않는다
   const ExplainSheet = useLazyComponent(
     explainSheet,
-    explain.open && week.status !== 'insufficient',
+    explainOpen,
     sheetLoadFailed(explain.closeExplain),
   )
   // 동의 시트 다음은 보고 흐름이다. 동의하는 동안 받아 두어 두 시트가 같은 그림에서 바뀌게 한다(사이에 홈이 비치지 않게).
@@ -188,10 +218,10 @@ export function HomeScreen({
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <h1 className="sr-only">{week.regionName} 이번 주 우리 동네 건강</h1>
+      <h1 className="sr-only">{shownName} 이번 주 우리 동네 건강</h1>
 
       <AppHeader
-        regionName={week.regionName}
+        regionName={shownName}
         current="home"
         onRegionClick={openBrowseRegion}
         onNotificationClick={
@@ -202,17 +232,23 @@ export function HomeScreen({
         navSearch={navSearch}
       />
 
-      <p className="px-page-mobile text-sub text-fg-sub tablet:hidden">
-        {week.weekLabel} · {week.updatedLabel}
-      </p>
+      {week && (
+        <p className="px-page-mobile text-sub text-fg-sub tablet:hidden">
+          {week.weekLabel} · {week.updatedLabel}
+        </p>
+      )}
 
       <div className="hidden border-b border-divider tablet:block tablet:border-t desktop:border-t-0">
-        <OfficialRow official={week.official} navSearch={navSearch} />
+        <OfficialRow official={official} navSearch={navSearch} />
       </div>
 
       {/* 오프라인 띠가 알림 대체 안내보다 위다. 띠의 live 영역은 온라인일 때도 빈 채로 그려 두고, 여백은 띠 상자에만 붙는다 */}
-      <OfflineNotice offline={!online} receivedAt={receivedAt} className={HOME_TOP_NOTICE_CLASS} />
-      <PushInappNotice week={week} signedIn={!guest} />
+      <OfflineNotice
+        offline={!online}
+        receivedAt={shownReceivedAt}
+        className={HOME_TOP_NOTICE_CLASS}
+      />
+      {week && <PushInappNotice week={week} signedIn={!guest} />}
 
       <main className="flex grow flex-col tablet:gap-7 tablet:p-6 desktop:flex-row desktop:gap-8 desktop:px-8">
         <div className="flex flex-col tablet:grid tablet:grid-cols-2 tablet:items-start tablet:gap-7 desktop:order-last desktop:flex desktop:w-105 desktop:shrink-0 desktop:gap-4">
@@ -225,30 +261,43 @@ export function HomeScreen({
             </div>
           )}
 
-          <StatusCard week={week} onExplain={openExplain} />
+          {week ? (
+            <StatusCard week={week} onExplain={openExplain} />
+          ) : (
+            pending && <WeeklyLoadState load={pending} onPickRegion={openBrowseRegion} />
+          )}
 
           <SectionBand className="tablet:hidden" />
           <div className="tablet:hidden">
-            <OfficialRow official={week.official} navSearch={navSearch} />
+            <OfficialRow official={official} navSearch={navSearch} />
           </div>
-          <SectionBand className="tablet:hidden" />
 
-          <SymptomTrends week={week} />
+          {week && (
+            <>
+              <SectionBand className="tablet:hidden" />
 
-          <SectionBand className="tablet:hidden" />
+              <SymptomTrends week={week} />
 
-          <NoticeSection
-            notice={week.notice}
-            officialHref={officialHref(week.official, navSearch)}
-          />
+              <SectionBand className="tablet:hidden" />
 
-          <div className="hidden tablet:block desktop:hidden">
-            <OfficialPanel official={week.official} />
-          </div>
+              <NoticeSection
+                notice={week.notice}
+                officialHref={officialHref(official, navSearch)}
+                navSearch={navSearch}
+              />
+            </>
+          )}
+
+          {/* 공식 정보 요약은 목에만 있다(실데이터는 공식 정보 연동 #253 전이라 행만) */}
+          {official && (
+            <div className="hidden tablet:block desktop:hidden">
+              <OfficialPanel official={official} />
+            </div>
+          )}
         </div>
 
         <div className="hidden tablet:flex tablet:grow">
-          <MapPlaceholder weekLabel={week.weekLabel} />
+          {week && <MapPlaceholder weekLabel={week.weekLabel} />}
         </div>
       </main>
 
@@ -297,8 +346,8 @@ export function HomeScreen({
       )}
 
       {/* 자료 부족이면 보일 숫자가 없어 ?explain=1 로 들어와도 열지 않는다 */}
-      {week.status !== 'insufficient' && ExplainSheet && (
-        <ExplainSheet week={week} open={explain.open} onClose={explain.closeExplain} />
+      {week && week.status !== 'insufficient' && ExplainSheet && (
+        <ExplainSheet week={week} open={explainOpen} onClose={explain.closeExplain} />
       )}
 
       <ToastRegion
