@@ -5,15 +5,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.sneezecast.SurveillanceH2TestSupport;
+import com.sneezecast.common.dto.metadata.CodeNameDescriptionMetadata;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.item.AdvisoryHistoryItem;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.item.AdvisoryOperatorCitationItem;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorDetailResponse;
+import com.sneezecast.domainlayer.advisory.adapter.in.web.dto.response.AdvisoryOperatorResponse;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryDraftCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryEditCommand;
 import com.sneezecast.domainlayer.advisory.application.command.AdvisoryRetractCommand;
 import com.sneezecast.domainlayer.advisory.application.exception.AdvisoryErrorCode;
 import com.sneezecast.domainlayer.advisory.application.exception.AdvisoryException;
-import com.sneezecast.domainlayer.advisory.application.info.AdvisoryDetailInfo;
-import com.sneezecast.domainlayer.advisory.application.info.AdvisoryHistoryInfo;
-import com.sneezecast.domainlayer.advisory.application.info.AdvisoryInfo;
-import com.sneezecast.domainlayer.advisory.application.port.in.AdvisoryOperatorUseCase;
+import com.sneezecast.domainlayer.advisory.application.port.in.AdvisoryOperatorWebUseCase;
 import com.sneezecast.domainlayer.advisory.domain.enums.AdvisoryStatus;
 import com.sneezecast.domainlayer.advisory.domain.model.AdvisoryCitation;
 import com.sneezecast.domainlayer.aggregate.domain.enums.AggregateLevel;
@@ -44,7 +46,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 운영자 안내 처리를 유스케이스 포트(트랜잭션 프록시)부터 실제 스키마(H2 MySQL 모드)까지 돌려 본다. 근거 집계 행은 JDBC 로 넣는다 — 마감 · 자료 부족
  * 조합을 재계산 잡 없이 바로 만든다.
  */
-class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
+class AdvisoryOperatorWebFacadeTest extends SurveillanceH2TestSupport {
 
     private static final String GARAK_1 = "11240660";
     private static final ReportWeek W40 = ReportWeek.parse("2026-W40");
@@ -55,7 +57,7 @@ class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
     private static final String BODY = "손 씻기와 기침 예절을 지켜 주세요.";
 
     @Autowired
-    private AdvisoryOperatorUseCase useCase;
+    private AdvisoryOperatorWebUseCase useCase;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -72,17 +74,17 @@ class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
     void createDraftCopiesCitation() {
         insertAggregate(100L, AggregateLevel.SLIGHT, null, true);
 
-        AdvisoryInfo draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
+        AdvisoryOperatorResponse draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
 
-        assertThat(draft.status()).isEqualTo(AdvisoryStatus.DRAFT);
+        assertThat(draft.status()).isEqualTo(AdvisoryStatus.DRAFT.toMetadata());
         assertThat(draft.version()).isZero();
-        assertThat(draft.aggregateId()).isEqualTo(100L);
-        assertThat(draft.citation()).isEqualTo(new AdvisoryCitation(150, 30, 20, 15, AggregateLevel.SLIGHT, "2026-10-08"));
-        assertThat(useCase.getDetail(draft.id()).histories()).singleElement().satisfies(history -> {
+        assertThat(jdbcTemplate.queryForObject("SELECT aggregate_id FROM advisory", Long.class)).isEqualTo(100L);
+        assertThat(citation(draft)).isEqualTo(new AdvisoryCitation(150, 30, 20, 15, AggregateLevel.SLIGHT, "2026-10-08"));
+        assertThat(useCase.getDetail(id(draft)).histories()).singleElement().satisfies(history -> {
             assertThat(history.fromStatus()).isNull();
-            assertThat(history.toStatus()).isEqualTo(AdvisoryStatus.DRAFT);
-            assertThat(history.operatorId()).isEqualTo(OPERATOR);
-            assertThat(history).extracting(AdvisoryHistoryInfo::title, AdvisoryHistoryInfo::body).containsExactly(TITLE, BODY);
+            assertThat(history.toStatus()).isEqualTo(AdvisoryStatus.DRAFT.toMetadata());
+            assertThat(history.operatorId()).isEqualTo(String.valueOf(OPERATOR));
+            assertThat(history).extracting(AdvisoryHistoryItem::title, AdvisoryHistoryItem::body).containsExactly(TITLE, BODY);
         });
         assertThat(jdbcTemplate.queryForObject("SELECT operator_id FROM advisory_history", Long.class)).isEqualTo(OPERATOR);
     }
@@ -107,39 +109,40 @@ class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
     @DisplayName("집계 행이 나중에 바뀌어도 안내의 인용 수치는 초안 생성 때 값 그대로다")
     void citationIsFixedAfterAggregateChanges() {
         insertAggregate(100L, AggregateLevel.SLIGHT, null, true);
-        AdvisoryInfo draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
+        AdvisoryOperatorResponse draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
 
         // 마감된 행은 재계산이 고치지 않지만, 어떤 경로로든 집계가 바뀌어도 안내가 따라가지 않는지 본다.
         jdbcTemplate.update("UPDATE district_weekly_aggregate SET participant_count = 400, symptomatic_count = 90, respiratory_count = 60,"
             + " enteric_count = 40, level = 'HIGH', rule_version = '2027-01-01' WHERE id = 100");
-        AdvisoryInfo approved = useCase.approve(OPERATOR, draft.id(), draft.version());
+        AdvisoryOperatorResponse approved = useCase.approve(OPERATOR, id(draft), draft.version());
 
-        assertThat(approved.citation()).isEqualTo(new AdvisoryCitation(150, 30, 20, 15, AggregateLevel.SLIGHT, "2026-10-08"));
-        assertThat(useCase.getDetail(draft.id()).advisory().citation()).isEqualTo(approved.citation());
+        assertThat(citation(approved)).isEqualTo(new AdvisoryCitation(150, 30, 20, 15, AggregateLevel.SLIGHT, "2026-10-08"));
+        assertThat(useCase.getDetail(id(draft)).advisory().citation()).isEqualTo(approved.citation());
     }
 
     @Test
     @DisplayName("초안 → 수정 → 승인 → 발행 → 철회가 버전을 하나씩 올리고, 전이마다 운영자 · 메모와 함께 이력이 한 행씩 쌓인다")
     void fullLifecycleRecordsHistory() {
         insertAggregate(100L, AggregateLevel.HIGH, null, true);
-        AdvisoryInfo draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
+        AdvisoryOperatorResponse draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
 
-        AdvisoryInfo edited = useCase.edit(OTHER_OPERATOR, draft.id(), new AdvisoryEditCommand(0L, "고친 제목", "고친 본문", "문장 다듬기"));
-        AdvisoryInfo approved = useCase.approve(OPERATOR, draft.id(), edited.version());
-        AdvisoryInfo published = useCase.publish(OPERATOR, draft.id(), approved.version());
-        AdvisoryInfo retracted = useCase.retract(OTHER_OPERATOR, draft.id(), new AdvisoryRetractCommand(published.version(), "집계 오류 확인"));
+        AdvisoryOperatorResponse edited = useCase.edit(OTHER_OPERATOR, id(draft), new AdvisoryEditCommand(0L, "고친 제목", "고친 본문", "문장 다듬기"));
+        AdvisoryOperatorResponse approved = useCase.approve(OPERATOR, id(draft), edited.version());
+        AdvisoryOperatorResponse published = useCase.publish(OPERATOR, id(draft), approved.version());
+        AdvisoryOperatorResponse retracted = useCase.retract(OTHER_OPERATOR, id(draft), new AdvisoryRetractCommand(published.version(), "집계 오류 확인"));
 
-        assertThat(List.of(edited, approved, published, retracted)).extracting(AdvisoryInfo::status, AdvisoryInfo::version).containsExactly(
+        assertThat(List.of(edited, approved, published, retracted)).extracting(response -> status(response.status()), AdvisoryOperatorResponse::version).containsExactly(
             tuple(AdvisoryStatus.EDITED, 1L), tuple(AdvisoryStatus.APPROVED, 2L), tuple(AdvisoryStatus.PUBLISHED, 3L), tuple(AdvisoryStatus.RETRACTED, 4L));
         assertThat(published.publishedAt()).isNotNull();
         assertThat(published.publishedAt().getNano()).as("초 단위 — MySQL TIMESTAMP 와 같다").isZero();
         assertThat(retracted.retractedAt()).isNotNull();
         assertThat(retracted.publishedAt()).isEqualTo(published.publishedAt());
 
-        AdvisoryDetailInfo detail = useCase.getDetail(draft.id());
-        assertThat(detail.advisory().status()).isEqualTo(AdvisoryStatus.RETRACTED);
+        AdvisoryOperatorDetailResponse detail = useCase.getDetail(id(draft));
+        assertThat(detail.advisory().status()).isEqualTo(AdvisoryStatus.RETRACTED.toMetadata());
         assertThat(detail.histories())
-            .extracting(AdvisoryHistoryInfo::fromStatus, AdvisoryHistoryInfo::toStatus, AdvisoryHistoryInfo::operatorId, AdvisoryHistoryInfo::memo)
+            .extracting(history -> status(history.fromStatus()), history -> status(history.toStatus()), history -> Long.parseLong(history.operatorId()),
+                AdvisoryHistoryItem::memo)
             .containsExactly(
                 tuple(null, AdvisoryStatus.DRAFT, OPERATOR, null),
                 tuple(AdvisoryStatus.DRAFT, AdvisoryStatus.EDITED, OTHER_OPERATOR, "문장 다듬기"),
@@ -147,25 +150,25 @@ class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
                 tuple(AdvisoryStatus.APPROVED, AdvisoryStatus.PUBLISHED, OPERATOR, null),
                 tuple(AdvisoryStatus.PUBLISHED, AdvisoryStatus.RETRACTED, OTHER_OPERATOR, "집계 오류 확인"));
         // 이력의 제목 · 본문은 그 시점의 값이다 — 승인 · 발행된 본문을 복원할 수 있다.
-        assertThat(detail.histories().get(3)).extracting(AdvisoryHistoryInfo::title, AdvisoryHistoryInfo::body).containsExactly("고친 제목", "고친 본문");
-        assertThat(detail.histories().get(0)).extracting(AdvisoryHistoryInfo::title, AdvisoryHistoryInfo::body).containsExactly(TITLE, BODY);
+        assertThat(detail.histories().get(3)).extracting(AdvisoryHistoryItem::title, AdvisoryHistoryItem::body).containsExactly("고친 제목", "고친 본문");
+        assertThat(detail.histories().get(0)).extracting(AdvisoryHistoryItem::title, AdvisoryHistoryItem::body).containsExactly(TITLE, BODY);
     }
 
     @Test
     @DisplayName("승인 뒤 수정하면 EDITED 로 돌아가 발행이 거부되고(ADVISORY_005), 다시 승인하면 고친 본문이 발행된다")
     void editAfterApprovalRequiresReapproval() {
         insertAggregate(100L, AggregateLevel.HIGH, null, true);
-        AdvisoryInfo draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
-        AdvisoryInfo approved = useCase.approve(OPERATOR, draft.id(), draft.version());
+        AdvisoryOperatorResponse draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
+        AdvisoryOperatorResponse approved = useCase.approve(OPERATOR, id(draft), draft.version());
 
-        AdvisoryInfo reedited = useCase.edit(OPERATOR, draft.id(), new AdvisoryEditCommand(approved.version(), TITLE, "승인 뒤 고친 본문", null));
+        AdvisoryOperatorResponse reedited = useCase.edit(OPERATOR, id(draft), new AdvisoryEditCommand(approved.version(), TITLE, "승인 뒤 고친 본문", null));
 
-        assertThat(reedited.status()).isEqualTo(AdvisoryStatus.EDITED);
-        assertErrorCode(() -> useCase.publish(OPERATOR, draft.id(), reedited.version()), AdvisoryErrorCode.INVALID_TRANSITION);
-        AdvisoryInfo reapproved = useCase.approve(OPERATOR, draft.id(), reedited.version());
-        AdvisoryInfo published = useCase.publish(OPERATOR, draft.id(), reapproved.version());
+        assertThat(reedited.status()).isEqualTo(AdvisoryStatus.EDITED.toMetadata());
+        assertErrorCode(() -> useCase.publish(OPERATOR, id(draft), reedited.version()), AdvisoryErrorCode.INVALID_TRANSITION);
+        AdvisoryOperatorResponse reapproved = useCase.approve(OPERATOR, id(draft), reedited.version());
+        AdvisoryOperatorResponse published = useCase.publish(OPERATOR, id(draft), reapproved.version());
         assertThat(published.body()).isEqualTo("승인 뒤 고친 본문");
-        assertThat(useCase.getDetail(draft.id()).histories()).extracting(AdvisoryHistoryInfo::toStatus).containsExactly(
+        assertThat(useCase.getDetail(id(draft)).histories()).extracting(history -> status(history.toStatus())).containsExactly(
             AdvisoryStatus.DRAFT, AdvisoryStatus.APPROVED, AdvisoryStatus.EDITED, AdvisoryStatus.APPROVED, AdvisoryStatus.PUBLISHED);
     }
 
@@ -174,17 +177,17 @@ class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
     @DisplayName("유스케이스 전이 표 — 상태마다 네 처리(수정 · 승인 · 발행 · 철회)를 보내 표에 있는 것만 되고 나머지는 ADVISORY_005 로 아무것도 바꾸지 않는다")
     void operatorTransitionTable(AdvisoryStatus from, Action action, boolean allowed) {
         insertAggregate(100L, AggregateLevel.HIGH, null, true);
-        AdvisoryInfo advisory = advisoryIn(from);
+        AdvisoryOperatorResponse advisory = advisoryIn(from);
         int historyBefore = count("advisory_history");
 
         if (allowed) {
-            assertThat(action.run(useCase, advisory).status()).isEqualTo(action.target);
+            assertThat(action.run(useCase, advisory).status()).isEqualTo(action.target.toMetadata());
             assertThat(count("advisory_history")).isEqualTo(historyBefore + 1);
             return;
         }
         assertErrorCode(() -> action.run(useCase, advisory), AdvisoryErrorCode.INVALID_TRANSITION);
-        AdvisoryInfo unchanged = useCase.getDetail(advisory.id()).advisory();
-        assertThat(unchanged.status()).isEqualTo(from);
+        AdvisoryOperatorResponse unchanged = useCase.getDetail(id(advisory)).advisory();
+        assertThat(unchanged.status()).isEqualTo(from.toMetadata());
         assertThat(unchanged.version()).isEqualTo(advisory.version());
         assertThat(count("advisory_history")).isEqualTo(historyBefore);
     }
@@ -218,31 +221,31 @@ class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
     @DisplayName("같은 버전을 읽은 두 운영자 중 늦게 보낸 수정은 ADVISORY_006 이고, 먼저 고친 내용 · 이력만 남는다")
     void staleVersionIsRejected() {
         insertAggregate(100L, AggregateLevel.HIGH, null, true);
-        AdvisoryInfo draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
-        useCase.edit(OPERATOR, draft.id(), new AdvisoryEditCommand(draft.version(), "먼저 고친 제목", BODY, null));
+        AdvisoryOperatorResponse draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
+        useCase.edit(OPERATOR, id(draft), new AdvisoryEditCommand(draft.version(), "먼저 고친 제목", BODY, null));
 
-        assertErrorCode(() -> useCase.edit(OTHER_OPERATOR, draft.id(), new AdvisoryEditCommand(draft.version(), "늦게 고친 제목", BODY, null)),
+        assertErrorCode(() -> useCase.edit(OTHER_OPERATOR, id(draft), new AdvisoryEditCommand(draft.version(), "늦게 고친 제목", BODY, null)),
             AdvisoryErrorCode.CONCURRENT_MODIFICATION);
-        assertErrorCode(() -> useCase.approve(OTHER_OPERATOR, draft.id(), draft.version()), AdvisoryErrorCode.CONCURRENT_MODIFICATION);
+        assertErrorCode(() -> useCase.approve(OTHER_OPERATOR, id(draft), draft.version()), AdvisoryErrorCode.CONCURRENT_MODIFICATION);
 
-        AdvisoryDetailInfo detail = useCase.getDetail(draft.id());
+        AdvisoryOperatorDetailResponse detail = useCase.getDetail(id(draft));
         assertThat(detail.advisory().title()).isEqualTo("먼저 고친 제목");
-        assertThat(detail.advisory().status()).isEqualTo(AdvisoryStatus.EDITED);
-        assertThat(detail.histories()).extracting(AdvisoryHistoryInfo::operatorId).containsExactly(OPERATOR, OPERATOR);
+        assertThat(detail.advisory().status()).isEqualTo(AdvisoryStatus.EDITED.toMetadata());
+        assertThat(detail.histories()).extracting(history -> Long.parseLong(history.operatorId())).containsExactly(OPERATOR, OPERATOR);
     }
 
     @Test
     @DisplayName("같은 동네 · 주에 발행 중인 안내가 있으면 다른 안내의 발행은 ADVISORY_007 이고, 그 안내를 철회하면 발행된다")
     void onePublishedAdvisoryPerDistrictWeek() {
         insertAggregate(100L, AggregateLevel.HIGH, null, true);
-        AdvisoryInfo first = publishedAdvisory();
-        AdvisoryInfo second = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, "새 안내", BODY));
-        AdvisoryInfo secondApproved = useCase.approve(OPERATOR, second.id(), second.version());
+        AdvisoryOperatorResponse first = publishedAdvisory();
+        AdvisoryOperatorResponse second = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, "새 안내", BODY));
+        AdvisoryOperatorResponse secondApproved = useCase.approve(OPERATOR, id(second), second.version());
 
-        assertErrorCode(() -> useCase.publish(OPERATOR, second.id(), secondApproved.version()), AdvisoryErrorCode.ALREADY_PUBLISHED);
+        assertErrorCode(() -> useCase.publish(OPERATOR, id(second), secondApproved.version()), AdvisoryErrorCode.ALREADY_PUBLISHED);
 
-        useCase.retract(OPERATOR, first.id(), new AdvisoryRetractCommand(first.version(), "새 안내로 바꿈"));
-        assertThat(useCase.publish(OPERATOR, second.id(), secondApproved.version()).status()).isEqualTo(AdvisoryStatus.PUBLISHED);
+        useCase.retract(OPERATOR, id(first), new AdvisoryRetractCommand(first.version(), "새 안내로 바꿈"));
+        assertThat(useCase.publish(OPERATOR, id(second), secondApproved.version()).status()).isEqualTo(AdvisoryStatus.PUBLISHED.toMetadata());
     }
 
     /**
@@ -257,28 +260,28 @@ class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
     @DisplayName("같은 동네 · 주의 동시 발행은 잠금에서 줄을 서고, 뒤에 선 쪽은 ADVISORY_007 로 거부된다 — 발행 중인 안내는 하나뿐이다")
     void concurrentPublishIsSerialized() throws Exception {
         insertAggregate(100L, AggregateLevel.HIGH, null, true);
-        AdvisoryInfo first = advisoryIn(AdvisoryStatus.APPROVED);
-        AdvisoryInfo second = advisoryIn(AdvisoryStatus.APPROVED);
+        AdvisoryOperatorResponse first = advisoryIn(AdvisoryStatus.APPROVED);
+        AdvisoryOperatorResponse second = advisoryIn(AdvisoryStatus.APPROVED);
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         CountDownLatch firstPublished = new CountDownLatch(1);
         CountDownLatch releaseFirst = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             // 첫 발행: 유스케이스 트랜잭션이 바깥 트랜잭션에 합류해, 발행한 뒤 커밋하지 않고 잠금을 쥔 채 기다린다.
-            Future<AdvisoryInfo> firstResult = executor.submit(() -> tx.execute(status -> {
-                AdvisoryInfo published = useCase.publish(OPERATOR, first.id(), first.version());
+            Future<AdvisoryOperatorResponse> firstResult = executor.submit(() -> tx.execute(status -> {
+                AdvisoryOperatorResponse published = useCase.publish(OPERATOR, id(first), first.version());
                 firstPublished.countDown();
                 awaitUninterruptibly(releaseFirst);
                 return published;
             }));
             assertThat(firstPublished.await(10, TimeUnit.SECONDS)).isTrue();
 
-            Future<AdvisoryInfo> secondResult = executor.submit(() -> useCase.publish(OTHER_OPERATOR, second.id(), second.version()));
+            Future<AdvisoryOperatorResponse> secondResult = executor.submit(() -> useCase.publish(OTHER_OPERATOR, id(second), second.version()));
             boolean secondWaited = awaitBlockedSession();
             releaseFirst.countDown();
 
             assertThat(secondWaited).as("두 번째 발행이 잠금에서 기다렸다").isTrue();
-            assertThat(firstResult.get(10, TimeUnit.SECONDS).status()).isEqualTo(AdvisoryStatus.PUBLISHED);
+            assertThat(firstResult.get(10, TimeUnit.SECONDS).status()).isEqualTo(AdvisoryStatus.PUBLISHED.toMetadata());
             assertThatThrownBy(() -> secondResult.get(10, TimeUnit.SECONDS))
                 .isInstanceOf(ExecutionException.class)
                 .cause()
@@ -288,7 +291,7 @@ class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
             executor.shutdownNow();
         }
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM advisory WHERE status = 'PUBLISHED'", Integer.class)).isEqualTo(1);
-        assertThat(useCase.getDetail(second.id()).advisory().status()).isEqualTo(AdvisoryStatus.APPROVED);
+        assertThat(useCase.getDetail(id(second)).advisory().status()).isEqualTo(AdvisoryStatus.APPROVED.toMetadata());
     }
 
     /** 다른 세션의 잠금을 기다리는 H2 세션이 생길 때까지 본다 (최대 5초). H2 LOCK_TIMEOUT 보다 짧은 간격으로 확인한다. */
@@ -327,11 +330,11 @@ class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
 
     /** 운영자 처리 하나. 화면이 읽은 버전을 그대로 싣는다. */
     enum Action {
-        EDIT(AdvisoryStatus.EDITED, (useCase, advisory) -> useCase.edit(OPERATOR, advisory.id(),
+        EDIT(AdvisoryStatus.EDITED, (useCase, advisory) -> useCase.edit(OPERATOR, id(advisory),
             new AdvisoryEditCommand(advisory.version(), advisory.title(), "다시 고친 본문", null))),
-        APPROVE(AdvisoryStatus.APPROVED, (useCase, advisory) -> useCase.approve(OPERATOR, advisory.id(), advisory.version())),
-        PUBLISH(AdvisoryStatus.PUBLISHED, (useCase, advisory) -> useCase.publish(OPERATOR, advisory.id(), advisory.version())),
-        RETRACT(AdvisoryStatus.RETRACTED, (useCase, advisory) -> useCase.retract(OPERATOR, advisory.id(),
+        APPROVE(AdvisoryStatus.APPROVED, (useCase, advisory) -> useCase.approve(OPERATOR, id(advisory), advisory.version())),
+        PUBLISH(AdvisoryStatus.PUBLISHED, (useCase, advisory) -> useCase.publish(OPERATOR, id(advisory), advisory.version())),
+        RETRACT(AdvisoryStatus.RETRACTED, (useCase, advisory) -> useCase.retract(OPERATOR, id(advisory),
             new AdvisoryRetractCommand(advisory.version(), "철회 사유")));
 
         private final AdvisoryStatus target;
@@ -342,36 +345,52 @@ class AdvisoryOperatorFacadeTest extends SurveillanceH2TestSupport {
             this.call = call;
         }
 
-        AdvisoryInfo run(AdvisoryOperatorUseCase useCase, AdvisoryInfo advisory) {
+        AdvisoryOperatorResponse run(AdvisoryOperatorWebUseCase useCase, AdvisoryOperatorResponse advisory) {
             return call.run(useCase, advisory);
         }
     }
 
     @FunctionalInterface
     interface ActionCall {
-        AdvisoryInfo run(AdvisoryOperatorUseCase useCase, AdvisoryInfo advisory);
+        AdvisoryOperatorResponse run(AdvisoryOperatorWebUseCase useCase, AdvisoryOperatorResponse advisory);
     }
 
     /** {@code status} 까지 유스케이스로 몰고 간 안내. */
-    private AdvisoryInfo advisoryIn(AdvisoryStatus status) {
-        AdvisoryInfo draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
-        Function<AdvisoryInfo, AdvisoryInfo> approve = advisory -> useCase.approve(OPERATOR, advisory.id(), advisory.version());
-        Function<AdvisoryInfo, AdvisoryInfo> publish = advisory -> useCase.publish(OPERATOR, advisory.id(), advisory.version());
+    private AdvisoryOperatorResponse advisoryIn(AdvisoryStatus status) {
+        AdvisoryOperatorResponse draft = useCase.createDraft(OPERATOR, new AdvisoryDraftCommand(GARAK_1, W40, TITLE, BODY));
+        Function<AdvisoryOperatorResponse, AdvisoryOperatorResponse> approve = advisory -> useCase.approve(OPERATOR, id(advisory), advisory.version());
+        Function<AdvisoryOperatorResponse, AdvisoryOperatorResponse> publish = advisory -> useCase.publish(OPERATOR, id(advisory), advisory.version());
         return switch (status) {
             case DRAFT -> draft;
-            case EDITED -> useCase.edit(OPERATOR, draft.id(), new AdvisoryEditCommand(draft.version(), TITLE, "고친 본문", null));
+            case EDITED -> useCase.edit(OPERATOR, id(draft), new AdvisoryEditCommand(draft.version(), TITLE, "고친 본문", null));
             case APPROVED -> approve.apply(draft);
             case PUBLISHED -> approve.andThen(publish).apply(draft);
             case RETRACTED -> {
-                AdvisoryInfo published = approve.andThen(publish).apply(draft);
-                yield useCase.retract(OPERATOR, draft.id(), new AdvisoryRetractCommand(published.version(), "철회 사유"));
+                AdvisoryOperatorResponse published = approve.andThen(publish).apply(draft);
+                yield useCase.retract(OPERATOR, id(draft), new AdvisoryRetractCommand(published.version(), "철회 사유"));
             }
             case AI_DRAFTED -> throw new IllegalArgumentException("AI 초안 경로는 아직 없다");
         };
     }
 
-    private AdvisoryInfo publishedAdvisory() {
+    private AdvisoryOperatorResponse publishedAdvisory() {
         return advisoryIn(AdvisoryStatus.PUBLISHED);
+    }
+
+    private static long id(AdvisoryOperatorResponse advisory) {
+        return Long.parseLong(advisory.advisoryId());
+    }
+
+    /** 응답의 상태 metadata 를 enum 으로 되돌린다. 생성 이력의 이전 상태(null)는 null 이다. */
+    private static AdvisoryStatus status(CodeNameDescriptionMetadata metadata) {
+        return metadata == null ? null : AdvisoryStatus.valueOf(metadata.code());
+    }
+
+    /** 응답의 인용 수치를 도메인 값으로 되돌린다 — 집계에서 복사한 값과 한 번에 비교한다. */
+    private static AdvisoryCitation citation(AdvisoryOperatorResponse advisory) {
+        AdvisoryOperatorCitationItem item = advisory.citation();
+        return new AdvisoryCitation(item.participantCount(), item.symptomaticCount(), item.respiratoryCount(), item.entericCount(),
+            AggregateLevel.valueOf(item.level().code()), item.ruleVersion());
     }
 
     private static void assertErrorCode(ThrowingCallable call, AdvisoryErrorCode errorCode) {

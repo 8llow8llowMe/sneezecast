@@ -21,7 +21,7 @@ import lombok.Builder;
  * @param title              제목 (현재본, {@value #TITLE_MAX_LENGTH}자 이하)
  * @param body               본문 (현재본)
  * @param citation           인용 수치 — 초안 생성 때 고정되고 바뀌지 않는다
- * @param correctsAdvisoryId 이 안내가 정정한 이전 안내. 정정 발행(#246)이 아니면 null
+ * @param correctsAdvisoryId 이 안내가 정정한 이전 안내. 정정 발행(#267)이 아니면 null
  * @param publishedAt        발행 시각
  * @param retractedAt        철회 시각
  * @param version            낙관적 락 버전 — 읽은 시점의 값. 저장하면 저장소가 올린 값으로 돌려준다
