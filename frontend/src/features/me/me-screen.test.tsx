@@ -991,6 +991,28 @@ describe('MeScreen 실데이터 (회원 API, #164)', () => {
     expect(takeHomeNotice()).toBe('건강정보 동의를 철회하고 로그아웃했어요')
   })
 
+  it.each([
+    ['성공', okResponse(null)],
+    ['이미 탈퇴(MEMBER_002)', errorResponse('MEMBER_002', 403)],
+  ])(
+    '탈퇴는 탈퇴 API 를 부르고, %s 면 세션을 비운 뒤 알림 없이 홈으로 간다(#169)',
+    async (_, response) => {
+      const server = holdRequests()
+      act(() => setSession(memberToken()))
+      search = 'region=11440660&confirm=withdraw'
+      renderMe({ regionCode: '11440660' })
+      await flush()
+
+      const dialog = screen.getByRole('dialog', { name: '회원 탈퇴할까요?' })
+      await userEvent.setup().click(within(dialog).getByRole('button', { name: '탈퇴하기' }))
+      expect(withdrawMembership).toHaveBeenCalledWith('api')
+      act(() => server.reply('POST /api/v1/members/me/withdraw', response))
+      await waitFor(() => expect(router.replace.mock.calls).toEqual([['/?region=11440660']]))
+      expect(getSessionSnapshot()).toEqual({ status: 'guest' })
+      expect(takeHomeNotice()).toBeNull()
+    },
+  )
+
   it('동의 철회 요청이 실패하면 대화상자 안에 알리고 세션 · 화면을 그대로 둔다(#168)', async () => {
     const server = holdRequests()
     act(() => setSession(memberToken()))

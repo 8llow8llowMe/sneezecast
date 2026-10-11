@@ -69,6 +69,7 @@ const PASSWORD_RESET_PATH = '/api/v1/auth/password/reset'
 const CHANGE_PASSWORD_PATH = '/api/v1/members/me/password'
 const CONSENTS_PATH = '/api/v1/members/me/consents'
 const HEALTH_CONSENT_PATH = `${CONSENTS_PATH}/SENSITIVE_HEALTH_INFO`
+const WITHDRAW_PATH = '/api/v1/members/me/withdraw'
 
 /* ── 목 회원 상태 ──────────────────────────────────────────────────────────────────
  *
@@ -566,7 +567,7 @@ export type SignupRequest =
 
 /**
  * - `verification-expired`: 이메일 인증 표시가 없거나 30분이 지났다(`AUTH_007`). 이메일 단계부터 다시 한다
- * - `email-taken`: 이미 가입된 이메일이다(`MEMBER_001` — 탈퇴 회원도 행이 파기될 때까지 이메일을 점유한다). 로그인으로 안내한다
+ * - `email-taken`: 이미 가입된 이메일이다(`MEMBER_001` — 탈퇴한 회원의 이메일은 점유하지 않아 바로 다시 가입할 수 있다). 로그인으로 안내한다
  * - `kakao-restart`(카카오 가입만): 가입표가 없거나 30분이 지났다(`AUTH_025`, 사유 `expired`) · 그사이 같은 이메일로 가입됐다
  *   (`MEMBER_001`, 사유 없음 — 다시 카카오 로그인하면 계정 연결 확인으로 간다) · 그 밖의 업무 오류로 가입표를 잃었다(사유 없음).
  *   카카오 로그인부터 다시 한다
@@ -929,11 +930,12 @@ export async function agreeTermsReconsent(source: DataSource): Promise<ConsentRe
  *
  * 로그아웃은 실데이터에서 `POST /api/v1/auth/logout`(백엔드 #57 — refresh 세션 폐기 + access token 블랙리스트)이다(아래 `logout`).
  * 건강정보 동의 철회는 `DELETE /api/v1/members/me/consents/SENSITIVE_HEALTH_INFO`(#59 · #168 — 원시 보고 파기 요청 + 모든 기기 로그아웃,
- * 아래 `withdrawHealthConsent`)다. 탈퇴(`withdrawMembership`)는 백엔드 #154 전이라 아직 출처와 무관하게 목이다(#169).
+ * 아래 `withdrawHealthConsent`)다. 탈퇴는 `POST /api/v1/members/me/withdraw`(#154 · #169 — 보고 원본 파기 요청 + 모든 기기 로그아웃,
+ * 아래 `withdrawMembership`)다.
  * 요청 시간 제한 · 네트워크 실패는 API 계층이 맡고, 실패하면 Promise 를 거부한다 — 화면은 대화상자 안에서 다시 시도하라고 알린다.
  *
  * 성공하면 화면과 무관하게 여기서 세션(실데이터는 세션 저장소, 목은 목 세션)을 바꾼다(응답 전에 화면이 닫혀도 서버에는 결과가 남는다):
- * 로그아웃 · 탈퇴 · 동의 철회 → `guest`(프로필도 지운다). 동의 철회는 서버가 모든 기기의 세션을 폐기하므로 로그아웃과 같은 결과다.
+ * 로그아웃 · 탈퇴 · 동의 철회 → `guest`(프로필도 지운다). 동의 철회 · 탈퇴는 서버가 모든 기기의 세션을 폐기하므로 로그아웃과 같은 결과다.
  *
  * 목에서 실패를 재현하는 입력 (docs/design/SCREENS.md 에도 적어 둔다). 프로필 이메일로 가린다 — 그 이메일로 이메일 로그인한 뒤 연다:
  * - 로그아웃: `logout-fail@example.com` → 거부(세션은 그대로)
@@ -1034,12 +1036,46 @@ export function expireMockSession(): void {
   setMockSession('guest')
 }
 
-/** 회원 탈퇴. 보낸 보고는 바로 지우고 계정은 30일 뒤 지운다(서버). 탈퇴 사유는 받지 않는다 */
-export function withdrawMembership(): Promise<void> {
+/** 탈퇴 요청이 이 코드로 거절되면 이미 탈퇴한 뒤다(다른 기기 · 겹친 요청) — 바란 결과가 이미 일어났다 */
+const ALREADY_WITHDRAWN = 'MEMBER_002'
+
+/**
+ * 회원 탈퇴. 보낸 보고는 바로 지우고 계정은 30일 뒤 지운다(서버). 탈퇴 사유는 받지 않는다.
+ *
+ * 실데이터: `POST /api/v1/members/me/withdraw`(본문 없음, access 필요). 서버는 보고 원본 파기를 요청하고 관심 동네 · 알림 설정을
+ * 지운 뒤 **모든 기기를 로그아웃**한다(refresh 세션 전부 폐기 + access 차단, 응답이 refresh 쿠키를 지움 — 세션 저장소 장애로
+ * 로그아웃이 실패해도 탈퇴는 끝났으므로 200). 같은 이메일로 바로 다시 가입할 수 있다.
+ * - 세션 저장소가 회원이 아니면 요청 없이 거부한다
+ * - 성공 → 이 기기 세션을 비운다(`endThisDeviceSession` — 동의 철회와 같다). 회원 정보 · 이번 주 보고 저장소는 세션이 비회원이 되면
+ *   스스로 지운다
+ * - `MEMBER_002`(이미 탈퇴) → 성공과 같다. 겹친 요청이 먼저 탈퇴시켰거나 앞선 탈퇴의 서버 로그아웃이 저장소(Redis) 장애로 실패했다 —
+ *   세션을 비우고 화면은 홈으로 간다. 다른 기기가 먼저 탈퇴했으면 서버가 모든 세션의 access 를 막아 이 요청은 401 → 재발급 재로그인으로
+ *   끝나고(아래 거부) 세션 저장소가 만료로 비운다(로그인 화면)
+ * - `MEMBER_004`(회원 없음) · `003`(정지)은 내 정보 조회와 같은 판단이 필요하다. 거부하면서 내 정보를 다시 읽게 해(`reloadMemberInfo`)
+ *   회원 정보 저장소가 세션을 끝내게 한다(`updateNickname` 과 같다)
+ * - 그 밖(일시 장애 · 401 계열 · 분류 밖 오류)은 거부하고 세션을 그대로 둔다 — 탈퇴가 일어나지 않았다. 동의 철회와 같이 "세션이 이미
+ *   없음" 을 성공으로 보지 않는다. 화면은 대화상자 안에서 다시 시도하라고 알린다
+ *
+ * 목은 로그아웃과 같이 `guest` 로 만들고 프로필을 지운다.
+ */
+export async function withdrawMembership(source: DataSource): Promise<void> {
+  if (source === 'api') {
+    requireMemberSession('withdrawMembership')
+    try {
+      await apiRequest<null>(WITHDRAW_PATH, { method: 'POST' })
+    } catch (error) {
+      const code = errorCodeOf(error)
+      if (code !== ALREADY_WITHDRAWN) {
+        if (endsMemberSession(code)) reloadMemberInfo()
+        throw error
+      }
+    }
+    endThisDeviceSession()
+    return
+  }
   const failure = rejectIfProfileEmail(MOCK_WITHDRAW_FAIL_EMAIL, 'withdraw')
   if (failure) return failure
   setMockSession('guest')
-  return Promise.resolve()
 }
 
 /* ── 로그인한 기기 (S10 Settings-devices) ─────────────────────────────────────────────
@@ -1125,7 +1161,7 @@ function deviceSessions(): DeviceSession[] {
 }
 
 /**
- * 서버가 이 기기의 세션을 끝냈다(사용자가 고른 동작 — 이 기기 로그아웃 · 이 탭 계정의 비밀번호 재설정 · 건강정보 동의 철회). 세션 저장소가 아직 회원이면
+ * 서버가 이 기기의 세션을 끝냈다(사용자가 고른 동작 — 이 기기 로그아웃 · 이 탭 계정의 비밀번호 재설정 · 건강정보 동의 철회 · 탈퇴). 세션 저장소가 아직 회원이면
  * `clearSession('logout')` 으로 비운다: 만료가 아니라 사용자가 고른 결과라 "다시 로그인해 주세요" 안내(`expired`)를 띄우지 않고
  * (화면이 스스로 이동한다), 같은 refresh 쿠키를 쓰는 다른 탭에도 알린다. `logout` 과 같게 만료 진행 표시도 끈다
  */

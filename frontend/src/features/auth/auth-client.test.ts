@@ -527,7 +527,7 @@ describe('목 프로필 · 로그아웃 · 동의 철회 · 탈퇴', () => {
     expect(getMockProfile()).toBeNull()
 
     await loginWithEmail('dong@example.com', 'dongne2026', 'mock')
-    await withdrawMembership()
+    await withdrawMembership('mock')
     expect(getMockSession()).toBe('guest')
     expect(getMockProfile()).toBeNull()
   })
@@ -1497,6 +1497,77 @@ describe('동의 · 철회 (API, #168)', () => {
 
     it('목데이터면 API · 세션 저장소를 부르지 않는다', async () => {
       await withdrawHealthConsent('mock')
+      expect(apiRequest).not.toHaveBeenCalled()
+      expect(clearSession).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('withdrawMembership', () => {
+    afterEach(() => clearSessionExpiring())
+
+    it('본문 없이 POST 로 탈퇴하고, 성공하면 세션 저장소를 비우고 만료 진행 표시를 끈다', async () => {
+      notifySessionExpired()
+      vi.mocked(apiRequest).mockResolvedValueOnce(null)
+      await expect(withdrawMembership('api')).resolves.toBeUndefined()
+      expect(apiRequest).toHaveBeenCalledExactlyOnceWith('/api/v1/members/me/withdraw', {
+        method: 'POST',
+      })
+      expect(clearSession).toHaveBeenCalledExactlyOnceWith('logout')
+      expect(isSessionExpiring()).toBe(false)
+      expect(reloadMemberInfo).not.toHaveBeenCalled()
+    })
+
+    it('MEMBER_002(이미 탈퇴 — 겹친 요청 · 서버 로그아웃 실패)면 성공과 같이 세션을 비우고 만료 진행 표시를 끈다', async () => {
+      notifySessionExpired()
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError('MEMBER_002', 403))
+      await expect(withdrawMembership('api')).resolves.toBeUndefined()
+      expect(clearSession).toHaveBeenCalledExactlyOnceWith('logout')
+      expect(isSessionExpiring()).toBe(false)
+      expect(reloadMemberInfo).not.toHaveBeenCalled()
+    })
+
+    it('응답을 받기 전에 세션이 이미 비었으면(다른 탭 로그아웃) 다시 비우지 않는다', async () => {
+      vi.mocked(apiRequest).mockImplementationOnce(() => {
+        vi.mocked(getSessionSnapshot).mockReturnValue({ status: 'guest' })
+        return Promise.resolve(null)
+      })
+      await withdrawMembership('api')
+      expect(clearSession).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['MEMBER_003', 403],
+      ['MEMBER_004', 404],
+    ])(
+      '%s 면 거부하고 내 정보를 다시 읽게 한다 — 세션은 회원 정보 저장소가 끝낸다',
+      async (code, status) => {
+        vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, status))
+        await expect(withdrawMembership('api')).rejects.toThrow(ApiError)
+        expect(reloadMemberInfo).toHaveBeenCalledTimes(1)
+        expect(clearSession).not.toHaveBeenCalled()
+      },
+    )
+
+    it.each([
+      ['UNAVAILABLE', 0],
+      ['SECURITY_001', 401],
+      ['AUTH_014', 401],
+    ])('%s 면 거부하고 세션을 그대로 둔다 — 탈퇴가 일어나지 않았다', async (code, status) => {
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError(code, status))
+      await expect(withdrawMembership('api')).rejects.toThrow(ApiError)
+      expect(clearSession).not.toHaveBeenCalled()
+      expect(reloadMemberInfo).not.toHaveBeenCalled()
+    })
+
+    it('실데이터 세션이 회원이 아니면 요청 없이 거부한다', async () => {
+      vi.mocked(getSessionSnapshot).mockReturnValue({ status: 'guest' })
+      await expect(withdrawMembership('api')).rejects.toThrow()
+      expect(apiRequest).not.toHaveBeenCalled()
+      expect(clearSession).not.toHaveBeenCalled()
+    })
+
+    it('목데이터면 API · 세션 저장소를 부르지 않는다', async () => {
+      await withdrawMembership('mock')
       expect(apiRequest).not.toHaveBeenCalled()
       expect(clearSession).not.toHaveBeenCalled()
     })
