@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역) · 행정동 주간 집계(홈 · 지도) · 공식 정보는 백엔드에 구현돼 있어 확정**이고, 안내 · 운영자는 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주 · 지난 보고 내역) · 행정동 주간 집계(홈 · 지도) · 공식 정보 · 동네 안내는 백엔드에 구현돼 있어 확정**이고, 운영자는 **BE 미정**이라 아래 초안은 프론트 제안이다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -265,7 +265,8 @@ GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:writ
 | `GET /{code}/weekly-aggregate?week=` (홈)                   | `{ isoWeek, finalized, publicThreshold, slightDeltaPp, highDeltaPp, district: 동네 집계 }`    | `AGGREGATE_001` 없는 코드(404), `002` 조회할 수 없는 주(400), 검증 `101` 코드 형식(숫자 8자리) · `102` 주 형식                  |
 | `GET /weekly-aggregates?sigunguCode=&include=&week=` (지도) | `{ isoWeek, finalized, publicThreshold, slightDeltaPp, highDeltaPp, districts: 동네 집계[] }` | `AGGREGATE_001` 없는 `include`(404), `002`, 검증 `103` 시군구 코드 없음 · `104` 형식(숫자 5자리) · `101` `include` 형식 · `102` |
 
-- **동네 집계** = `{ code, name, sigungu, active, level, insufficientReason?, participantCount, calculatedAt?, symptomaticCount?, symptomRate?, baselineRate?, groups? }`. `level` · `insufficientReason` · 증상군 · 변화는 `{ code, name, description }` 이다.
+- **동네 집계** = `{ code, name, sigungu, active, level, insufficientReason?, participantCount, calculatedAt?, symptomaticCount?, symptomRate?, baselineRate?, groups?, publishedAdvisory? }`. `level` · `insufficientReason` · 증상군 · 변화는 `{ code, name, description }` 이다.
+  - `publishedAdvisory` = `{ isoWeek, title, publishedAt }`(#215) — 운영자가 발행해 **지금 보이는(PUBLISHED)** 안내의 근거 주 · 제목 · 발행 시각(ISO-8601 UTC, 초 단위)이다. **요청 주의 안내, 없으면 요청 주 직전 주의 안내**다(요청 주가 먼저). 안내는 마감된 주의 집계로만 만들어지므로, 기본 호출(현재 주 — 아직 마감 전)에는 보통 지난주 안내가 붙는다. 그보다 오래된 주 · 철회됐거나 · 승인 전이면 **키가 없다** — 키가 없으면 발행 안내 없음(`PublishedNotice` 는 `null`)으로 읽는다. **자료 부족 칸에도 붙는다** — 안내는 운영자가 승인한 정보이고 근거 주의 마감 · 자료 충분 집계로 한 판단이라, 요청 주가 자료 부족이어도 보인다(요약에 수치는 없다). 링크(`/notice/[region]/[week]`)의 주는 요청 주가 아니라 이 `isoWeek` 로 만든다. 지도의 `이 동네 안내 보기` 는 이 키가 있는 동네에만 두고, 본문 · 인용 수치 · 정정 이력은 아래 "동네 안내" 를 이 `isoWeek` 로 부른다.
   - `level` 은 `NORMAL` · `SLIGHT` · `HIGH` · `INSUFFICIENT` 이고 프론트 `status`(normal · slight · high · insufficient)와 1:1 이다.
   - **`INSUFFICIENT` 면 `symptomaticCount` · `symptomRate` · `baselineRate` · `groups` 가 응답에 아예 없다**(키가 없다 — null 이 아니다). 집계 행에 숫자가 있어도 서버가 뺀다. 프론트는 이 값이 없을 때 수치 · 상태색을 그리지 않는다.
   - `insufficientReason` 은 `INSUFFICIENT` 일 때만 있고 `LOW_SAMPLE`(참여 100명 미만) · `UNSTABLE`(마감 판정에서 전주 대비 참여 급변) · `NO_BASELINE`(기준선을 만들 마감 4주 부족)이다. **화면은 셋 모두 같은 `자료 부족` 으로 그린다**(이유를 문구로 갈라 보이지 않는다).
@@ -282,7 +283,7 @@ GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:writ
 - **지도 범위는 시군구**다. `sigunguCode` 는 행정동 코드 앞 5자리(SGIS)라 처음 고른 동네 코드에서 바로 만든다. `districts` 는 그 시군구의 **현행** 동 전부(코드 오름차순, 폐지 동 제외)이고, 집계 행이 없는 동도 자료 부족으로 담긴다.
   - **`include`(찾은 동네 · 처음 고른 동네)는 반드시 담긴다**(#204) — 시군구 밖이거나 폐지된 코드여도 목록 맨 앞에 더하고, 이미 목록에 있으면 그 자리 그대로다. 보고가 없으면 자료 부족(참여 0)이다.
   - `districts` 가 빈 배열인 것은 그 시군구에 현행 동이 없고 `include` 도 없을 때뿐이다. 지도의 "자료 없음"(이번 주 동네 자료가 하나도 없음)을 따로 알리는 값은 없다 — 모든 동이 `participantCount: 0` 이면 그렇게 볼 수 있다.
-- **아직 없는 것**: 발행 안내 여부(지도의 `이 동네 안내 보기`)는 안내 API(#214 · #215)가 생기면 그 이슈에서 더한다 — 지금은 키가 없고, 없다는 것을 "발행 안내 없음" 으로 읽지 않는다. 증상군의 최근 주별 비율(`series`, 작은 막대)은 이 응답에 없다. 회원의 내 동네를 서버가 알아서 범위로 쓰지 않는다(프론트가 `include` · `sigunguCode` 로 보낸다).
+- **아직 없는 것**: 증상군의 최근 주별 비율(`series`, 작은 막대)은 이 응답에 없다. 회원의 내 동네를 서버가 알아서 범위로 쓰지 않는다(프론트가 `include` · `sigunguCode` 로 보낸다).
 - **프론트 연동**: 아직 하지 않았다 — 홈(`features/home/mock.ts`) · 지도(`features/map/mock.ts`)는 목 데이터다. 연동 이슈에서 `HomeWeekly` · `MapWeek` 로 옮긴다.
 
 ## 공식 정보 `/api/v1/official/latest` (확정 — 백엔드 #213, 화면 S08)
@@ -357,34 +358,45 @@ GET /api/v1/official/latest   → { programs: OfficialProgram[] }   (자료가 �
 - 오류: 받는 파라미터가 없어 검증 오류가 없다. 공통 오류(게이트웨이 · 일시 장애)만 있다.
 - 프론트 함수: 아직 없다. **화면은 연동 전까지 목 데이터**(`features/official/mock.ts`)다.
 
-## BE 미정 — 프론트 초안
+## 동네 안내 `/api/v1/advisories` (확정 — 백엔드 #215)
 
-백엔드에 아직 없다(게이트웨이 라우트 `/api/v1/advisories/**` 는 열려 있다). 아래는 화면을 만들며 가정한 모양이고, 연동 이슈에서 백엔드와 맞춘다. 지역 키 `admCd` 는 행정동 `code`(SGIS 8자리)다. 동네 주간 집계는 위 "행정동 주간 집계" 로 확정됐다.
+동네 안내(S07 `/notice/[region]/[week]`)가 읽는 API 다. **백엔드에 구현돼 있어 확정**이다(`AdvisoryWebController#getRegionAdvisory`). 게이트웨이 라우트 `/api/v1/advisories/**`(surveillance) 안이다. **인증 불필요** — 비회원 둘러보기에서도 부른다(행정동 API 처럼 `auth: false`). 화면 동작은 [SCREENS.md](design/SCREENS.md) "동네 안내" 다.
 
 ```text
-GET  /api/notices/{admCd}?week=            → 발행된 안내 | null (정정 이력 · 철회 표시 포함) — 아래 "동네 안내 (#215)"
+GET /api/v1/advisories?districtCode=&week=   → 발행 중인 안내 | 철회 표시 | null
+```
+
+- **파라미터는 둘 다 필수**다. `districtCode` 는 행정동 `code`(SGIS 숫자 8자리 — 주소의 `[region]`), `week` 는 ISO 주 `YYYY-Www`(주소의 `[week]` — 홈 · 지도에서 열 때는 집계 응답 `publishedAdvisory.isoWeek`). 안내는 마감된 주의 집계로만 만들어져 "현재 주" 기본값은 늘 안내 없음이라 두지 않는다. 조회할 수 있는 주는 **현재 주 ~ 51주 전**(행정동 주간 집계와 같은 창)이다.
+- `dataBody` 는 셋 중 하나다. `advisory` · `retraction` 키는 늘 있고 하나만 값이 있다.
+  - **발행 중**: `{ districtCode, isoWeek, advisory: { title, body, publishedAt, citation, corrections: [{ correctedAt }] }, retraction: null }`
+  - **철회됨**: `{ districtCode, isoWeek, advisory: null, retraction: { retractedAt } }` — 내린 안내의 제목 · 본문 · 인용 수치는 **싣지 않는다**.
+  - **안내 없음**: `dataBody: null` 이다(초안 · 수정 · 승인 단계의 안내도 보이지 않는다).
+- `citation` = `{ level, participantCount, symptomaticCount, symptomRate, groups: [{ group, count, rate }] }` — 운영자가 검토할 때 고정한 **인용 수치**(advisory `cited_*`)다. 집계가 다시 계산돼도 바뀌지 않는다. `level` 은 `NORMAL` · `SLIGHT` · `HIGH`(자료 부족 집계로는 안내를 만들지 않아 `INSUFFICIENT` 는 없다), `level` · `group` 은 `{ code, name, description }`, 비율은 행정동 주간 집계와 같은 퍼센트 소수 첫째 자리 반올림, `groups` 는 호흡기 → 장관 순서다.
+- 시각(`publishedAt` · `correctedAt` · `retractedAt`)은 ISO-8601 UTC(초 단위)다. 화면 모델의 `publishedOn` · `correctedOn` · `retractedOn`(한국 날짜 `YYYY-MM-DD`)은 매핑 계층이 KST 로 바꿔 만든다. `correctedAt` 은 정정한 안내의 발행 시각이고 `corrections` 는 **최근 것이 먼저**다. 정정이 없으면 빈 배열이다.
+- 오류: `ADVISORY_101` `districtCode` 없음 · `102` 형식(숫자 8자리) · `103` `week` 없음 · `104` 형식(`YYYY-Www`), `ADVISORY_008` 없는 코드(404), `ADVISORY_009` 조회할 수 없는 주(400 — 미래 주 · 51주보다 이전 · 그 해에 없는 주, 메시지에 범위). **폐지된 코드는 오류가 아니다**(그 주에 발행된 안내가 있으면 보인다).
+- 결정(#215 에서 정한 세 가지):
+  - **철회된 안내는 남긴다** — 그 동네 · 주에 발행 중인 안내가 없고 철회된 안내가 있으면 철회 표시(`retraction`)를 준다. 운영자 철회 대화상자의 "사용자 화면에는 '철회된 안내예요'가 남아요" 와 맞는다. 정정으로 내려간 안내(새 안내가 `corrects_advisory_id` 로 이은 이전 안내)는 철회 표시가 아니라 새 안내의 `corrections` 로 보인다.
+  - **철회 · 정정 사유는 공개하지 않는다** — 사유는 운영자 메모(advisory_history `memo`)이고 공개 응답은 이력을 읽지 않는다. `NoticeRetraction.reason` 은 늘 비어(키 없음) 화면이 사유 줄을 뺀다. `NoticeCorrection.reason` 도 응답에 없다 — 매핑 계층이 정정일만 채울 모양(타입의 `reason` 을 선택으로 바꾸거나 정정 줄에서 사유를 빼는 것)은 연동 이슈에서 정한다. 사유 공개는 운영자 입력란 안내("사용자 화면에 보여요")와 함께 정할 일이다(#246).
+  - **한 동네 · 한 주에 보이는 안내는 하나** — 발행 중인 안내는 하나뿐이다(백엔드가 발행을 막는다 — `ADVISORY_007`). 철회 뒤 같은 주에 새 안내가 발행되면 새 안내만 주고 철회 표시는 주지 않는다. 철회된 안내가 여럿이면 가장 최근 철회 하나다.
+- **화면 모델과 다른 점**:
+  - `items`(할 일 목록) · `source`(근거)는 응답에 없다 — 백엔드 안내는 `title` · `body` 한 덩어리다. 본문 형식(줄마다 할 일 등)이나 목록 · 근거를 따로 둘지는 연동 · 운영자 화면(#246)에서 정한다. 지어내지 않는다.
+  - 발행 중 갈래의 `stats`(인용 집계) 중 `participants` · `symptomRate` · 증상군 비율 · `status` 는 `citation` 에서 오지만, **`baselineRate`(지난 4주 평균) · 증상군 `trend` 는 인용값이 아니라 응답에 없다** — 같은 주 행정동 주간 집계에서 읽는다(안내가 있는 주는 마감 주라 그 값도 바뀌지 않는다). 안내 없음 · 철회 갈래의 `stats`(그 주 집계)도 행정동 주간 집계에서 읽는다 — 이 API 는 집계를 싣지 않는다.
+  - 동네 이름 · `isoWeek` 는 주소 · 행정동 API 로 안다(`districtCode` · `isoWeek` 는 확인용으로 되돌려 준다).
+  - 홈 요약 모델 `PublishedNotice`(`{ publishedLabel, items, source, href }` — 홈 안내 섹션이 `items` · `source` 를 그린다)와 집계의 `publishedAdvisory`(`{ isoWeek, title, publishedAt }`)가 다르다 — `items` · `source` 는 응답에 없고(안내 API 에도 없다), `title` 은 화면 모델에 없다. `publishedLabel` 은 `publishedAt`, `href` 는 동네 코드와 `isoWeek` 로 만들 수 있다. 홈 안내 섹션의 모양(제목을 보일지, 할 일 목록을 본문에서 만들지 뺄지)은 연동 이슈에서 정한다.
+- 안내를 요약해 보이는 곳(홈 안내 섹션 · 지도 `이 동네 안내 보기`)은 위 행정동 주간 집계의 `publishedAdvisory`(요청 주, 없으면 직전 주)로 **발행 중인 안내만** 안다 — 철회된 안내는 키가 없고 `PublishedNotice` 는 `null` 이다.
+- **프론트 연동**: 아직 하지 않았다 — `features/notice/notice-client.ts` 의 `getRegionNotice` 안내 내용은 **출처와 무관하게 목**이다(동네만 출처에 따라 행정동 API 로 확인). 목 재현 `?mock=published|corrected|retracted|none|insufficient`.
+
+## BE 미정 — 프론트 초안
+
+백엔드에 아직 없다. 아래는 화면을 만들며 가정한 모양이고, 연동 이슈에서 백엔드와 맞춘다. 지역 키 `admCd` 는 행정동 `code`(SGIS 8자리)다. 동네 주간 집계는 위 "행정동 주간 집계", 동네 안내는 위 "동네 안내" 로 확정됐다.
+
+```text
 GET  /api/v1/admin/review-candidates?week=  → 후보 목록 (운영자) — 아래 "운영자 검토 (#219)"
 GET  /api/v1/admin/advisories/history       → 발행 이력 (운영자) — 아래 "발행 이력 (#220)"
 (운영자 처리 경로 · 동사는 아래 "운영자 검토 (#219)" · "발행 이력 · 정정 · 철회 (#220)" 가 정본이다)
 ```
 
-- 프론트 함수: 안내 `notice-client.ts`(`getRegionNotice`). 보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계", 공식 정보는 위 "공식 정보" 로 확정이다(집계 · 공식 정보는 화면 연동 전이라 아직 목). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
-
-### 동네 안내 (#215, 프론트 초안)
-
-동네 안내(S07 `/notice/[region]/[week]`)가 가정한 모양이다. **백엔드는 #215 에서 만든다**(백엔드 제안 경로는 `GET /api/v1/advisories?districtCode=&week=`). 화면 동작은 [SCREENS.md](design/SCREENS.md) "동네 안내" 다. 비회원도 부른다.
-
-- 화면 모델 `RegionNoticeBody`(`features/notice/types.ts`) — 셋 중 하나다.
-  - 발행 중인 안내: `{ notice: { title, publishedOn, items, source, corrections: [{ correctedOn, reason }] }, retraction: null, stats: 인용 집계(cited_*, 수치가 있는 주) }`
-  - 철회된 안내(#225): `{ notice: null, retraction: { retractedOn, reason? }, stats: 그 주 집계 }` — 철회된 안내의 제목 · 본문 · 할 일 · 인용 수치는 **싣지 않는다**(화면이 내린 안내를 다시 퍼뜨리지 않게, 타입에도 자리가 없다). `retractedOn` 은 `retracted_at` 의 한국 날짜 `YYYY-MM-DD`(정정일과 같은 모양). `reason` 은 없으면 빼고 보낸다 — 화면이 사유 줄을 뺀다.
-  - 안내 없음: `{ notice: null, retraction: null, stats: 그 주 집계 }`
-  - 그 주 집계는 위 `weekly` 와 같은 모양이다(`insufficient` 면 참여 · 공개 기준만).
-- 정할 것:
-  - **철회된 안내를 응답에 남길지** — 공개 API 가 PUBLISHED 만 읽으면 철회가 안내 없음으로 보이고, 운영자 철회 대화상자의 "사용자 화면에는 '철회된 안내예요'가 남아요" 와 어긋난다. 남긴다면 RETRACTED 중 정정으로 내려간 안내(정정 발행이 잇는 이전 안내)는 철회 표시가 아니라 새 안내의 `corrections` 로 보인다.
-  - **철회 사유를 공개할지** — 사유는 운영자 메모(advisory_history `memo`)이고 #215 는 메모를 공개 응답에 싣지 않는다고 적었다. 공개하면 운영자 입력란에 "사용자 화면에 보여요" 를 알려야 한다. 공개하지 않으면 `reason` 을 빼고 철회일만 보낸다(지금 목과 같음).
-  - 같은 동네 · 주에 철회 뒤 새 안내가 발행되면 새 안내만 준다(화면은 발행된 안내가 있으면 철회 표시를 받지 않는다). 한 동네 · 한 주에 안내가 여럿일 때 규칙과 함께 정한다.
-- 안내를 요약해 보이는 곳(홈 주간 데이터의 `notice` — 홈 안내 섹션 · 지도 `이 동네 안내 보기`)은 **발행 중인 안내만** 받는다. 철회된 안내는 `null` 이다(`features/home/types.ts` 의 `PublishedNotice`).
-- 프론트 함수: `features/notice/notice-client.ts` 의 `getRegionNotice`. 안내 내용은 **출처와 무관하게 목**이다(동네만 출처에 따라 행정동 API 로 확인). 목 재현 `?mock=published|corrected|retracted|none|insufficient`.
+- 프론트 함수: 보고는 위 "주간 보고", 홈 · 지도 집계는 위 "행정동 주간 집계", 공식 정보는 위 "공식 정보", 동네 안내는 위 "동네 안내" 로 확정이다(집계 · 공식 정보 · 동네 안내는 화면 연동 전이라 아직 목). 운영자 검토 · 발행 이력은 실데이터에서 요청하지 않는다(아래 "운영자 검토 (#219)" · "발행 이력 (#220)").
 
 ### 운영자 검토 (#219, 프론트 초안)
 
@@ -419,7 +431,7 @@ POST /api/v1/admin/advisories/{id}/retract  { reason, version }         → 204 
 - `HistoryEntry` = `{ id, kind: baseline|surge|repeat, districtCode, districtName, isoWeek, participants, symptomRate, outcome: published|held|corrected|retracted, processedAt, edited, body, version, timeline: [{ step, at, note? }], correction?: { previousId, correctedOn, reason }, retraction?: { retractedOn, reason } }` + **1단계에 없는 선택 값** `operatorName` · `reviewMinutes`(`features/admin/types.ts`). 선택 값 · `note` 는 **없으면 빼고 보낸다** — 화면이 그 열 · 칸 · 문구를 숨긴다.
   - 행은 안내(advisory) 하나 또는 보류한 후보 하나다. `timeline` 은 advisory_history(§2-4)의 전이를 오래된 것부터 옮긴 것이다 — `step`: `registered`(생성) · `ai-drafted`(AI_DRAFTED) · `edited`(EDITED) · `published`(PUBLISHED, 승인은 묶음) · `held`(보류) · `corrected`(정정으로 내려감) · `correction-published`(정정한 새 안내의 발행) · `retracted`(RETRACTED), `at` = `created_at`, `note` 는 정정 · 철회의 `memo` 만 백엔드에서 나온다.
   - `edited` 는 PUBLISHED 전에 EDITED 를 거쳤는지다(요약의 수정 후 발행 비율 — 화면이 목록에서 계산한다). `correctedOn` · `retractedOn` 은 한국 날짜 `YYYY-MM-DD`(동네 안내 `NoticeCorrection` 과 같은 모양)다.
-- **정정 발행은 §2-5 에 없다**(PUBLISHED 본문은 고치지 않는다). 화면은 **이전 안내 철회(RETRACTED, `memo` = 사유) + 새 안내 발행(같은 동네 · 주 · 인용값, 고친 본문) + 둘을 잇는 값**(예: advisory `corrects_advisory_id`)을 한 요청으로 가정한다. 잇는 값이 있어야 ① 이력에서 이전 안내를 `철회` 가 아니라 `정정됨` 으로 보이고 ② 동네 안내(`GET /api/notices/{admCd}?week=`)가 지금 안내에서 이전 안내로 따라가 정정 이력(`corrections` — 정정일 · 사유, 최근 것부터)을 만든다. 새 안내는 운영자가 고친 본문이라 AI 초안 · 승인 단계를 어떻게 남길지(바로 PUBLISHED 로 만들지) 정한다.
+- **정정 발행은 §2-5 에 없다**(PUBLISHED 본문은 고치지 않는다). 화면은 **이전 안내 철회(RETRACTED, `memo` = 사유) + 새 안내 발행(같은 동네 · 주 · 인용값, 고친 본문) + 둘을 잇는 값**(예: advisory `corrects_advisory_id`)을 한 요청으로 가정한다. 잇는 값이 있어야 ① 이력에서 이전 안내를 `철회` 가 아니라 `정정됨` 으로 보이고 ② 동네 안내(`GET /api/v1/advisories?districtCode=&week=`, 위 "동네 안내" 확정 절)가 지금 안내에서 이전 안내로 따라가 정정 이력(`corrections` — 정정일 · 사유, 최근 것부터)을 만든다. 새 안내는 운영자가 고친 본문이라 AI 초안 · 승인 단계를 어떻게 남길지(바로 PUBLISHED 로 만들지) 정한다.
 - 정정 · 철회는 발행 중(PUBLISHED)인 안내에만 된다. 정정됨 · 철회(끝 상태)에 보내거나 `version` 이 다르면 **409** 이고, 화면은 이력을 다시 읽어 바꿔 그린다(목은 충돌 응답에 이력을 싣는다 — 연동 때 `GET` 을 다시 부르는 쪽으로 바꾼다).
 - 검증: `reason` 필수 · 500자(`memo` VARCHAR(500)), `body` 필수 · 500자(검토 대기 `DRAFT_MAX_LENGTH` 와 같음). 검증 오류 번호는 백엔드가 정한다.
 - 정할 것 — **숫자를 바로잡는 정정의 의미**: 인용값(`cited_*`)은 초안 생성 때 마감 집계에서 복사해 고정되고(§2-3) 마감 집계는 바뀌지 않는다. 그래서 ① 정정한 새 안내의 인용값을 이전 안내에서 그대로 옮길지(목은 그렇게 한다), 정정 시점의 집계에서 다시 복사할지(마감 집계가 다시 계산될 수 있는지와 함께), ② 운영자가 본문의 숫자를 고치면 본문과 인용값이 어긋나는 문제를 어떻게 막을지(본문 숫자를 인용값에서만 만들지, 검증할지) 정한다. 화면은 지금 본문을 바꾸지 않고 사유만 남기는 정정도 받는다.
