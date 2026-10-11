@@ -144,11 +144,11 @@ export const INFO_PAGES: Record<InfoPageKind, InfoPage> = {
           // 공식 정보 화면의 차이 안내(official-screen.tsx)
           '시민 자가보고와는 조사 대상 · 지역 단위 · 발표 시점이 달라요.',
           '두 정보는 화면에서 섞지 않아요.',
-          // 공식 정보 화면의 출처 줄(official-screen.tsx `SourceLine`, 루트 CLAUDE.md "출처 · 집계 단위 · 기준 주")
+          // 공식 정보 화면의 묶음 머리(official-screen.tsx `ProgramSection`, 루트 CLAUDE.md "출처 · 집계 단위 · 기준 주")
           '출처 · 집계 단위 · 기준 주를 함께 밝혀요.',
         ],
-        // 공식 정보 화면의 쉬운 요약 아래 문구(official-screen.tsx)
-        notes: ['수치와 표현은 발표 원문을 기준으로 해요.'],
+        // 공식 정보 화면의 묶음 아래 원값 안내(official-screen.tsx `PublishedBody`)
+        notes: ['수치는 발표 원문을 기준으로 해요.'],
       },
       {
         title: '행정구역',

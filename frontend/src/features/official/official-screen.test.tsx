@@ -7,7 +7,9 @@ import { cancelReport, submitReport } from '@/features/report/report-client'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import { OFFICIAL_MOCKS } from './mock'
+import { toOfficialReport } from './official-map'
 import { OFFICIAL_PATH, OfficialScreen } from './official-screen'
+import type { OfficialProgramView, OfficialReport } from './types'
 
 // 테스트에는 Next 라우터가 없다. 주소 쿼리 · 경로는 이 값으로 흉내 낸다
 let search = ''
@@ -24,7 +26,7 @@ vi.mock('next/navigation', () => ({
  * `from` 을 주면 그 화면에서 앱 안 이동으로 온 것으로, 생략하면 주소로 바로 들어온 것으로 그린다.
  */
 function renderOfficial(
-  official: (typeof OFFICIAL_MOCKS)[keyof typeof OFFICIAL_MOCKS],
+  official: OfficialReport,
   { from, ...props }: { regionCode?: string; from?: string } = {},
 ) {
   if (from === undefined) {
@@ -60,7 +62,7 @@ describe('OfficialScreen 발표가 있을 때', () => {
     vi.restoreAllMocks()
   })
 
-  it('출처 · 집계 단위 · 기준 주 · 발표일을 `공식` 배지와 함께 밝힌다', () => {
+  it('`공식` 배지와 집계 단위를 밝히고, 화면 제목은 폭마다 하나만 보인다', () => {
     renderOfficial(OFFICIAL_MOCKS.published)
 
     // 화면 제목(h1)은 폭마다 하나만 보인다 — 모바일 머리줄 · 태블릿 이상 본문 위
@@ -70,35 +72,66 @@ describe('OfficialScreen 발표가 있을 때', () => {
     expect(titles[1]?.classList.contains('hidden')).toBe(true)
     expect(titles[1]?.classList.contains('tablet:block')).toBe(true)
 
-    const line = screen.getByText('공식').parentElement
-    // 기준 주는 모바일이 주차, 태블릿 이상이 기간이다 (시안)
-    expect(line?.textContent).toBe('공식전국 · 47주11월 17일~23일 · 11월 21일 발표')
-    expect(
-      within(line as HTMLElement)
-        .getByText('47주')
-        .classList.contains('tablet:hidden'),
-    ).toBe(true)
-    expect(
-      within(line as HTMLElement)
-        .getByText('11월 17일~23일')
-        .classList.contains('tablet:inline'),
-    ).toBe(true)
+    expect(screen.getByText('공식').parentElement?.textContent).toBe('공식전국')
   })
 
-  it('단계 · 쉬운 요약 · 원문 보기(새 창)를 보인다', () => {
+  it('표본감시 프로그램마다 출처 · 집계 단위 · 기준 주(질병관리청 주차 · 기간) · 원값 · 단위 · 받은 시각을 밝힌다', () => {
     renderOfficial(OFFICIAL_MOCKS.published)
 
-    expect(screen.getByRole('term').textContent).toBe('인플루엔자')
-    expect(screen.getByRole('definition').textContent).toBe('유행주의보 발령 중')
+    const sections = screen.getAllByRole('region')
+    expect(sections.map((section) => section.getAttribute('aria-labelledby'))).toEqual([
+      'official-INFLUENZA_ILI',
+      'official-ARI',
+      'official-ENTERIC',
+    ])
 
-    const summary = screen.getByRole('region', { name: '쉬운 요약' })
-    expect(summary.querySelectorAll('p')).toHaveLength(3)
-    expect(summary.textContent).toContain('수치와 표현은 발표 원문을 기준으로 해요')
+    const ari = screen.getByRole('region', { name: '급성호흡기감염증' })
+    expect(ari.textContent).toContain('질병관리청 표본감시 · 전국')
+    expect(ari.textContent).toContain('기준 주 2026년 38주 (9월 13일~19일)')
+    // 받은 시각은 발표일이 아니라 우리가 받은 시각으로 적는다
+    expect(ari.textContent).toContain('단위: 발생 수 · 9월 25일 06:00에 받은 자료')
+    expect(ari.textContent).not.toContain('발표일')
+    const rows = within(ari)
+      .getAllByRole('term')
+      .map((term) => `${term.textContent} ${term.nextElementSibling?.textContent}`)
+    expect(rows).toEqual([
+      '합계 400건',
+      '호흡기세포융합바이러스 152건',
+      '리노바이러스 101건',
+      '인플루엔자 바이러스 64건',
+    ])
+    expect(ari.textContent).toContain('합계와 신고 수가 많은 병원체 3개만 보여요.')
 
-    const source = screen.getByRole('link', { name: '원문 보기 (새 창)' })
-    expect(source.getAttribute('href')).toBe(OFFICIAL_MOCKS.published.sourceUrl)
+    // 인플루엔자 분율은 연령대별 값이고 원천 빈 칸은 0 이 아니라 값 없음이다
+    const ili = screen.getByRole('region', { name: '인플루엔자 의사환자' })
+    expect(within(ili).getAllByRole('term')).toHaveLength(7)
+    expect(within(ili).getByText('65세 이상').nextElementSibling?.textContent).toBe('값 없음')
+    expect(ili.textContent).toContain('단위: 외래 1,000명당 의사환자 분율')
+
+    expect(screen.getByText(/수치는 발표 원문을 기준으로 해요/).textContent).toContain(
+      '공공누리 제4유형',
+    )
+  })
+
+  it('원문 보기는 묶음마다 원문 주소를 새 창으로 연다', () => {
+    renderOfficial(OFFICIAL_MOCKS.published)
+
+    const source = screen.getByRole('link', { name: '원문 보기, 급성호흡기감염증 (새 창)' })
+    expect(source.getAttribute('href')).toBe('https://dportal.kdca.go.kr/pot/is/st/ari.do')
     expect(source.getAttribute('target')).toBe('_blank')
     expect(source.getAttribute('rel')).toBe('noopener noreferrer')
+    expect(screen.getAllByRole('link', { name: /^원문 보기/ })).toHaveLength(3)
+  })
+
+  it('원문 주소가 없는 묶음에는 원문 보기를 그리지 않는다', () => {
+    const [first] =
+      OFFICIAL_MOCKS.published.status === 'published' ? OFFICIAL_MOCKS.published.programs : []
+    renderOfficial({
+      status: 'published',
+      programs: [{ ...(first as OfficialProgramView), sourceUrl: null }],
+    })
+
+    expect(screen.queryByRole('link', { name: /원문 보기/ })).toBeNull()
   })
 
   it('시민 자가보고 값은 그리지 않고 두 정보가 다르다는 것만 알린다', () => {
@@ -106,7 +139,7 @@ describe('OfficialScreen 발표가 있을 때', () => {
 
     const text = container.textContent ?? ''
     expect(text).not.toMatch(/참여|%|평소 수준|늘었어요|자료 부족/)
-    expect(text).toContain('의료기관 표본감시 자료예요.')
+    expect(text).toContain('질병관리청 표본감시 자료예요.')
 
     const aside = screen.getByRole('complementary', { name: '시민 자가보고와 다른 점' })
     expect(aside.textContent).toContain('시민 자가보고와 무엇이 다른가요?')
@@ -114,22 +147,44 @@ describe('OfficialScreen 발표가 있을 때', () => {
   })
 })
 
-describe('OfficialScreen 받은 발표가 없을 때', () => {
+describe('OfficialScreen 보일 자료가 없을 때', () => {
   beforeEach(() => {
     search = ''
   })
 
-  it('단계 · 요약 · 원문 보기 대신 아직 없다는 안내를 보인다', () => {
+  it('받은 자료가 없으면 묶음 · 원문 보기 대신 원인을 질병관리청에 돌리지 않는 안내를 보인다', () => {
     const { container } = renderOfficial(OFFICIAL_MOCKS.empty)
 
-    expect(screen.getByText('아직 받은 발표가 없어요')).not.toBeNull()
-    expect(screen.queryByRole('region', { name: '쉬운 요약' })).toBeNull()
-    expect(screen.queryByRole('definition')).toBeNull()
+    expect(screen.getByText('아직 보여 드릴 표본감시 자료가 없어요')).not.toBeNull()
+    expect(
+      screen.getByText('질병관리청 표본감시 자료를 받으면 여기에서 보여 드려요.'),
+    ).not.toBeNull()
+    expect(screen.queryByRole('region')).toBeNull()
+    expect(screen.queryByRole('term')).toBeNull()
     expect(screen.queryByRole('link', { name: /원문 보기/ })).toBeNull()
 
-    // 집계 단위만 밝히고 기준 주 · 발표일 · 조사 방식은 지어내지 않는다
-    expect(screen.getByText('공식').parentElement?.textContent).toBe('공식전국')
-    expect(container.textContent).not.toContain('표본감시')
+    // 집계 단위 · 기준 주 · 받은 시각을 지어내지 않는다
+    expect(screen.getByText('공식').parentElement?.textContent).toBe('공식')
+    expect(container.textContent).not.toMatch(/기준 주|단위:|받은 자료|발표가 없어요/)
+  })
+
+  it('전수신고만 받았으면 받은 자료를 이 화면에서 아직 보이지 않는다고 알린다', () => {
+    const notifiableOnly = toOfficialReport({
+      programs: [
+        {
+          program: { code: 'NOTIFIABLE', name: '전수신고 감염병' },
+          source: { code: 'KDCA_NOTIFIABLE', name: '질병관리청 전수신고' },
+          sourceUrl: null,
+          diseases: [],
+        },
+      ],
+    })
+    renderOfficial(notifiableOnly)
+
+    expect(screen.getByText('아직 보여 드릴 표본감시 자료가 없어요')).not.toBeNull()
+    expect(
+      screen.getByText('지금 받은 자료(전수신고 등)는 이 화면에서 아직 보여 드리지 않아요.'),
+    ).not.toBeNull()
   })
 })
 
