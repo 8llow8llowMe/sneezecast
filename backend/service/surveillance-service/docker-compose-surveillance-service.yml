@@ -41,6 +41,14 @@ x-surveillance-service-environment: &surveillance_service_environment
   # Snowflake ID. 환경당 인스턴스 하나라 기본값(0/0)으로 충분하다. 인스턴스를 늘리면 인스턴스마다 다른 worker-id 를 준다. 기본값은 application.yml 과 같다.
   SNOWFLAKE_DATACENTER_ID: ${SNOWFLAKE_DATACENTER_ID:-0}
   SNOWFLAKE_WORKER_ID: ${SNOWFLAKE_WORKER_ID:-0}
+  # 집계 재계산 · 주 마감 스케줄 (surveillance.aggregate-job.*). 스위치만 application.yml(false)과 다르게 기본 true 다 — yml 기본값은 테스트 · 개발자 PC 용이고,
+  # 배포된 surveillance 는 dev · prod 모두 집계를 돌려야 한다(꺼지면 모든 동이 자료 부족). 나머지 기본값은 application.yml 과 같다.
+  # 환경당 인스턴스 하나를 전제로 한다 — 늘리면 ShedLock 을 먼저 붙인다(modules.md surveillance).
+  SURVEILLANCE_AGGREGATE_JOB_SCHEDULER_ENABLED: ${SURVEILLANCE_AGGREGATE_JOB_SCHEDULER_ENABLED:-true}
+  SURVEILLANCE_AGGREGATE_JOB_INITIAL_DELAY: ${SURVEILLANCE_AGGREGATE_JOB_INITIAL_DELAY:-PT1M}
+  SURVEILLANCE_AGGREGATE_JOB_FIXED_DELAY: ${SURVEILLANCE_AGGREGATE_JOB_FIXED_DELAY:-PT10M}
+  SURVEILLANCE_AGGREGATE_JOB_CLOSE_CRON: "${SURVEILLANCE_AGGREGATE_JOB_CLOSE_CRON:-0 10 0 * * MON}"
+  SURVEILLANCE_AGGREGATE_JOB_CLOSE_GRACE: ${SURVEILLANCE_AGGREGATE_JOB_CLOSE_GRACE:-PT9M}
 
 x-logging: &default-logging
   driver: "json-file"

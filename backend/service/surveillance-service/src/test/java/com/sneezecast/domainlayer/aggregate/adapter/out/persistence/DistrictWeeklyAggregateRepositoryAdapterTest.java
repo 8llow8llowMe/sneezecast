@@ -226,6 +226,18 @@ class DistrictWeeklyAggregateRepositoryAdapterTest extends SurveillanceH2TestSup
     }
 
     @Test
+    @DisplayName("주어진 주 가운데 행이 있는 주만 준다 — 마감 여부와 무관하고, 빈 목록이면 빈 결과")
+    void findWeeksWithRows() {
+        adapter.insert(DistrictWeeklyAggregate.newAggregate(1L, calculation(GARAK_1, W52, COUNTS, SLIGHT)));
+        adapter.insert(DistrictWeeklyAggregate.newAggregate(2L, calculation(GARAK_1, W53, COUNTS, SLIGHT)));
+        adapter.insert(DistrictWeeklyAggregate.newAggregate(3L, calculation(YEOKSAM_1, W53, COUNTS, SLIGHT)));
+        finalizeWeek(W52, FINALIZED_AT);
+
+        assertThat(adapter.findWeeksWithRows(List.of(W52, W53, NEXT_W01))).containsExactlyInAnyOrder(W52, W53);
+        assertThat(adapter.findWeeksWithRows(List.of())).isEmpty();
+    }
+
+    @Test
     @DisplayName("트랜잭션 밖에서 재계산 · 마감을 부르면 거부한다")
     void updateAndFinalizeRequireTransaction() {
         adapter.insert(DistrictWeeklyAggregate.newAggregate(1L, calculation(GARAK_1, W53, COUNTS, SLIGHT)));
