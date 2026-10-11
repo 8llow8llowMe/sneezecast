@@ -17,7 +17,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => router,
 }))
 
-const NOTICE = '○○동 이번 주 안내가 발행됐어요 · 알림 대신 여기서 알려드려요'
+const NOTICE = '○○동 안내가 발행됐어요 · 알림 대신 여기서 알려드려요'
 
 beforeEach(() => {
   search = ''

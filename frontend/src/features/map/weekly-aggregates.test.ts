@@ -94,10 +94,11 @@ describe('fetchMapWeek', () => {
     expect(map?.districts.map((item) => item.code)).toEqual([SEOGYO, HAPJEONG])
     const [seogyo, hapjeong] = map?.districts ?? []
     expect(seogyo?.week).toMatchObject({ regionName: '서교동', status: 'high', symptomRate: 18 })
-    // 동네 안내 화면은 아직 목이라 주소 없이 제목 · 발행일만이다(#256)
+    // 발행 안내는 그 동네 · 안내 근거 주(요청 주 W47 이 아니라 W46)의 동네 안내로 잇는다(#256)
     expect(seogyo?.week.notice).toEqual({
       publishedLabel: '11월 18일 발행',
       title: '호흡기 증상 보고가 늘었어요',
+      href: `/notice/${SEOGYO}/2025-W46`,
     })
     // 자료 부족 동네는 수치 필드가 없다
     expect(hapjeong?.week).toMatchObject({ status: 'insufficient', participants: 41 })

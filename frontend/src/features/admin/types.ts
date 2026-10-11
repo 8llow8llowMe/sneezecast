@@ -171,8 +171,11 @@ export type HistoryEntry = Readonly<{
   version: number
   /** 전이 이력. 오래된 것부터 */
   timeline: readonly TimelineEvent[]
-  /** 이 안내가 정정한 이전 안내와 정정일 · 사유. 정정일 · 사유는 동네 안내(S07)의 정정 이력과 같은 모양이다 */
-  correction?: NoticeCorrection & { previousId: string }
+  /**
+   * 이 안내가 정정한 이전 안내와 정정일 · 사유. 정정일 · 사유는 동네 안내(S07)의 정정 이력과 같은 모양이다. 사유는 운영자가 늘 적는다
+   * (공개 응답은 사유를 내리지 않아 S07 쪽은 선택 값이다)
+   */
+  correction?: NoticeCorrection & { previousId: string; reason: string }
   /** 철회일(`YYYY-MM-DD`, 한국 날짜) · 사유 */
   retraction?: { retractedOn: string; reason: string }
 

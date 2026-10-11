@@ -27,10 +27,15 @@ describe('NoticeSection', () => {
     )
   })
 
-  it('요약만 아는 안내(실데이터)는 배지 · 발행일 · 제목만 보이고 목록 · 근거 · 링크(#256 전)가 없다', () => {
+  it('요약만 아는 안내(실데이터)는 배지 · 발행일 · 제목 · 안내 전체 보기를 보이고 목록 · 근거는 없다', () => {
     render(
       <NoticeSection
-        notice={{ publishedLabel: '11월 18일 발행', title: '호흡기 증상 보고가 늘었어요' }}
+        notice={{
+          publishedLabel: '11월 18일 발행',
+          title: '호흡기 증상 보고가 늘었어요',
+          href: '/notice/11680640/2025-W46',
+        }}
+        navSearch="region=11440660"
       />,
     )
 
@@ -38,7 +43,10 @@ describe('NoticeSection', () => {
     expect(screen.getByText('호흡기 증상 보고가 늘었어요')).toBeDefined()
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
     expect(screen.queryByText(/근거:/)).toBeNull()
-    expect(screen.queryAllByRole('link')).toHaveLength(0)
+    // 둘러보기 동네를 잇는다(목 링크와 같다)
+    expect(screen.getByRole('link', { name: '안내 전체 보기' }).getAttribute('href')).toBe(
+      '/notice/11680640/2025-W46?region=11440660',
+    )
   })
 
   it('발행 전이면 안내 없음과 공식 예방수칙 링크를 보인다', () => {

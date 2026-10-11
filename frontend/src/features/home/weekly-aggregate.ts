@@ -1,3 +1,4 @@
+import { noticePath } from '@/features/notice/paths'
 import { ApiError } from '@/lib/api/api-error'
 import { apiRequest } from '@/lib/api/client'
 import { formatMonthDayTime } from '@/lib/format'
@@ -19,7 +20,8 @@ import type {
 
 /*
  * 행정동 주간 집계(docs/api-contract-draft.md "행정동 주간 집계", 백엔드 #212)를 홈 화면 모델(`HomeWeekly`)로 옮긴다.
- * 지도(`GET /weekly-aggregates`, `features/map/weekly-aggregates.ts` — #257)도 동네 집계 모양이 같아 `toHomeWeekly` 를 함께 쓴다.
+ * 지도(`GET /weekly-aggregates`, `features/map/weekly-aggregates.ts` — #257)도 동네 집계 모양이 같아 `toHomeWeekly` 를 함께 쓰고,
+ * 동네 안내(`features/notice/advisory-api.ts` — #256)도 같은 주 집계(지난 4주 평균 · 증상군 변화 · 안내 없는 주의 수치)를 이 함수로 읽는다.
  *
  * - **실데이터만 부른다.** 목데이터는 서버 페이지가 `pickHomeMock`(`?mock=`)으로 고른 값을 그대로 넘긴다(`app/(home)/page.tsx`).
  * - 공개 API 라 `auth: false` 로 보낸다(만료된 access 로 게이트웨이가 거절하지 않게 — 행정동 API 와 같다).
@@ -58,7 +60,7 @@ export type AggregateWeekResponse = {
 }
 
 /** `GET /api/v1/districts/{code}/weekly-aggregate` */
-type DistrictWeeklyAggregateResponse = AggregateWeekResponse & {
+export type DistrictWeeklyAggregateResponse = AggregateWeekResponse & {
   district: DistrictAggregateResponse
 }
 
@@ -70,14 +72,14 @@ export const DISTRICT_CODE_PATTERN = /^\d{8}$/
 /** 없는 코드 (404) */
 export const AGGREGATE_NOT_FOUND = 'AGGREGATE_001'
 
-const LEVEL_STATUS: Readonly<Record<string, RegionStatus>> = {
+export const LEVEL_STATUS: Readonly<Record<string, RegionStatus>> = {
   NORMAL: 'normal',
   SLIGHT: 'slight',
   HIGH: 'high',
   INSUFFICIENT: 'insufficient',
 }
 
-const GROUP_KEY: Readonly<Record<string, SymptomGroupKey>> = {
+export const GROUP_KEY: Readonly<Record<string, SymptomGroupKey>> = {
   RESPIRATORY: 'respiratory',
   ENTERIC: 'gastrointestinal',
 }
@@ -201,8 +203,8 @@ function updatedLabel(calculatedAt: string | undefined, now: Date): string {
 }
 
 /**
- * 발행 중인 안내 요약. 키가 없으면(발행 전 · 철회 · 오래된 주) null. 동네 안내 화면으로 가는 주소(`href`)는 두지 않는다 —
- * 그 화면의 안내 내용이 아직 목이다(본문 연동 #256 에서 근거 주 `isoWeek` 로 연다)
+ * 발행 중인 안내 요약. 키가 없으면(발행 전 · 철회 · 오래된 주) null. 동네 안내 화면(S07)으로 가는 주소는 요청 주가 아니라 안내의
+ * 근거 주(`publishedAdvisory.isoWeek`)로 만든다 — 요청 주에 안내가 없으면 직전 주의 안내가 붙는다(#256)
  */
 function publishedNotice(district: DistrictAggregateResponse): PublishedNotice | null {
   const advisory = district.publishedAdvisory
@@ -211,6 +213,7 @@ function publishedNotice(district: DistrictAggregateResponse): PublishedNotice |
   return {
     publishedLabel: at ? `${at.slice(0, at.lastIndexOf(' '))} 발행` : '발행',
     title: advisory.title,
+    href: noticePath(district.code, advisory.isoWeek),
   }
 }
 

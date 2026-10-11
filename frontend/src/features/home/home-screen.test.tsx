@@ -644,7 +644,7 @@ describe('HomeScreen 다시 들어온 회원 (약관 재동의 · 동네 다시 
 
 describe('HomeScreen 오프라인 띠 (State-offline)', () => {
   const OFFLINE_WITH_TIME = '오프라인이에요. 11월 19일 09:00에 받은 정보예요'
-  const PUSH_INAPP = '○○동 이번 주 안내가 발행됐어요 · 알림 대신 여기서 알려드려요'
+  const PUSH_INAPP = '○○동 안내가 발행됐어요 · 알림 대신 여기서 알려드려요'
 
   /** 브라우저 연결 상태를 바꾸고 그 이벤트를 보낸다 (`useOnline` 이 navigator.onLine 과 online · offline 이벤트를 따른다) */
   function goOnline(value: boolean) {

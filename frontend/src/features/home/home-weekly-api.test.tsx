@@ -123,14 +123,12 @@ describe('실데이터 홈 — 행정동 주간 집계', () => {
     expect(screen.getByText('이번 주 14.1%')).toBeTruthy()
     expect(screen.getByText('이번 주 3.9%')).toBeTruthy()
     expect(screen.queryByText('비슷해요')).toBeNull()
-    // 안내는 제목 · 발행일만. 할 일 목록 · 근거는 지어내지 않고, 동네 안내 화면 링크는 그 화면이 아직 목이라 열지 않는다(#256)
+    // 안내는 제목 · 발행일 · 안내 전체 보기. 할 일 목록 · 근거는 지어내지 않는다. 링크의 주는 요청 주가 아니라 안내의 근거 주다(#256)
     expect(screen.getByText('호흡기 증상 보고가 늘었어요')).toBeTruthy()
     expect(screen.getByText('11월 18일 발행')).toBeTruthy()
-    expect(
-      screen
-        .queryAllByRole('link')
-        .some((link) => link.getAttribute('href')?.startsWith('/notice/')),
-    ).toBe(false)
+    expect(screen.getByRole('link', { name: '안내 전체 보기' }).getAttribute('href')).toBe(
+      `/notice/${YEOKSAM1_CODE}/2025-W46?region=${YEOKSAM1_CODE}`,
+    )
     expect(screen.queryByText(/근거:/)).toBeNull()
     // 공식 정보는 단계 없이 공식 정보 화면으로 가는 행만
     const official = screen
