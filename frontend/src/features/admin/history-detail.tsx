@@ -66,8 +66,8 @@ export function outcomeLabel(entry: HistoryEntry): string {
 
 /**
  * `사용자 화면에서 보기` 주소 — 동네 안내(S07) `/notice/[동네]/[주]`. 보류는 안내가 없어 null 이다.
- * 동네 안내의 안내 내용은 아직 목(`?mock=`)이라 이 행의 본문이 아니라 상태만 맞춘다: 정정을 거친 안내는 `corrected`, 철회는
- * `retracted`(철회 대화상자가 약속한 "철회된 안내예요" 모양, #225), 그 밖은 `published`. 철회일 · 사유도 이 행이 아니라 목의 예시 값이다.
+ * 이력은 목데이터에서만 그려지고, 목 출처의 S07 은 `?mock=` 으로 상태를 고르므로 이 행의 본문이 아니라 상태만 맞춘다:
+ * 정정을 거친 안내는 `corrected`, 철회는 `retracted`(철회 대화상자가 약속한 "철회된 안내예요" 모양, #225), 그 밖은 `published`. 철회일 · 사유도 이 행이 아니라 목의 예시 값이다.
  * 실데이터는 이 화면에 이력이 없어 쓰지 않는다
  */
 export function noticeViewHref(entry: HistoryEntry): string | null {

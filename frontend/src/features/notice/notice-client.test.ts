@@ -4,7 +4,8 @@ import { HOME_MOCKS } from '@/features/home/mock'
 import { MAP_MOCK_KEYS, pickMapMock } from '@/features/map/mock'
 import type * as regionClient from '@/features/region/region-client'
 import { findDistrict } from '@/features/region/region-client'
-import { unavailableError } from '@/lib/api/api-error'
+import { ApiError, unavailableError } from '@/lib/api/api-error'
+import { apiRequest } from '@/lib/api/client'
 
 import { NOTICE_EXAMPLE_DISTRICT, NOTICE_EXAMPLE_WEEK, NOTICE_MOCKS, pickNoticeMock } from './mock'
 import { getRegionNotice } from './notice-client'
@@ -15,8 +16,21 @@ vi.mock('@/features/region/region-client', async (importOriginal) => {
   return { ...actual, findDistrict: vi.fn(actual.findDistrict) }
 })
 
+vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
+
+const request = vi.mocked(apiRequest)
+
+/** 안내 API · 집계 API 응답(값이면 성공, Error 면 실패) */
+function reply(advisory: unknown, aggregate: unknown) {
+  request.mockImplementation((path) => {
+    const value = path === '/api/v1/advisories' ? advisory : aggregate
+    return value instanceof Error ? Promise.reject(value) : Promise.resolve(value)
+  })
+}
+
 beforeEach(() => {
   vi.mocked(findDistrict).mockClear()
+  request.mockReset()
 })
 
 describe('pickNoticeMock', () => {
@@ -26,9 +40,10 @@ describe('pickNoticeMock', () => {
     expect(pickNoticeMock('retracted')).toBe(NOTICE_MOCKS.retracted)
   })
 
-  it('철회 목은 발행된 안내가 없고 철회 표시만 있다 — 사유는 백엔드가 정하기 전이라 없다', () => {
+  it('철회 목은 발행된 안내가 없고 철회 표시만 있다 — 철회 · 정정 사유는 백엔드가 공개 응답에 내리지 않아 목에도 없다', () => {
     expect(NOTICE_MOCKS.retracted.notice).toBeNull()
     expect(NOTICE_MOCKS.retracted.retraction).toEqual({ retractedOn: '2025-11-20' })
+    expect(NOTICE_MOCKS.corrected.notice?.corrections).toEqual([{ correctedOn: '2025-11-19' }])
     for (const key of ['published', 'corrected', 'none', 'insufficient'] as const) {
       expect(NOTICE_MOCKS[key].retraction, key).toBeNull()
     }
@@ -75,39 +90,54 @@ describe('getRegionNotice', () => {
     await expect(getRegionNotice('00000000', '2025-W47', 'mock', 'published')).resolves.toBeNull()
   })
 
-  it('API 출처면 동네를 행정동 API 로 확인한다', async () => {
-    vi.mocked(findDistrict).mockResolvedValueOnce({
-      code: '11440660',
-      name: '서교동',
-      sigungu: '서울특별시 마포구',
-      active: true,
+  it('API 출처면 안내 API · 같은 주 집계로 그리고 ?mock= 을 듣지 않는다 — 동네 이름은 집계에서 읽는다', async () => {
+    reply(null, {
+      isoWeek: '2025-W47',
+      finalized: true,
+      publicThreshold: 100,
+      slightDeltaPp: 3,
+      highDeltaPp: 8,
+      district: {
+        code: '11440660',
+        name: '서교동',
+        sigungu: '서울특별시 마포구',
+        active: true,
+        level: { code: 'INSUFFICIENT', name: '자료 부족', description: '' },
+        participantCount: 12,
+      },
     })
-    const notice = await getRegionNotice('11440660', '2025-W47', 'api')
-    expect(findDistrict).toHaveBeenCalledWith('11440660', 'api')
-    expect(notice?.regionName).toBe('서교동')
+
+    const notice = await getRegionNotice('11440660', '2025-W47', 'api', 'published')
+
+    expect(notice).toEqual({
+      regionCode: '11440660',
+      regionName: '서교동',
+      isoWeek: '2025-W47',
+      officialHref: '/official',
+      notice: null,
+      retraction: null,
+      stats: { status: 'insufficient', participants: 12, publicThreshold: 100 },
+    })
+    expect(request).toHaveBeenCalledWith('/api/v1/advisories', {
+      auth: false,
+      query: { districtCode: '11440660', week: '2025-W47' },
+    })
+    expect(findDistrict).not.toHaveBeenCalled()
   })
 
-  it('API 출처에서 폐지된 동네면 null 이다', async () => {
-    vi.mocked(findDistrict).mockResolvedValueOnce({
-      code: '11680999',
-      name: '옛동',
-      sigungu: '서울특별시 강남구',
-      active: false,
-    })
-    await expect(getRegionNotice('11680999', '2025-W47', 'api')).resolves.toBeNull()
-  })
-
-  it('API 출처에서는 안내 예시 동네(지어낸 코드)도 행정동 API 로 확인한다', async () => {
-    vi.mocked(findDistrict).mockResolvedValueOnce(null)
+  it('API 출처에서 모르는 동네(안내 예시 동네 같은 지어낸 코드 포함)면 null 이다', async () => {
+    reply(
+      new ApiError({ status: 404, code: 'ADVISORY_008', message: '없는 행정동' }),
+      new ApiError({ status: 404, code: 'AGGREGATE_001', message: '없는 행정동' }),
+    )
     await expect(
       getRegionNotice(NOTICE_EXAMPLE_DISTRICT.code, '2025-W47', 'api'),
     ).resolves.toBeNull()
-    expect(findDistrict).toHaveBeenCalledWith(NOTICE_EXAMPLE_DISTRICT.code, 'api')
   })
 
-  it('동네 확인이 실패하면 거부한다 — 페이지 오류 경계가 받는다', async () => {
+  it('API 출처에서 요청이 실패하면 거부한다 — 페이지 오류 경계가 받는다', async () => {
     const error = unavailableError('network', 0)
-    vi.mocked(findDistrict).mockRejectedValueOnce(error)
+    reply(error, error)
     await expect(getRegionNotice('11440660', '2025-W47', 'api')).rejects.toBe(error)
   })
 })
@@ -128,8 +158,6 @@ describe('홈 목의 안내 링크', () => {
     ].filter((notice) => notice !== null)
     expect(summaries.length).toBeGreaterThan(0)
     for (const { href } of summaries) {
-      // 목 요약은 늘 동네 안내 주소가 있다(실데이터만 #256 전까지 없다)
-      if (href === undefined) throw new Error('목 안내 요약에 주소가 없다')
       const opened = pickNoticeMock(
         new URL(href, 'http://localhost').searchParams.get('mock') ?? undefined,
       )

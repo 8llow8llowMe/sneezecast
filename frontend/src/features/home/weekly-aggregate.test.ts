@@ -127,13 +127,14 @@ describe('toHomeWeekly — 수치가 있는 동네', () => {
     expect(week.groups).toEqual([{ key: 'respiratory', rate: 14.1 }])
   })
 
-  it('발행 안내는 한국 날짜 발행일 · 제목으로 옮기고, 목록 · 근거 · 동네 안내 주소(#256 전)는 비운다', () => {
+  it('발행 안내는 한국 날짜 발행일 · 제목 · 근거 주의 동네 안내 주소로 옮기고, 목록 · 근거는 비운다', () => {
     const week = toHomeWeekly(WEEK, HIGH, NOW)
 
-    // 2025-11-17T15:30Z 는 한국 시각 11월 18일 00:30
+    // 2025-11-17T15:30Z 는 한국 시각 11월 18일 00:30. 주소의 주는 요청 주(W47)가 아니라 안내의 근거 주(W46)다
     expect(week.notice).toEqual({
       publishedLabel: '11월 18일 발행',
       title: '호흡기 증상 보고가 늘었어요',
+      href: '/notice/11680640/2025-W46',
     })
   })
 

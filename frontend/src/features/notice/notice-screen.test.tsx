@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { StrictMode } from 'react'
+import { type ComponentProps, StrictMode } from 'react'
 
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -9,8 +9,15 @@ import { cancelReport, submitReport } from '@/features/report/report-client'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import { NOTICE_MOCKS, type NoticeMockKey } from './mock'
-import { AI_DRAFT_DISCLOSURE, NoticeScreen } from './notice-screen'
+import { AI_DRAFT_DISCLOSURE, NoticeScreen as Screen, noticeWeekName } from './notice-screen'
 import type { RegionNotice } from './types'
+
+/** 목 안내의 기준 주(2025-W47)를 연 주로 그린다(`이번 주`). 다른 주는 `currentWeek` 를 넘긴다 */
+function NoticeScreen(
+  props: Omit<ComponentProps<typeof Screen>, 'currentWeek'> & { currentWeek?: string },
+) {
+  return <Screen currentWeek="2025-W47" {...props} />
+}
 
 // 테스트에는 Next 라우터가 없다. 주소 · 경로는 이 값으로 흉내 낸다
 let search = ''
@@ -46,7 +53,7 @@ afterEach(async () => {
 })
 
 describe('NoticeScreen — 발행된 안내 (Guide-published)', () => {
-  it('운영자 검토 배지 · 발행일 · 기준 주 · 제목 · 할 일 · 근거를 보인다', () => {
+  it('운영자 검토 배지 · 발행일 · 기준 주 · 제목 · 본문을 보이고 할 일 목록 · 근거는 없다', () => {
     render(<NoticeScreen data={data('published')} />)
 
     expect(screen.getByText('운영자 검토')).toBeDefined()
@@ -56,13 +63,16 @@ describe('NoticeScreen — 발행된 안내 (Guide-published)', () => {
     expect(
       screen.getByRole('heading', { name: '발열·기침 보고가 지난 4주보다 많이 늘었어요' }),
     ).toBeDefined()
-    expect(screen.getByRole('heading', { name: '이렇게 해 주세요' })).toBeDefined()
-    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
-      '1기침할 때 옷소매로 입과 코 가리기',
-      '2손 씻기와 실내 환기 자주 하기',
-      '3열이 나면 사람 많은 곳 피하기',
-    ])
-    expect(screen.getByText('근거: 질병관리청 예방수칙')).toBeDefined()
+    // 본문은 받은 그대로 문단 하나이고 줄바꿈을 지킨다(번호 목록으로 쪼개지 않는다)
+    const body = screen.getByText(/옷소매로 입과 코를/)
+    expect(body.tagName).toBe('P')
+    expect(body.textContent).toBe(NOTICE_MOCKS.published.notice?.body)
+    expect(body.textContent).toContain('\n')
+    expect(body.className).toContain('whitespace-pre-line')
+    // 응답에 없는 할 일 제목 · 번호 목록 · 근거는 지어내지 않는다
+    expect(screen.queryByRole('heading', { name: '이렇게 해 주세요' })).toBeNull()
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+    expect(screen.queryByText(/근거:/)).toBeNull()
     expect(screen.queryByRole('region', { name: '정정 이력' })).toBeNull()
   })
 
@@ -98,16 +108,73 @@ describe('NoticeScreen — 발행된 안내 (Guide-published)', () => {
   })
 })
 
+describe('noticeWeekName — 안내 주를 부르는 말', () => {
+  it('연 주와 같으면 이번 주, 바로 전 주면 지난주(해가 바뀌어도), 그 밖은 몇 월 몇째 주다', () => {
+    expect(noticeWeekName('2025-W47', '2025-W47')).toBe('이번 주')
+    expect(noticeWeekName('2025-W46', '2025-W47')).toBe('지난주')
+    expect(noticeWeekName('2025-W52', '2026-W01')).toBe('지난주')
+    expect(noticeWeekName('2025-W45', '2025-W47')).toBe('11월 1주')
+  })
+
+  it('올해(ISO 연도)가 아닌 주는 연도를 붙인다', () => {
+    expect(noticeWeekName('2025-W47', '2026-W41')).toBe('2025년 11월 3주')
+    expect(noticeWeekName('2025-W51', '2026-W02')).toBe('2025년 12월 3주')
+  })
+})
+
+describe('NoticeScreen — 안내 주 이름', () => {
+  it('홈 · 지도가 여는 지난 주 안내는 제목 · 집계 제목이 지난주다', () => {
+    render(<NoticeScreen data={data('published')} currentWeek="2025-W48" />)
+
+    expect(screen.getAllByRole('heading', { level: 1, name: '역삼1동 지난주 안내' })).toHaveLength(
+      2,
+    )
+    expect(screen.getByRole('heading', { name: '지난주 역삼1동 집계' })).toBeDefined()
+    expect(screen.queryByText(/이번 주/)).toBeNull()
+  })
+
+  it('오래된 주의 안내 없음은 몇 월 몇째 주로, 다른 해면 연도를 붙여 부른다', () => {
+    const { unmount } = render(<NoticeScreen data={data('none')} currentWeek="2025-W50" />)
+    expect(screen.getByRole('heading', { name: '11월 3주는 발행된 안내가 없어요' })).toBeDefined()
+    unmount()
+
+    render(<NoticeScreen data={data('none')} currentWeek="2026-W41" />)
+    expect(
+      screen.getAllByRole('heading', { level: 1, name: '역삼1동 2025년 11월 3주 안내' }),
+    ).toHaveLength(2)
+    expect(
+      screen.getByRole('heading', { name: '2025년 11월 3주는 발행된 안내가 없어요' }),
+    ).toBeDefined()
+  })
+})
+
 describe('NoticeScreen — 정정된 안내 (Guide-corrected)', () => {
-  it('배지 줄에 마지막 정정일을 적고 정정 이력을 보인다', () => {
+  it('배지 줄에 마지막 정정일을 적고 정정 이력을 보인다 — 사유가 없으면(실데이터) 정정일만이다', () => {
     render(<NoticeScreen data={data('corrected')} />)
 
     expect(screen.getAllByText('11월 18일 발행 · 11월 19일 정정')).toHaveLength(2)
     const history = screen.getByRole('region', { name: '정정 이력' })
-    expect(history.textContent).toBe(
-      '11월 19일 정정 · 중복 보고를 제외해 참여자 수를 131명에서 128명으로 바로잡았어요. 안내 내용은 같아요.',
-    )
+    expect(history.textContent).toBe('11월 19일 정정')
     expect(screen.getAllByText(AI_DRAFT_DISCLOSURE)).toHaveLength(2)
+  })
+
+  it('사유가 있으면 정정일 뒤에 사유를 잇는다', () => {
+    const corrected = NOTICE_MOCKS.corrected
+    if (!corrected.notice) throw new Error('정정 목에는 안내가 있다')
+    render(
+      <NoticeScreen
+        data={data('corrected', {
+          notice: {
+            ...corrected.notice,
+            corrections: [{ correctedOn: '2025-11-19', reason: '참여자 수를 바로잡았어요.' }],
+          },
+        })}
+      />,
+    )
+
+    expect(screen.getByRole('region', { name: '정정 이력' }).textContent).toBe(
+      '11월 19일 정정 · 참여자 수를 바로잡았어요.',
+    )
   })
 
   it('정정이 여러 번이면 최근 것부터 모두 보이고 배지 줄은 마지막 정정일이다', () => {
@@ -188,7 +255,7 @@ describe('NoticeScreen — 안내 없음 (Guide-none)', () => {
 })
 
 describe('NoticeScreen — 철회된 안내 (#225, 시안 없음)', () => {
-  it('철회 상자(철회일)를 보이고 내린 안내의 제목 · 할 일 · 근거 · AI 고지 · 운영자 검토 배지는 없다', () => {
+  it('철회 상자(철회일)를 보이고 내린 안내의 제목 · 본문 · AI 고지 · 운영자 검토 배지는 없다', () => {
     render(<NoticeScreen data={data('retracted')} />)
 
     const box = screen.getByRole('region', { name: '철회된 안내예요' })
@@ -197,8 +264,7 @@ describe('NoticeScreen — 철회된 안내 (#225, 시안 없음)', () => {
     expect(
       screen.queryByRole('heading', { name: '발열·기침 보고가 지난 4주보다 많이 늘었어요' }),
     ).toBeNull()
-    expect(screen.queryByRole('heading', { name: '이렇게 해 주세요' })).toBeNull()
-    expect(screen.queryByText(/근거:/)).toBeNull()
+    expect(screen.queryByText(/옷소매/)).toBeNull()
     expect(screen.queryByText(AI_DRAFT_DISCLOSURE)).toBeNull()
     // 안내가 없다는 문구 대신 철회 상자다 — 처음부터 안내가 없던 주로 읽히지 않게
     expect(screen.queryByRole('heading', { name: '이번 주는 발행된 안내가 없어요' })).toBeNull()

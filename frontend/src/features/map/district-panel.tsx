@@ -3,7 +3,6 @@ import Link from 'next/link'
 
 import clsx from 'clsx'
 
-import { Badge } from '@/components/badge'
 import { ListRow } from '@/components/list-row'
 import { ProgressBar } from '@/components/progress-bar'
 import { GROUP_LABEL } from '@/features/home/symptom'
@@ -33,8 +32,8 @@ const TILE_CLASS = 'flex flex-1 basis-0 flex-col gap-1 rounded-button bg-section
  *
  * 모바일 접힘 · 펼침은 손잡이 버튼(누름)과 위 · 아래로 밀기로 바꾼다. 상태는 부모가 갖는다.
  * **자료 부족이면 수치 · 상태색 없이 `자료 부족` 글자와 참여 진행 막대만** 보인다 — 증상 비율 · 기준선은 타입에 없다.
- * `이 동네 안내 보기` 는 운영자가 발행한 안내가 있는 동네에만 있다. 실데이터는 동네 안내 화면이 아직 목이라(#256) 링크 대신
- * 홈 안내 섹션과 같은 `운영자 검토` 배지 · 발행일 · 제목만 보인다. `내 동네로 설정` 은 내 동네(`mine`)에는 없고,
+ * `이 동네 안내 보기` 는 운영자가 발행한 안내가 있는 동네에만 있고 그 안내의 근거 주 동네 안내(S07)로 간다(실데이터 #256 — 요청 주가
+ * 아니라 `publishedAdvisory.isoWeek`). `내 동네로 설정` 은 내 동네(`mine`)에는 없고,
  * 대신 이름 뒤 `(내 동네)` 로 이미 내 동네임을 보인다(Map-collapsed 시안 — 꺼진 버튼보다 상태를 알린다).
  */
 export function DistrictPanel({
@@ -82,9 +81,7 @@ export function DistrictPanel({
     onExpandedChange(!expanded)
   }
 
-  // 링크가 없는 안내(실데이터 — 동네 안내 본문 연동 #256 전)면 `이 동네 안내 보기` 를 두지 않고 요약만 보인다
-  const noticeHref = week.notice?.href ? withSearch(week.notice.href, navSearch) : null
-  const noticeSummary = week.notice && !noticeHref ? week.notice : null
+  const noticeHref = week.notice ? withSearch(week.notice.href, navSearch) : null
 
   return (
     <section
@@ -182,20 +179,6 @@ export function DistrictPanel({
               왜 이렇게 보나요?
             </button>
           </>
-        )}
-
-        {noticeSummary && (
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <Badge kind="review" />
-              <span className="text-sub text-fg-sub">{noticeSummary.publishedLabel}</span>
-            </div>
-            {noticeSummary.title && (
-              <p className="text-body leading-normal font-semibold text-fg">
-                {noticeSummary.title}
-              </p>
-            )}
-          </div>
         )}
 
         {(!mine || noticeHref) && (

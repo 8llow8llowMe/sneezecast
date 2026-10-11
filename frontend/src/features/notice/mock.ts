@@ -5,8 +5,8 @@ import type { MeasuredNoticeStats, PublishedRegionNotice, RegionNoticeBody } fro
 /**
  * 동네 안내 목 데이터. 값은 시안(Guide-published · Guide-none · Guide-corrected)의 예시 값이다. 철회(`retracted`)는 시안이 없다(#225).
  *
- * **API 연동 전까지만 쓴다.** 연동 이슈(`GET /api/v1/advisories?districtCode=&week=`, 백엔드 #215 로 확정)에서 이 파일을 지우고
- * API 매핑으로 바꾼다.
+ * 데이터 출처가 목일 때만 쓴다(docs/conventions.md "데이터 출처"). 실데이터는 `advisory-api.ts` 가 동네 안내 API 와 행정동 주간 집계를
+ * 옮긴다(#256). 목도 실데이터와 같은 모양이다 — 할 일 목록 · 근거 대신 본문, 정정 · 철회 사유 없음(백엔드가 내리지 않는다).
  */
 
 /**
@@ -43,15 +43,15 @@ export type NoticeMockKey = (typeof NOTICE_MOCK_KEYS)[number]
 /** 동네 · 주를 뺀 목 데이터. 주소의 동네 · 주에 붙여 쓴다 */
 export type NoticeMock = RegionNoticeBody
 
+/** 본문은 시안의 할 일 세 줄을 줄바꿈으로 이은 문장이다(백엔드 안내는 제목 · 본문 한 덩어리) */
 const PUBLISHED_NOTICE: PublishedRegionNotice = {
   title: '발열·기침 보고가 지난 4주보다 많이 늘었어요',
   publishedOn: '2025-11-18',
-  items: [
-    '기침할 때 옷소매로 입과 코 가리기',
-    '손 씻기와 실내 환기 자주 하기',
-    '열이 나면 사람 많은 곳 피하기',
-  ],
-  source: '질병관리청 예방수칙',
+  body: [
+    '기침할 때 옷소매로 입과 코를 가려 주세요.',
+    '손을 자주 씻고 실내를 자주 환기해 주세요.',
+    '열이 나면 사람 많은 곳을 피해 주세요.',
+  ].join('\n'),
   corrections: [],
 }
 
@@ -69,18 +69,10 @@ const HIGH_STATS: MeasuredNoticeStats = {
 
 export const NOTICE_MOCKS: Record<NoticeMockKey, NoticeMock> = {
   published: { notice: PUBLISHED_NOTICE, retraction: null, stats: HIGH_STATS },
+  // 사유는 없다 — 백엔드 #215 는 정정 사유(운영자 메모)를 공개 응답에 내리지 않는다(철회와 같다). 사유가 있는 모양은 테스트가 그린다
   corrected: {
     retraction: null,
-    notice: {
-      ...PUBLISHED_NOTICE,
-      corrections: [
-        {
-          correctedOn: '2025-11-19',
-          reason:
-            '중복 보고를 제외해 참여자 수를 131명에서 128명으로 바로잡았어요. 안내 내용은 같아요.',
-        },
-      ],
-    },
+    notice: { ...PUBLISHED_NOTICE, corrections: [{ correctedOn: '2025-11-19' }] },
     stats: HIGH_STATS,
   },
   // 발행 시안의 안내를 철회한 주. 집계는 그 주 집계라 발행 · 정정 시안과 같다(마감 집계는 다시 계산되지 않는다).

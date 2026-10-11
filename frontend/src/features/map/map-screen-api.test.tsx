@@ -143,7 +143,7 @@ describe('실데이터 지도 — 행정동 주간 집계', () => {
     expect(document.body.textContent).not.toMatch(/%/)
   })
 
-  it('수치가 있는 동네를 고르면 수치를 보이고, 발행 안내는 링크 없이 운영자 검토 · 발행일 · 제목만 보인다', async () => {
+  it('수치가 있는 동네를 고르면 수치를 보이고, 발행 안내는 그 안내의 근거 주 동네 안내로 잇는다', async () => {
     const user = userEvent.setup()
     renderMap(HAPJEONG)
     await flush()
@@ -154,16 +154,10 @@ describe('실데이터 지도 — 행정동 주간 집계', () => {
 
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('서교동')
     expect(screen.getAllByText('18%').length).toBeGreaterThan(0)
-    expect(screen.getByText('운영자 검토')).toBeTruthy()
-    expect(screen.getByText('11월 18일 발행')).toBeTruthy()
-    expect(screen.getByText('호흡기 증상 보고가 늘었어요')).toBeTruthy()
-    // 동네 안내 화면은 아직 목이라 열지 않는다(#256)
-    expect(screen.queryByRole('link', { name: '이 동네 안내 보기' })).toBeNull()
-    expect(
-      screen
-        .queryAllByRole('link')
-        .some((link) => link.getAttribute('href')?.startsWith('/notice/')),
-    ).toBe(false)
+    // 요청 주(W47)가 아니라 안내의 근거 주(W46)이고, 둘러보기 동네(처음 고른 동네)를 잇는다(#256)
+    expect(screen.getByRole('link', { name: '이 동네 안내 보기' }).getAttribute('href')).toBe(
+      `/notice/${SEOGYO}/2025-W46?region=${HAPJEONG}`,
+    )
   })
 
   it('모든 동네의 참여가 0 이면 자료 없음이다 — 동네 목록 · 동네 정보 없이 안내와 찾기만 남는다', async () => {
