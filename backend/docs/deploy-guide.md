@@ -143,7 +143,7 @@ Infra 원칙 4번(호스트 간은 사설 IP)을 따르고, 파이프라인이 �
 ```text
 kv/sneezecast/backend/{env}/env                    # 공통 — 둘 이상의 서비스가 같은 값을 써야 하는 키
 kv/sneezecast/backend/{env}/api-gateway
-kv/sneezecast/backend/{env}/auth-service
+kv/sneezecast/backend/{env}/auth-service           # WITHDRAWN_EMAIL_PEPPER 는 여기에만
 kv/sneezecast/backend/{env}/surveillance-service   # REPORTER_KEY_PEPPER 는 여기에만
 kv/sneezecast/backend/{env}/batch-service
 ```
@@ -160,7 +160,7 @@ service-discovery 는 공통만 읽고 서비스 경로가 없다. 키를 어느
 | 경로가 없거나 비면 실패 | `readServiceSecret: true` 인데 서비스 경로가 없으면(404) "공통만 쓴다" 로 넘어가지 않고 실패 | `readVaultSecretValues` |
 | `.env` 로 안전하게 쓸 수 없는 값은 실패 | 줄바꿈, `$`, 따옴표로 시작, 공백 뒤 `#`. compose `--env-file` 이 치환 · 따옴표 제거 · 주석 처리로 값을 바꾸기 때문이다 | `toEnvFileValues` |
 | 같은 키가 두 경로에 있으면 실패 | 덮어쓰지 않는다. 키 이름과 두 경로만 메시지에 남긴다 | `mergeVaultSecretValues` |
-| 서비스 전용 키는 주인 경로에만 | `REPORTER_KEY_PEPPER` → surveillance, `AUTH_DB_*` → auth, `SURVEILLANCE_DB_*` → surveillance, `BATCH_DB_*` → batch. 공통이나 다른 서비스 경로에 있으면 실패 | `validateServiceOnlyKeys` |
+| 서비스 전용 키는 주인 경로에만 | `REPORTER_KEY_PEPPER` → surveillance, `WITHDRAWN_EMAIL_PEPPER` · `AUTH_DB_*` → auth, `SURVEILLANCE_DB_*` → surveillance, `BATCH_DB_*` → batch. 공통이나 다른 서비스 경로에 있으면 실패 | `validateServiceOnlyKeys` |
 | 필수 키 · 프로필 · 포트 | 아래 표의 키가 비면 실패. `SPRING_PROFILES_ACTIVE` 는 배포 환경(dev/prod)과 같아야 하고, 포트 키는 `hostPorts` 와 같아야 한다 | `validateDeployEnvValues` |
 | discovery 주소 | 모든 잡의 `SERVICE_DISCOVERY_PORT` 가 discovery 포트(dev 3761 / prod 4761)와, 클라이언트 잡의 `SERVICE_DISCOVERY_HOSTNAME` 이 dev `192.168.0.13` 과 같아야 한다 | `validateDiscoveryEndpoint`, `discoveryEndpoints` |
 | 값은 로그에 남기지 않는다 | 경로별 **키 이름**만 출력한다. AppRole 자격 · Vault 토큰 · GitHub 토큰은 curl 인자가 아니라 stdin 으로 넘긴다 | `readDeployEnvValues`, `loginToVault` |
@@ -180,7 +180,7 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
 |--------|---------------|-----------------|
 | service-discovery | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_PORT` | (경로 없음) |
 | api-gateway | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD`, `AUTH_SERVICE_APP_NAME`, `SURVEILLANCE_SERVICE_APP_NAME` | `API_GATEWAY_PORT`, `GATEWAY_TRUSTED_PROXIES` |
-| auth-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `AUTH_SERVICE_APP_NAME`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD` | `AUTH_SERVICE_PORT`, `AUTH_DB_URL`, `AUTH_DB_USERNAME`, `AUTH_DB_PASSWORD`, `JWT_REFRESH_KEY`, `MINIO_ENDPOINT`, `MINIO_PUBLIC_URL`, `MINIO_BUCKET`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI` |
+| auth-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `AUTH_SERVICE_APP_NAME`, `JWT_ACCESS_KEY`, `REDIS_MASTER_NAME`, `REDIS_SENTINEL_NODES`, `REDIS_PASSWORD` | `AUTH_SERVICE_PORT`, `AUTH_DB_URL`, `AUTH_DB_USERNAME`, `AUTH_DB_PASSWORD`, `JWT_REFRESH_KEY`, `MINIO_ENDPOINT`, `MINIO_PUBLIC_URL`, `MINIO_BUCKET`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI`, `WITHDRAWN_EMAIL_PEPPER` |
 | surveillance-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT`, `SURVEILLANCE_SERVICE_APP_NAME`, `JWT_ACCESS_KEY` | `SURVEILLANCE_SERVICE_PORT`, `SURVEILLANCE_DB_URL`, `SURVEILLANCE_DB_USERNAME`, `SURVEILLANCE_DB_PASSWORD`, `REPORTER_KEY_PEPPER` |
 | batch-service | `SPRING_PROFILES_ACTIVE`, `SERVICE_DISCOVERY_HOSTNAME`, `SERVICE_DISCOVERY_PORT` | `BATCH_SERVICE_PORT`, `BATCH_DB_URL`, `BATCH_DB_USERNAME`, `BATCH_DB_PASSWORD` |
 
@@ -206,6 +206,8 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
   (늘리기 전에 ShedLock, modules.md surveillance). 판정 규칙 `aggregate.*` 는 env 로 바꾸지 않으므로 `AGGREGATE_*` 키는 넣지 않는다.
 - auth 카카오 로그인 `KAKAO_CLIENT_ID`(REST API 키) · `KAKAO_CLIENT_SECRET` · `KAKAO_REDIRECT_URI`(프론트 콜백 페이지 — 예: `https://dev.sneezecast.com/login/kakao/callback`)는 auth 전용 필수 키다(서비스 경로). 카카오 개발자 콘솔에
   같은 콜백 주소를 등록하고 동의 항목 `account_email` · `profile_nickname` 을 켠다. 비거나 공백이면 기동 실패다.
+- auth 탈퇴 이메일 다이제스트 pepper `WITHDRAWN_EMAIL_PEPPER` 는 auth 전용 필수 키다(서비스 경로 `{env}/auth-service`). 32자 이상 무작위 값(예: `openssl rand -base64 48`)을 환경마다 따로 만들고, 비거나 공백이거나 32자 미만이면 기동 실패다. 탈퇴 회원의 `member.email` 을 `HMAC-SHA256(pepper, 회원 ID + 이메일)` 로 바꾸는 데 쓴다(entity-design §1-1).
+  > **교체 금지.** 바꾸면 이미 저장된 탈퇴 행의 다이제스트와 대조할 수 없고, 원문이 없어 다시 계산할 수도 없다. 기동 로그의 `withdrawn email pepper fingerprint=…`(지문 8자)를 배포 전후로 비교해 교체 여부를 확인한다. 유출 등으로 바꿔야 하면 기존 탈퇴 행을 어떻게 다룰지 먼저 정한다.
 - `TIME_ZONE` 은 Vault 키가 아니다. 비면 `Asia/Seoul` 이다 (compose · Dockerfile).
 - 무작위 비밀값(JWT 키 · pepper · DB 비밀번호)은 `$` · 따옴표가 섞이지 않게 만든다. `openssl rand -base64` 출력은 해당 없다.
 
@@ -255,7 +257,7 @@ batch 의 수동 잡 실행은 같은 상한 안에 두 번째 JVM 을 띄운다
   - [ ] `rotate-approle-secret.sh jenkins-sneezecast` → `role_id` / `secret_id` 를 Jenkins credential 로 (3번)
   - [ ] dev 경로 5개 적재: `env`, `api-gateway`, `auth-service`, `surveillance-service`, `batch-service`.
         같은 키를 두 경로에 넣지 않는다. 포트 · discovery 값은 §6 "값 규칙" 대로 넣는다.
-  - [ ] `JWT_ACCESS_KEY` · `JWT_REFRESH_KEY` · `REPORTER_KEY_PEPPER` 생성. **pepper 는 오프라인 사본을 한 부 둔다** (교체 · 분실 불가)
+  - [ ] `JWT_ACCESS_KEY` · `JWT_REFRESH_KEY` · `REPORTER_KEY_PEPPER` · `WITHDRAWN_EMAIL_PEPPER`(auth 경로, 32자 이상) 생성. **pepper 두 개는 오프라인 사본을 한 부씩 둔다** (교체 · 분실 불가 — `WITHDRAWN_EMAIL_PEPPER` 를 잃으면 탈퇴 행 대조가 불가능하다)
 - [ ] **3. Jenkins**
   - [ ] Secret text credential `sneezecast-vault-role-id`, `sneezecast-vault-secret-id`
   - [ ] GitHub App(`github-app-followfollowme-jenkins`)이 `8llow8llowMe/sneezecast` 저장소에 설치돼 있는지 확인 (라벨 조회)

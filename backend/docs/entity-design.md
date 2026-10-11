@@ -49,7 +49,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | 컬럼 | 타입 | Null | 설명 |
 |------|------|------|------|
 | id | BIGINT | N | PK (Snowflake) |
-| email | VARCHAR(100) | N | 이메일. **`uk_member_email`** — 동시 가입 요청에서 중복 계정을 DB 가 막는다 |
+| email | VARCHAR(100) | N | 이메일. **`uk_member_email`** — 동시 가입 요청에서 중복 계정을 DB 가 막는다. 탈퇴하면 원문 대신 다이제스트(hex 64자)가 들어간다(아래) |
 | password | VARCHAR(80) | Y | 비밀번호 해시. 카카오로만 로그인하는 회원은 null (비밀번호 최초 설정은 두지 않는다 — #61) |
 | nickname | VARCHAR(30) | N | 닉네임 |
 | profile_image_url | VARCHAR(500) | Y | 소셜 제공자가 준 외부 프로필 이미지 URL (직접 업로드하면 null) |
@@ -57,12 +57,19 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | role | VARCHAR(20) | N | `SecurityRole` — USER / OPERATOR / ADMIN. JWT `role` claim 과 같은 값 |
 | provider | VARCHAR(20) | Y | `OAuthProvider` — KAKAO. null 이면 이메일 계정만. KAKAO 면 카카오 로그인 가능(비밀번호가 있으면 이메일 로그인도 — 기존 이메일 계정에 카카오를 연결한 경우) |
 | status | VARCHAR(20) | N | `MemberStatus` — ACTIVE / WITHDRAWN / SUSPENDED |
-| withdrawn_at | TIMESTAMP | Y | 탈퇴 시각. 30일 보존 후 파기 스케줄러의 판정 기준 |
+| withdrawn_at | TIMESTAMP | Y | 탈퇴 시각. 30일 보존 후 파기 스케줄러(#244)의 판정 기준 |
 
 - 인증 코드 · 로그인 시도 횟수 · OAuth state · refresh 토큰 · 세션은 테이블이 아니라 Redis(TTL) 다 ([modules.md](modules.md#serviceauth-service)).
 - 운영자 계정은 따로 두지 않는다. `role` 이 OPERATOR 인 회원이다.
 - **탈퇴 회원 hard delete 는 그 회원의 `report_purge_request` 가 모두 완료된 뒤에만 한다** (§1-5). 회원 행이 먼저 사라지면 `memberId` 를 잃어 `reporter_key` 를 다시 계산할 수 없고, 보고가 52주 동안 남는다.
-- **탈퇴 즉시 같은 이메일로 재가입할 수 있다** (2026-10-01 결정). 탈퇴할 때 `email` 을 다이제스트로 바꿔 원문을 비운다(hondigagae `WithdrawnEmailHasher` 방식) — `uk_member_email` 을 풀어 주면서 회원 행은 보고 파기가 끝날 때까지 남긴다. 보고 파기는 `memberId` 기준이라 영향이 없다. 구현은 #59.
+- **탈퇴 즉시 같은 이메일로 재가입할 수 있다** (2026-10-01 결정). 탈퇴할 때 `email` 을 다이제스트로 바꿔 원문을 비운다(hondigagae `WithdrawnEmailHasher` 방식) — `uk_member_email` 을 풀어 주면서 회원 행은 보고 파기가 끝날 때까지 남긴다. 보고 파기는 `memberId` 기준이라 영향이 없다. 구현은 #154(탈퇴 API — 흐름은 [modules.md](modules.md#serviceauth-service) "회원 탈퇴"), 회원 hard delete 는 #244.
+  - **다이제스트** = `HMAC-SHA256(pepper, "{memberId}:" + 정규화한 이메일)` 의 소문자 hex 64자. pepper 는 `member.withdrawn-email.pepper`(env `WITHDRAWN_EMAIL_PEPPER`, Vault auth 경로, 기본값 없음 · 32자 미만이면 기동 실패)다. 이메일 공간은 열거할 수 있어 단순 SHA-256 은 원문을 되찾는다. **pepper 는 바꾸지 않는다** — 바꾸면 기존 탈퇴 행과 대조할 수 없다(기동 로그의 지문으로 교체를 알아챈다).
+  - **대조할 수 있는 다이제스트로 남기는 목적**은 둘이다. ① 원문을 비우면서 `email` 의 not null · unique 를 지킨다. ② 분쟁 · 정보주체 권리 행사 때 사용자가 제시한 이메일을 운영자가 pepper 와 `memberId` 로 계산해 그 탈퇴 행인지 확인한다. 보관은 회원 파기(#244)까지다.
+  - 회원 ID 를 섞는 이유: 재가입을 허용하므로 "탈퇴 → 같은 이메일로 재가입 → 다시 탈퇴" 가 정상 흐름이다. 이메일만 넣으면 두 탈퇴 행의 다이제스트가 같아 앞 행이 파기되기 전에는 둘째 탈퇴가 `uk_member_email` 에 막힌다.
+  - **재가입 차단에 쓰지 않는다**(hondigagae 와 다르다). 원문이 사라지므로 가입 중복 검사 · 로그인 · 재설정 · 카카오 로그인이 탈퇴한 행을 찾지 못하고, 미가입과 같은 응답이 된다.
+  - **탈퇴 때 비우는 컬럼**: `password` · `provider` · `profile_image_url` · `profile_image_key` = null, `nickname`(not null) = 고정 값 `탈퇴회원`, `status` = WITHDRAWN, `withdrawn_at` = 탈퇴 시각. `role` 은 그대로다. 업로드한 이미지 오브젝트는 고아 이미지 정리(#112)가 지운다.
+  - 같은 트랜잭션에서 `report_purge_request`(WITHDRAWAL, §1-5)를 남기고 `member_interest_region`(§1-6) · `member_notification_setting`(§1-7)을 지운다. `member_consent` · `member_region` 은 회원 파기 때 지운다(§8).
+  - **회원 행을 바꾸는 모든 쓰기(탈퇴 · 닉네임 · 비밀번호 변경 · 재설정 · 카카오 연결)는 저장 트랜잭션에서 회원 행을 `SELECT ... FOR UPDATE` 로 다시 읽고 ACTIVE 를 다시 본다.** 변경 감지는 전 컬럼을 UPDATE 하므로(`@Version` · `@DynamicUpdate` 없음), 잠금 없이 읽은 값으로 저장하면 그사이 커밋된 탈퇴가 되살아나거나 탈퇴한 행에 비밀번호 해시가 다시 써진다.
 
 ### 1-2. member_consent — 동의 이력
 
@@ -126,6 +133,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | last_error | VARCHAR(200) | Y | 마지막 실패 사유 (예외 코드 · 상태 코드만. 응답 본문을 넣지 않는다) |
 
 - 인덱스: `idx_report_purge_request_member_id`, `idx_report_purge_request_completed_at`
+- **만들 때의 중복 판정은 사유별로 다르다.** 건강정보 동의 철회는 사유와 상관없이 미완료 요청이 하나라도 있으면 만들지 않는다(파기가 끝나기 전에는 `report:write` 가 없어 새 보고가 생길 수 없다). 탈퇴는 **`WITHDRAWAL` 사유의 미완료 요청만** 보고 만든다 — 철회 요청이 미완료로 남아 있어도 `WITHDRAWAL` 행은 반드시 생긴다(탈퇴 증빙 · 회원 파기 판정, #154).
 - **완료 조건: 호출 시작 시각이 `requested_at + access token TTL(15분) + 여유(설정, 기본 5분)` 이후인 파기 호출이 성공했을 때.** 철회 직전에 발급된 다른 기기의 access token 에는 `report:write` 가 최대 15분 남는다. 1차 파기 뒤 그 토큰으로 들어온 보고를 2차 파기가 지운다. 여유는 만료 직전에 검증된 요청이 늦게 커밋되는 경우와 서버 간 시계 오차를 흡수한다.
 - 스케줄러(auth `ReportPurgeScheduler`, 회차가 끝나고 5분 뒤 다음 회차)는 미완료 행에 `DELETE /internal/v1/reporters/{memberId}` 를 부른다. **받는 쪽은 멱등이다** — 지울 행이 0건이어도 204. 호출은 DB 트랜잭션 밖에서 한다.
 - **대상 선정**: `completed_at is null` 이고, `first_purged_at is null`(1차 — 바로) 이거나 `requested_at <= now - (access TTL + 여유)`(2차 — 대기 뒤에만)인 행. 그 사이에 부르는 호출은 완료 조건을 통과할 수 없어 쓸모가 없다. `requested_at, id` 순으로 회차당 상한(설정, 기본 50건)까지. 시각 비교는 `requested_at` 과 같은 기준(JVM 기본 시간대 `LocalDateTime.now()`)이다.
@@ -157,7 +165,8 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - 내 동네를 관심 동네 중 하나로 **바꿔도** 그 관심 동네는 그대로 둔다(내 동네 저장은 이 테이블을 건드리지 않는다 — 2026-10-08 결정).
 - 행정동이 폐지돼도 행을 지우거나 바꾸지 않는다. 조회 때 `abolished: true` 로 내리고 회원이 지운다 (§3-1).
 - 이름 · 폐지 여부는 저장하지 않고 조회할 때마다 surveillance 내부 API 로 읽는다(내 동네와 같다).
-- 회원 단위 삭제(탈퇴 시 정리)는 탈퇴 처리(#154)에서 저장소 포트와 함께 만든다.
+- **탈퇴 때 이 회원의 행을 모두 지운다**(#154) — 저장소 포트 `MemberInterestRegionRepositoryPort#deleteAllByMemberId`(벌크 DELETE, 없어도 성공, 호출자 트랜잭션 필수)를 탈퇴 트랜잭션이 부른다.
+- **회원 파기(#244) 때도 함께 지운다(안전망)** — 근거는 둘이다. ① 탈퇴와 **동시에** 들어온 추가는 탈퇴의 삭제 뒤에 커밋돼 행을 남길 수 있다. ② `region` 은 회원 상태를 보지 않아(회원을 JWT 의 `memberId` 로만 안다) 탈퇴 뒤 남은 access(최대 15분)로 한 추가도 막지 못한다. region 에 회원 상태 포트를 두지 않고 이 고아 행을 파기 스케줄러가 회원 행과 함께 지운다.
 
 ### 1-7. member_notification_setting — 알림 수신 설정
 
@@ -176,8 +185,8 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - **켠 · 끈 이력을 동의 이력(`member_consent`)으로 남기지 않는다.** 이 설정은 서비스가 보내는 알림(주간 보고 요청 · 발행된 동네 안내)을 받을지 고르는 값이고 광고성 정보 수신 동의가 아니다. 법적 의미의 알림 수신 동의는 2단계에서 푸시와 함께 `PUSH_NOTIFICATION`(§1-3)으로 추가하고, 그때 동의 이력 규칙(§1-2)을 따른다.
 - **건강정보 동의를 철회해도 이 설정은 바꾸지 않는다** — 다시 동의했을 때 스위치를 다시 켤 필요가 없게. 대신 2단계 발송 때 `weekly_report` 대상은 건강정보 동의가 유효한 회원(`report:write` 와 같은 계산 — 미완료 보고 파기 요청이 없을 것 포함)으로 다시 거른다.
 - `region_notice` 는 스위치 하나다. 어느 동네(내 동네만 · 관심 동네 포함)의 안내를 보낼지는 발송 대상 규칙이라 2단계에서 정하고, 이 컬럼의 뜻과 무관하다.
-- **탈퇴 때 이 회원의 행을 지운다**(회원 파기를 기다리지 않는다 — 탈퇴한 회원에게 알림을 보낼 이유가 없다). 회원 단위 삭제는 저장소 포트 `MemberNotificationSettingRepositoryPort#deleteByMemberId`(벌크 DELETE, 없어도 성공, 호출자 트랜잭션 필수)로 #218 에서 두었고, 탈퇴 흐름에서 부르는 것은 탈퇴 처리(#154)다.
-- **회원 파기 때도 함께 지운다(탈퇴 경합 안전망)** — `member_consent` · `member_region` 을 회원 파기 때 지우는 것과 같은 방식이다. 회원 상태 확인은 쓰기와 같은 트랜잭션이라 요청이 차례로 올 때는 탈퇴 뒤의 요청이 행을 만들지 못하지만, 탈퇴와 **동시에** 들어온 `PATCH` 는 확인을 통과한 뒤 탈퇴가 커밋되면 행을 남길 수 있다. 그 고아 행은 파기 스케줄러가 회원 행과 함께 지운다(구현은 #154).
+- **탈퇴 때 이 회원의 행을 지운다**(회원 파기를 기다리지 않는다 — 탈퇴한 회원에게 알림을 보낼 이유가 없다). 회원 단위 삭제는 저장소 포트 `MemberNotificationSettingRepositoryPort#deleteByMemberId`(벌크 DELETE, 없어도 성공, 호출자 트랜잭션 필수)로 #218 에서 두었고, 탈퇴 트랜잭션(#154)이 부른다.
+- **회원 파기 때도 함께 지운다(탈퇴 경합 안전망)** — `member_consent` · `member_region` 을 회원 파기 때 지우는 것과 같은 방식이다. 회원 상태 확인은 쓰기와 같은 트랜잭션이라 요청이 차례로 올 때는 탈퇴 뒤의 요청이 행을 만들지 못하지만, 탈퇴와 **동시에** 들어온 `PATCH` 는 확인을 통과한 뒤 탈퇴가 커밋되면 행을 남길 수 있다. 그 고아 행은 파기 스케줄러가 회원 행과 함께 지운다(구현은 #244).
 
 ---
 
@@ -526,10 +535,10 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 | 테이블 | 보관 | 끝나면 |
 |--------|------|--------|
-| member | 탈퇴 후 30일, **보고 파기 완료 후** | 파기 스케줄러가 hard delete |
+| member | 탈퇴 후 30일, **보고 파기 완료 후** (탈퇴 때 이메일은 다이제스트로 바꾸고 비밀번호 · 닉네임 · 프로필 이미지 · 소셜 제공자를 비운다 — §1-1) | 파기 스케줄러(#244)가 hard delete |
 | member_consent · member_region | 회원과 같다 | 회원 파기 때 함께 삭제 |
-| member_interest_region | 회원과 같다 | 회원 파기 때 함께 삭제 — 회원 단위 삭제는 탈퇴 처리(#154)에서 만든다 |
-| member_notification_setting | 탈퇴할 때까지 | 탈퇴 처리(#154)가 회원 단위 삭제(`deleteByMemberId`, §1-7)로 지운다. 회원 파기 때도 함께 삭제(탈퇴와 겹친 변경이 남긴 행의 안전망) |
+| member_interest_region | 탈퇴할 때까지 | 탈퇴 처리(#154)가 회원 단위 삭제(`deleteAllByMemberId`, §1-6)로 지운다. 회원 파기(#244) 때도 함께 삭제(탈퇴와 겹친 추가 · 남은 access 로 한 추가가 남긴 행의 안전망 — region 은 회원 상태를 보지 않는다) |
+| member_notification_setting | 탈퇴할 때까지 | 탈퇴 처리(#154)가 회원 단위 삭제(`deleteByMemberId`, §1-7)로 지운다. 회원 파기(#244) 때도 함께 삭제(탈퇴와 겹친 변경이 남긴 행의 안전망) |
 | report_purge_request | 완료 후 1년 (설정) — 파기 증빙 | 정리 스케줄러가 삭제 |
 | weekly_report | 52주 · 탈퇴 / 철회 시 즉시 | 삭제 스케줄러 · 파기 API |
 | district_weekly_aggregate | 계속 (익명 집계) | — |

@@ -159,7 +159,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | Redis (TTL) | 이메일 인증 코드, 비밀번호 재설정 코드 · 재설정 토큰(해시), 로그인 · 비밀번호 확인 시도 횟수, OAuth state · 카카오 가입표 · 연결 확인표(해시), refresh 세션 |
 | MinIO | 업로드한 프로필 이미지 |
 
-- 탈퇴 회원은 30일 보존 후 스케줄러가 파기한다. **보고 파기 요청이 모두 완료된 회원만** 지운다. 고아 프로필 이미지는 정리 스케줄러가 지운다.
+- 탈퇴 회원은 30일 보존 후 스케줄러가 파기한다(#244). **보고 파기 요청이 모두 완료된 회원만** 지운다. 고아 프로필 이미지는 정리 스케줄러가 지운다(#112 — 탈퇴한 회원의 업로드 이미지 오브젝트도 여기서 지운다).
 - 테이블 · 컬럼 정본은 [entity-design.md §1](entity-design.md#1-auth--회원).
 - enum 컬럼은 `@Enumerated(STRING)` 에 `@JdbcTypeCode(SqlTypes.VARCHAR)` 를 함께 건다. 빠지면 Hibernate 6 이 MySQL 네이티브 `enum(...)` 을 만들어 값을 늘릴 때마다 ALTER 가 필요하고, dev `ddl-auto: update` 는 기존 컬럼을 고치지 않아 새 값 INSERT 가 실패한다.
 - auth 엔티티는 `Persistable<Long>` 을 구현하고 `isNew()` = `createdAt == null` 이다. Snowflake 로 ID 를 미리 정해 기본 판정이 merge 로 가면 INSERT 전 SELECT 가 나가고 겹치는 ID 를 조용히 덮어쓰기 때문이다. 그래서 **기존 행을 고칠 때는 엔티티를 조회해 변경 감지로 바꾼다** — 도메인에서 새로 매핑한 엔티티를 `save` 하면 PK 위반이다.
@@ -167,7 +167,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 **가입 흐름** (`auth` 컨텍스트가 받고, 회원 · 동의 저장은 `member` 의 포트 · `MemberConsentProcessor` 를 쓴다)
 
 - 인증 코드: 숫자 6자리(시안 Signup-code). 한도 · 수명은 `auth.email-send.*`(env `AUTH_EMAIL_SEND_*`, 기본 코드 5분 · 재발송 쿨다운 60초 · IP당 발송 10회/1시간 · 오입력 5회 · 인증 완료 30분 · IP당 검증 30회/1시간). IP 발송 상한은 쿨다운을 통과해 **실제로 발송한 요청만** 센다. IP 상한 둘은 저장소 장애에 fail-open. 검증은 앞뒤 공백을 무시한다.
-- **가입 여부가 응답으로 새지 않는다**(계정 열거 방지). 이미 가입된 이메일에도 메일로 보내지 않는 무작위 미끼 코드를 같은 수명으로 저장하고 실패 횟수를 초기화한다 — 발송 · 검증의 모든 응답(AUTH_003 · 004 · 005 포함)이 미가입과 같다. 가입된 이메일에는 코드 대신 "이미 가입된 계정" 안내 메일만 간다. 미끼를 맞혀 인증 표시가 생겨도 가입은 `MEMBER_001` 로 막힌다. 탈퇴 회원도 행이 파기될 때까지 이메일을 점유한다.
+- **가입 여부가 응답으로 새지 않는다**(계정 열거 방지). 이미 가입된 이메일에도 메일로 보내지 않는 무작위 미끼 코드를 같은 수명으로 저장하고 실패 횟수를 초기화한다 — 발송 · 검증의 모든 응답(AUTH_003 · 004 · 005 포함)이 미가입과 같다. 가입된 이메일에는 코드 대신 "이미 가입된 계정" 안내 메일만 간다. 미끼를 맞혀 인증 표시가 생겨도 가입은 `MEMBER_001` 로 막힌다. 탈퇴한 회원은 이메일이 다이제스트로 바뀌어 이메일을 점유하지 않는다 — 가입되지 않은 이메일과 같게 코드를 받고 **바로 다시 가입할 수 있다**(entity-design §1-1).
 - Redis 키는 `{prefix}:auth:{emailVerificationCode|emailVerificationFail|emailVerificationCooldown|emailVerified|emailSendIp|emailVerifyIp}:{정규화한 이메일 또는 IP}`. 이메일은 trim + 소문자(`EmailNormalizer`)로 키와 저장값을 맞춘다. Redis 장애는 503 `AUTH_006` 이다.
 - IP 상한의 키는 `X-Real-IP` 다 (nginx 가 덮어쓰고, nginx 가 아닌 출발지면 게이트웨이가 접속 주소로 덮어쓴다). `X-Forwarded-For` 는 앞쪽 값을 클라이언트가 바꿀 수 있고 마지막 값은 게이트웨이가 덧붙인 nginx 주소라 쓰지 않는다.
 - 메일은 `authMailTaskExecutor` 에서 비동기로 보내고(SMTP 접속 · 응답 · 쓰기 timeout 5초), 실패는 로그만 남긴다. 큐가 차면 그 메일을 로그만 남기고 버린다(요청은 성공). Boot 기본 `applicationTaskExecutor` 는 `AuthServiceAsyncConfig` 가 같은 이름으로 따로 두고 한정자 없는 `@Async` 기본값에 연결한다. health 는 SMTP 를 보지 않는다(`management.health.mail.enabled: false`).
@@ -177,7 +177,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 **로그인 · 토큰 · 세션**
 
 - 로그인 시도 제한은 `auth.login.*`(env `AUTH_LOGIN_*`, 기본 이메일당 5회 실패 → 10분 잠금 · IP당 실패 30회/1시간). 이메일 키는 **계정 존재 여부와 무관하게** 세고 잠근다 — 잠금 응답이 "가입된 이메일" 신호가 되지 않게. 잠금 검사는 회원 조회보다 먼저다. **두 카운터는 BCrypt 비교 전에 먼저 올린다** — 실패한 뒤에 올리면 동시에 들어온 수백 요청이 모두 비교를 거쳐 상한이 무력화된다. 비밀번호가 맞으면(탈퇴 · 정지여도) 이메일 카운터는 지우고 IP 카운터는 자기 몫만 되돌린다. 잠글 때 카운터는 지우지 않는다 — 잠금 직전에 확인을 통과한 동시 요청이 1부터 다시 세어 비교까지 가지 않게. 카운터 TTL 은 첫 실패부터 잠금 시간이라 잠금보다 먼저 사라진다. 두 카운터 모두 저장소 장애에 fail-open.
-- 미존재 이메일 · 비밀번호 없는(소셜) 계정 · 비밀번호 불일치는 모두 `AUTH_011` 이고, 미존재 · 비밀번호 없음에도 더미 BCrypt 비교를 돌려 응답 시간을 맞춘다. 탈퇴(`MEMBER_002`) · 정지(`MEMBER_003`)는 **비밀번호가 맞을 때만** 드러낸다.
+- 미존재 이메일 · 비밀번호 없는(소셜) 계정 · 비밀번호 불일치는 모두 `AUTH_011` 이고, 미존재 · 비밀번호 없음에도 더미 BCrypt 비교를 돌려 응답 시간을 맞춘다. 정지(`MEMBER_003`)는 **비밀번호가 맞을 때만** 드러낸다. 탈퇴한 회원은 이메일이 다이제스트로 바뀌어 원래 이메일로 찾을 수 없으므로 **미존재와 같은 `AUTH_011`** 이다 — 이메일 로그인에서 `MEMBER_002` 는 사실상 나오지 않는다(상태 분기는 방어용으로 남긴다).
 - 세션은 로그인 한 번 = 기기 하나다. 세션 ID 는 로그인 때 만들고 **회전해도 유지**하며, refresh JWT 의 jti 만 매번 바뀐다. JWT 의 `sid` claim 이 세션 ID 다(access · refresh 둘 다).
 - Redis 키: `{prefix}:auth:refreshSession:{memberId}:{sessionId}`(HASH — 현재 · 직전 refresh jti, 회전 시각, 기기 이름, 생성 · 마지막 사용 시각, 최근 access jti · 만료) · `{prefix}:auth:refreshSessions:{memberId}`(ZSET, score = 마지막 사용). TTL 은 refresh 만료(기본 14일, 회전마다 갱신). **refresh 토큰 원문은 저장하지 않는다.** 회원당 기기 상한(`auth.session.max-devices`, 기본 5)을 넘으면 가장 오래 안 쓴 세션부터 밀어낸다.
 - 재발급 회전은 Lua 하나로 원자 처리한다 — 제시한 jti 가 현재 jti 면 회전, **직전 jti 이고 회전 직후(`auth.session.rotation-grace`, 기본 10초)면 여러 탭의 동시 재발급으로 보고 세션을 두고 `AUTH_016`(409)**, 그 밖의 옛 jti 는 **재사용(탈취 의심)으로 보고 그 세션을 폐기**하고 `AUTH_015`. 세션이 없거나 refresh 가 만료면 `AUTH_014`.
@@ -186,15 +186,15 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 로그아웃은 현재 세션(access `sid`)을 지우고 access jti 를 남은 만료 시간만큼 블랙리스트에 올린다. 세션 폐기(`DELETE /sessions/{id}` · `DELETE /sessions`) · 재사용 감지 · 기기 상한 밀어내기는 그 세션에 저장된 **최근 access jti** 를 블랙리스트에 올려 그 기기를 끊는다. 같은 세션에서 그보다 먼저 발급돼 아직 만료되지 않은 access(여러 탭)는 최대 access TTL(15분) 동안 남는다 — 동의 철회와 같은 허용 범위다([architecture-guide.md](architecture-guide.md)). 로그아웃만 Redis 장애를 관용한다(로그를 남기고 200 + 쿠키 삭제 — 쿠키가 지워지면 그 브라우저의 refresh 는 사라진다).
 - 기기 이름은 `User-Agent` 를 "OS · 브라우저"(예: `iPhone · Safari`)로 줄여 저장한다. **UA 원문과 IP 는 저장하지 않는다.**
 - refresh 토큰은 응답 바디가 아니라 쿠키 `refreshToken`(HttpOnly · Secure · SameSite=Strict · Path=`/api/v1/auth`)으로만 오간다. 웹과 API 는 같은 사이트(`*.sneezecast.com`)라 Strict 로 충분하다. 게이트웨이 · auth 의 CORS 는 `allowCredentials=true` 다.
-- 오류 코드: `AUTH_011` 로그인 실패(401) · `012` 이메일 잠금(429) · `013` IP 상한(429) · `014` refresh 없음 · 만료 · 세션 없음(401, 재로그인) · `015` refresh 위조 · 재사용(401) · `016` 동시 재발급 경합(409, 한 번 재시도) · `017` 세션 저장소 장애(503), 검증 `AUTH_113`(로그인 비밀번호 100자 초과) · `AUTH_114`(sessionId 가 UUID 형식이 아님), `MEMBER_002` 탈퇴 · `MEMBER_003` 정지(403).
+- 오류 코드: `AUTH_011` 로그인 실패(401) · `012` 이메일 잠금(429) · `013` IP 상한(429) · `014` refresh 없음 · 만료 · 세션 없음(401, 재로그인) · `015` refresh 위조 · 재사용(401) · `016` 동시 재발급 경합(409, 한 번 재시도) · `017` 세션 저장소 장애(503), 검증 `AUTH_113`(로그인 비밀번호 100자 초과) · `AUTH_114`(sessionId 가 UUID 형식이 아님), `MEMBER_002` 탈퇴(재발급 — 이메일 로그인에서는 위 이유로 사실상 나오지 않는다) · `MEMBER_003` 정지(403).
 - Lua 스크립트는 다른 세션의 해시 키를 스크립트 안에서 조립한다(밀어내기 · 전체 삭제). Redis 를 Sentinel 로 쓰는 한 문제없지만, Cluster 로 옮기면 회원 단위 해시태그(`{memberId}`)로 키를 묶어야 한다.
 
 **비밀번호 재설정** (`auth` 컨텍스트, 인증 불필요)
 
 - 인증 코드 발급 · 확인은 가입과 같은 처리기(`EmailCodeProcessor`)를 용도(`EmailCodePurpose` SIGNUP / PASSWORD_RESET)만 바꿔 쓴다. 한도 · 수명도 `auth.email-send.*` 를 그대로 쓴다. 브루트포스 방어를 두 벌로 두면 한쪽만 고쳐져 조용히 어긋나기 때문이다. Redis 키만 따로다: `passwordResetCode` · `passwordResetFail` · `passwordResetCooldown` · `passwordResetSendIp` · `passwordResetVerifyIp`.
-- send-code 응답은 **가입 여부와 무관하게 같다**. 메일만 갈린다: 비밀번호가 있는 ACTIVE 회원(카카오가 연결된 이메일 계정 포함)에게는 재설정 코드, **비밀번호가 없는(카카오만 쓰는) ACTIVE 회원에게는 미끼 코드 + "카카오 로그인으로 가입된 계정" 안내 메일**, 가입되지 않은 이메일에는 미끼 코드 + "가입된 계정 없음" 안내 메일, 탈퇴 · 정지 회원에게는 미끼 코드만(메일 없음). reset 단계에서 회원 비밀번호가 null 이면 `AUTH_018`(균일).
+- send-code 응답은 **가입 여부와 무관하게 같다**. 메일만 갈린다: 비밀번호가 있는 ACTIVE 회원(카카오가 연결된 이메일 계정 포함)에게는 재설정 코드, **비밀번호가 없는(카카오만 쓰는) ACTIVE 회원에게는 미끼 코드 + "카카오 로그인으로 가입된 계정" 안내 메일**, 가입되지 않은 이메일에는 미끼 코드 + "가입된 계정 없음" 안내 메일, 정지 회원에게는 미끼 코드만(메일 없음). 탈퇴한 회원은 원래 이메일로 찾을 수 없어 가입되지 않은 이메일과 같다. reset 단계에서 회원 비밀번호가 null 이면 `AUTH_018`(균일).
 - verify-code 의 실패 코드는 가입과 같다(`AUTH_003` · `004` · `005` · `010`). 성공하면 일회용 `resetToken` 을 준다 — SecureRandom 32바이트 base64url. Redis 에는 원문이 아니라 SHA-256 해시를 키로(`passwordResetToken:{sha256hex}` → 이메일, TTL `auth.password-reset.token-ttl` 기본 15분) 둔다. 미끼 코드를 맞혀도 같은 모양으로 토큰을 준다.
-- reset `{resetToken, newPassword}`: IP 시도 카운터(`passwordResetIp`, 상한 · 창은 `auth.email-send.verify-ip-*`)를 BCrypt 전에 먼저 올리고 넘으면 `AUTH_019`. 토큰은 Lua GET+DEL 로 원자 소비하고, 없음 · 만료 · 이미 씀 · 그 이메일의 ACTIVE 회원 없음은 모두 `AUTH_018` 이다.
+- reset `{resetToken, newPassword}`: IP 시도 카운터(`passwordResetIp`, 상한 · 창은 `auth.email-send.verify-ip-*`)를 BCrypt 전에 먼저 올리고 넘으면 `AUTH_019`. 토큰은 Lua GET+DEL 로 원자 소비하고, 없음 · 만료 · 이미 씀 · 그 이메일의 ACTIVE 회원 없음은 모두 `AUTH_018` 이다. 저장 트랜잭션이 회원 행을 쓰기 잠금으로 다시 보고, 토큰 소비 뒤 그사이 탈퇴 · 정지됐으면 역시 `AUTH_018` 이다(탈퇴한 행에 비밀번호를 쓰지 않는다).
 - 성공 순서: 새 비밀번호 BCrypt(트랜잭션 밖) → **모든 기기 세션 폐기 + access 블랙리스트** → 비밀번호 저장(커밋) → **같은 범위 2차 폐기** → 그 이메일의 로그인 잠금 · 실패 카운터 해제. 1차 폐기가 실패하면(503) 비밀번호는 그대로이고, 토큰은 이미 소비돼 인증 코드부터 다시 한다. 2차 폐기는 폐기와 커밋 사이에 옛 비밀번호로 BCrypt 를 통과한 로그인이 남긴 세션을 지우려는 것이고, 실패해도 로그만 남긴다.
 - 같은 이메일로 verify-code 를 여러 번 통과하면 토큰이 여러 개 함께 살아 있을 수 있다(각각 1회용 · 15분). 메일함 소유가 전제라 받아들였다.
 
@@ -207,7 +207,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
   - **회원 없음** → 회원 행을 만들지 않고 **가입표**를 준다(SecureRandom 32바이트, Redis 에는 SHA-256 해시 키 `oauthSignupTicket:{sha256}` → 이메일 · 닉네임, `auth.oauth.signup-ticket-ttl` 기본 30분). 개인정보 수집 동의가 수집보다 먼저여야 해서다. 응답 `result=SIGNUP_REQUIRED`.
   - **ACTIVE + KAKAO** → #57 과 같은 발급(세션 · refresh 쿠키). `result=LOGGED_IN`.
   - **ACTIVE + provider null(이메일 계정)** → **연결 확인표**(`oauthLinkTicket:{sha256}` → 회원 ID, `auth.oauth.link-ticket-ttl` 기본 10분). 자동 연결하지 않고 "카카오 로그인을 연결할까요?" 를 묻는다. 응답 `result=LINK_REQUIRED` + 가린 이메일.
-  - 탈퇴 · 정지 → `MEMBER_002` · `003`.
+  - 정지 → `MEMBER_003`. 탈퇴한 회원은 원래 이메일로 찾을 수 없어 **회원 없음과 같다**(가입표 — 탈퇴 즉시 카카오로 다시 가입할 수 있다). `MEMBER_002` 분기는 방어용으로 남는다.
 - `POST /kakao/signup {termsAgreed, privacyAgreed, ageOver19Confirmed}` — 가입표를 원자 소비(Lua GET+DEL)하고 회원(provider KAKAO, 비밀번호 null) + 필수 동의를 한 트랜잭션에 저장한 뒤 **바로 로그인 토큰을 준다**(비밀번호가 없어 따로 로그인할 수 없다). 건강정보 동의는 이메일 가입처럼 #59 API 로 따로. 닉네임은 카카오 닉네임을 strip 해 10자(코드포인트)로 자르고, 2자 미만이면 `동네이웃` + 무작위 4자리다.
 - `POST /kakao/link` — 확인표를 소비하고, 같은 트랜잭션에서 회원이 여전히 ACTIVE · provider null 인지 다시 본 뒤(아니면 `AUTH_027`) provider 를 KAKAO 로 바꾼다(조회 후 변경 감지, **비밀번호는 그대로** — 두 방식 모두 로그인된다). "카카오 로그인이 연결됐어요" 메일을 비동기로 보내고(본인이 아니면 바로 알아챌 수 있게) 토큰을 준다. 연결을 끊는 API 는 아직 없다(후속).
 - 쿠키 3종(`oauthState` · `oauthSignupTicket` · `oauthLinkTicket`)은 `OAuthCookieProvider` 한 곳에서 HttpOnly · Secure · Strict · Path=`/api/v1/auth` · Max-Age=TTL 로 다룬다. 일회용 쿠키를 지우는 Set-Cookie 는 처리 전에 응답에 넣어, 뒤 단계가 실패해도 지워진다. 요청 검증 오류는 본문까지 오지 않으므로 쿠키를 건드리지 않는다(동의를 고쳐 다시 보낼 수 있다). 쓰다 만 표가 공용 기기에 남지 않게 authorize 는 두 표 쿠키를 함께 지우고, login 은 결과에 맞지 않는 표 쿠키를 지운다.
@@ -217,12 +217,12 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 **내 정보 · 비밀번호 변경** (`member` 컨텍스트, 인증 필요)
 
 - `GET /members/me` → `{memberId, email, nickname, provider(EMAIL | KAKAO — DB 값이 null 이면 EMAIL), hasPassword, role, pendingConsents, reportWritable}`. 재동의 · 보고 가능 여부(미완료 파기 요청 포함)는 토큰과 같은 계산(`MemberConsentProcessor.currentStatus` + auth 의 `ReportScopePolicy` — member 는 `MemberReportScopePort` 로 부른다)이다. 내 동네는 `/me` 에 싣지 않고 `GET /members/me/region`(#60)으로 따로 읽는다 — 이름 · 폐지 여부를 surveillance 에서 읽으므로 `/me` 가 surveillance 장애에 묶이지 않게 한다. 프로필 이미지는 #112 에서 더한다.
-- `PATCH /members/me` 는 닉네임만 바꾼다(가입과 같은 2~10자). 수정은 엔티티를 조회해 변경 감지로 한다 — 리포지토리의 수정 메서드는 `@Transactional(MANDATORY)` 라 트랜잭션 밖에서 부르면 바로 실패한다.
+- `PATCH /members/me` 는 닉네임만 바꾼다(가입과 같은 2~10자). 수정은 엔티티를 조회해 변경 감지로 한다(저장 전에 회원 행을 쓰기 잠금으로 다시 읽어 ACTIVE 를 본다 — 아래 "회원 탈퇴" 의 동시성) — 리포지토리의 수정 메서드는 `@Transactional(MANDATORY)` 라 트랜잭션 밖에서 부르면 바로 실패한다.
 - 비밀번호 변경 `{currentPassword, newPassword}`: 비밀번호가 없는(카카오만 쓰는) 계정이 부르면 `MEMBER_007`. 새 비밀번호 규칙은 가입과 같다(현재와 같아도 막지 않는다). **비밀번호 최초 설정 API 는 #61 에서 없앴다** — 카카오 회원은 비밀번호가 필요 없고(사용자 결정), 탈취된 access 로 이메일 로그인 자격을 만드는 경로도 함께 사라진다.
 - 현재 비밀번호 확인은 회원 단위로 횟수를 제한한다(`passwordChangeFail:{memberId}`, 상한 · 잠금은 `auth.login.*` 5회 · 10분). 로그인처럼 **BCrypt 전에 먼저 올리고**, 상한째 틀린 시도부터 `MEMBER_006`(429)이다. 틀리면 `MEMBER_005`.
 - 성공 순서: 현재 비밀번호 확인 → 새 비밀번호 BCrypt(트랜잭션 밖) → **지금 기기(access `sid`)를 뺀 다른 기기 세션 폐기 + access 블랙리스트**(sid 가 없으면 전부) → 저장(커밋) → 같은 범위 2차 폐기(실패해도 로그만 — 재설정과 같은 이유). 1차 폐기가 실패하면 저장하지 않고 `MEMBER_009`(503) — member 컨트롤러에는 auth 의 예외 처리기가 걸리지 않아 auth 의 `AUTH_017` 을 member 코드로 바꿔 낸다.
 - member 요청 검증은 `MemberRequestExceptionHandler`(member 패키지 전용) 가 `MEMBER_1xx` 로 낸다. auth 검증 오류가 MEMBER 코드로 새지 않게 처리기를 나눴다.
-- **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장과 카카오 연결의 provider 변경 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향). `region` 은 다른 컨텍스트와 서로 import 하지 않는다(회원은 JWT 의 `memberId` 로만 안다). 예외 하나: 동의 철회 응답에서 refresh 쿠키를 지우려고 member 웹 계층(`MemberRefreshCookie`)에 auth 와 **같은 값**의 쿠키 이름 · 속성을 둔다 — 응답 헤더라 out 포트로 돌릴 수 없고, auth 상수를 쓰면 의존이 생긴다. 두 값이 같음은 테스트(`MemberRefreshCookieTest`)가 고정한다.
+- **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장과 카카오 연결의 provider 변경 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향). `region` 은 다른 컨텍스트를 import 하지 않는다(회원은 JWT 의 `memberId` 로만 안다). **member → region 도 `member/adapter/out/region` 의 어댑터로만** 잇는다(`MemberRegionCleanupAdapter` — 탈퇴 때 관심 동네 정리, `member/application` 은 `MemberRegionCleanupPort` 만 안다). 예외 하나: 동의 철회 · 탈퇴 응답에서 refresh 쿠키를 지우려고 member 웹 계층(`MemberRefreshCookie`)에 auth 와 **같은 값**의 쿠키 이름 · 속성을 둔다 — 응답 헤더라 out 포트로 돌릴 수 없고, auth 상수를 쓰면 의존이 생긴다. 두 값이 같음은 테스트(`MemberRefreshCookieTest`)가 고정한다.
 - 오류 코드: `AUTH_018` 재설정 인증 만료(400) · `AUTH_019` 재설정 IP 상한(429) · 검증 `AUTH_115` · `116`(resetToken), `MEMBER_004` 회원 없음(404) · `005` 현재 비밀번호 불일치(400) · `006` 확인 잠금(429) · `007` 비밀번호 없는 계정(409) · `008` 비운 번호(#61 에서 최초 설정 API 를 없앰 — 재사용 금지) · `009` 세션 저장소 장애(503) · `010` 동의할 수 없는 항목(400) · `011` 동의 문서 버전 불일치(409) · `012` 철회할 수 없는 항목(400) · `013` 알림 설정 동시 저장 경합(409, 아래 "알림 설정") · `100` · `198` · `199` 요청 형식, 검증 `MEMBER_101~114`(`111~114` 는 알림 설정).
 
 **동의 · 재동의 · 건강정보 동의 철회** (`member` 컨텍스트, 인증 필요 — #59)
@@ -232,17 +232,34 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 철회는 **한 트랜잭션**에서 그 행에 `withdrawn_at` 을 채우고(쓰기 잠금으로 읽어 동시 철회가 파기 요청을 두 번 남기지 않게, 조회 후 변경 감지) `report_purge_request`(reason `HEALTH_CONSENT_WITHDRAWN`)를 만든다 — 파기 요청이 철회와 반드시 함께 남는다. 미완료 파기 요청이 이미 있으면 둘째 요청을 만들지 않는다(파기가 끝나기 전에는 `report:write` 가 없어 새 보고가 생길 수 없다).
 - 커밋 뒤 **모든 기기를 로그아웃**한다 — refresh 세션 전부 폐기 + 그 세션들의 최근 access 와 요청한 access 를 블랙리스트에 올리고, 응답에서 refresh 쿠키를 지운다(프론트 #129 요청, 시안 "모든 기기에서 로그아웃돼요"). 세션 폐기가 실패해도(Redis 장애) 철회 · 파기 요청은 이미 커밋됐으므로 로그만 남기고 200 이다 — 다음 재발급에서 scope 가 다시 계산돼 `report:write` 가 빠지고, 남은 access(최대 15분)로 들어온 보고는 #155 의 2차 파기가 지운다.
 - 두 API 모두 동의 상태 `{pendingConsents, healthInfoAgreed, reportWritable, purgePending}` 를 돌려준다. **동의 뒤 access 의 scope 는 그대로**다(토큰은 발급 때 계산) — `report:write` 를 받으려면 `POST /auth/token/reissue` 로 새 access 를 받는다.
-- 탈퇴(`WITHDRAWAL` 요청 생성 · 회원 hard delete)는 #154 다.
+- 탈퇴의 `WITHDRAWAL` 요청 생성은 아래 "회원 탈퇴"(#154), 회원 hard delete 는 #244 다.
+
+**회원 탈퇴** (`member` 컨텍스트, `POST /api/v1/members/me/withdraw`, 인증 필요 — #154. 정본은 [entity-design.md §1-1](entity-design.md#1-1-member))
+
+- 본문 없음 → 200 `dataBody: null` + refresh 쿠키 삭제(동의 철회와 같은 `MemberRefreshCookie`). 오류: 이미 탈퇴한 회원의 남은 access `MEMBER_002` · 정지 `MEMBER_003`(403), 회원 행 없음 `MEMBER_004`(404). 새 오류 코드는 없다.
+- `MemberWebFacade.withdraw`(트랜잭션 없음) → `MemberWithdrawalProcessor.withdraw`(**한 트랜잭션**) → 커밋 뒤 모든 기기 로그아웃. 트랜잭션 안에서 차례로:
+  1. 회원 상태 확인 — 회원 행을 **쓰기 잠금**(`SELECT ... FOR UPDATE`, `MemberQueryProcessor.getActiveMemberForUpdate`)으로 읽고 `getActiveMember` 와 같은 판정을 한다.
+  2. 회원 행 탈퇴 갱신(조회 후 변경 감지) — `email` = `HMAC-SHA256(pepper, "{memberId}:" + 정규화한 이메일)` 의 hex 64자(`WithdrawnEmailHasher`), `password` · `provider` · `profile_image_url` · `profile_image_key` = null, `nickname` = `탈퇴회원`, `status` = WITHDRAWN, `withdrawn_at` = 지금. 업로드 이미지 오브젝트는 트랜잭션 안에서 지우지 않고 고아 이미지 정리(#112)에 맡긴다.
+  3. `report_purge_request`(reason `WITHDRAWAL`, `requested_at` = 탈퇴 시각) — `ReportPurgeRequestProcessor.requestWithdrawalIfAbsent` 는 **같은 사유의 미완료 요청만** 본다. 건강정보 동의 철회 파기가 미완료로 남아 있어도 `WITHDRAWAL` 행은 반드시 생긴다(철회용 `requestIfAbsent` 는 사유를 보지 않아 쓰지 않는다).
+  4. 관심 동네 회원 단위 삭제(`MemberRegionCleanupPort` → region `MemberInterestRegionRepositoryPort#deleteAllByMemberId`, 벌크 JPQL DELETE · MANDATORY).
+  5. 알림 설정 삭제(`MemberNotificationSettingRepositoryPort#deleteByMemberId`, 벌크 DELETE · MANDATORY).
+- 동의 이력 · 내 동네는 남긴다 — 회원 파기(#244) 때 지운다. 중간 단계가 실패하면 전부 롤백된다.
+- **동시성**: 같은 회원의 탈퇴 두 건이 겹치면 회원 행 잠금에서 뒤 요청이 기다렸다가 WITHDRAWN 을 보고 `MEMBER_002` 로 끝난다(InnoDB 잠금 읽기는 커밋된 최신 행을 읽는다). 회원 행 갱신 · 파기 요청은 한 번만 생긴다.
+  - **회원 행을 바꾸는 다른 쓰기도 같은 잠금을 거친다** — 닉네임 수정 · 비밀번호 변경 · 비밀번호 재설정 확정 · 카카오 연결은 저장 트랜잭션에서 회원 행을 `SELECT ... FOR UPDATE` 로 다시 읽어(커밋된 최신 값으로 덮어쓴다 — `MemberRepositoryPort#findByIdForUpdate`) ACTIVE 를 다시 본다(`MemberCommandProcessor`, `OAuthMemberProcessor.link`). 변경 감지는 전 컬럼을 UPDATE 하므로, 잠금 없이 읽은 값으로 저장하면 그사이 커밋된 탈퇴가 되살아나거나(ACTIVE · 원문 이메일) 탈퇴한 행에 비밀번호 해시가 다시 써진다. 탈퇴를 본 쓰기의 응답은 경로의 기존 관례다: 회원 API `MEMBER_002`, 재설정 `AUTH_018`(정상 회원 없음과 같다), 카카오 연결 `AUTH_027`. 잠그는 행은 회원 행 하나이고 각 경로에서 다른 행 잠금보다 먼저 잡는다.
+  - 탈퇴와 겹친 알림 설정 `PATCH` · 관심 동네 추가가 남길 수 있는 행은 회원 파기(#244)가 지우는 안전망으로 둔다.
+- **커밋 뒤 모든 기기 로그아웃**(`MemberSessionRevokePort.revokeAllSessions` — refresh 세션 전부 + 그 세션들의 최근 access + 요청 access 블랙리스트). 실패해도(세션 저장소 장애 · 예상 밖 오류) 로그만 남기고 200 이다 — 탈퇴는 이미 커밋돼 되돌릴 수 없고 다시 보내면 `MEMBER_002` 다. 남은 자격은 다른 장치가 막는다: 남은 refresh 는 재발급(`AuthTokenProcessor.reissue`)이 회원 상태를 보고 ACTIVE 가 아니면 모든 세션을 지우고 거절하고, 남은 access(최대 15분)는 member 컨텍스트 API(내 정보 · 비밀번호 · 동의 · 알림 설정)에서 `getActiveMember` 가 막으며 그 사이 들어온 보고는 파기 요청의 완료 경계(요청 시각 + access 수명 + 여유) 뒤 2차 파기가 지운다(entity-design §1-5). **region 쓰기(내 동네 저장 · 관심 동네 추가)는 회원 상태를 보지 않아 남은 access 로 막지 못한다** — region 은 회원을 JWT 의 `memberId` 로만 안다. 그 사이 생긴 관심 동네 행은 회원 파기(#244)가 함께 지운다(내 동네는 원래 회원 파기 때 지운다).
+- **재가입**: 원문 이메일이 사라져 가입 중복 검사 · 이메일 인증 · 로그인 · 재설정 · 카카오 로그인이 탈퇴한 계정을 찾지 못한다 — 코드 변경 없이 미가입과 같은 응답이고, 같은 이메일로 바로 다시 가입할 수 있다(이전 계정의 동의 · 보고 · 설정은 이어지지 않는다). 다이제스트에 회원 ID 를 섞는 이유는 "탈퇴 → 재가입 → 다시 탈퇴" 의 두 탈퇴 행이 `uk_member_email` 에 막히지 않게 하려는 것이다. 다이제스트를 재가입 차단에 쓰지 않는다(hondigagae 와 다르다).
+- pepper `member.withdrawn-email.pepper`(env `WITHDRAWN_EMAIL_PEPPER`)는 아래 "설정 · 기동 규칙".
 
 **알림 설정** (`member` 컨텍스트, `/api/v1/members/me/notification-settings`, #218 — 정본은 [entity-design.md §1-7](entity-design.md#1-7-member_notification_setting--알림-수신-설정))
 
-- 알림을 받을지 고른 값(설정)만 다룬다. 실제로 보낼 곳(PWA 푸시 구독)과 발송은 2단계 `notification` 컨텍스트다 — 설정을 켜도 지금은 알림이 가지 않는다. 인증만 요구하고 `report:write` 는 요구하지 않는다(건강정보가 아니다). 회원 상태는 내 정보와 같게 본다(`MEMBER_004` · `002` · `003`, 쓰기와 같은 트랜잭션) — 요청이 차례로 올 때, 탈퇴 뒤에 남은 access 로 들어온 요청이 행을 다시 만들지 못하게. 탈퇴와 동시에 들어온 요청은 확인을 통과한 뒤 탈퇴가 커밋되면 행을 남길 수 있고, 그 행은 회원 파기 때 함께 지운다(entity-design §1-7, #154).
+- 알림을 받을지 고른 값(설정)만 다룬다. 실제로 보낼 곳(PWA 푸시 구독)과 발송은 2단계 `notification` 컨텍스트다 — 설정을 켜도 지금은 알림이 가지 않는다. 인증만 요구하고 `report:write` 는 요구하지 않는다(건강정보가 아니다). 회원 상태는 내 정보와 같게 본다(`MEMBER_004` · `002` · `003`, 쓰기와 같은 트랜잭션) — 요청이 차례로 올 때, 탈퇴 뒤에 남은 access 로 들어온 요청이 행을 다시 만들지 못하게. 탈퇴와 동시에 들어온 요청은 확인을 통과한 뒤 탈퇴가 커밋되면 행을 남길 수 있고, 그 행은 회원 파기 때 함께 지운다(entity-design §1-7, #244).
 - `GET` → `{weeklyReport, regionNotice}`. 행이 없으면(한 번도 바꾸지 않음) **모두 false** 이고 행을 만들지 않는다.
 - `PATCH {weeklyReport?, regionNotice?}` → 보낸 항목만 바꾼 뒤의 설정 전부. 동작은 둘이다.
   - **보낸 항목만 DB 에서 바꾼다.** 행이 있으면 부분 갱신 쿼리(`set weekly_report = coalesce(?, weekly_report), region_notice = coalesce(?, region_notice), updated_at = ? where member_id = ?`)를 쓰고 같은 트랜잭션에서 다시 읽어 응답을 만든다. 엔티티 변경 감지는 두 칸을 모두 쓰는 UPDATE 를 내보내 같은 회원의 겹친 요청(다른 탭 · 기기)이 바꾼 다른 항목을 되돌리므로 쓰지 않는다. 벌크 갱신이라 `updated_at` 은 쿼리가 직접 쓴다(`LocalDateTime.now()` — Auditing 과 같은 기준).
   - **첫 생성 경합만 한 번 다시 한다.** 행이 없으면 모두 꺼짐을 바탕으로 INSERT 한다. 같은 회원의 첫 변경 두 건이 겹치면 `uk_member_notification_setting_member_id` 에 막힌 쪽을 저장소 어댑터가 `MEMBER_013` 으로 바꾸고, 그 트랜잭션이 롤백된 뒤 `MemberNotificationSettingWebFacade` 가 **새 트랜잭션에서 한 번 다시** 한다 — 이번에는 행이 보여 부분 갱신이 된다. 조회에서 본 행이 갱신 전에 사라진 경우(갱신 0건 — 탈퇴 정리 등)도 같은 `MEMBER_013` 으로 롤백해 새 트랜잭션에서 다시 판단한다(회원 상태 확인부터 — 탈퇴했으면 `MEMBER_002`, 아니면 새 행). 다시 해도 겹치면 `MEMBER_013`(409). 행이 없을 때 UPDATE 를 먼저 시도하지 않는 이유: MySQL(REPEATABLE READ)이 없는 키에 갭 잠금을 잡아, 동시 첫 변경 둘의 INSERT 가 교착(unique 위반이 아닌 실패)이 될 수 있다. 트랜잭션은 Facade 가 아니라 `MemberNotificationSettingProcessor` 의 메서드마다 건다(그래야 다시 할 수 있다 — architecture-guide §3-1).
 - 본문은 **이 DTO 만 엄격하게** 받는다(전역 Jackson 설정은 그대로 — 모르는 항목은 버리고 문자열 `"true"` 는 boolean 으로 바꾼다). `MemberNotificationSettingUpdateRequest` 의 역직렬화기가 본문을 트리로 읽어 두 항목의 원본 값(`JsonNode`)과 나머지 항목 이름을 담고, Bean Validation 이 거른다: 항목이 하나도 없는 `{}` `MEMBER_111`(field `request`), `weeklyReport` · `regionNotice` 가 JSON `true` / `false` 가 아님(문자열 · 숫자 · `null` · 객체 · 배열) `MEMBER_112` · `113`, 모르는 항목 `MEMBER_114`(field `unknownItems`, 받은 항목 이름은 응답에 싣지 않는다 — 모르는 항목만 있으면 111 은 내지 않는다). 깨진 JSON · 객체가 아닌 본문 · 본문 없음은 `MEMBER_100`. 오류 봉투 · `fieldErrors` 는 다른 회원 요청과 같고 순서는 record 컴포넌트 순서(`weeklyReport` → `regionNotice` → `unknownItems`)다. `@JsonAnySetter` 로 모르는 항목을 모으지 않은 이유: 그 모음의 이름과 같은 항목(`unknownItems`)이 모음을 덮어 검증을 빠져나간다.
-- 켠 · 끈 이력은 남기지 않는다(동의 이력과 별개 — entity-design §1-7). 건강정보 동의를 철회해도 설정은 그대로 두고, 탈퇴 때는 행을 지운다(회원 단위 삭제 `deleteByMemberId` 는 저장소 포트에 있고, 탈퇴 흐름에서 부르는 것은 #154). 탈퇴와 겹친 변경이 남긴 행에 대비해 회원 파기 때도 함께 지운다(#154).
+- 켠 · 끈 이력은 남기지 않는다(동의 이력과 별개 — entity-design §1-7). 건강정보 동의를 철회해도 설정은 그대로 두고, 탈퇴 때는 행을 지운다(회원 단위 삭제 `deleteByMemberId` 를 탈퇴 트랜잭션이 부른다 — 위 "회원 탈퇴"). 탈퇴와 겹친 변경이 남긴 행에 대비해 회원 파기 때도 함께 지운다(#244).
 - 2단계 발송 규칙(이번 범위 아님): `weeklyReport` 대상은 건강정보 동의(`report:write` 와 같은 계산) 보유 회원으로 다시 거른다. `regionNotice` 가 내 동네만인지 관심 동네도 포함하는지는 발송 대상 규칙이라 그때 정한다 — 이 설정은 스위치 하나다.
 
 **원시 보고 파기 실행** (`member` 컨텍스트, #155 — 정본은 [entity-design.md §1-5](entity-design.md#1-5-report_purge_request--원시-보고-파기-요청))
@@ -275,10 +292,11 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
   - `LOGGED_IN`: 로그인 응답과 같은 필드 → 홈(또는 `next`).
   - `SIGNUP_REQUIRED`: `/setup/region?from=kakao` → S02-1 · S02-2 · S02-3 → S02-3 `가입하기` 에서 `POST /kakao/signup {termsAgreed, privacyAgreed, ageOver19Confirmed}`(가입표 쿠키, 30분 안에). 응답은 로그인 응답과 같고 바로 로그인된 상태다 → 동네 저장(#60) → S02-4(건강정보 동의 #59).
   - `LINK_REQUIRED`: 시안 Login-kakao-exists 자리에 **"이 이메일로 가입된 계정이 있어요. 카카오 로그인을 연결할까요?"** 확인(가린 `email` 표시). `연결하고 계속하기` → `POST /kakao/link`(10분 안에, 응답은 로그인 응답) · `다른 카카오 계정으로 계속하기` → `GET /kakao/authorize?switchAccount=true`. 연결하면 비밀번호 로그인도 그대로 된다.
-  - 실패는 모두 `/login?error=kakao-fail` 이다 — `AUTH_020`(state, 처음부터) · `021` · `022` · `023`(카카오 이메일 제공 동의 필요) · `024`(카카오 이메일 미인증) · `025` · `026`(시간 지남, 카카오 로그인부터) · `027` · `028`(요청 많음, 잠시 뒤). 탈퇴 · 정지는 `MEMBER_002` · `003`.
+  - 실패는 모두 `/login?error=kakao-fail` 이다 — `AUTH_020`(state, 처음부터) · `021` · `022` · `023`(카카오 이메일 제공 동의 필요) · `024`(카카오 이메일 미인증) · `025` · `026`(시간 지남, 카카오 로그인부터) · `027` · `028`(요청 많음, 잠시 뒤). 정지는 `MEMBER_003`(탈퇴한 계정은 가입되지 않은 계정처럼 `SIGNUP_REQUIRED` 다).
   - **iOS 홈 화면(standalone) PWA 는 실기기 확인이 필요하다** — 외부 도메인(kauth.kakao.com)이 앱 안 Safari 시트로 열리면 PWA 와 쿠키 저장소가 달라 state 쿠키가 없을 수 있다(→ `AUTH_020`). 연동 때 iOS Safari · PWA 에서 먼저 확인한다.
 - 동의(#59): 증상 보고 동의(S02-4 · 홈의 동의 시트) · 약관 재동의(S02-3 reconsent)는 모두 `POST /members/me/consents {type, documentVersion}` 이다(`legal.ts` 의 현재 버전). `MEMBER_011`(409)이면 화면의 문서 버전이 낡은 것이다. 응답의 `pendingConsents` · `reportWritable` 로 화면을 고르고, **증상 보고 동의 뒤에는 `POST /auth/token/reissue` 로 새 access 를 받아야 보고(`report:write`)할 수 있다.** 재동의 화면은 이용약관 · 개인정보만 다시 받는다(만 19세 확인은 다시 받지 않는다).
 - 건강정보 동의 철회(S10 확인 대화상자)는 `DELETE /members/me/consents/SENSITIVE_HEALTH_INFO` 이고, 성공하면 **모든 기기가 로그아웃된다**(응답이 refresh 쿠키를 지운다) — 화면은 비회원 홈으로 간다. 응답의 `purgePending: true` 는 보고를 지우는 중이라는 뜻이다(Home-purging 은 다음 단계). 파기가 완료되기 전(빨라야 철회 뒤 20분 — access 수명 15분 + 여유 5분)에는 다시 동의해도 `reportWritable` 이 false 다.
+- 회원 탈퇴(S10)는 `POST /members/me/withdraw`(본문 없음)이고, 성공하면 **모든 기기가 로그아웃된다**(응답이 refresh 쿠키를 지운다, `dataBody: null`) — 화면은 비회원 홈으로 간다. `MEMBER_002` 는 이미 탈퇴한 뒤라 화면도 세션을 비운다. 같은 이메일로 바로 다시 가입할 수 있고, 탈퇴한 계정으로 로그인하면 가입되지 않은 계정과 같은 응답(`AUTH_011` · 카카오 `SIGNUP_REQUIRED`)이다.
 
 **내 동네** (`region` 컨텍스트, `/api/v1/members/me/region`)
 
@@ -296,7 +314,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 내 동네와의 관계: 내 동네와 같은 코드는 관심 동네로 더하지 못하지만(`REGION_007`), **내 동네를 관심 동네 중 하나로 바꾸는 것은 막지 않고 그 관심 동네도 그대로 둔다** — `PUT /me/region` 은 관심 동네를 건드리지 않는다(2026-10-08 결정). 화면이 그 줄을 `내 동네` 로 적는다.
 - **변경은 커밋된 채 503 일 수 있다**: 추가 · 삭제를 커밋한 뒤 목록 이름을 읽다 surveillance 가 실패하면 응답은 `REGION_004` 지만 변경은 남는다. 삭제는 멱등이라 다시 보내면 되고, 추가를 다시 보내면 `REGION_006` 이 된다.
 - 화면 계약: **409(`REGION_003` · `005` · `006` · `007`) 오류 봉투에는 목록이 없다(`dataBody: null`)** — 프론트는 거절 뒤 `GET` 으로 목록을 다시 읽어 맞춘다. `name` · `sigungu` 가 null 인 줄(행정동 서비스가 코드를 모름)은 지어낸 이름 없이 보이고 삭제는 그대로 둔다. 폐지(`abolished: true`)는 이름이 남아 있어도 지우게 안내한다.
-- 탈퇴(#154) 때 이 테이블의 회원 행을 지우는 회원 단위 삭제는 #154 에서 저장소 포트와 함께 만든다.
+- 탈퇴(#154)하면 회원의 관심 동네를 모두 지운다 — `MemberInterestRegionRepositoryPort#deleteAllByMemberId`(벌크 JPQL DELETE, 없어도 성공, 호출자 트랜잭션 필수 `MANDATORY`)를 member 의 `MemberRegionCleanupAdapter` 가 탈퇴 트랜잭션 안에서 부른다. 파생 `deleteBy...` 는 쓰지 않는다(겹친 삭제가 StaleState 로 실패한다). 관심 동네 API 는 회원 상태를 보지 않으므로 탈퇴와 겹친 추가 · 탈퇴 뒤 남은 access(최대 15분)로 한 추가는 행을 남길 수 있다 — 회원 파기(#244)가 함께 지운다.
 
 **설정 · 기동 규칙**
 
@@ -307,6 +325,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - SMTP 계정 `MAIL_USERNAME` · `MAIL_PASSWORD` 는 기본값이 없다(auth 전용 필수 키). 동의 문서 버전 `legal.*-version` 은 비거나 20자를 넘으면 기동 실패(`LegalDocumentProperties`).
 - 재설정 토큰 수명 `auth.password-reset.token-ttl`(env `AUTH_PASSWORD_RESET_TOKEN_TTL`, 기본 PT15M)은 0 이하면 기동 실패다. 필수 키가 아니다.
 - 카카오 앱 키 `KAKAO_CLIENT_ID`(REST API 키) · `KAKAO_CLIENT_SECRET` · `KAKAO_REDIRECT_URI`(프론트 콜백 페이지, 카카오 개발자 콘솔에 등록한 값과 같아야 함)는 **기본값이 없는 auth 필수 키**다 — 비거나 공백이거나 `${...}` 가 풀리지 않으면 기동 실패(`KakaoOAuthProperties`, `toString` 에서 secret 을 가린다). 카카오 앱은 동의 항목 `account_email` · `profile_nickname` 을 켜야 한다. timeout `KAKAO_CONNECT_TIMEOUT`(PT1S) · `KAKAO_READ_TIMEOUT`(PT2S), authorize IP 상한 `AUTH_OAUTH_AUTHORIZE_IP_MAX_COUNT`(30) · `AUTH_OAUTH_AUTHORIZE_IP_WINDOW`(PT10M)과 `AUTH_OAUTH_STATE_TTL` · `AUTH_OAUTH_SIGNUP_TICKET_TTL` · `AUTH_OAUTH_LINK_TICKET_TTL` 은 기본값이 있고 0 이하면 기동 실패다.
+- 탈퇴 이메일 다이제스트 pepper `member.withdrawn-email.pepper`(env `WITHDRAWN_EMAIL_PEPPER`)는 **기본값이 없는 auth 필수 키**다 — 비거나 공백이거나 `${...}` 가 풀리지 않거나 앞뒤 공백을 지운 길이가 32자 미만이면 기동 실패(`WithdrawnEmailProperties`, `toString` 에서 가린다). 기동 때 pepper 지문(고정 입력 HMAC 의 앞 8자)을 INFO 로 남긴다(`withdrawn email pepper fingerprint=…`). **한번 정하면 바꾸지 않는다** — 바꾸면 기존 탈퇴 행의 다이제스트와 대조할 수 없고 원문이 없어 다시 계산할 수도 없다. 배포 전후 기동 로그의 지문이 다르면 교체된 것이다.
 - 원시 보고 파기 `auth.report-purge.*`(env `AUTH_REPORT_PURGE_*`): `scheduler-enabled`(`true` / `false` 만 받고 대소문자는 무시한다. `yes` · `1` · 빈 문자열 등은 기동 실패 — 조건(`@ConditionalOnProperty`)이 조용히 꺼짐으로 읽을 값이라서다. yml 기본 false, **compose 가 dev · prod 모두 true 로 넘긴다**. 테스트 컨텍스트가 surveillance 를 부르지 않게 하려는 것이다. 꺼져 있으면 기동 때 WARN 한 줄을 남긴다), `initial-delay`(PT1M, 0 허용) · `fixed-delay`(PT5M) · `completion-margin`(PT5M) · `batch-size`(50) · `alert-attempt-threshold`(12) · `retention`(P365D) · `cleanup-cron`(`0 30 4 * * *`, KST). 0 이하 · 잘못된 cron 은 기동 실패(`ReportPurgeProperties`). `@EnableScheduling` 은 같은 스위치로 `AuthServiceSchedulingConfig` 에 건다.
 - persistence-core 의 Snowflake · QueryDSL · JPA Auditing 을 `AuthServiceBeansConfig` 에서 켠다. Snowflake 는 기본 datacenter 0 / worker 0 — 인스턴스를 늘리면 `SNOWFLAKE_WORKER_ID` 를 인스턴스마다 다르게 준다.
 - 관심 동네 상한 `region.interest.max-count`(기본 3)는 application.yml 에만 있고 환경변수로 받지 않는다(프론트 상수와 같은 값이어야 해서 배포 환경마다 다르게 두지 않는다). 0 이하면 기동 실패(`RegionInterestProperties`).
