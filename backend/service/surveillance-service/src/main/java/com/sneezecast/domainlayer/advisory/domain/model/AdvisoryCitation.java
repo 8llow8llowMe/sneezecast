@@ -1,6 +1,7 @@
 package com.sneezecast.domainlayer.advisory.domain.model;
 
 import com.sneezecast.domainlayer.aggregate.domain.enums.AggregateLevel;
+import com.sneezecast.domainlayer.report.domain.enums.SymptomGroup;
 import java.util.Objects;
 
 /**
@@ -37,5 +38,13 @@ public record AdvisoryCitation(
             throw new IllegalArgumentException("인용 수치 관계가 맞지 않습니다. participant=" + participantCount + ", symptomatic=" + symptomaticCount
                 + ", respiratory=" + respiratoryCount + ", enteric=" + entericCount);
         }
+    }
+
+    /** 증상군의 인용 보고 수 ({@code DistrictWeeklyAggregate#groupCount} 와 같은 대응). */
+    public int groupCount(SymptomGroup group) {
+        return switch (group) {
+            case RESPIRATORY -> respiratoryCount;
+            case ENTERIC -> entericCount;
+        };
     }
 }

@@ -6,9 +6,14 @@ import com.sneezecast.domainlayer.advisory.application.exception.AdvisoryErrorCo
 import com.sneezecast.domainlayer.advisory.application.exception.AdvisoryException;
 import com.sneezecast.domainlayer.advisory.application.mapper.AdvisoryMapper;
 import com.sneezecast.domainlayer.advisory.application.port.out.AdvisoryRepositoryPort;
+import com.sneezecast.domainlayer.advisory.domain.enums.AdvisoryStatus;
 import com.sneezecast.domainlayer.advisory.domain.model.Advisory;
+import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
+import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -21,12 +26,33 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AdvisoryRepositoryAdapter implements AdvisoryRepositoryPort {
 
+    /** 공개 조회가 저장소 밖으로 내보내는 상태. 초안 · AI 초안 · 수정 · 승인은 여기에 없다. */
+    private static final Set<AdvisoryStatus> PUBLIC_STATUSES = EnumSet.of(AdvisoryStatus.PUBLISHED, AdvisoryStatus.RETRACTED);
+
     private final AdvisoryRepository advisoryRepository;
     private final AdvisoryMapper advisoryMapper;
 
     @Override
     public Optional<Advisory> findById(long id) {
         return advisoryRepository.findById(id).map(advisoryMapper::toDomainFromEntity);
+    }
+
+    @Override
+    public List<Advisory> findAllPublicByDistrictCodeAndIsoWeek(String districtCode, ReportWeek isoWeek) {
+        return advisoryRepository.findAllByDistrictCodeAndIsoWeekAndStatusIn(districtCode, isoWeek.value(), PUBLIC_STATUSES).stream()
+            .map(advisoryMapper::toDomainFromEntity)
+            .toList();
+    }
+
+    @Override
+    public List<Advisory> findAllPublishedByDistrictCodeInAndIsoWeekIn(Collection<String> districtCodes, Collection<ReportWeek> isoWeeks) {
+        if (districtCodes.isEmpty() || isoWeeks.isEmpty()) {
+            return List.of();
+        }
+        List<String> weeks = isoWeeks.stream().map(ReportWeek::value).toList();
+        return advisoryRepository.findAllByDistrictCodeInAndIsoWeekInAndStatus(districtCodes, weeks, AdvisoryStatus.PUBLISHED).stream()
+            .map(advisoryMapper::toDomainFromEntity)
+            .toList();
     }
 
     /**

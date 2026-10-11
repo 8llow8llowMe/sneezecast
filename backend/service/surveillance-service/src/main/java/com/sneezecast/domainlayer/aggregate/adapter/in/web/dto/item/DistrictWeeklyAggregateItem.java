@@ -52,7 +52,10 @@ public record DistrictWeeklyAggregateItem(
     BigDecimal baselineRate,
 
     @Schema(description = "증상군별 비율 · 전주 대비 변화 (호흡기 → 장관). 자료 부족이면 없다")
-    List<SymptomGroupAggregateItem> groups
+    List<SymptomGroupAggregateItem> groups,
+
+    @Schema(description = "그 주에 운영자가 발행해 지금 보이는 안내 요약. 발행 중인 안내가 없거나 철회됐으면 없다 (#215)")
+    PublishedAdvisorySummaryItem publishedAdvisory
 ) {
 
 }

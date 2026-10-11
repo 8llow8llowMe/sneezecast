@@ -5,8 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 
 /**
- * 예방 안내 도메인 오류 (coding-conventions §6-2 대역). 요청 검증 대역(ADVISORY_100 · 101~ · 198 · 199)과 advice 는 운영자 API(#246)가 컨트롤러와
- * 함께 더한다.
+ * 예방 안내 도메인 오류 (coding-conventions §6-2 대역). 필드별 검증 코드(ADVISORY_101~)는 {@link AdvisoryValidationMessage} 가 단일 기준점이며 여기서
+ * 중복 정의하지 않는다. 요청 검증 대역 · advice 는 공개 동네 안내(#215)가 먼저 두었고, 운영자 API(#246)는 필드별 코드를 이어 붙인다.
  */
 @Getter
 @RequiredArgsConstructor
@@ -24,7 +24,17 @@ public enum AdvisoryErrorCode {
     // 요청이 실은 버전이 지금 버전과 다르거나, 같은 안내를 다른 운영자가 먼저 고쳤다(@Version 충돌). 화면은 다시 읽어 그린다.
     CONCURRENT_MODIFICATION("ADVISORY_006", "다른 운영자가 먼저 이 안내를 처리했습니다. 새로 불러온 뒤 다시 시도해주세요.", HttpStatus.CONFLICT),
     // 같은 동네 · 주에 이미 발행 중인 안내가 있다. 바꾸려면 그 안내를 철회(정정)한다.
-    ALREADY_PUBLISHED("ADVISORY_007", "이 동네 · 주에는 이미 발행 중인 안내가 있습니다. (행정동 %s, %s)", HttpStatus.CONFLICT);
+    ALREADY_PUBLISHED("ADVISORY_007", "이 동네 · 주에는 이미 발행 중인 안내가 있습니다. (행정동 %s, %s)", HttpStatus.CONFLICT),
+    // 공개 동네 안내 — 없는 행정동 코드. 폐지된 코드는 오류가 아니다(행정동 조회 #111 · 공개 집계 #212 와 같은 관례).
+    DISTRICT_NOT_FOUND("ADVISORY_008", "존재하지 않는 행정동입니다.", HttpStatus.NOT_FOUND),
+    // 공개 동네 안내 — 형식은 맞지만 조회할 수 없는 주(미래 주, 현재 주 ~ 51주 전 밖, 그 해에 없는 주). 공개 집계 AGGREGATE_002 와 같은 창이다.
+    WEEK_NOT_QUERYABLE("ADVISORY_009", "조회할 수 없는 주입니다. (조회할 수 있는 주: %s ~ %s)", HttpStatus.BAD_REQUEST),
+
+    // 요청 검증 대역 — 필드별 코드(ADVISORY_101~)는 AdvisoryValidationMessage 에 있다.
+    INVALID_REQUEST("ADVISORY_100", "요청 값이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
+    // 프레임워크 2종은 대역 끝에 둔다 — 필드별 코드가 늘어도 번호가 끼어들지 않는다.
+    PARAMETER_TYPE_INVALID("ADVISORY_198", "요청 파라미터 형식이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
+    PARAMETER_REQUIRED("ADVISORY_199", "필수 요청 파라미터가 누락되었습니다.", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;

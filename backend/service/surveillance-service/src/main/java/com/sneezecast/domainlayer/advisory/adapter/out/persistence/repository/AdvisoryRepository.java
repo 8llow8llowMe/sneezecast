@@ -1,7 +1,9 @@
 package com.sneezecast.domainlayer.advisory.adapter.out.persistence.repository;
 
 import com.sneezecast.domainlayer.advisory.adapter.out.persistence.entity.AdvisoryEntity;
+import com.sneezecast.domainlayer.advisory.domain.enums.AdvisoryStatus;
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -24,6 +26,12 @@ public interface AdvisoryRepository extends JpaRepository<AdvisoryEntity, Long> 
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<AdvisoryEntity> findAllByDistrictCodeAndIsoWeek(String districtCode, String isoWeek);
+
+    /** 공개 조회 — 동네 · 주의 안내 중 {@code statuses} 인 것. 잠그지 않는다. */
+    List<AdvisoryEntity> findAllByDistrictCodeAndIsoWeekAndStatusIn(String districtCode, String isoWeek, Collection<AdvisoryStatus> statuses);
+
+    /** 공개 집계의 발행 안내 요약 — 여러 동네 · 여러 주의 안내 중 {@code status} 인 것. 잠그지 않는다. */
+    List<AdvisoryEntity> findAllByDistrictCodeInAndIsoWeekInAndStatus(Collection<String> districtCodes, Collection<String> isoWeeks, AdvisoryStatus status);
 
     interface DistrictWeekView {
 

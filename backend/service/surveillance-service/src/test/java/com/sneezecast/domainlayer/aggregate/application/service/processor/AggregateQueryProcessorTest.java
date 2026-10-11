@@ -15,8 +15,11 @@ import com.sneezecast.domainlayer.aggregate.application.exception.AggregateExcep
 import com.sneezecast.domainlayer.aggregate.application.info.AggregateWeekInfo;
 import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo;
 import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo.GroupRate;
+import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo.PublishedAdvisory;
+import com.sneezecast.domainlayer.aggregate.application.port.out.AggregateAdvisoryQueryPort;
 import com.sneezecast.domainlayer.aggregate.application.port.out.AggregateDistrictQueryPort;
 import com.sneezecast.domainlayer.aggregate.application.port.out.DistrictWeeklyAggregateRepositoryPort;
+import com.sneezecast.domainlayer.aggregate.application.port.out.query.AggregateAdvisoryQueryResult;
 import com.sneezecast.domainlayer.aggregate.application.port.out.query.AggregateDistrictQueryResult;
 import com.sneezecast.domainlayer.aggregate.application.service.AggregateProperties;
 import com.sneezecast.domainlayer.aggregate.domain.enums.AggregateLevel;
@@ -48,6 +51,7 @@ class AggregateQueryProcessorTest {
     private static final ReportWeek CURRENT = ReportWeek.parse("2026-W42");
     private static final ReportWeek PREVIOUS = ReportWeek.parse("2026-W41");
     private static final LocalDateTime CALCULATED_AT = LocalDateTime.of(2026, 10, 14, 9, 50);
+    private static final LocalDateTime PUBLISHED_AT = LocalDateTime.of(2026, 10, 13, 10, 0);
 
     private static final AggregateDistrictQueryResult SEOGYO = new AggregateDistrictQueryResult("11440660", "서교동", "서울특별시 마포구", true);
     private static final AggregateDistrictQueryResult HAPJEONG = new AggregateDistrictQueryResult("11440680", "합정동", "서울특별시 마포구", true);
@@ -58,16 +62,19 @@ class AggregateQueryProcessorTest {
 
     private DistrictWeeklyAggregateRepositoryPort repositoryPort;
     private AggregateDistrictQueryPort districtPort;
+    private AggregateAdvisoryQueryPort advisoryPort;
     private AggregateQueryProcessor processor;
 
     @BeforeEach
     void setUp() {
         repositoryPort = mock(DistrictWeeklyAggregateRepositoryPort.class);
         districtPort = mock(AggregateDistrictQueryPort.class);
+        advisoryPort = mock(AggregateAdvisoryQueryPort.class);
         AggregateProperties properties = new AggregateProperties("2026-10-08", 100, 50, 3, 8, 4, 8);
-        processor = new AggregateQueryProcessor(repositoryPort, districtPort, properties, CLOCK);
+        processor = new AggregateQueryProcessor(repositoryPort, districtPort, advisoryPort, properties, CLOCK);
         when(districtPort.findByCode(any())).thenReturn(Optional.empty());
         when(repositoryPort.findAllByDistrictCodeInAndIsoWeekIn(anyCollection(), anyCollection())).thenReturn(List.of());
+        when(advisoryPort.findPublished(anyCollection(), anyCollection())).thenReturn(List.of());
     }
 
     @Test
@@ -170,6 +177,43 @@ class AggregateQueryProcessorTest {
         processor.getSigunguWeek("11440", null, null);
 
         verify(repositoryPort, times(1)).findAllByDistrictCodeInAndIsoWeekIn(List.of(SEOGYO.code(), HAPJEONG.code()), List.of(CURRENT, PREVIOUS));
+        verify(advisoryPort, times(1)).findPublished(List.of(SEOGYO.code(), HAPJEONG.code()), List.of(CURRENT, PREVIOUS));
+    }
+
+    @Test
+    @DisplayName("기본 주(현재 주 — 아직 마감 전이라 안내가 없다) 호출에는 직전 주의 발행 안내가 근거 주와 함께 붙는다. 자료 부족 칸에도 붙는다")
+    void previousWeekAdvisoryIsAttachedByDefault() {
+        when(districtPort.findActiveBySigunguCode("11440")).thenReturn(List.of(SEOGYO, HAPJEONG));
+        givenAdvisories(advisory(HAPJEONG.code(), PREVIOUS, "합정동 지난주 안내"));
+
+        List<DistrictWeeklyAggregateInfo> districts = processor.getSigunguWeek("11440", null, null).districts();
+
+        assertThat(districts.get(0).publishedAdvisory()).isNull();
+        assertThat(districts.get(1).publishedAdvisory()).isEqualTo(new PublishedAdvisory(PREVIOUS, "합정동 지난주 안내", PUBLISHED_AT));
+        assertThat(districts.get(1).level()).isEqualTo(AggregateLevel.INSUFFICIENT);
+        assertThat(districts.get(1).measured()).isNull();
+        verify(advisoryPort).findPublished(List.of(SEOGYO.code(), HAPJEONG.code()), List.of(CURRENT, PREVIOUS));
+    }
+
+    @Test
+    @DisplayName("요청 주와 직전 주에 모두 발행 안내가 있으면 요청 주의 안내다")
+    void requestedWeekAdvisoryWins() {
+        givenDistrict(SEOGYO);
+        givenAdvisories(advisory(SEOGYO.code(), PREVIOUS, "지난주 안내"), advisory(SEOGYO.code(), CURRENT, "이번 주 안내"));
+
+        PublishedAdvisory advisory = processor.getDistrictWeek(SEOGYO.code(), null).districts().getFirst().publishedAdvisory();
+
+        assertThat(advisory.isoWeek()).isEqualTo(CURRENT);
+        assertThat(advisory.title()).isEqualTo("이번 주 안내");
+    }
+
+    @Test
+    @DisplayName("요청 주 · 직전 주가 아닌 주의 안내는 붙지 않는다 (포트가 돌려줘도)")
+    void olderAdvisoryIsIgnored() {
+        givenDistrict(SEOGYO);
+        givenAdvisories(advisory(SEOGYO.code(), CURRENT.minusWeeks(2), "2주 전 안내"));
+
+        assertThat(processor.getDistrictWeek(SEOGYO.code(), null).districts().getFirst().publishedAdvisory()).isNull();
     }
 
     @Test
@@ -278,6 +322,14 @@ class AggregateQueryProcessorTest {
         assertThatThrownBy(() -> processor.getDistrictWeek("99999999", "2027-W01"))
             .isInstanceOfSatisfying(AggregateException.class, exception -> assertThat(exception.getErrorCode()).isEqualTo(AggregateErrorCode.WEEK_NOT_QUERYABLE));
         verify(districtPort, never()).findByCode(any());
+    }
+
+    private void givenAdvisories(AggregateAdvisoryQueryResult... advisories) {
+        when(advisoryPort.findPublished(anyCollection(), anyCollection())).thenReturn(List.of(advisories));
+    }
+
+    private static AggregateAdvisoryQueryResult advisory(String code, ReportWeek week, String title) {
+        return new AggregateAdvisoryQueryResult(code, week, title, PUBLISHED_AT);
     }
 
     private void givenDistrict(AggregateDistrictQueryResult district) {

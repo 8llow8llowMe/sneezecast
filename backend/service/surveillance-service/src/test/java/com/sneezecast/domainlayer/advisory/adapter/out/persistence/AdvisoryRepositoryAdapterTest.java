@@ -191,6 +191,26 @@ class AdvisoryRepositoryAdapterTest extends SurveillanceH2TestSupport {
     }
 
     @Test
+    @DisplayName("공개 조회는 동네 · 주의 발행됨 · 철회됨만, 요약 조회는 동네 코드 IN × 주 IN 의 발행됨만 읽는다. 동네 코드 · 주가 비면 빈 목록이다")
+    void publicQueriesReadOnlyPublicStatuses() {
+        adapter.insert(draft(1L));
+        adapter.insert(draft(2L).approve());
+        adapter.insert(draft(3L).approve().publish(PUBLISHED_AT));
+        adapter.insert(draft(4L).approve().publish(PUBLISHED_AT).retract(PUBLISHED_AT.plusDays(1)));
+        adapter.insert(draft(5L).toBuilder().isoWeek(W40.previous()).build().approve().publish(PUBLISHED_AT));
+        adapter.insert(draft(6L).toBuilder().districtCode("11240670").build().approve().publish(PUBLISHED_AT));
+        adapter.insert(draft(7L).toBuilder().isoWeek(W40.minusWeeks(2)).build().approve().publish(PUBLISHED_AT));
+
+        assertThat(adapter.findAllPublicByDistrictCodeAndIsoWeek(GARAK_1, W40)).extracting(Advisory::id).containsExactlyInAnyOrder(3L, 4L);
+        assertThat(adapter.findAllPublishedByDistrictCodeInAndIsoWeekIn(List.of(GARAK_1, "11240670", "11240680"), List.of(W40))).extracting(Advisory::id)
+            .containsExactlyInAnyOrder(3L, 6L);
+        assertThat(adapter.findAllPublishedByDistrictCodeInAndIsoWeekIn(List.of(GARAK_1), List.of(W40, W40.previous()))).extracting(Advisory::id)
+            .containsExactlyInAnyOrder(3L, 5L);
+        assertThat(adapter.findAllPublishedByDistrictCodeInAndIsoWeekIn(List.of(), List.of(W40))).isEmpty();
+        assertThat(adapter.findAllPublishedByDistrictCodeInAndIsoWeekIn(List.of(GARAK_1), List.of())).isEmpty();
+    }
+
+    @Test
     @DisplayName("이력은 운영자 ID 와 함께 쌓이고, 안내별로 오래된 것부터 읽힌다")
     void historyInsertAndOrder() {
         Advisory draft = draft(1L);

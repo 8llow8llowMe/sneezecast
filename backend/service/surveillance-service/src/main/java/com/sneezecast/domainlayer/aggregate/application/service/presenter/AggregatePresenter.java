@@ -2,6 +2,7 @@ package com.sneezecast.domainlayer.aggregate.application.service.presenter;
 
 import com.sneezecast.common.dto.metadata.CodeNameDescriptionMetadata;
 import com.sneezecast.domainlayer.aggregate.adapter.in.web.dto.item.DistrictWeeklyAggregateItem;
+import com.sneezecast.domainlayer.aggregate.adapter.in.web.dto.item.PublishedAdvisorySummaryItem;
 import com.sneezecast.domainlayer.aggregate.adapter.in.web.dto.item.SymptomGroupAggregateItem;
 import com.sneezecast.domainlayer.aggregate.adapter.in.web.dto.response.DistrictWeeklyAggregateListResponse;
 import com.sneezecast.domainlayer.aggregate.adapter.in.web.dto.response.DistrictWeeklyAggregateResponse;
@@ -9,6 +10,7 @@ import com.sneezecast.domainlayer.aggregate.application.info.AggregateWeekInfo;
 import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo;
 import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo.GroupRate;
 import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo.Measured;
+import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo.PublishedAdvisory;
 import com.sneezecast.domainlayer.aggregate.domain.enums.GroupTrend;
 import com.sneezecast.domainlayer.aggregate.domain.enums.InsufficientReason;
 import java.time.Instant;
@@ -72,7 +74,8 @@ public class AggregatePresenter {
             .level(district.level().toMetadata())
             .insufficientReason(metadata(district.insufficientReason()))
             .participantCount(district.participantCount())
-            .calculatedAt(toInstant(district.calculatedAt()));
+            .calculatedAt(toInstant(district.calculatedAt()))
+            .publishedAdvisory(toAdvisoryItem(district.publishedAdvisory()));
         Measured measured = district.measured();
         if (measured == null) {
             return item.build();
@@ -83,6 +86,10 @@ public class AggregatePresenter {
             .baselineRate(measured.baselineRate())
             .groups(measured.groups().stream().map(AggregatePresenter::toGroupItem).toList())
             .build();
+    }
+
+    private PublishedAdvisorySummaryItem toAdvisoryItem(PublishedAdvisory advisory) {
+        return advisory == null ? null : new PublishedAdvisorySummaryItem(advisory.isoWeek().value(), advisory.title(), toInstant(advisory.publishedAt()));
     }
 
     private static SymptomGroupAggregateItem toGroupItem(GroupRate group) {
