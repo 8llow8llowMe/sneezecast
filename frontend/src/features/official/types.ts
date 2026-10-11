@@ -1,6 +1,7 @@
 /**
- * S08 공식 정보 화면 데이터. 질병관리청 감시 자료(API 초안 `GET /api/official/latest`, docs/api-contract-draft.md)를
- * 화면용으로 옮긴 모양이다. 날짜 · 주차 문구는 API 연동 때 매핑 계층이 만든다 — 지금은 목 데이터가 채운다.
+ * S08 공식 정보 화면 데이터. 질병관리청 감시 자료(백엔드 확정 `GET /api/v1/official/latest`, docs/api-contract-draft.md
+ * "공식 정보")를 화면용으로 옮긴 모양이다. 날짜 · 주차 문구는 API 연동 때 매핑 계층이 만든다 — 연동 전이라 지금은 목 데이터가 채운다.
+ * 발표 단계(`stage`) · 쉬운 요약(`summary`) · 발표일(`announcedLabel`)은 그 API 에 없다(출처 미정) — 연동 때 이 모양을 함께 고친다.
  *
  * **시민 자가보고 값은 이 타입에 없다.** 공식 정보와 시민 자가보고를 한 UI 요소에 섞지 않는다 (루트 CLAUDE.md "공식 정보와 안내").
  *
