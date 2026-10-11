@@ -75,7 +75,9 @@ backend/
 ## core/storage-core
 
 - MinIO(S3 호환) 클라이언트, 버킷 초기화, 업로드 · 삭제 · 공개 URL 조립
-- 삭제는 DB 커밋 이후로 미룬다 (`deleteAfterCommit`). 롤백됐는데 파일만 지워지는 일을 막는다.
+- 삭제는 DB 커밋 이후로 미룬다. 롤백됐는데 파일만 지워지는 일을 막는다. auth 는 트랜잭션을 처리기 메서드로 좁히고 처리기가 돌아온 뒤 `deleteQuietly` 를 부른다 — `deleteAfterCommit`(커밋 동기화 콜백)은 커밋 직후 아직 커넥션을 쥔 채 원격 삭제를 기다리므로 쓰지 않는다.
+- `ObjectStorageClient` 는 core 라이브러리라 application 계층(Facade · Processor)에서 직접 주입한다(out-port 로 감싸지 않는다).
+- MinIO 호출 timeout 은 connect 3초 · write 10초 · read 10초다(`StorageConfigurer` 상수 — SDK 기본 5분이면 저장소가 멈췄을 때 요청이 매달린다).
 - 이미지 검증 (형식 · 크기)
 - DB 에는 URL 이 아니라 **오브젝트 키**를 저장한다. 버킷·도메인이 바뀌어도 데이터를 고치지 않는다.
 - 사용처는 현재 auth-service(프로필 이미지)뿐이다. **증상·건강 관련 파일은 올리지 않는다.**
@@ -140,7 +142,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | 카카오 | `GET /kakao/authorize?switchAccount=` · `POST /kakao/login` · `POST /kakao/signup` · `POST /kakao/link` |
 | 비밀번호 | `POST /password/reset/send-code` · `POST /password/reset/verify-code` (일회용 재설정 토큰) · `POST /password/reset` · `POST /me/password` (변경) |
 | 세션 | `GET /sessions` · `DELETE /sessions/{sessionId}` · `DELETE /sessions` (현재 기기를 뺀 전부) |
-| 내 정보 | `GET /me` · `PATCH /me` · `POST /me/withdraw` (#154) · 프로필 이미지 업로드 · `DELETE /me/profile-image` (#112) |
+| 내 정보 | `GET /me` · `PATCH /me` · `POST /me/withdraw` (#154) · `POST /me/profile-image` (multipart) · `DELETE /me/profile-image` (#112) |
 | 동의 | `POST /me/consents` (동의 · 재동의) · `DELETE /me/consents/SENSITIVE_HEALTH_INFO` (건강정보 동의 철회) |
 | 내 동네 | `GET /me/region` · `PUT /me/region` |
 | 관심 동네 | `GET /me/interest-regions` · `POST /me/interest-regions` · `DELETE /me/interest-regions/{code}` |
@@ -157,9 +159,9 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 | MySQL `member_notification_setting` | 알림 수신 설정 (회원당 최대 1행, 첫 변경 때 만든다 — 행이 없으면 모두 꺼짐) |
 | MySQL `report_purge_request` | 탈퇴 · 건강정보 동의 철회 시 surveillance 원시 보고 파기 요청 (완료될 때까지 재시도) |
 | Redis (TTL) | 이메일 인증 코드, 비밀번호 재설정 코드 · 재설정 토큰(해시), 로그인 · 비밀번호 확인 시도 횟수, OAuth state · 카카오 가입표 · 연결 확인표(해시), refresh 세션 |
-| MinIO | 업로드한 프로필 이미지 |
+| MinIO | 업로드한 프로필 이미지 (`members/profiles/{memberId}/{yyyy}/{MM}/{uuid}.{ext}`, 익명 읽기는 이 prefix 의 GetObject 만) |
 
-- 탈퇴 회원은 30일 보존 후 스케줄러가 파기한다(#244). **보고 파기 요청이 모두 완료된 회원만** 지운다. 고아 프로필 이미지는 정리 스케줄러가 지운다(#112 — 탈퇴한 회원의 업로드 이미지 오브젝트도 여기서 지운다).
+- 탈퇴 회원은 30일 보존 후 스케줄러가 파기한다(#244). **보고 파기 요청이 모두 완료된 회원만** 지운다. 바뀐 · 지운 · 탈퇴한 회원의 업로드 이미지 오브젝트는 DB 커밋 뒤에 바로 지우고(아래 "프로필 이미지"), 그 삭제가 실패해 남은 고아 오브젝트는 고아 이미지 정리 스케줄러가 회수한다(#278 — 아직 없다).
 - 테이블 · 컬럼 정본은 [entity-design.md §1](entity-design.md#1-auth--회원).
 - enum 컬럼은 `@Enumerated(STRING)` 에 `@JdbcTypeCode(SqlTypes.VARCHAR)` 를 함께 건다. 빠지면 Hibernate 6 이 MySQL 네이티브 `enum(...)` 을 만들어 값을 늘릴 때마다 ALTER 가 필요하고, dev `ddl-auto: update` 는 기존 컬럼을 고치지 않아 새 값 INSERT 가 실패한다.
 - auth 엔티티의 새 행 판정은 `BaseEntity` 가 한다(`isNew()` = `createdAt == null`, [coding-conventions.md §8-1](coding-conventions.md#8-1-엔티티)). Snowflake 로 ID 를 미리 정해 기본 판정이 merge 로 가면 INSERT 전 SELECT 가 나가고 겹치는 ID 를 조용히 덮어쓰기 때문이다. 그래서 **기존 행을 고칠 때는 엔티티를 조회해 변경 감지로 바꾼다** — 도메인에서 새로 매핑한 엔티티를 `save` 하면 PK 위반이다.
@@ -216,7 +218,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 
 **내 정보 · 비밀번호 변경** (`member` 컨텍스트, 인증 필요)
 
-- `GET /members/me` → `{memberId, email, nickname, provider(EMAIL | KAKAO — DB 값이 null 이면 EMAIL), hasPassword, role, pendingConsents, reportWritable}`. 재동의 · 보고 가능 여부(미완료 파기 요청 포함)는 토큰과 같은 계산(`MemberConsentProcessor.currentStatus` + auth 의 `ReportScopePolicy` — member 는 `MemberReportScopePort` 로 부른다)이다. 내 동네는 `/me` 에 싣지 않고 `GET /members/me/region`(#60)으로 따로 읽는다 — 이름 · 폐지 여부를 surveillance 에서 읽으므로 `/me` 가 surveillance 장애에 묶이지 않게 한다. 프로필 이미지는 #112 에서 더한다.
+- `GET /members/me` → `{memberId, email, nickname, profileImageUrl, provider(EMAIL | KAKAO — DB 값이 null 이면 EMAIL), hasPassword, role, pendingConsents, reportWritable}`. 재동의 · 보고 가능 여부(미완료 파기 요청 포함)는 토큰과 같은 계산(`MemberConsentProcessor.currentStatus` + auth 의 `ReportScopePolicy` — member 는 `MemberReportScopePort` 로 부른다)이다. 내 동네는 `/me` 에 싣지 않고 `GET /members/me/region`(#60)으로 따로 읽는다 — 이름 · 폐지 여부를 surveillance 에서 읽으므로 `/me` 가 surveillance 장애에 묶이지 않게 한다. `profileImageUrl` 은 아래 "프로필 이미지" 의 표시 규칙을 따른다.
 - `PATCH /members/me` 는 닉네임만 바꾼다(가입과 같은 2~10자). 수정은 엔티티를 조회해 변경 감지로 한다(저장 전에 회원 행을 쓰기 잠금으로 다시 읽어 ACTIVE 를 본다 — 아래 "회원 탈퇴" 의 동시성) — 리포지토리의 수정 메서드는 `@Transactional(MANDATORY)` 라 트랜잭션 밖에서 부르면 바로 실패한다.
 - 비밀번호 변경 `{currentPassword, newPassword}`: 비밀번호가 없는(카카오만 쓰는) 계정이 부르면 `MEMBER_007`. 새 비밀번호 규칙은 가입과 같다(현재와 같아도 막지 않는다). **비밀번호 최초 설정 API 는 #61 에서 없앴다** — 카카오 회원은 비밀번호가 필요 없고(사용자 결정), 탈취된 access 로 이메일 로그인 자격을 만드는 경로도 함께 사라진다.
 - 현재 비밀번호 확인은 회원 단위로 횟수를 제한한다(`passwordChangeFail:{memberId}`, 상한 · 잠금은 `auth.login.*` 5회 · 10분). 로그인처럼 **BCrypt 전에 먼저 올리고**, 상한째 틀린 시도부터 `MEMBER_006`(429)이다. 틀리면 `MEMBER_005`.
@@ -224,6 +226,15 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - member 요청 검증은 `MemberRequestExceptionHandler`(member 패키지 전용) 가 `MEMBER_1xx` 로 낸다. auth 검증 오류가 MEMBER 코드로 새지 않게 처리기를 나눴다.
 - **컨텍스트 의존 방향**: auth → member 는 자유롭게 쓴다(회원 조회 · 동의 상태 · 재설정의 비밀번호 저장과 카카오 연결의 provider 변경 `MemberCommandProcessor`, 입력 규칙 `MemberInputPolicy`). **member → auth 는 `member/adapter/out/auth` 의 어댑터로만** 잇는다(`MemberReportScopeAdapter` · `MemberSessionRevokeAdapter`) — `member/application` · `member/domain` 은 auth 를 import 하지 않는다. application 계층에 순환이 생기면 컨텍스트를 떼어 내거나 의존 규칙 테스트를 넣을 때 막힌다(hondigagae 와 같은 방향). `region` 은 다른 컨텍스트를 import 하지 않는다(회원은 JWT 의 `memberId` 로만 안다). **member → region 도 `member/adapter/out/region` 의 어댑터로만** 잇는다(`MemberRegionCleanupAdapter` — 탈퇴 때 관심 동네 정리, `member/application` 은 `MemberRegionCleanupPort` 만 안다). 예외 하나: 동의 철회 · 탈퇴 응답에서 refresh 쿠키를 지우려고 member 웹 계층(`MemberRefreshCookie`)에 auth 와 **같은 값**의 쿠키 이름 · 속성을 둔다 — 응답 헤더라 out 포트로 돌릴 수 없고, auth 상수를 쓰면 의존이 생긴다. 두 값이 같음은 테스트(`MemberRefreshCookieTest`)가 고정한다.
 - 오류 코드: `AUTH_018` 재설정 인증 만료(400) · `AUTH_019` 재설정 IP 상한(429) · 검증 `AUTH_115` · `116`(resetToken), `MEMBER_004` 회원 없음(404) · `005` 현재 비밀번호 불일치(400) · `006` 확인 잠금(429) · `007` 비밀번호 없는 계정(409) · `008` 비운 번호(#61 에서 최초 설정 API 를 없앰 — 재사용 금지) · `009` 세션 저장소 장애(503) · `010` 동의할 수 없는 항목(400) · `011` 동의 문서 버전 불일치(409) · `012` 철회할 수 없는 항목(400) · `013` 알림 설정 동시 저장 경합(409, 아래 "알림 설정") · `100` · `198` · `199` 요청 형식, 검증 `MEMBER_101~114`(`111~114` 는 알림 설정).
+
+**프로필 이미지** (`member` 컨텍스트, 인증 필요 — #112)
+
+- `POST /members/me/profile-image` — multipart 파트 `imageFile` 하나. 형식 jpg · png · gif · webp 를 **매직 바이트로만** 판정하고(확장자 · Content-Type 무시) 크기 상한은 `infra.storage.max-file-bytes`(기본 5MiB)다 — 검증은 storage-core `ObjectStorageClient.uploadImage` 가 한다. 응답 `{profileImageUrl}`. 오브젝트 키는 서버가 만든다(원본 파일명을 쓰지 않는다).
+- 흐름(`MemberWebFacade`, 트랜잭션 없음): 회원 상태 확인 → 업로드(원격 I/O, 트랜잭션 밖) → `MemberCommandProcessor.changeProfileImage`(트랜잭션 — 회원 행 쓰기 잠금 · key 저장 · 소셜 URL 비움 · **이전 key 반환**) → 커밋 뒤 이전 key 오브젝트 `deleteQuietly`. 연결 트랜잭션 실패가 확정이면(그사이 탈퇴 · 롤백) 방금 올린 오브젝트를 지우고 같은 예외를 다시 던진다. 커밋 단계 예외(`TransactionSystemException` · `HeuristicCompletionException`)라 커밋 결과를 알 수 없으면 지우지 않고 남긴다 — 정말 고아면 고아 이미지 정리(#278)가 DB 참조를 보고 회수한다. 이전 key 는 잠금 읽기로 본 값이라 같은 회원의 업로드가 겹쳐도 고아가 남지 않는다.
+- `DELETE /members/me/profile-image` — key · 소셜 URL 을 비우고(같은 잠금 트랜잭션) 커밋 뒤 이전 key 오브젝트를 지운다. 이미지가 없어도 200(멱등).
+- 표시: 업로드 key 가 있으면 `{infra.storage.public-url}/{bucket}/{key}`, 없으면 소셜 URL, 둘 다 없으면 null. DB 에는 key 만 두고 URL 은 응답 때 조립한다.
+- 오류는 storage-core 코드를 그대로 쓴다 — `STORAGE_001` 파일 · 파트 없음 · 빈 파일, `002` 크기 초과, `003` 형식(400), `004` 저장소 장애(500). `MemberStorageExceptionHandler`(member 패키지 전용)가 봉투로 바꾼다. 크기 상한은 두 겹이다 — 스토리지 상한(`MINIO_MAX_FILE_BYTES`, 기본 5MiB) 초과는 `STORAGE_002`(400) 봉투, 요청 상한(`MULTIPART_MAX_REQUEST_SIZE` 기본 6MB = 서블릿 `max-file-size` · `max-request-size` = nginx `client_max_body_size`) 초과는 컨트롤러 전에 막혀 봉투 없는 413 이다. 서블릿 파일 상한을 스토리지 상한과 같게 두면 1바이트만 넘어도 413 이 되므로 요청 상한에 맞춘다(`MemberProfileImageApiIntegrationTest` 가 고정). 화면은 보내기 전에 5MiB 를 본다.
+- 삭제 실패(저장소 장애)는 로그만 남기고 요청은 성공이다. 남은 고아 오브젝트는 고아 이미지 정리 스케줄러가 회수한다(#278 — 아직 없다).
 
 **동의 · 재동의 · 건강정보 동의 철회** (`member` 컨텍스트, 인증 필요 — #59)
 
@@ -239,7 +250,7 @@ Eureka 서버. 서비스는 `@EnableDiscoveryClient` 로 등록하고, 게이트
 - 본문 없음 → 200 `dataBody: null` + refresh 쿠키 삭제(동의 철회와 같은 `MemberRefreshCookie`). 오류: 이미 탈퇴한 회원의 남은 access `MEMBER_002` · 정지 `MEMBER_003`(403), 회원 행 없음 `MEMBER_004`(404). 새 오류 코드는 없다.
 - `MemberWebFacade.withdraw`(트랜잭션 없음) → `MemberWithdrawalProcessor.withdraw`(**한 트랜잭션**) → 커밋 뒤 모든 기기 로그아웃. 트랜잭션 안에서 차례로:
   1. 회원 상태 확인 — 회원 행을 **쓰기 잠금**(`SELECT ... FOR UPDATE`, `MemberQueryProcessor.getActiveMemberForUpdate`)으로 읽고 `getActiveMember` 와 같은 판정을 한다.
-  2. 회원 행 탈퇴 갱신(조회 후 변경 감지) — `email` = `HMAC-SHA256(pepper, "{memberId}:" + 정규화한 이메일)` 의 hex 64자(`WithdrawnEmailHasher`), `password` · `provider` · `profile_image_url` · `profile_image_key` = null, `nickname` = `탈퇴회원`, `status` = WITHDRAWN, `withdrawn_at` = 지금. 업로드 이미지 오브젝트는 트랜잭션 안에서 지우지 않고 고아 이미지 정리(#112)에 맡긴다.
+  2. 회원 행 탈퇴 갱신(조회 후 변경 감지) — `email` = `HMAC-SHA256(pepper, "{memberId}:" + 정규화한 이메일)` 의 hex 64자(`WithdrawnEmailHasher`), `password` · `provider` · `profile_image_url` · `profile_image_key` = null, `nickname` = `탈퇴회원`, `status` = WITHDRAWN, `withdrawn_at` = 지금. 잠금 읽기로 본 업로드 이미지 key 는 처리기가 **돌려주기만** 하고, `MemberWebFacade.withdraw` 가 처리기가 돌아온 뒤(커밋 · 커넥션 반환 뒤, 로그아웃 다음) `deleteQuietly` 로 지운다 — DB 커넥션을 잡은 채 원격 저장소를 기다리지 않고, 롤백이면 처리기가 예외로 빠져 지우지 않는다. 삭제가 실패해 남은 오브젝트는 고아 이미지 정리 스케줄러(#278)가 회수한다.
   3. `report_purge_request`(reason `WITHDRAWAL`, `requested_at` = 탈퇴 시각) — `ReportPurgeRequestProcessor.requestWithdrawalIfAbsent` 는 **같은 사유의 미완료 요청만** 본다. 건강정보 동의 철회 파기가 미완료로 남아 있어도 `WITHDRAWAL` 행은 반드시 생긴다(철회용 `requestIfAbsent` 는 사유를 보지 않아 쓰지 않는다).
   4. 관심 동네 회원 단위 삭제(`MemberRegionCleanupPort` → region `MemberInterestRegionRepositoryPort#deleteAllByMemberId`, 벌크 JPQL DELETE · MANDATORY).
   5. 알림 설정 삭제(`MemberNotificationSettingRepositoryPort#deleteByMemberId`, 벌크 DELETE · MANDATORY).

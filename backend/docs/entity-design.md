@@ -52,8 +52,8 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | email | VARCHAR(100) | N | 이메일. **`uk_member_email`** — 동시 가입 요청에서 중복 계정을 DB 가 막는다. 탈퇴하면 원문 대신 다이제스트(hex 64자)가 들어간다(아래) |
 | password | VARCHAR(80) | Y | 비밀번호 해시. 카카오로만 로그인하는 회원은 null (비밀번호 최초 설정은 두지 않는다 — #61) |
 | nickname | VARCHAR(30) | N | 닉네임 |
-| profile_image_url | VARCHAR(500) | Y | 소셜 제공자가 준 외부 프로필 이미지 URL (직접 업로드하면 null) |
-| profile_image_key | VARCHAR(512) | Y | 직접 업로드한 프로필 이미지 오브젝트 키 (URL 이 아니라 키를 저장한다) |
+| profile_image_url | VARCHAR(500) | Y | 소셜 제공자가 준 외부 프로필 이미지 URL (직접 업로드하면 null). 지금 가입 경로는 모두 null 이다 — 카카오 프로필 이미지는 받지 않는다 |
+| profile_image_key | VARCHAR(512) | Y | 직접 업로드한 프로필 이미지 오브젝트 키 `members/profiles/{memberId}/{yyyy}/{MM}/{uuid}.{ext}` (URL 이 아니라 키를 저장하고 응답 때 공개 URL 을 조립한다). 업로드 · 삭제는 #112 |
 | role | VARCHAR(20) | N | `SecurityRole` — USER / OPERATOR / ADMIN. JWT `role` claim 과 같은 값 |
 | provider | VARCHAR(20) | Y | `OAuthProvider` — KAKAO. null 이면 이메일 계정만. KAKAO 면 카카오 로그인 가능(비밀번호가 있으면 이메일 로그인도 — 기존 이메일 계정에 카카오를 연결한 경우) |
 | status | VARCHAR(20) | N | `MemberStatus` — ACTIVE / WITHDRAWN / SUSPENDED |
@@ -61,13 +61,14 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 - 인증 코드 · 로그인 시도 횟수 · OAuth state · refresh 토큰 · 세션은 테이블이 아니라 Redis(TTL) 다 ([modules.md](modules.md#serviceauth-service)).
 - 운영자 계정은 따로 두지 않는다. `role` 이 OPERATOR 인 회원이다.
+- **프로필 이미지** (#112): `profile_image_key` 와 `profile_image_url` 은 배타적이다 — 업로드하면 key 를 쓰고 URL 을 비우며, 삭제하면 둘 다 비운다. 표시 우선순위는 key(공개 URL) → URL → 없음(null). 바뀌거나 지워진 이전 key 의 오브젝트는 DB 커밋 뒤에 지운다. 쓰기는 다른 회원 행 쓰기처럼 회원 행 잠금 읽기 뒤에 한다(아래).
 - **탈퇴 회원 hard delete 는 그 회원의 `report_purge_request` 가 모두 완료된 뒤에만 한다** (§1-5). 회원 행이 먼저 사라지면 `memberId` 를 잃어 `reporter_key` 를 다시 계산할 수 없고, 보고가 52주 동안 남는다.
 - **탈퇴 즉시 같은 이메일로 재가입할 수 있다** (2026-10-01 결정). 탈퇴할 때 `email` 을 다이제스트로 바꿔 원문을 비운다(hondigagae `WithdrawnEmailHasher` 방식) — `uk_member_email` 을 풀어 주면서 회원 행은 보고 파기가 끝날 때까지 남긴다. 보고 파기는 `memberId` 기준이라 영향이 없다. 구현은 #154(탈퇴 API — 흐름은 [modules.md](modules.md#serviceauth-service) "회원 탈퇴"), 회원 hard delete 는 #244.
   - **다이제스트** = `HMAC-SHA256(pepper, "{memberId}:" + 정규화한 이메일)` 의 소문자 hex 64자. pepper 는 `member.withdrawn-email.pepper`(env `WITHDRAWN_EMAIL_PEPPER`, Vault auth 경로, 기본값 없음 · 32자 미만이면 기동 실패)다. 이메일 공간은 열거할 수 있어 단순 SHA-256 은 원문을 되찾는다. **pepper 는 바꾸지 않는다** — 바꾸면 기존 탈퇴 행과 대조할 수 없다(기동 로그의 지문으로 교체를 알아챈다).
   - **대조할 수 있는 다이제스트로 남기는 목적**은 둘이다. ① 원문을 비우면서 `email` 의 not null · unique 를 지킨다. ② 분쟁 · 정보주체 권리 행사 때 사용자가 제시한 이메일을 운영자가 pepper 와 `memberId` 로 계산해 그 탈퇴 행인지 확인한다. 보관은 회원 파기(#244)까지다.
   - 회원 ID 를 섞는 이유: 재가입을 허용하므로 "탈퇴 → 같은 이메일로 재가입 → 다시 탈퇴" 가 정상 흐름이다. 이메일만 넣으면 두 탈퇴 행의 다이제스트가 같아 앞 행이 파기되기 전에는 둘째 탈퇴가 `uk_member_email` 에 막힌다.
   - **재가입 차단에 쓰지 않는다**(hondigagae 와 다르다). 원문이 사라지므로 가입 중복 검사 · 로그인 · 재설정 · 카카오 로그인이 탈퇴한 행을 찾지 못하고, 미가입과 같은 응답이 된다.
-  - **탈퇴 때 비우는 컬럼**: `password` · `provider` · `profile_image_url` · `profile_image_key` = null, `nickname`(not null) = 고정 값 `탈퇴회원`, `status` = WITHDRAWN, `withdrawn_at` = 탈퇴 시각. `role` 은 그대로다. 업로드한 이미지 오브젝트는 고아 이미지 정리(#112)가 지운다.
+  - **탈퇴 때 비우는 컬럼**: `password` · `provider` · `profile_image_url` · `profile_image_key` = null, `nickname`(not null) = 고정 값 `탈퇴회원`, `status` = WITHDRAWN, `withdrawn_at` = 탈퇴 시각. `role` 은 그대로다. 업로드한 이미지 오브젝트는 탈퇴 트랜잭션이 **커밋되고 커넥션을 돌려준 뒤에** 지운다(처리기가 이전 key 를 돌려주고 Facade 가 지운다 — 롤백되면 지우지 않는다). 그 삭제가 실패해 남은 오브젝트는 고아 이미지 정리 스케줄러(#278)가 회수한다.
   - 같은 트랜잭션에서 `report_purge_request`(WITHDRAWAL, §1-5)를 남기고 `member_interest_region`(§1-6) · `member_notification_setting`(§1-7)을 지운다. `member_consent` · `member_region` 은 회원 파기 때 지운다(§8).
   - **회원 행을 바꾸는 모든 쓰기(탈퇴 · 닉네임 · 비밀번호 변경 · 재설정 · 카카오 연결)는 저장 트랜잭션에서 회원 행을 `SELECT ... FOR UPDATE` 로 다시 읽고 ACTIVE 를 다시 본다.** 변경 감지는 전 컬럼을 UPDATE 하므로(`@Version` · `@DynamicUpdate` 없음), 잠금 없이 읽은 값으로 저장하면 그사이 커밋된 탈퇴가 되살아나거나 탈퇴한 행에 비밀번호 해시가 다시 써진다.
 

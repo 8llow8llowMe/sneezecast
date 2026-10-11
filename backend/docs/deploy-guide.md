@@ -270,8 +270,23 @@ batch 의 수동 잡 실행은 같은 상한 안에 두 번째 JVM 을 띄운다
         Script Path 는 `Jenkinsfile-<service>`, 브랜치(`develop` · `main`)와 PR 을 discover, 웹훅 연결
   - [ ] 배포 lock `sneezecast-backend-deploy` — `lock` 스텝이 처음 쓸 때 만든다. 미리 만들 필요는 없다
 - [ ] **4. MySQL** (dev MySQL `192.168.0.11`) — 아래 SQL. DB 이름은 `*_DB_URL` 과 한 글자도 다르면 안 된다
-- [ ] **5. MinIO** (`192.168.0.12`) — 버킷 `sneezecast` 생성 (`mc mb <alias>/sneezecast`). 익명 읽기 정책 범위는
-      프로필 이미지 업로드 기능 이슈에서 오브젝트 키 규칙과 함께 정한다
+- [ ] **5. MinIO** (`192.168.0.12`) — 버킷 `sneezecast` 생성 (`mc mb <alias>/sneezecast`). 익명 읽기는 **`members/profiles/*` 의
+      `s3:GetObject` 만** 연다(#112) — 목록 조회(`s3:ListBucket`)는 열지 않아 키를 모르면 이미지를 찾을 수 없다. auth-service 가 기동할 때마다
+      `StorageBucketInitializer` 가 버킷을 만들고 이 정책을 **덮어쓰므로** 수동 설정은 첫 배포 전 확인 · 초기화 실패 때의 대체 수단이다(콘솔 · `mc` 로
+      넓혀도 다음 기동에 되돌아간다). 수동으로 걸 때:
+
+      ```bash
+      cat > sneezecast-public-read.json <<'EOF'
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"AWS": ["*"]}, "Action": ["s3:GetObject"], "Resource": ["arn:aws:s3:::sneezecast/members/profiles/*"]}
+        ]
+      }
+      EOF
+      mc anonymous set-json sneezecast-public-read.json <alias>/sneezecast
+      mc anonymous get-json <alias>/sneezecast   # 확인 — Resource 가 members/profiles/* 하나인지 본다
+      ```
 - [ ] **6. nginx** — Infra `nginx/conf.d/api-dev.sneezecast.conf` 적용(HTTPS 블록 주석 상태로 reload → 인증서 발급 → 주석 해제)
 - [ ] **7. 첫 배포** — 각 잡을 `FORCE_DEPLOY=true` 로 하나씩, 앞 잡이 초록이 된 뒤 다음 잡을 실행한다
   1. `sneezecast-service-discovery` (다른 서비스가 등록할 대상)
