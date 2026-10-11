@@ -45,7 +45,7 @@ public class MemberConsentRepositoryAdapter implements MemberConsentRepositoryPo
     }
 
     /**
-     * 조회한 엔티티를 바꿔 변경 감지로 UPDATE 한다 — 매핑한 엔티티를 {@code save} 하면 INSERT 로 가서 PK 위반이다(MemberConsentEntity 주의).
+     * 조회한 엔티티를 바꿔 변경 감지로 UPDATE 한다 — 매핑한 엔티티를 {@code save} 하면 INSERT 로 가서 PK 위반이다(BaseEntity#isNew 주의).
      * 트랜잭션이 없으면 변경이 조용히 사라지므로 {@code MANDATORY} 다.
      */
     @Override

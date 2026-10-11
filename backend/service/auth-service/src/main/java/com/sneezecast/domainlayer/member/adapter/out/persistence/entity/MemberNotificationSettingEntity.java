@@ -12,7 +12,6 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Comment;
-import org.springframework.data.domain.Persistable;
 
 /**
  * 회원의 알림 수신 설정 (entity-design §1-7). 회원당 최대 1행이고 회원은 raw FK 로만 참조한다(DB FK 제약 없음). 행은 첫 변경 때 만든다 — 조회는 행이
@@ -30,7 +29,7 @@ import org.springframework.data.domain.Persistable;
         // 회원 기준 조회 인덱스도 겸한다.
         @Index(name = MemberNotificationSettingEntity.MEMBER_ID_UNIQUE_INDEX, columnList = "memberId", unique = true)
     })
-public class MemberNotificationSettingEntity extends BaseEntity implements Persistable<Long> {
+public class MemberNotificationSettingEntity extends BaseEntity {
 
     public static final String MEMBER_ID_UNIQUE_INDEX = "uk_member_notification_setting_member_id";
 
@@ -54,13 +53,4 @@ public class MemberNotificationSettingEntity extends BaseEntity implements Persi
      * 값을 바꾸는 메서드를 두지 않는다 — 변경 감지는 두 칸을 모두 쓰는 UPDATE 를 내보내 같은 회원의 동시 요청이 바꾼 다른 항목을 되돌린다. 기존 행은
      * 저장소의 부분 갱신 쿼리(MemberNotificationSettingRepository#changeByMemberId)로만 고친다.
      */
-
-    /**
-     * 새 행인지 판정한다 — {@code MemberRegionEntity#isNew} 와 같은 이유(Snowflake ID 를 미리 정해 기본 판정이 merge 로 가면 겹치는 ID 를 조용히
-     * 덮어쓴다)로 감사 컬럼 {@code createdAt} 이 비어 있으면 새 행이다 (coding-conventions §8-1).
-     */
-    @Override
-    public boolean isNew() {
-        return getCreatedAt() == null;
-    }
 }

@@ -103,7 +103,7 @@ public class MemberRepositoryAdapter implements MemberRepositoryPort {
 
     /**
      * 조회한 엔티티를 바꿔 변경 감지로 UPDATE 한다. 도메인에서 새로 매핑한 엔티티를 {@code save} 하면 {@code isNew()} 가 true 라 INSERT 로 가서 PK
-     * 위반이다(MemberEntity 주의). 트랜잭션이 없으면 조회한 엔티티가 바로 분리돼 변경이 조용히 사라지므로 {@code MANDATORY} 로 호출자 트랜잭션을 강제한다.
+     * 위반이다(BaseEntity#isNew 주의). 트랜잭션이 없으면 조회한 엔티티가 바로 분리돼 변경이 조용히 사라지므로 {@code MANDATORY} 로 호출자 트랜잭션을 강제한다.
      */
     @Override
     @Transactional(propagation = Propagation.MANDATORY)

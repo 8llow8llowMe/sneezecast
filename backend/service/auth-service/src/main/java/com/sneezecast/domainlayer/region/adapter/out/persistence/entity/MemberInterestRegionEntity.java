@@ -12,7 +12,6 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Comment;
-import org.springframework.data.domain.Persistable;
 
 /**
  * 회원이 고른 관심 동네 (entity-design §1-6). 회원당 여러 행이고 회원은 raw FK 로만 참조한다(DB FK 제약 없음). 행정동은 다른 서비스(surveillance
@@ -31,7 +30,7 @@ import org.springframework.data.domain.Persistable;
         // 회원당 상한을 DB 가 지킨다 — 칸(slot)이 1..max-count 뿐이라, 동시에 들어온 추가 요청이 같은 빈 칸을 노리면 하나는 여기서 막힌다.
         @Index(name = MemberInterestRegionEntity.MEMBER_SLOT_UNIQUE_INDEX, columnList = "memberId, slot", unique = true)
     })
-public class MemberInterestRegionEntity extends BaseEntity implements Persistable<Long> {
+public class MemberInterestRegionEntity extends BaseEntity {
 
     public static final String MEMBER_DISTRICT_UNIQUE_INDEX = "uk_member_interest_region_member_id_district_code";
     public static final String MEMBER_SLOT_UNIQUE_INDEX = "uk_member_interest_region_member_id_slot";
@@ -51,13 +50,4 @@ public class MemberInterestRegionEntity extends BaseEntity implements Persistabl
     @Column(nullable = false)
     @Comment("관심 동네 칸 번호 (1..region.interest.max-count). 회원당 상한을 unique 로 지키는 데만 쓰고 순서가 아니다 — 지운 칸을 다시 쓴다")
     private int slot;
-
-    /**
-     * 새 행인지 판정한다 — {@code MemberRegionEntity#isNew} 와 같은 이유(Snowflake ID 를 미리 정해 기본 판정이 merge 로 가면 겹치는 ID 를 조용히
-     * 덮어쓴다)로 감사 컬럼 {@code createdAt} 이 비어 있으면 새 행이다 (coding-conventions §8-1).
-     */
-    @Override
-    public boolean isNew() {
-        return getCreatedAt() == null;
-    }
 }
