@@ -8,6 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -84,10 +85,14 @@ class ApiGatewayApplicationTests {
         assertThat(matchingRouteIds(path)).isEmpty();
     }
 
-    @Test
+    @ParameterizedTest(name = "{0} → {1}")
+    @CsvSource({
+        "/api/v1/reports/me, surveillance-service-reports",
+        "/api/v1/official/latest, surveillance-service-official"
+    })
     @DisplayName("공개 경로는 라우트에 매칭된다 — 위 매칭 검사가 헛돌지 않는다는 대조군")
-    void publicPathMatchesItsRoute() {
-        assertThat(matchingRouteIds("/api/v1/reports/me")).containsExactly("surveillance-service-reports");
+    void publicPathMatchesItsRoute(String path, String routeId) {
+        assertThat(matchingRouteIds(path)).containsExactly(routeId);
     }
 
     @Test
