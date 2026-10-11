@@ -105,7 +105,7 @@ export type ReviewCandidate = Readonly<{
  * 이력 행의 결과.
  * - published: 발행 중(PUBLISHED)
  * - held: 보류 — 후보의 처리 결과(§2-5 에 없다, 검토 대기의 `held`)
- * - corrected: 정정됨 — 새 안내로 정정 발행해 내려간 이전 안내. 백엔드는 RETRACTED + 새 안내를 잇는 값이 필요하다(SCREENS.md A03)
+ * - corrected: 정정됨 — 새 안내로 정정 발행해 내려간 이전 안내. 백엔드는 RETRACTED 이고 이력 응답의 `correctedByAdvisoryId` 가 있다(#267)
  * - retracted: 철회(RETRACTED, 끝 상태)
  */
 export type HistoryOutcome = 'published' | 'held' | 'corrected' | 'retracted'

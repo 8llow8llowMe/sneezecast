@@ -7,20 +7,21 @@ import type { HistoryEntry, ReviewCandidate, TimelineEvent } from './types'
 
 /* ── 발행 이력 · 정정 · 철회 (A03 `/admin/history`, #220) ─────────────────────────────────────────
  *
- * 최근 발행 · 보류 기록과 발행된 안내의 정정 발행 · 철회. **이력 목록 · 정정은 BE 미정이다(#267)** — 화면이 가정한 모양은
- * docs/api-contract-draft.md "발행 이력 (#220, 프론트 초안)" 이다. 철회는 "운영자 안내 처리"(#246)로 확정됐다.
+ * 최근 발행 · 보류 기록과 발행된 안내의 정정 발행 · 철회. **이력 목록 · 정정 · 철회 API 는 백엔드에 확정됐다**(#246 · #267) — 계약은
+ * docs/api-contract-draft.md "운영자 정정 · 발행 이력" 이고, 화면 모델(`HistoryEntry`)과 다른 점도 거기 적었다. 연동은 A03 연동 이슈에서 한다.
  *
- * - 실데이터: 요청하지 않고 `unavailable` 이다(검토 대기와 같은 까닭 — 목 안내를 철회해도 시민 화면은 바뀌지 않는다)
+ * - 실데이터: 아직 요청하지 않고 `unavailable` 이다(검토 대기와 같은 까닭 — 목 안내를 철회해도 시민 화면은 바뀌지 않는다)
  * - 목: 모듈 메모리의 이력(목 서버 흉내). 검토 대기 목(`admin-review-client.ts`)의 보류 · 발행이 `recordReviewOutcome` 으로 여기 더해진다 —
  *   같은 목 서버의 두 화면이라 한쪽 결과가 다른 쪽에 이어진다. 정정 · 철회는 `version` 을 맞춰 보고, 다르면 충돌(409)이다
  *
- * **정정 발행은 백엔드 §2-5 에 없다**(PUBLISHED 본문은 고치지 않는다 — 철회하고 새 안내를 만든다). 목은 그 모양대로 이전 안내를
- * `정정됨`(정정일 · 사유)으로 내리고 고친 본문을 새 안내로 발행한다. 백엔드는 두 안내를 잇는 값(예: `corrects_advisory_id`)이 필요하다.
+ * **정정 발행**은 백엔드와 같은 모양이다(PUBLISHED 본문은 고치지 않는다 — 한 요청으로 이전 안내를 철회하고 새 안내를 발행해
+ * `corrects_advisory_id` 로 잇는다). 목은 이전 안내를 `정정됨`(정정일 · 사유)으로 내리고 고친 본문을 새 안내로 발행한다. 백엔드 정정은
+ * 제목도 받고(필수), 사유는 사용자 화면에 보이지 않는다 — 대화상자 문구("사유가 함께 보여요")는 연동 이슈에서 바꾼다.
  */
 
 export type HistoryListResult =
   | { status: 'ready'; entries: readonly HistoryEntry[] }
-  /** 실데이터 — 운영자 API 가 아직 없다 */
+  /** 실데이터 — 아직 연동하지 않았다(API 는 백엔드 #267 로 확정) */
   | { status: 'unavailable' }
 
 export type HistoryActionResult =
@@ -150,8 +151,8 @@ export function correctAdvisory(
       districtCode: entry.districtCode,
       districtName: entry.districtName,
       isoWeek: entry.isoWeek,
-      // 인용값(advisory `cited_*`)은 이전 안내의 것을 그대로 옮긴다. 인용값은 초안 생성 때 마감 집계에서 복사해 고정하고
-      // (backend §2-3) 마감 집계는 바뀌지 않아, 숫자를 바로잡는 정정이 무엇을 바꾸는지는 계약에 없다 — api-contract-draft.md #220 "정할 것"
+      // 인용값(advisory `cited_*`)은 이전 안내의 것을 그대로 옮긴다 — 백엔드 정정(#267)도 같다(집계가 다시 계산돼도 같은 근거,
+      // 본문 숫자는 검증하지 않는다 — api-contract-draft.md "운영자 정정 · 발행 이력")
       participants: entry.participants,
       symptomRate: entry.symptomRate,
       outcome: 'published',
