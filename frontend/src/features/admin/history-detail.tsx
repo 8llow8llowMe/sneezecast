@@ -8,7 +8,9 @@ import clsx from 'clsx'
 import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
 import { Modal } from '@/components/modal'
+import { TextField } from '@/components/text-field'
 import { noticePath } from '@/features/notice/paths'
+import type { DataSource } from '@/lib/data-source'
 import { formatMonthDay } from '@/lib/format'
 import { formatIsoWeekOfMonth } from '@/lib/iso-week'
 
@@ -21,6 +23,7 @@ import {
   REASON_MAX_LENGTH,
   TIMELINE_STEP_LABEL,
   type TimelineEvent,
+  TITLE_MAX_LENGTH,
 } from './types'
 
 export type HistoryAction = 'correct' | 'retract'
@@ -66,12 +69,13 @@ export function outcomeLabel(entry: HistoryEntry): string {
 
 /**
  * `사용자 화면에서 보기` 주소 — 동네 안내(S07) `/notice/[동네]/[주]`. 보류는 안내가 없어 null 이다.
- * 이력은 목데이터에서만 그려지고, 목 출처의 S07 은 `?mock=` 으로 상태를 고르므로 이 행의 본문이 아니라 상태만 맞춘다:
- * 정정을 거친 안내는 `corrected`, 철회는 `retracted`(철회 대화상자가 약속한 "철회된 안내예요" 모양, #225), 그 밖은 `published`. 철회일 · 사유도 이 행이 아니라 목의 예시 값이다.
- * 실데이터는 이 화면에 이력이 없어 쓰지 않는다
+ * 실데이터는 그 동네 · 주의 동네 안내 그대로다(지금 발행 중인 안내 · 정정 이력 · 철회 표시를 서버가 고른다).
+ * 목 출처의 S07 은 `?mock=` 으로 상태를 고르므로 이 행의 본문이 아니라 상태만 맞춘다:
+ * 정정을 거친 안내는 `corrected`, 철회는 `retracted`(철회 대화상자가 약속한 "철회된 안내예요" 모양, #225), 그 밖은 `published`. 철회일도 이 행이 아니라 목의 예시 값이다
  */
-export function noticeViewHref(entry: HistoryEntry): string | null {
+export function noticeViewHref(entry: HistoryEntry, source: DataSource): string | null {
   if (entry.outcome === 'held') return null
+  if (source === 'api') return noticePath(entry.districtCode, entry.isoWeek)
   const state =
     entry.outcome === 'retracted'
       ? 'retracted'
@@ -84,27 +88,29 @@ export function noticeViewHref(entry: HistoryEntry): string | null {
 /**
  * 이력 상세 (시안 History 의 오른쪽 패널). 고른 행 하나의 근거 · 타임라인 · 본문과 정정 · 철회다.
  *
- * - 제목(`○○2동 · 11월 3주`) · 근거 줄(후보 유형 · 참여 · 증상 보고)
+ * - 제목(`○○2동 · 11월 3주`) · 근거 줄(후보 유형 · 참여 · 증상 보고 — 후보 유형은 이력 응답에 없어 목에서만 보인다)
  * - 타임라인: 전이 시각과 세부 문구. 백엔드 이력에서 나올 수 없는 세부 문구는 값이 있을 때만 보인다(`TimelineEvent.note`).
  *   처리를 끝낸 승인·발행 · 보류 단계에는 담당 · 검토 시간을 붙인다(둘 다 1단계에 없는 값 — 없으면 뺀다)
- * - 본문: 발행 본문(보류는 그때의 초안)
+ * - 본문: 안내 제목 + 발행 본문(보류는 그때의 초안). 시안에는 제목이 없다 — 정정 발행이 제목을 함께 고치므로 지금 제목을 보인다
  * - `정정 발행` · `발행 철회`: **발행 중인 안내에만** 있다. 정정됨 · 철회(RETRACTED 는 끝 상태)는 고칠 수 없다
  * - `사용자 화면에서 보기`: 동네 안내(S07). 보류에는 없다
  */
 export function HistoryDetail({
   entry,
+  source,
   busy,
   message,
   onAction,
 }: {
   entry: HistoryEntry
+  source: DataSource
   busy: boolean
   message: DetailMessage | null
   onAction: (action: HistoryAction) => void
 }) {
   const id = useId()
   const week = formatIsoWeekOfMonth(entry.isoWeek)
-  const viewHref = noticeViewHref(entry)
+  const viewHref = noticeViewHref(entry, source)
   const first = entry.timeline[0]?.at ?? entry.processedAt
   // 담당 · 검토 시간을 붙일 단계 — 처리를 끝낸 마지막 승인·발행 또는 보류 하나다(보류했다가 나중에 발행한 후보는 앞의 보류에 붙이지 않는다)
   const decisionIndex = entry.timeline.reduce(
@@ -126,8 +132,13 @@ export function HistoryDetail({
           {[entry.districtName, week].filter(Boolean).join(' · ')}
         </h2>
         <p className="text-sub text-fg-sub">
-          {CANDIDATE_KIND_LABEL[entry.kind]} · 참여 {entry.participants}명 · 증상 보고{' '}
-          {entry.symptomRate}%
+          {[
+            entry.kind && CANDIDATE_KIND_LABEL[entry.kind],
+            `참여 ${entry.participants}명`,
+            `증상 보고 ${entry.symptomRate}%`,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
       </div>
 
@@ -152,9 +163,10 @@ export function HistoryDetail({
 
       <div>
         <h3 className="sr-only">{entry.outcome === 'held' ? '보류한 초안' : '발행 본문'}</h3>
-        <p className="rounded-button bg-section p-3.5 text-sub leading-[1.6] whitespace-pre-line text-fg">
-          {entry.body}
-        </p>
+        <div className="flex flex-col gap-1.5 rounded-button bg-section p-3.5 text-sub leading-[1.6] text-fg">
+          <p className="font-semibold">{entry.title}</p>
+          <p className="whitespace-pre-line">{entry.body}</p>
+        </div>
       </div>
 
       {message && <AlertBox tone={message.tone}>{message.text}</AlertBox>}
@@ -182,8 +194,8 @@ export function HistoryDetail({
             </button>
           </div>
           <p className="text-caption leading-[1.55] text-fg-sub">
-            정정하면 사용자 화면에 정정일과 사유가 표시돼요. 철회하면 안내가 내려가고 “철회된
-            안내예요”가 남아요.
+            정정하면 사용자 화면에 정정일이 표시돼요. 철회하면 안내가 내려가고 “철회된 안내예요”가
+            남아요. 사유는 운영자 이력에만 남아요.
           </p>
         </>
       )}
@@ -247,8 +259,8 @@ const DIALOG_CONTENT: Record<
   correct: {
     title: '정정 발행할까요?',
     items: [
-      '고친 본문이 새 안내로 발행돼요.',
-      '사용자 화면에 정정일과 사유가 함께 보여요.',
+      '고친 제목 · 본문이 새 안내로 발행돼요.',
+      '사용자 화면에 정정일이 함께 보여요.',
       '지금 안내는 이력에 정정됨으로 남아요.',
     ],
     reasonLabel: '정정 사유',
@@ -273,6 +285,13 @@ function reasonError(action: HistoryAction, reason: string): string | null {
   return null
 }
 
+/** 고친 제목 검사(advisory `title` 상한). 문제가 없으면 null 이다 */
+function titleError(title: string): string | null {
+  if (title.trim() === '') return '제목을 입력해 주세요.'
+  if (title.length > TITLE_MAX_LENGTH) return `제목은 ${TITLE_MAX_LENGTH}자까지 쓸 수 있어요.`
+  return null
+}
+
 /** 고친 본문 검사(검토 대기의 안내문 초안과 같은 상한). 문제가 없으면 null 이다 */
 function bodyError(body: string): string | null {
   if (body.trim() === '') return '고친 본문을 입력해 주세요.'
@@ -283,8 +302,9 @@ function bodyError(body: string): string | null {
 /**
  * 정정 발행 · 발행 철회 확인 대화상자(시안 없음 — 모양은 내 정보의 확인 대화상자). 모바일은 바텀시트, 태블릿 · 데스크톱은 가운데 대화상자다.
  *
- * - 정정: 사유 + 고친 본문(처음 값은 지금 본문). 철회: 사유. 사유는 필수이고 500자(`memo` VARCHAR(500))까지, 본문은 500자까지다.
- *   틀리면 보내지 않고 칸 아래에 알린다. 운영자 입력이라 시민 자유 서술 수집 금지와 무관하다
+ * - 정정: 사유 + 제목 · 고친 본문(처음 값은 지금 제목 · 본문 — 백엔드 정정은 제목이 필수다). 철회: 사유. 사유는 필수이고
+ *   500자(`memo` VARCHAR(500))까지, 제목은 100자(`title` VARCHAR(100)), 본문은 500자까지다. 틀리면 보내지 않고 칸 아래에 알린다.
+ *   사유 칸에는 "사용자 화면에는 보이지 않아요" 를 둔다(사유는 운영자 이력에만 남는다 — #246 · #267). 운영자 입력이라 시민 자유 서술 수집 금지와 무관하다
  * - 보내는 동안(`busy`)은 두 버튼이 꺼진 모양(`aria-disabled` — 포커스를 지킨다)이고 닫기 · Esc · 바깥 누르기를 부모가 막는다
  * - `failure`: 실패하면 대화상자 안 빨강 상자로 알리고 입력은 그대로 둔다
  *
@@ -304,26 +324,29 @@ export function HistoryActionDialog({
   open: boolean
   busy: boolean
   failure: string | null
-  onSubmit: (input: { reason: string; body: string }) => void
+  onSubmit: (input: { reason: string; title: string; body: string }) => void
   onClose: () => void
 }) {
   const content = DIALOG_CONTENT[action]
   const [reason, setReason] = useState('')
+  const [title, setTitle] = useState(entry.title)
   const [body, setBody] = useState(entry.body)
-  const [problems, setProblems] = useState<{ reason: string | null; body: string | null }>({
-    reason: null,
-    body: null,
-  })
+  const [problems, setProblems] = useState<{
+    reason: string | null
+    title: string | null
+    body: string | null
+  }>({ reason: null, title: null, body: null })
 
   function submit() {
     if (busy) return
     const next = {
       reason: reasonError(action, reason),
+      title: action === 'correct' ? titleError(title) : null,
       body: action === 'correct' ? bodyError(body) : null,
     }
     setProblems(next)
-    if (next.reason || next.body) return
-    onSubmit({ reason: reason.trim(), body })
+    if (next.reason || next.title || next.body) return
+    onSubmit({ reason: reason.trim(), title: title.trim(), body })
   }
 
   return (
@@ -367,6 +390,7 @@ export function HistoryActionDialog({
         label={content.reasonLabel}
         value={reason}
         error={problems.reason}
+        hint="사용자 화면에는 보이지 않아요"
         rows={3}
         readOnly={busy}
         onChange={(value) => {
@@ -374,6 +398,19 @@ export function HistoryActionDialog({
           setProblems((list) => ({ ...list, reason: null }))
         }}
       />
+      {action === 'correct' && (
+        <TextField
+          label="제목"
+          value={title}
+          error={problems.title ?? undefined}
+          counter={{ current: title.length, max: TITLE_MAX_LENGTH }}
+          readOnly={busy}
+          onChange={(event) => {
+            setTitle(event.target.value)
+            setProblems((list) => ({ ...list, title: null }))
+          }}
+        />
+      )}
       {action === 'correct' && (
         <TextArea
           label="고친 본문"
@@ -392,11 +429,12 @@ export function HistoryActionDialog({
   )
 }
 
-/** 여러 줄 입력칸(라벨 위 · 오류 아래). 검토 대기의 안내문 초안 칸과 같은 모양이다 */
+/** 여러 줄 입력칸(라벨 위 · 오류 또는 도움말 아래). 검토 대기의 안내문 초안 칸과 같은 모양이다 */
 function TextArea({
   label,
   value,
   error,
+  hint,
   rows,
   readOnly,
   onChange,
@@ -404,6 +442,8 @@ function TextArea({
   label: string
   value: string
   error: string | null
+  /** 칸 아래 한 줄 도움말. 오류가 있으면 오류가 대신 보인다 */
+  hint?: string
   rows: number
   /** 보내는 동안 고치지 못하게 한다 */
   readOnly: boolean
@@ -421,17 +461,23 @@ function TextArea({
         value={value}
         readOnly={readOnly}
         aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${id}-error` : undefined}
+        aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
         onChange={(event) => onChange(event.target.value)}
         className={clsx(
           'resize-none rounded-button border border-inactive-bar px-3.5 py-3 text-body-strong leading-[1.55] text-fg',
           'focus-visible:outline-2 focus-visible:outline-brand aria-invalid:border-danger',
         )}
       />
-      {error && (
+      {error ? (
         <p id={`${id}-error`} role="alert" className="text-sub text-danger">
           {error}
         </p>
+      ) : (
+        hint && (
+          <p id={`${id}-hint`} className="text-sub text-fg-sub">
+            {hint}
+          </p>
+        )
       )}
     </div>
   )

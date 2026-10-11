@@ -1,5 +1,18 @@
 import type { HistoryEntry, ReviewCandidate } from './types'
 
+const MOCK_SURGE_TITLE = '참여가 지난주보다 많이 늘었어요'
+
+/**
+ * 목 후보로 낸 안내의 제목(예시). 목 후보에는 제목이 없어(검토 대기 화면 모델에 제목 칸이 아직 없다) 검토 대기에서 보류 · 발행한 행이
+ * 발행 이력에 더해질 때 쓴다 — 참여 급증은 참여, 그 밖은 많이 보고된 증상군으로 짓는다
+ */
+export function mockCandidateTitle(candidate: ReviewCandidate): string {
+  if (candidate.kind === 'surge') return MOCK_SURGE_TITLE
+  return candidate.leadingSymptom === 'gastrointestinal'
+    ? '구토·설사 보고가 늘었어요'
+    : '발열·기침 보고가 늘었어요'
+}
+
 /**
  * 운영자 검토 목 데이터 (시안 Admin 의 값). 동 이름 · 수치 · 초안은 모두 예시다.
  *
@@ -119,6 +132,7 @@ export function createMockHistory(): HistoryEntry[] {
       outcome: 'published',
       processedAt: '2025-11-11T05:08:00.000Z',
       edited: true,
+      title: '발열·기침 보고가 지난 4주보다 많이 늘었어요',
       body: '○○동에서 이번 주 발열·기침 보고가 지난 4주보다 많이 늘었어요(참여 128명 중 18%). 기침할 때는 옷소매로 입과 코를 가려 주세요. 손 씻기와 실내 환기도 자주 해 주세요.',
       version: 4,
       timeline: [
@@ -153,6 +167,7 @@ export function createMockHistory(): HistoryEntry[] {
       outcome: 'held',
       processedAt: '2025-11-11T04:20:00.000Z',
       edited: false,
+      title: MOCK_SURGE_TITLE,
       body: '○○5동은 이번 주 참여가 지난주보다 많이 늘었어요(참여 186명 중 6%). 증상 보고 비율은 지난 4주와 비슷해요. 손 씻기를 자주 해 주세요.',
       version: 2,
       timeline: [
@@ -174,6 +189,7 @@ export function createMockHistory(): HistoryEntry[] {
       outcome: 'published',
       processedAt: '2025-11-04T05:30:00.000Z',
       edited: false,
+      title: '발열·기침 보고가 지난 4주보다 조금 늘었어요',
       body: '○○2동에서 이번 주 발열·기침 보고가 지난 4주보다 조금 늘었어요(참여 142명 중 12%). 기침할 때는 옷소매로 입과 코를 가려 주세요.',
       version: 3,
       timeline: [
@@ -195,6 +211,7 @@ export function createMockHistory(): HistoryEntry[] {
       outcome: 'published',
       processedAt: '2025-10-28T06:05:00.000Z',
       edited: false,
+      title: '발열·기침 보고가 지난 4주보다 조금 늘었어요',
       body: '○○4동에서 이번 주 발열·기침 보고가 지난 4주보다 조금 늘었어요(참여 104명 중 13%). 손 씻기와 실내 환기를 자주 해 주세요.',
       version: 3,
       timeline: [

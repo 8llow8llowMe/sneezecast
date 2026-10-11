@@ -4,7 +4,16 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resetMockSession } from '@/features/auth/auth-client'
-import { resetApiSession, selectApiSource } from '@/test/api-session'
+import { setSession } from '@/lib/session/session-store'
+import { correctedHistory, historyResponse } from '@/test/admin-history'
+import {
+  errorResponse,
+  holdRequests,
+  memberToken,
+  okResponse,
+  resetApiSession,
+  selectApiSource,
+} from '@/test/api-session'
 
 import * as client from './admin-history-client'
 import { resetMockHistory } from './admin-history-client'
@@ -166,17 +175,29 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
     await user.click(button('정정 발행'))
     expect(within(dialog()).getByRole('heading', { name: '정정 발행할까요?' })).toBeDefined()
     const reason = within(dialog()).getByRole('textbox', { name: '정정 사유' })
+    const title = within(dialog()).getByRole<HTMLInputElement>('textbox', { name: '제목' })
     const body = within(dialog()).getByRole('textbox', { name: '고친 본문' })
+    expect(within(dialog()).getByText('사용자 화면에는 보이지 않아요')).toBeDefined()
+    expect(within(dialog()).getByText('사용자 화면에 정정일이 함께 보여요.')).toBeDefined()
+    expect(title.value).toBe('발열·기침 보고가 지난 4주보다 많이 늘었어요')
     expect((body as HTMLTextAreaElement).value).toMatch(/^○○동에서 이번 주/)
 
+    await user.clear(title)
     await user.clear(body)
     await user.click(within(dialog()).getByRole('button', { name: '정정 발행' }))
     expect(
       within(dialog())
         .getAllByRole('alert')
         .map((item) => item.textContent),
-    ).toEqual(['정정 사유를 입력해 주세요.', '고친 본문을 입력해 주세요.'])
+    ).toEqual(['정정 사유를 입력해 주세요.', '제목을 입력해 주세요.', '고친 본문을 입력해 주세요.'])
     expect(reason.getAttribute('aria-invalid')).toBe('true')
+
+    await user.click(title)
+    await user.paste('가'.repeat(101))
+    await user.click(within(dialog()).getByRole('button', { name: '정정 발행' }))
+    expect(within(dialog()).getByText('제목은 100자까지 쓸 수 있어요.')).toBeDefined()
+    await user.clear(title)
+    await user.type(title, '고친 제목')
 
     await user.click(reason)
     await user.paste('가'.repeat(501))
@@ -196,9 +217,10 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
       expect(document.activeElement).toBe(screen.getAllByRole('heading', { level: 2 })[0]),
     )
     expect(screen.getByRole('status').textContent).toBe(
-      '정정 발행했어요. 사용자 화면에 정정일과 사유가 함께 보여요.',
+      '정정 발행했어요. 사용자 화면에 정정일이 함께 보여요.',
     )
     expect(steps()).toEqual(['정정 발행 · 14:08참여자 수를 바로잡았어요.'])
+    expect(screen.getByText('고친 제목', { selector: 'p' })).toBeDefined()
     expect(screen.getByText('고친 안내예요.', { selector: 'p' })).toBeDefined()
     expect(screen.getByRole('link', { name: '사용자 화면에서 보기' }).getAttribute('href')).toBe(
       '/notice/99990101/2025-W46?mock=corrected',
@@ -240,11 +262,11 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
   })
 
   it('보내는 동안 대화상자 버튼 · 닫기 · 행 고르기를 막는다', async () => {
-    let finish: (result: client.HistoryActionResult) => void = () => {}
+    let fail: (error: Error) => void = () => {}
     vi.mocked(client.retractAdvisory).mockImplementationOnce(
       () =>
-        new Promise((resolve) => {
-          finish = resolve
+        new Promise((_, reject) => {
+          fail = reject
         }),
     )
     await renderScreen()
@@ -268,10 +290,11 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
       true,
     )
 
-    act(() => finish({ status: 'unavailable' }))
-    await act(async () => {})
-    expect(within(dialog()).getByRole('alert').textContent).toBe(
-      '철회하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    act(() => fail(new Error('network')))
+    await waitFor(() =>
+      expect(within(dialog()).getByRole('alert').textContent).toBe(
+        '철회하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+      ),
     )
     await user.click(within(dialog()).getByRole('button', { name: '취소' }))
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -352,20 +375,222 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
 })
 
 describe('AdminHistoryScreen 실데이터', () => {
-  it('운영자 API 가 없어 요청 없이 준비 중이라고 알린다 — 목 재현 쿼리도 듣지 않는다', async () => {
-    selectApiSource()
-    search = 'mock-admin=empty'
-    await renderScreen()
+  const HISTORY = 'GET /api/v1/advisories/admin/history'
+  const CORRECT = 'POST /api/v1/advisories/admin/701/correct'
+  const RETRACT = 'POST /api/v1/advisories/admin/701/retract'
 
-    expect(screen.getByRole('status').textContent).toBe(
-      '발행 이력은 아직 준비하고 있어요. 지금은 이력을 불러올 수 없어요.',
-    )
+  /** 실데이터 운영자 세션으로 그리고, 이력 요청을 붙잡아 둔다 */
+  async function renderApi() {
+    selectApiSource()
+    const server = holdRequests()
+    act(() => setSession(memberToken({ role: 'OPERATOR' })))
+    await renderScreen()
+    await waitFor(() => expect(server.requests()).toContain(HISTORY))
+    return server
+  }
+
+  /** 이력 읽기 요청 수 */
+  const historyCalls = (server: ReturnType<typeof holdRequests>) =>
+    server.requests().filter((request) => request === HISTORY).length
+
+  async function replyHistory(server: ReturnType<typeof holdRequests>, response: Response) {
+    act(() => server.reply(HISTORY, response))
+    await act(async () => {})
+  }
+
+  /** n 번째로 보낸 요청의 바디 */
+  function sentBody(server: ReturnType<typeof holdRequests>, index: number): unknown {
+    const init = server.fetchMock.mock.calls[index]?.[1] as RequestInit | undefined
+    return typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
+  }
+
+  async function submitCorrection(server: ReturnType<typeof holdRequests>) {
+    const user = userEvent.setup()
+    await user.click(button('정정 발행'))
+    const title = within(dialog()).getByRole('textbox', { name: '제목' })
+    await user.clear(title)
+    await user.type(title, '고친 제목')
+    const body = within(dialog()).getByRole('textbox', { name: '고친 본문' })
+    await user.clear(body)
+    await user.type(body, '고친 본문')
+    await user.type(within(dialog()).getByRole('textbox', { name: '정정 사유' }), '사유')
+    await user.click(within(dialog()).getByRole('button', { name: '정정 발행' }))
+    await waitFor(() => expect(server.requests()).toContain(CORRECT))
+    return user
+  }
+
+  it('이력 API 를 읽어 그린다 — 후보 유형 · 담당 · 검토 시간 열과 보류 칸이 없고, 목 재현 쿼리는 듣지 않는다', async () => {
+    search = 'mock-admin=empty'
+    const server = await renderApi()
+    expect(screen.getByText('발행 이력을 불러오고 있어요')).toBeDefined()
     expect(screen.queryByRole('table')).toBeNull()
-    expect(screen.queryByText('발행', { selector: 'dt' })).toBeNull()
+
+    await replyHistory(server, okResponse(historyResponse()))
+
+    expect(screen.getByText(/^최근 4주/).textContent).toBe(
+      '최근 4주 동안 발행한 안내의 승인·수정·정정·철회 기록이 남아요.',
+    )
+    expect(stat('발행')).toBe('1건')
+    expect(screen.queryByText('보류', { selector: 'dt' })).toBeNull()
+    expect(screen.queryByText('평균 검토 시간')).toBeNull()
+    expect(stat('수정 후 발행 비율')).toBe('100%')
+    expect(
+      within(table())
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).toEqual(['발행·처리일', '행정동', '기준 주', '결과'])
+    expect(rows()[0]?.textContent).toContain('11월 11일가락1동')
+    expect(rows()[0]?.textContent).toContain('11월 2주수정 후 발행')
+    expect(detailTitle()).toBe('가락1동 · 11월 2주')
+    expect(screen.getByText('참여 128명 · 증상 보고 18%')).toBeDefined()
+    expect(steps()).toEqual(['후보 등록 · 14:02', '운영자 수정 · 14:06', '승인·발행 · 14:08'])
+    expect(screen.getByText('발열·기침 보고가 지난 4주보다 많이 늘었어요')).toBeDefined()
+    expect(screen.getByRole('link', { name: '사용자 화면에서 보기' }).getAttribute('href')).toBe(
+      '/notice/11240660/2025-W46',
+    )
     expect(
       within(screen.getByRole('navigation', { name: '운영 메뉴' })).getByRole('link', {
         name: /검토 대기/,
       }).textContent,
     ).toBe('검토 대기')
+  })
+
+  it('이력이 없으면 최근 4주 동안 발행한 안내가 없다고 알린다', async () => {
+    const server = await renderApi()
+    await replyHistory(server, okResponse(historyResponse([])))
+    expect(screen.getByText('최근 4주 동안 발행한 안내가 없어요.')).toBeDefined()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('읽지 못하면 빨강 상자 + 다시 시도이고, 다시 시도하면 다시 읽는다', async () => {
+    const server = await renderApi()
+    await replyHistory(server, errorResponse('GATEWAY_004', 504))
+
+    expect(screen.getByRole('alert').textContent).toContain(
+      '발행 이력을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    )
+    expect(screen.queryByRole('table')).toBeNull()
+    await userEvent.setup().click(button('다시 시도'))
+    await waitFor(() => expect(historyCalls(server)).toBe(2))
+    await replyHistory(server, okResponse(historyResponse()))
+    expect(rows()).toHaveLength(1)
+  })
+
+  it('정정: 제목 · 본문 · 사유 · version 을 보내고 이력을 다시 읽어 새 안내를 고른다', async () => {
+    const server = await renderApi()
+    await replyHistory(server, okResponse(historyResponse()))
+    await submitCorrection(server)
+
+    expect(sentBody(server, 1)).toEqual({
+      title: '고친 제목',
+      body: '고친 본문',
+      reason: '사유',
+      version: 4,
+    })
+    act(() => server.reply(CORRECT, okResponse({ advisoryId: '702' })))
+    await waitFor(() => expect(historyCalls(server)).toBe(2))
+    await replyHistory(server, okResponse(correctedHistory('사유')))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(rows()[0]?.textContent).toContain('정정 발행')
+    expect(rows()[1]?.textContent).toContain('정정됨')
+    expect(screen.getByRole('status').textContent).toBe(
+      '정정 발행했어요. 사용자 화면에 정정일이 함께 보여요.',
+    )
+    expect(steps()).toEqual(['정정 발행 · 14:08사유'])
+    expect(screen.getByText('고친 제목', { selector: 'p' })).toBeDefined()
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getAllByRole('heading', { level: 2 })[0]),
+    )
+  })
+
+  it('충돌(409)이면 이력을 다시 읽어 바꿔 그리고 알린다', async () => {
+    const server = await renderApi()
+    await replyHistory(server, okResponse(historyResponse()))
+    const user = userEvent.setup()
+    await user.click(button('발행 철회'))
+    await user.type(within(dialog()).getByRole('textbox', { name: '철회 사유' }), '사유')
+    await user.click(within(dialog()).getByRole('button', { name: '발행 철회' }))
+    await waitFor(() => expect(server.requests()).toContain(RETRACT))
+    expect(sentBody(server, 1)).toEqual({ reason: '사유', version: 4 })
+
+    act(() => server.reply(RETRACT, errorResponse('ADVISORY_006', 409)))
+    await waitFor(() => expect(historyCalls(server)).toBe(2))
+    await replyHistory(server, okResponse(correctedHistory()))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('status').textContent).toBe(
+      '다른 운영자가 먼저 이 안내를 바꿨어요. 최신 내용으로 바꿔 두었어요. 확인한 뒤 다시 시도해 주세요.',
+    )
+    // 다른 운영자가 정정해 내려간 안내 — 버튼이 없다
+    expect(detailTitle()).toBe('가락1동 · 11월 2주')
+    expect(screen.queryByRole('button', { name: '발행 철회' })).toBeNull()
+  })
+
+  it('처리는 됐는데 이력을 다시 읽지 못하면 처리 결과를 알리고 목록은 다시 시도하게 한다 — 다시 읽으면 처리한 안내를 고른다', async () => {
+    const server = await renderApi()
+    await replyHistory(server, okResponse(historyResponse()))
+    const user = await submitCorrection(server)
+    act(() => server.reply(CORRECT, okResponse({ advisoryId: '702' })))
+    await waitFor(() => expect(historyCalls(server)).toBe(2))
+    await replyHistory(server, new Response('<html>bad gateway</html>', { status: 502 }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getAllByRole('alert').map((item) => item.textContent)).toEqual([
+      '정정 발행했어요. 사용자 화면에 정정일이 함께 보여요.',
+      expect.stringContaining('발행 이력을 불러오지 못했어요.'),
+    ])
+    expect(screen.queryByRole('table')).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(button('다시 시도')))
+
+    await user.click(button('다시 시도'))
+    await waitFor(() => expect(historyCalls(server)).toBe(3))
+    // 새 안내를 첫 행이 아닌 곳에 두어 첫 행 기본 고르기와 가른다
+    const [fresh, previous] = correctedHistory().entries
+    await replyHistory(server, okResponse(historyResponse([previous!, fresh!])))
+    expect(rows()[1]?.textContent).toContain('정정 발행')
+    expect(within(rows()[1]!).getByRole('button').getAttribute('aria-current')).toBe('true')
+    expect(steps()).toEqual(['정정 발행 · 14:08참여자 수를 바로잡았어요.'])
+  })
+
+  it('충돌(409) 뒤 이력을 다시 읽지 못해도 충돌을 알리고, 다시 읽으면 충돌한 안내를 고른다', async () => {
+    const server = await renderApi()
+    await replyHistory(server, okResponse(historyResponse()))
+    const user = userEvent.setup()
+    await user.click(button('발행 철회'))
+    await user.type(within(dialog()).getByRole('textbox', { name: '철회 사유' }), '사유')
+    await user.click(within(dialog()).getByRole('button', { name: '발행 철회' }))
+    await waitFor(() => expect(server.requests()).toContain(RETRACT))
+    act(() => server.reply(RETRACT, errorResponse('ADVISORY_006', 409)))
+    await waitFor(() => expect(historyCalls(server)).toBe(2))
+    await replyHistory(server, new Response('<html>bad gateway</html>', { status: 502 }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(
+      screen.getByText('다른 운영자가 먼저 이 안내를 바꿨어요.', { exact: false }),
+    ).toBeDefined()
+    expect(screen.queryByRole('table')).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(button('다시 시도')))
+
+    await user.click(button('다시 시도'))
+    await waitFor(() => expect(historyCalls(server)).toBe(3))
+    // 충돌한 안내(701)를 첫 행이 아닌 곳에 두어 첫 행 기본 고르기와 가른다
+    await replyHistory(server, okResponse(correctedHistory()))
+    expect(rows()[1]?.textContent).toContain('정정됨')
+    expect(within(rows()[1]!).getByRole('button').getAttribute('aria-current')).toBe('true')
+  })
+
+  it('검증 거부(400)면 대화상자 안에 입력을 확인하라고 알리고 다시 읽지 않는다', async () => {
+    const server = await renderApi()
+    await replyHistory(server, okResponse(historyResponse()))
+    await submitCorrection(server)
+    act(() => server.reply(CORRECT, errorResponse('ADVISORY_106', 400)))
+
+    await waitFor(() =>
+      expect(within(dialog()).getByRole('alert').textContent).toBe(
+        '정정 발행하지 못했어요. 입력한 내용을 확인해 주세요.',
+      ),
+    )
+    expect(historyCalls(server)).toBe(1)
   })
 })

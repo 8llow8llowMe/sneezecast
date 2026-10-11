@@ -1,35 +1,115 @@
 import { getMockSession, subscribeMockSession } from '@/features/auth/auth-client'
+import { ApiError } from '@/lib/api/api-error'
+import { apiRequest } from '@/lib/api/client'
+import { classifyApiError } from '@/lib/api/error-kind'
 import type { DataSource } from '@/lib/data-source'
+import { refreshSession } from '@/lib/session/session-store'
 
+import {
+  type OperatorAdvisoryResponse,
+  type PublicationHistoryResponse,
+  toHistoryEntries,
+} from './admin-history-api'
 import type { MockAdminScenario } from './admin-review-client'
-import { createMockHistory } from './mock'
+import { createMockHistory, mockCandidateTitle } from './mock'
 import type { HistoryEntry, ReviewCandidate, TimelineEvent } from './types'
 
-/* ── 발행 이력 · 정정 · 철회 (A03 `/admin/history`, #220) ─────────────────────────────────────────
+/* ── 발행 이력 · 정정 · 철회 (A03 `/admin/history`, #220 · 연동 #271) ───────────────────────────────
  *
- * 최근 발행 · 보류 기록과 발행된 안내의 정정 발행 · 철회. **이력 목록 · 정정 · 철회 API 는 백엔드에 확정됐다**(#246 · #267) — 계약은
- * docs/api-contract-draft.md "운영자 정정 · 발행 이력" 이고, 화면 모델(`HistoryEntry`)과 다른 점도 거기 적었다. 연동은 A03 연동 이슈에서 한다.
+ * 최근 발행 기록과 발행된 안내의 정정 발행 · 철회. 계약은 docs/api-contract-draft.md "운영자 안내 처리"(#246) · "운영자 정정 · 발행 이력"(#267)이고,
+ * 화면 모델(`HistoryEntry`)로 옮기는 규칙은 `admin-history-api.ts` 다.
  *
- * - 실데이터: 아직 요청하지 않고 `unavailable` 이다(검토 대기와 같은 까닭 — 목 안내를 철회해도 시민 화면은 바뀌지 않는다)
+ * - 실데이터: `GET /api/v1/advisories/admin/history`(끝 주 생략 — 현재 주 − 1 로 끝나는 4주) · `POST /{id}/correct` · `POST /{id}/retract`.
+ *   처리한 뒤와 충돌(409) 뒤에는 이력을 **다시 읽어** 그린다(처리 응답 · 오류 봉투에 이력이 없다). 다시 읽지 못해도 처리 결과는 잃지 않는다
+ *   (`unrefreshed`). 401 은 API 계층(재발급 · 만료), 403 은 세션 요약을 다시 맞춰 운영자 가드(`AdminGate`)가 권한 없음을 그리게 한다
  * - 목: 모듈 메모리의 이력(목 서버 흉내). 검토 대기 목(`admin-review-client.ts`)의 보류 · 발행이 `recordReviewOutcome` 으로 여기 더해진다 —
- *   같은 목 서버의 두 화면이라 한쪽 결과가 다른 쪽에 이어진다. 정정 · 철회는 `version` 을 맞춰 보고, 다르면 충돌(409)이다
+ *   같은 목 서버의 두 화면이라 한쪽 결과가 다른 쪽에 이어진다. 정정 · 철회는 `version` 을 맞춰 보고, 다르면 충돌(409)이다.
+ *   목은 충돌 응답에 지금 이력을 바로 싣는다(실데이터는 다시 읽는다)
  *
- * **정정 발행**은 백엔드와 같은 모양이다(PUBLISHED 본문은 고치지 않는다 — 한 요청으로 이전 안내를 철회하고 새 안내를 발행해
- * `corrects_advisory_id` 로 잇는다). 목은 이전 안내를 `정정됨`(정정일 · 사유)으로 내리고 고친 본문을 새 안내로 발행한다. 백엔드 정정은
- * 제목도 받고(필수), 사유는 사용자 화면에 보이지 않는다 — 대화상자 문구("사유가 함께 보여요")는 연동 이슈에서 바꾼다.
+ * **정정 발행**은 한 요청으로 이전 안내를 철회하고 고친 제목 · 본문을 새 안내로 발행해 `corrects_advisory_id` 로 잇는다(PUBLISHED 본문은
+ * 고치지 않는다). 사유는 운영자 이력(`memo`)에만 남고 사용자 화면에는 보이지 않는다(#246 · #267 결정).
  */
 
-export type HistoryListResult =
-  | { status: 'ready'; entries: readonly HistoryEntry[] }
-  /** 실데이터 — 아직 연동하지 않았다(API 는 백엔드 #267 로 확정) */
-  | { status: 'unavailable' }
+export type HistoryListResult = { status: 'ready'; entries: readonly HistoryEntry[] }
 
 export type HistoryActionResult =
   /** 처리한 뒤의 이력과 고를 행(정정은 새 안내, 철회는 그 안내) */
   | { status: 'ok'; entries: readonly HistoryEntry[]; selectedId: string }
-  /** 다른 운영자가 먼저 바꿨다(409) — 지금 서버의 이력 */
+  /** 다른 운영자가 먼저 바꿨다(409 · 없는 안내) — 지금 서버의 이력 */
   | { status: 'conflict'; entries: readonly HistoryEntry[] }
-  | { status: 'unavailable' }
+  /** 서버가 입력을 받지 않았다(검증 400). 화면이 먼저 막아 보통은 닿지 않는다 */
+  | { status: 'invalid' }
+  /**
+   * 처리(`ok`) 또는 충돌(`conflict`)까지는 알지만 이력을 다시 읽지 못했다(일시 장애 등). 처리 결과를 알리고 목록은 다시 읽게 한다 —
+   * 옛 목록을 그대로 두면 이미 정정 · 철회한 안내의 버튼이 남는다. `selectedId` 는 다시 읽은 뒤 고를 행이다
+   */
+  | { status: 'unrefreshed'; outcome: 'ok' | 'conflict'; selectedId: string | null }
+
+/** 운영자 안내 처리 · 발행 이력 API 앞부분 */
+export const ADMIN_ADVISORIES_PATH = '/api/v1/advisories/admin'
+
+/**
+ * 다시 읽어 그릴 처리 거부 — 지금 상태에서 할 수 없음(`005` — 이미 정정 · 철회), 버전 다름(`006`), 같은 동네 · 주에 발행 중인 안내가 있음
+ * (`007`), 없는 안내(`001`). 거부되면 아무것도 바뀌지 않는다
+ */
+const CONFLICT_CODES: ReadonlySet<string> = new Set([
+  'ADVISORY_001',
+  'ADVISORY_005',
+  'ADVISORY_006',
+  'ADVISORY_007',
+])
+
+/** 입력 검증 거부 — 본문 형식(`100`), 제목 · 본문 · 사유 · version(`105`~`113`), 숫자가 아닌 ID(`198`) */
+const INVALID_CODES: ReadonlySet<string> = new Set([
+  'ADVISORY_100',
+  ...Array.from({ length: 9 }, (_, index) => `ADVISORY_${105 + index}`),
+  'ADVISORY_198',
+])
+
+function errorCode(error: unknown): string | null {
+  return error instanceof ApiError ? error.code : null
+}
+
+/** 권한 없음(403)이면 세션 요약을 다시 맞춘다 — 역할이 바뀌었으면 운영자 가드가 권한 없음을 그린다. 오류는 그대로 둔다 */
+function syncRoleOnForbidden(error: unknown): void {
+  if (classifyApiError(error) === 'forbidden') void refreshSession()
+}
+
+async function fetchHistory(): Promise<HistoryEntry[]> {
+  const response = await apiRequest<PublicationHistoryResponse>(`${ADMIN_ADVISORIES_PATH}/history`)
+  return toHistoryEntries(response)
+}
+
+/**
+ * 처리 요청 하나를 보내고 이력을 다시 읽는다. 충돌 · 없는 안내면 다시 읽어 `conflict`, 검증 거부면 `invalid`, 그 밖의 실패는 거부한다
+ * (화면이 대화상자 안에 실패를 알린다)
+ */
+async function writeApi(path: string, body: unknown): Promise<HistoryActionResult> {
+  // 처리한 안내 — 정정은 새 안내, 철회는 그 안내다. 충돌이면 null
+  let selectedId: string | null
+  try {
+    const advisory = await apiRequest<OperatorAdvisoryResponse>(path, { method: 'POST', body })
+    selectedId = advisory.advisoryId
+  } catch (error) {
+    const code = errorCode(error)
+    if (code !== null && INVALID_CODES.has(code)) return { status: 'invalid' }
+    if (code === null || !CONFLICT_CODES.has(code)) {
+      syncRoleOnForbidden(error)
+      throw error
+    }
+    selectedId = null
+  }
+  let entries: HistoryEntry[]
+  try {
+    entries = await fetchHistory()
+  } catch (error) {
+    syncRoleOnForbidden(error)
+    return { status: 'unrefreshed', outcome: selectedId === null ? 'conflict' : 'ok', selectedId }
+  }
+  return selectedId === null
+    ? { status: 'conflict', entries }
+    : { status: 'ok', entries, selectedId }
+}
 
 type MockStore = {
   entries: HistoryEntry[]
@@ -82,15 +162,24 @@ export function kstDate(instant: Date): string {
 }
 
 /**
- * 발행 이력을 읽는다(최근 것부터). `scenario` 는 목 재현이다(검토 대기의 `?mock-admin=` 과 같다) — 주어지면 목 이력을 그 상태로 다시
+ * 발행 이력을 읽는다(최근 것부터). 실데이터는 이력 API 이고 실패하면 거부한다(화면이 `다시 시도` 를 보인다) — 재현 쿼리는 듣지 않는다.
+ * `scenario` 는 목 재현이다(검토 대기의 `?mock-admin=` 과 같다) — 주어지면 목 이력을 그 상태로 다시
  * 시작하고, 없으면 이력은 그대로 두고 재현만 끈다. `conflict` 는 목록을 준 직후 모든 행의 `version` 을 올린다(다른 운영자가 그사이 바꿈)
  */
 export function listHistory(
   source: DataSource,
   { scenario = null }: { scenario?: MockAdminScenario | null } = {},
 ): Promise<HistoryListResult> {
+  if (source === 'api') {
+    return fetchHistory().then(
+      (entries) => ({ status: 'ready', entries }),
+      (error: unknown) => {
+        syncRoleOnForbidden(error)
+        throw error
+      },
+    )
+  }
   return respond(() => {
-    if (source === 'api') return { status: 'unavailable' }
     if (scenario) mockStore = seed(scenario)
     else Object.assign(store(), { failWrites: false, staleOnList: false })
     const current = store()
@@ -105,14 +194,8 @@ export function listHistory(
 type Change = (entry: HistoryEntry, now: Date) => { entries: HistoryEntry[]; selectedId: string }
 
 /** 목 서버의 처리 하나. 발행 중이 아니거나(이미 정정 · 철회) 버전이 다르면 충돌, 재현 `fail` 이면 거부한다 */
-function write(
-  id: string,
-  version: number,
-  source: DataSource,
-  change: Change,
-): Promise<HistoryActionResult> {
+function writeMock(id: string, version: number, change: Change): Promise<HistoryActionResult> {
   return respond(() => {
-    if (source === 'api') return { status: 'unavailable' }
     const current = store()
     if (current.failWrites) throw new Error('mock: history write failed')
     const entry = current.entries.find((item) => item.id === id)
@@ -126,15 +209,28 @@ function write(
 }
 
 /**
- * 발행된 안내를 정정 발행한다. 이전 안내는 `정정됨`(타임라인에 정정 · 사유)으로 내려가고, 고친 본문이 새 안내로 발행된다 —
- * 새 안내는 정정일 · 사유(`correction`)를 갖고 사용자 화면(S07)의 정정 이력이 된다. 새 안내를 고른다
+ * 발행된 안내를 정정 발행한다(`POST /{id}/correct`). 이전 안내는 `정정됨`(타임라인에 정정 · 사유)으로 내려가고, 고친 제목 · 본문이 새 안내로
+ * 발행된다 — 새 안내는 정정일 · 사유(`correction`)를 갖고 사용자 화면(S07)에는 정정일만 보인다(사유는 운영자에게만). 새 안내를 고른다
  */
 export function correctAdvisory(
   id: string,
-  { body, reason, version }: { body: string; reason: string; version: number },
+  {
+    title,
+    body,
+    reason,
+    version,
+  }: { title: string; body: string; reason: string; version: number },
   source: DataSource,
 ): Promise<HistoryActionResult> {
-  return write(id, version, source, (entry, now) => {
+  if (source === 'api') {
+    return writeApi(`${ADMIN_ADVISORIES_PATH}/${encodeURIComponent(id)}/correct`, {
+      title,
+      body,
+      reason,
+      version,
+    })
+  }
+  return writeMock(id, version, (entry, now) => {
     const current = store()
     current.serial += 1
     const at = now.toISOString()
@@ -147,7 +243,7 @@ export function correctAdvisory(
     }
     const correction: HistoryEntry = {
       id: newId,
-      kind: entry.kind,
+      ...(entry.kind && { kind: entry.kind }),
       districtCode: entry.districtCode,
       districtName: entry.districtName,
       isoWeek: entry.isoWeek,
@@ -158,6 +254,7 @@ export function correctAdvisory(
       outcome: 'published',
       processedAt: at,
       edited: false,
+      title,
       body,
       version: 1,
       timeline: [{ step: 'correction-published', at, note: reason }],
@@ -170,13 +267,22 @@ export function correctAdvisory(
   })
 }
 
-/** 발행된 안내를 철회한다(RETRACTED — 끝 상태). 사유는 타임라인에 남고, 사용자 화면에는 철회된 안내로 남는다 */
+/**
+ * 발행된 안내를 철회한다(`POST /{id}/retract` — RETRACTED, 끝 상태). 사유는 타임라인에 남고(운영자에게만), 사용자 화면에는 철회된 안내로
+ * 남는다. 그 안내를 고른다
+ */
 export function retractAdvisory(
   id: string,
   { reason, version }: { reason: string; version: number },
   source: DataSource,
 ): Promise<HistoryActionResult> {
-  return write(id, version, source, (entry, now) => {
+  if (source === 'api') {
+    return writeApi(`${ADMIN_ADVISORIES_PATH}/${encodeURIComponent(id)}/retract`, {
+      reason,
+      version,
+    })
+  }
+  return writeMock(id, version, (entry, now) => {
     const retracted: HistoryEntry = {
       ...entry,
       outcome: 'retracted',
@@ -219,6 +325,7 @@ export function recordReviewOutcome(
     outcome,
     processedAt: last.at,
     edited: outcome === 'published' && log.some((event) => event.step === 'edited'),
+    title: mockCandidateTitle(candidate),
     body: candidate.draft,
     version: 1,
     timeline: [...log],

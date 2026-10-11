@@ -94,11 +94,12 @@ export type ReviewCandidate = Readonly<{
   reviewStartedAt?: string
 }>
 
-/* ── 발행 이력 (A03 `/admin/history`, #220) ──────────────────────────────────────────────────
+/* ── 발행 이력 (A03 `/admin/history`, #220 · 연동 #271) ────────────────────────────────────────
  *
- * 후보 하나의 처리 결과(보류) 또는 안내(advisory) 하나가 한 행이다. 전이 이력은 backend advisory_history(§2-4 — from/to status ·
+ * 후보 하나의 처리 결과(보류 — 목에만 있다) 또는 안내(advisory) 하나가 한 행이다. 전이 이력은 backend advisory_history(§2-4 — from/to status ·
  * title · body · operator_id · ai_model · prompt_version · memo · created_at)에서 나오는 값만 필수로 둔다.
- * 담당 이름 · 검토 시간 · 단계별 세부 문구는 1단계에 없어 **선택 값**이다 — 없으면 화면이 숨긴다(검토 대기와 같은 원칙).
+ * 후보 유형 · 담당 이름 · 검토 시간 · 단계별 세부 문구는 이력 응답에 없어 **선택 값**이다 — 없으면 화면이 숨긴다(검토 대기와 같은 원칙).
+ * 응답에서 옮기는 규칙은 `admin-history-api.ts` 의 `toHistoryEntry` 다.
  */
 
 /**
@@ -112,6 +113,9 @@ export type HistoryOutcome = 'published' | 'held' | 'corrected' | 'retracted'
 
 /** 정정 · 철회 사유 최대 길이. backend advisory_history `memo` VARCHAR(500) 과 같다 */
 export const REASON_MAX_LENGTH = 500
+
+/** 안내 제목 최대 길이. backend advisory `title` VARCHAR(100) 과 같다(넘으면 `ADVISORY_106`) */
+export const TITLE_MAX_LENGTH = 100
 
 /**
  * 타임라인 단계 (시안: 후보 등록 → AI 초안 생성 → 운영자 수정 → 승인·발행).
@@ -152,7 +156,6 @@ export type TimelineEvent = Readonly<{
 export type HistoryEntry = Readonly<{
   /** 안내 id (보류는 후보 id) */
   id: string
-  kind: CandidateKind
   districtCode: string
   districtName: string
   /** 근거 집계 주 (ISO 주 `YYYY-Www`) */
@@ -166,6 +169,8 @@ export type HistoryEntry = Readonly<{
   processedAt: string
   /** 운영자 수정(EDITED)을 거쳐 발행했는지 — `수정 후 발행` · 수정 후 발행 비율 */
   edited: boolean
+  /** 안내 제목 (advisory `title`). 정정 발행은 새 제목을 함께 보낸다(필수) */
+  title: string
   /** 발행 본문 (보류는 그때의 초안) */
   body: string
   /** 동시 수정 확인 값 (advisory `@Version`). 정정 · 철회에 함께 보내고, 다르면 409 */
@@ -181,6 +186,8 @@ export type HistoryEntry = Readonly<{
   retraction?: { retractedOn: string; reason: string }
 
   // ── 백엔드 1단계에 없는 값 — 없으면 그 칸 · 문구를 숨긴다 ──────────────────────────────
+  /** 후보 유형. 신호는 검토 후보 조회 때 계산하고 안내에 남기지 않아 이력 응답에 없다(#267) — 목에만 있다 */
+  kind?: CandidateKind
   /** 담당 표시 이름 (`운영자 A`). 백엔드는 `operator_id` 뿐이라 이름의 출처가 없다 */
   operatorName?: string
   /** 검토 시간(분). 검토 시작 시각을 저장하지 않는다 */
