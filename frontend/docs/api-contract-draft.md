@@ -453,9 +453,11 @@ GET /api/v1/advisories/admin/candidates?week=   → { isoWeek, finalized, surgeC
 - `draftable` 은 마감됐고 자료 부족이 아닌지다 — 초안 만들기 전제(`ADVISORY_003` · `004`)와 같다.
 - `advisory` 는 그 동네 · 주의 안내 하나다 — 발행 중(PUBLISHED) → 검토 중(DRAFT · AI_DRAFTED · EDITED · APPROVED 중 가장 최근에 만든 것) → 가장 최근 철회(RETRACTED) → `null`. 제목 · 본문 · 이력은 위 "운영자 안내 처리" 의 상세(`GET /{advisoryId}`)로 읽고, 처리 요청에는 읽은 `version` 을 싣는다.
 - **정렬**: 신호가 있는 후보 → 단계(`HIGH` → `SLIGHT` → `NORMAL` → `INSUFFICIENT`) → 행정동 코드. 신호 없이 안내만 있는 동네는 맨 뒤다. 화면이 첫 후보를 먼저 연다. 쪽 나누기는 없다 — 후보 수는 배열 길이, 유형별 수는 `signals` 로 센다.
-- **화면 모델(`ReviewCandidate`)과 다른 점** — 연동 때 매핑 계층이 맞춘다:
-  - 한 행이 **동네 하나**이고 `signals` 가 여럿일 수 있다(화면 `kind` 는 하나). 후보 ID 는 없다 — 동네 · 주가 키다.
-  - 상태: `advisory` 가 `null` · RETRACTED 면 `대기`, DRAFT~APPROVED 면 `검토 중`, PUBLISHED 면 발행됨이다(서버는 싣는다 — 화면이 목록에서 뺄지 정한다). **보류는 기록되지 않는다(2단계)** — 서버 처리가 없다(#246 결정, 후보 처리 기록은 `review_signal`). 화면의 보류는 목에서만 동작한다.
+- **화면 모델(`ReviewCandidate`)과 다른 점** — 매핑 계층 `features/admin/admin-review-api.ts`(#272, `toReviewCandidateList` · `toReviewCandidate` · `withAdvisoryDetail`)가 맞춘다. 정한 규칙:
+  - 화면 `id` 는 `{districtCode}:{isoWeek}` 다. 대표 `kind` 는 `signals` 중 `BASELINE` → `SURGE` → `REPEAT` 순서로 하나 고르고, 원본은 `signals` 로 둔다. 신호가 없으면 `kind` 를 싣지 않는다(지어낸 유형을 붙이지 않는다).
+  - PUBLISHED 후보는 목록에서 뺀다. RETRACTED 는 `대기` 로 두고 `advisoryId` · `version` 을 싣지 않는다(철회된 안내는 고칠 수 없어 초안 만들기부터다). 모르는 상태 · 단계 코드의 행은 뺀다.
+  - `leadingSymptom` 은 `groups` 에서 수가 가장 큰 증상군이다. 최댓값이 같은 증상군이 둘 이상이거나 0 이면 싣지 않는다.
+  - 상태: `advisory` 가 `null` · RETRACTED 면 `대기`, DRAFT~APPROVED 면 `검토 중`이다. **보류는 기록되지 않는다(2단계)** — 서버 처리가 없다(#246 결정, 후보 처리 기록은 `review_signal`). 화면의 보류는 목에서만 동작한다.
   - 초안 본문 · 제목은 상세에서 읽고, 안내가 없으면 초안 만들기(`POST`, 제목 필수)부터다. `leadingSymptom` 은 `groups` 에서 수가 큰 증상군이다(자료 부족이면 없음). `guides`(연결된 예방수칙) · `recentRates` · `burstCount` · `sameDeviceRepeatCount` · `newParticipantRate` · `reviewStartedAt` 은 응답에 없다(1단계에 출처가 없다 — 화면은 그 칸 · 행을 숨긴다). `baselineRate` · `baselineDeltaPp` 는 수치가 있는 후보에 있다.
 - 상태 전이 · `version` · 409 · **승인하고 발행 = 두 요청**은 위 "운영자 안내 처리" 를 따른다 — 화면은 오류 봉투에 후보가 없으니 목록을 다시 읽어 그 후보를 바꿔 그린다(목은 충돌 응답에 최신 후보를 싣는다 — 연동 때 `GET` 을 다시 부르는 쪽으로 바꾼다).
 - 정할 것(연동 이슈): 발행 전 확인 세 항목을 서버에 남길지, 검토 시작 시각의 출처(advisory `createdAt`?), 다른 주 고르기(화면은 지금 한 주).
