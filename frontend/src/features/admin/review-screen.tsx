@@ -173,10 +173,15 @@ export function AdminReviewScreen() {
 
   async function act(action: CandidateAction, target: ReviewCandidate, draft: string) {
     if (busy) return
+    const { id, version } = target
+    // 처리할 안내(버전)가 없는 후보는 초안 만들기부터다 — 연동(#272) 전에는 목 후보만 오고 목 후보는 늘 버전이 있다
+    if (version === undefined) {
+      setMessage({ tone: 'danger', text: ACTION_MESSAGES[action].failed })
+      return
+    }
     setBusy(true)
     setMessage(null)
     setPublished(null)
-    const { id, version } = target
     let result: CandidateActionResult
     try {
       result = await (action === 'save'
@@ -370,9 +375,9 @@ function CandidateTable({
           const delta = item.baselineDeltaPp
           const deltaClass = delta !== undefined && delta > 0 && STATUS_TEXT_CLASS.high
           const summary = [
-            CANDIDATE_KIND_LABEL[item.kind],
+            ...(item.kind ? [CANDIDATE_KIND_LABEL[item.kind]] : []),
             `참여 ${item.participants}명`,
-            `증상 보고 ${item.symptomRate}%`,
+            ...(item.symptomRate !== undefined ? [`증상 보고 ${item.symptomRate}%`] : []),
             ...(delta !== undefined ? [`기준선 대비 ${formatDelta(delta)}`] : []),
           ].join(' · ')
           return (
@@ -393,7 +398,7 @@ function CandidateTable({
                 {selected && (
                   <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.75 bg-brand" />
                 )}
-                {CANDIDATE_KIND_LABEL[item.kind]}
+                {item.kind && CANDIDATE_KIND_LABEL[item.kind]}
               </td>
               <td className={clsx('flex min-w-0 flex-col gap-1 desktop:table-cell', cell)}>
                 {selected && (
@@ -414,7 +419,9 @@ function CandidateTable({
                 <span className="text-sub text-fg-sub desktop:hidden">{summary}</span>
               </td>
               <td className={wideOnly}>{item.participants}명</td>
-              <td className={wideOnly}>{item.symptomRate}%</td>
+              <td className={wideOnly}>
+                {item.symptomRate !== undefined && `${item.symptomRate}%`}
+              </td>
               {showBaseline && (
                 <td className={clsx(wideOnly, deltaClass && ['font-semibold', deltaClass])}>
                   {delta !== undefined && formatDelta(delta)}

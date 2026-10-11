@@ -2,7 +2,7 @@ import { getMockSession, subscribeMockSession } from '@/features/auth/auth-clien
 import type { DataSource } from '@/lib/data-source'
 
 import { recordReviewOutcome } from './admin-history-client'
-import { createMockCandidates, MOCK_REVIEW_WEEK } from './mock'
+import { createMockCandidates, MOCK_REVIEW_WEEK, type MockReviewCandidate } from './mock'
 import type { ReviewCandidate, TimelineEvent, TimelineStep } from './types'
 
 /* ── 운영자 검토 (A01–A02 `/admin/review`, #219) ────────────────────────────────────────────────
@@ -47,7 +47,7 @@ export function parseMockAdminScenario(value: string | null): MockAdminScenario 
 }
 
 /** `log`: 이 후보의 처리 기록(수정 저장 · 보류 · 발행). 보류 · 발행하면 발행 이력에 넘긴다 */
-type MockEntry = { candidate: ReviewCandidate; published: boolean; log: TimelineEvent[] }
+type MockEntry = { candidate: MockReviewCandidate; published: boolean; log: TimelineEvent[] }
 type MockStore = { entries: MockEntry[]; failWrites: boolean; staleOnList: boolean }
 
 let mockStore: MockStore | null = null

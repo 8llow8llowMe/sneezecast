@@ -10,6 +10,7 @@ import * as client from './admin-review-client'
 import { listReviewCandidates, resetMockReviewCandidates } from './admin-review-client'
 import { barHeightPercent } from './candidate-detail'
 import { AdminReviewScreen } from './review-screen'
+import type { ReviewCandidate } from './types'
 
 // 테스트에는 Next 라우터가 없다. 주소 · 경로는 이 값으로 흉내 낸다
 let search = ''
@@ -19,10 +20,14 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
 }))
 
-// 보내는 중을 붙잡아 보려고 저장만 감싼다(기본은 실제 목)
+// 보내는 중을 붙잡아 보려고 저장을, 선택 값이 빠진 후보를 그려 보려고 목록을 감싼다(기본은 실제 목)
 vi.mock('./admin-review-client', async (importOriginal) => {
   const actual = await importOriginal<typeof client>()
-  return { ...actual, saveCandidateDraft: vi.fn(actual.saveCandidateDraft) }
+  return {
+    ...actual,
+    listReviewCandidates: vi.fn(actual.listReviewCandidates),
+    saveCandidateDraft: vi.fn(actual.saveCandidateDraft),
+  }
 })
 
 /** 목 후보를 읽은 뒤(마이크로태스크)까지 그린다 */
@@ -125,6 +130,66 @@ describe('AdminReviewScreen 검토 대기 (목)', () => {
     expect(screen.queryByText('이상 보고 확인')).toBeNull()
     expect(screen.queryByText(/검토 시작/)).toBeNull()
     expect(screen.getByText('발행 전 확인')).toBeDefined()
+  })
+
+  it('선택 값이 빠진 후보(유형 · 증상 보고 비율 · 많이 보고된 증상군 · 예방수칙 · 초안 · 버전 없음)는 그 조각을 그리지 않는다', async () => {
+    // 후보 API 모양 — 신호 없이 안내만 있던 자료 부족 동네(안내 없음) · 신호는 있지만 수치가 없는 자료 부족 동네
+    const base = { isoWeek: '2025-W47', state: 'waiting', active: true, draftable: false } as const
+    const candidates: ReviewCandidate[] = [
+      {
+        ...base,
+        id: '11240670:2025-W47',
+        districtCode: '11240670',
+        districtName: '가락2동',
+        participants: 240,
+        signals: [],
+        level: 'insufficient',
+        insufficientReason: 'unstable',
+      },
+      {
+        ...base,
+        id: '11240680:2025-W47',
+        kind: 'surge',
+        districtCode: '11240680',
+        districtName: '가락본동',
+        participants: 180,
+        signals: ['surge'],
+        level: 'insufficient',
+        insufficientReason: 'no-baseline',
+      },
+    ]
+    vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({
+      status: 'ready',
+      isoWeek: '2025-W47',
+      candidates,
+    })
+    await renderScreen()
+
+    const rows = within(table()).getAllByRole('row').slice(1)
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('가락2동'),
+      expect.stringContaining('가락본동'),
+    ])
+    // 유형 칸이 비고(신호 없음), 증상 보고 비율 · 기준선 대비 칸이 없다 — `undefined` · `%` 를 그리지 않는다
+    expect(within(rows[0]!).queryByText(/기준선 변화|참여 급증|반복 보고 의심/)).toBeNull()
+    expect(within(rows[1]!).getAllByText('참여 급증')).toBeDefined()
+    for (const row of rows) {
+      expect(row.textContent).not.toMatch(/증상 보고|%|undefined/)
+    }
+    expect(screen.queryByRole('columnheader', { name: '기준선 대비' })).toBeNull()
+
+    // 상세: 제목에 ` · 유형` 이 없고, 근거 줄에 증상 보고 · 증상군이 없고, 예방수칙 줄이 없고, 초안 칸은 비어 있다
+    expect(detailTitle()).toBe('가락2동')
+    const detail = screen.getByRole('region', { name: '가락2동' })
+    expect(within(detail).getByText('11월 3주 · 참여 240명')).toBeDefined()
+    expect(detail.textContent).not.toMatch(/증상 보고 \d|undefined|발열·기침|구토·설사/)
+    expect(within(detail).queryByText(/연결된 예방수칙/)).toBeNull()
+    expect(draft()).toHaveProperty('value', '')
+
+    await userEvent.setup().click(button('가락본동'))
+    expect(detailTitle()).toBe('가락본동 · 참여 급증')
+    expect(screen.getByText('11월 3주 · 참여 180명')).toBeDefined()
+    expect(screen.queryByText(/연결된 예방수칙/)).toBeNull()
   })
 
   it('유형 필터는 그 유형만 보이고, 고른 후보가 빠지면 첫 후보를 고른다', async () => {

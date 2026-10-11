@@ -300,7 +300,8 @@ export function retractAdvisory(
 /**
  * 검토 대기 목의 보류 · 발행을 이력에 남긴다(목 서버 안의 일 — `admin-review-client.ts` 만 부른다). 같은 후보는 한 행이다 —
  * 보류한 후보를 나중에 발행하면 그 행이 발행으로 바뀐다. `log` 는 그 후보의 처리 기록이고 마지막이 보류 · 발행이다.
- * 검토 시간은 목 후보에 검토 시작 시각이 있을 때만 센다(백엔드에는 저장하는 곳이 없다).
+ * 검토 시간은 목 후보에 검토 시작 시각이 있을 때만 센다(백엔드에는 저장하는 곳이 없다). 목 후보는 늘 증상 보고 비율 · 초안이 있다 —
+ * 없으면(자료 부족 · 안내 없음) 이력 행을 만들 수 없어 남기지 않는다.
  *
  * 그 행이 이미 정정됨 · 철회(끝 상태)면 덮지 않는다 — 검토 대기의 `?mock-admin=` 재설정 뒤 같은 후보를 다시 발행해도 끝 상태가
  * 되살아나지 않고, 같은 동네 · 주에 발행 중인 안내가 둘 생기지 않게 한다
@@ -312,21 +313,23 @@ export function recordReviewOutcome(
   const last = log.at(-1)
   if (!last || (last.step !== 'held' && last.step !== 'published')) return
   const outcome = last.step
+  const { symptomRate, draft } = candidate
+  if (symptomRate === undefined || draft === undefined) return
   const started = candidate.reviewStartedAt ? Date.parse(candidate.reviewStartedAt) : Number.NaN
   const minutes = Math.round((Date.parse(last.at) - started) / 60_000)
   const entry: HistoryEntry = {
     id: candidate.id,
-    kind: candidate.kind,
+    ...(candidate.kind && { kind: candidate.kind }),
     districtCode: candidate.districtCode,
     districtName: candidate.districtName,
     isoWeek: candidate.isoWeek,
     participants: candidate.participants,
-    symptomRate: candidate.symptomRate,
+    symptomRate,
     outcome,
     processedAt: last.at,
     edited: outcome === 'published' && log.some((event) => event.step === 'edited'),
     title: mockCandidateTitle(candidate),
-    body: candidate.draft,
+    body: draft,
     version: 1,
     timeline: [...log],
     ...(Number.isFinite(minutes) && { reviewMinutes: Math.max(0, minutes) }),

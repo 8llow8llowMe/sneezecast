@@ -3,14 +3,20 @@ import type { HistoryEntry, ReviewCandidate } from './types'
 const MOCK_SURGE_TITLE = '참여가 지난주보다 많이 늘었어요'
 
 /**
- * 목 후보로 낸 안내의 제목(예시). 목 후보에는 제목이 없어(검토 대기 화면 모델에 제목 칸이 아직 없다) 검토 대기에서 보류 · 발행한 행이
- * 발행 이력에 더해질 때 쓴다 — 참여 급증은 참여, 그 밖은 많이 보고된 증상군으로 짓는다
+ * 목 후보로 낸 안내의 제목(예시) — **목 전용**이다. 목 후보에는 제목이 없어 검토 대기에서 보류 · 발행한 행이 발행 이력에 더해질 때 쓴다
+ * (실데이터 제목은 안내 상세의 `title` 이다). 참여 급증은 참여, 그 밖은 많이 보고된 증상군으로 짓는다.
+ * 많이 보고된 증상군이 없으면(자료 부족 · 동점) 증상군을 지어내지 않고 중립 제목이다
  */
 export function mockCandidateTitle(candidate: ReviewCandidate): string {
   if (candidate.kind === 'surge') return MOCK_SURGE_TITLE
-  return candidate.leadingSymptom === 'gastrointestinal'
-    ? '구토·설사 보고가 늘었어요'
-    : '발열·기침 보고가 늘었어요'
+  switch (candidate.leadingSymptom) {
+    case 'respiratory':
+      return '발열·기침 보고가 늘었어요'
+    case 'gastrointestinal':
+      return '구토·설사 보고가 늘었어요'
+    default:
+      return '이번 주 동네 증상 보고 안내'
+  }
 }
 
 /**
@@ -29,8 +35,11 @@ export const MOCK_REVIEW_WEEK = '2025-W47'
 /** 시안의 `검토 시작 14:02 · 경과 6분` — 목을 처음 만들 때부터 6분 전에 시작한 것으로 둔다 */
 const REVIEW_STARTED_MINUTES_AGO = 6
 
+/** 목 후보. 목 서버는 처리 때 버전을 맞춰 보므로 늘 버전이 있다(실데이터는 안내가 없으면 없다) */
+export type MockReviewCandidate = ReviewCandidate & Readonly<{ version: number }>
+
 /** 목 후보 목록을 새로 만든다. `now` 는 검토 시작 시각의 기준이다 */
-export function createMockCandidates(now: Date = new Date()): ReviewCandidate[] {
+export function createMockCandidates(now: Date = new Date()): MockReviewCandidate[] {
   const startedAt = new Date(now.getTime() - REVIEW_STARTED_MINUTES_AGO * 60_000)
   return [
     {

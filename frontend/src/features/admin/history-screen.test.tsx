@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetMockSession } from '@/features/auth/auth-client'
 import { setSession } from '@/lib/session/session-store'
 import { correctedHistory, historyResponse } from '@/test/admin-history'
+import { processable } from '@/test/admin-review'
 import {
   errorResponse,
   holdRequests,
@@ -137,7 +138,7 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
     const review = await import('./admin-review-client')
     const list = await review.listReviewCandidates('mock')
     if (list.status !== 'ready' || !list.candidates[0]) throw new Error('not ready')
-    const { id, version, draft } = list.candidates[0] // ○○1동, 6분 전 검토 시작
+    const { id, version, draft } = processable(list.candidates[0]) // ○○1동, 6분 전 검토 시작
     await review.holdCandidate(id, { version }, 'mock')
     await review.publishCandidate(id, { draft, version: version + 1 }, 'mock')
     await renderScreen()

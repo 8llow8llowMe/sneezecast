@@ -7,6 +7,7 @@ import { apiRequest } from '@/lib/api/client'
 import type * as sessionStore from '@/lib/session/session-store'
 import { refreshSession } from '@/lib/session/session-store'
 import { correctedHistory, historyResponse, operatorAdvisory } from '@/test/admin-history'
+import { processable } from '@/test/admin-review'
 
 import {
   ADMIN_ADVISORIES_PATH,
@@ -340,7 +341,7 @@ describe('검토 대기 → 발행 이력 (같은 목 서버)', () => {
   it('보류하면 이번 주 행이 보류로 더해지고, 나중에 발행하면 그 행이 발행으로 바뀐다', async () => {
     const list = await listReviewCandidates('mock')
     if (list.status !== 'ready' || !list.candidates[1]) throw new Error('not ready')
-    const { id, version } = list.candidates[1] // ○○2동, 검토 시작 없음
+    const { id, version } = processable(list.candidates[1]) // ○○2동, 검토 시작 없음
     await holdCandidate(id, { version }, 'mock')
 
     let rows = await entries()
@@ -365,7 +366,7 @@ describe('검토 대기 → 발행 이력 (같은 목 서버)', () => {
   it('저장한 초안 그대로 발행하면 수정 후 발행이고, 검토 시작이 있으면 검토 시간을 센다', async () => {
     const list = await listReviewCandidates('mock')
     if (list.status !== 'ready' || !list.candidates[0]) throw new Error('not ready')
-    const first = list.candidates[0] // ○○1동, 6분 전 검토 시작
+    const first = processable(list.candidates[0]) // ○○1동, 6분 전 검토 시작
     vi.setSystemTime(new Date('2025-11-20T05:10:00Z'))
     await saveCandidateDraft(first.id, { draft: '저장본', version: first.version }, 'mock')
     await publishCandidate(first.id, { draft: '저장본', version: first.version + 1 }, 'mock')
@@ -382,7 +383,7 @@ describe('검토 대기 → 발행 이력 (같은 목 서버)', () => {
       resetMockReviewCandidates()
       const list = await listReviewCandidates('mock')
       if (list.status !== 'ready' || !list.candidates[2]) throw new Error('not ready')
-      const { id, version, draft } = list.candidates[2]
+      const { id, version, draft } = processable(list.candidates[2])
       await publishCandidate(id, { draft, version }, 'mock')
       if (end === 'retract') await retractAdvisory(id, { reason: '사유', version: 1 }, 'mock')
       else
@@ -396,7 +397,11 @@ describe('검토 대기 → 발행 이력 (같은 목 서버)', () => {
       resetMockReviewCandidates()
       const again = await listReviewCandidates('mock')
       if (again.status !== 'ready' || !again.candidates[2]) throw new Error('not ready')
-      await publishCandidate(id, { draft, version: again.candidates[2].version }, 'mock')
+      await publishCandidate(
+        id,
+        { draft, version: processable(again.candidates[2]).version },
+        'mock',
+      )
 
       const rows = (await entries()).filter((row) => row.id === id)
       expect(rows).toHaveLength(1)
@@ -414,7 +419,7 @@ describe('검토 대기 → 발행 이력 (같은 목 서버)', () => {
   it('고치지 않고 발행하면 발행(수정 없음)이다', async () => {
     const list = await listReviewCandidates('mock')
     if (list.status !== 'ready' || !list.candidates[2]) throw new Error('not ready')
-    const { id, version, draft } = list.candidates[2]
+    const { id, version, draft } = processable(list.candidates[2])
     await publishCandidate(id, { draft, version }, 'mock')
     expect((await entries())[0]).toMatchObject({ id, edited: false })
   })
@@ -423,7 +428,8 @@ describe('검토 대기 → 발행 이력 (같은 목 서버)', () => {
     expect(await countPendingCandidates('mock')).toBe(4)
     const list = await listReviewCandidates('mock')
     if (list.status !== 'ready' || !list.candidates[0]) throw new Error('not ready')
-    await holdCandidate(list.candidates[0].id, { version: list.candidates[0].version }, 'mock')
+    const { id, version } = processable(list.candidates[0])
+    await holdCandidate(id, { version }, 'mock')
     expect(await countPendingCandidates('mock')).toBe(3)
     expect(await countPendingCandidates('api')).toBeNull()
   })

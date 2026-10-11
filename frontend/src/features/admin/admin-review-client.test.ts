@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { loginWithEmail, logout, resetMockSession } from '@/features/auth/auth-client'
+import { processable } from '@/test/admin-review'
 
 import {
   holdCandidate,
@@ -10,11 +11,12 @@ import {
   resetMockReviewCandidates,
   saveCandidateDraft,
 } from './admin-review-client'
+import { createMockCandidates, mockCandidateTitle } from './mock'
 
 async function firstCandidate() {
   const result = await listReviewCandidates('mock')
   if (result.status !== 'ready' || !result.candidates[0]) throw new Error('no candidate')
-  return result.candidates[0]
+  return processable(result.candidates[0])
 }
 
 beforeEach(() => {
@@ -54,7 +56,7 @@ describe('운영자 검토 클라이언트', () => {
   it('수정 저장은 초안을 바꾸고 버전을 올리며, 대기 후보는 검토 중이 된다', async () => {
     const list = await listReviewCandidates('mock')
     if (list.status !== 'ready' || !list.candidates[1]) throw new Error('not ready')
-    const waiting = list.candidates[1]
+    const waiting = processable(list.candidates[1])
     expect(waiting.state).toBe('waiting')
 
     const result = await saveCandidateDraft(
@@ -115,7 +117,7 @@ describe('운영자 검토 클라이언트', () => {
 
     const failing = await listReviewCandidates('mock', { scenario: 'fail' })
     if (failing.status !== 'ready' || !failing.candidates[0]) throw new Error('not ready')
-    const { id, version } = failing.candidates[0]
+    const { id, version } = processable(failing.candidates[0])
     await expect(holdCandidate(id, { version }, 'mock')).rejects.toThrow()
 
     await listReviewCandidates('mock')
@@ -125,7 +127,7 @@ describe('운영자 검토 클라이언트', () => {
   it('목 재현 conflict: 목록을 준 뒤 다른 운영자가 고친 것처럼 첫 처리가 충돌하고, 최신 버전으로 다시 하면 된다', async () => {
     const list = await listReviewCandidates('mock', { scenario: 'conflict' })
     if (list.status !== 'ready' || !list.candidates[0]) throw new Error('not ready')
-    const { id, version } = list.candidates[0]
+    const { id, version } = processable(list.candidates[0])
 
     const first = await saveCandidateDraft(id, { draft: '안내', version }, 'mock')
     expect(first).toMatchObject({ status: 'conflict', candidate: { version: version + 1 } })
@@ -141,6 +143,17 @@ describe('운영자 검토 클라이언트', () => {
 
     await logout('mock')
     expect((await firstCandidate()).state).toBe('reviewing')
+  })
+
+  it('목 후보의 예시 제목: 많이 보고된 증상군이 없으면 증상군을 지어내지 않고 중립 제목이다', () => {
+    const [first, surge, repeat] = createMockCandidates()
+    if (!first || !surge || !repeat) throw new Error('no candidate')
+    expect(mockCandidateTitle(first)).toBe('발열·기침 보고가 늘었어요')
+    expect(mockCandidateTitle(surge)).toBe('참여가 지난주보다 많이 늘었어요')
+    expect(mockCandidateTitle(repeat)).toBe('구토·설사 보고가 늘었어요')
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 많이 보고된 증상군만 뺀 후보
+    const { leadingSymptom, ...withoutSymptom } = first
+    expect(mockCandidateTitle(withoutSymptom)).toBe('이번 주 동네 증상 보고 안내')
   })
 
   it('목 재현 쿼리는 아는 값만 받는다', () => {

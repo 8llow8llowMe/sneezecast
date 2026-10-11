@@ -9,7 +9,7 @@ import type { HistoryEntry, TimelineEvent, TimelineStep } from './types'
  */
 
 /** `{ code, name, description }` — 상태 · 단계 */
-type CodeName = { code: string; name: string; description: string }
+export type CodeName = { code: string; name: string; description: string }
 
 /** 운영자가 보는 안내 한 건(backend `AdvisoryOperatorResponse`). 처리 응답 · 상세 · 이력 항목이 같은 모양이다 */
 export type OperatorAdvisoryResponse = {
