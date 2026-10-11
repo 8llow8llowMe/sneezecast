@@ -53,6 +53,13 @@ surveillance:
     # grace ≤ close-cron 의 월요일 시각으로 둔다— 크면 cron 회차가 지난 주를 못 닫는다. 기본은 경계(0ms)를 피해 1분 여유를 둔다(9분 · 00:10).
     close-grace: ${SURVEILLANCE_AGGREGATE_JOB_CLOSE_GRACE:PT9M}
 
+# 공식 정보(질병관리청 감시 자료) 표시 규칙 (official 컨텍스트, entity-design §3-2). 잘못되면 기동 실패 (OfficialNotifiableProperties).
+official:
+  notifiable:
+    # 전수신고 주별 값은 신고 지연으로 최근 주가 계속 늘어난다. 지금 주(질병관리청 주, 일요일 시작)에서 이 주 수만큼 전보다 최근 주는 보이지 않는다.
+    # 0 이상 52 이하. 0 이면 지금 주까지 보인다.
+    display-lag-weeks: 2
+
 logging:
   level:
     # Eureka 클라이언트가 주기적으로 Eureka 서버 엔드포인트를 확인할 때 출력하는 반복 로그를 줄이기 위한 설정
