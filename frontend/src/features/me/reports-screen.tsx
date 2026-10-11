@@ -19,12 +19,14 @@ import {
 } from '@/features/report/report-history'
 import { summarizeAnswer } from '@/features/report/symptoms'
 import {
+  useCurrentReportReadWeek,
   useSubmittedReport,
   useSubmittedReportStatus,
   useSubmittedReportWeek,
 } from '@/features/report/use-submitted-report'
 import { formatIsoWeekOfMonth, formatIsoWeekRange, kstIsoWeek, parseIsoWeek } from '@/lib/iso-week'
 import { navHref } from '@/lib/nav'
+import { useSession } from '@/lib/session/use-session'
 import { useDataSource } from '@/lib/use-data-source'
 
 import { AccountPageLayout } from './account-page-layout'
@@ -40,6 +42,9 @@ import { useMeTrail } from './me-trail'
 import { useMemberGate } from './member-gate'
 import { useShownRegionName } from './member-region'
 
+/** 지난 보고 읽기 결과 */
+type PastLoad = { status: 'ready'; reports: readonly PastReport[] } | { status: 'failed' }
+
 /**
  * S10 최근 보고 내역 (`/me/reports`, #194). 회원만 본다(`useMemberGate`). **시안이 없어** 계정 화면(Settings-devices)의 틀을 쓴다.
  *
@@ -50,9 +55,10 @@ import { useShownRegionName } from './member-region'
  * - 이번 주 보고는 보고 버튼 · 내 정보와 같은 값(`useSubmittedReport` — 실데이터는 `GET /api/v1/reports/current` 저장소, 목은 목 보고)이다.
  *   실데이터에서 읽는 동안은 "불러오고 있어요", 읽지 못하면 빨강 상자 + `다시 시도` 다. 실데이터 줄의 주는 서버가 정한 주(저장소 `week`)이고
  *   화면을 연 때의 KST 주와 같을 때만 `이번 주` 다. 저장소 값이 지난 주 것이면 열 때 다시 읽는다(`refreshCurrentReportIfWeekChanged`)
- * - 지난 보고는 BE 미정이다(`report-history.ts`). **실데이터는 지어낸 이력을 보이지 않고** 회색 상자로 아직 불러올 수 없다고 알린다.
+ * - 지난 보고는 실데이터면 지난 보고 내역 API(#216 · 연동 #251, `report-history.ts`)에서 읽는다. 읽는 동안은 "불러오고 있어요",
+ *   읽지 못하면 빨강 상자 + `다시 시도` 다(이번 주 보고는 그대로 보인다). 화면을 띄운 채 주가 바뀌면 다시 읽는다.
  *   목은 예시 목록이고 `?mock-reports=empty` 면 지난 보고가 없다
- * - 보낸 보고가 하나도 없으면 빈 상태다
+ * - 이번 주 · 지난 보고를 모두 읽었는데 보낸 보고가 하나도 없으면 빈 상태다
  */
 export function ReportsScreen({
   regionName,
@@ -64,6 +70,7 @@ export function ReportsScreen({
   regionCode?: string | null
 }) {
   const auth = useMemberGate({ next: ME_REPORTS_PATH })
+  const session = useSession()
   const searchParams = useSearchParams()
   const { goBack } = useMeTrail()
   const noConsent = auth === 'member-no-consent'
@@ -74,7 +81,15 @@ export function ReportsScreen({
   }, [noConsent, goBack, backHref])
 
   if (auth !== 'member') return null
-  return <Reports regionName={regionName} regionCode={regionCode} backHref={backHref} />
+  // 회원이 바뀌면(다른 탭의 로그인이 비회원을 거치지 않고 바뀜) 화면을 새로 그린다 — 앞 회원의 지난 보고 · 진행 중인 응답을 남기지 않는다
+  return (
+    <Reports
+      key={session.status === 'member' ? session.summary.memberId : 'mock'}
+      regionName={regionName}
+      regionCode={regionCode}
+      backHref={backHref}
+    />
+  )
 }
 
 function Reports({
@@ -104,18 +119,45 @@ function Reports({
   useEffect(() => {
     if (source === 'api') refreshCurrentReportIfWeekChanged()
   }, [source])
-  const past = listPastReports(source, {
-    now,
-    empty: searchParams.get(MOCK_REPORTS_PARAM) === 'empty',
-  })
+  const mockEmpty = searchParams.get(MOCK_REPORTS_PARAM) === 'empty'
+  // 다시 시도할 때 올린다(지난 보고를 다시 읽는다)
+  const [pastKey, setPastKey] = useState(0)
+  // 서버의 이번 주. 화면을 띄운 채 주가 바뀌어 이번 주 저장소가 다음 주로 넘어가면(화면이 다시 보일 때 다시 읽음) 지난 보고도 다시 읽는다 —
+  // 처음 읽은 목록에는 그때의 이번 주가 없어, 그대로 두면 그 주가 보고하지 않은 주처럼 보인다
+  const readWeek = useCurrentReportReadWeek()
+  const serverWeek = readWeek !== null && readWeek > thisWeek ? readWeek : thisWeek
+  // 이 읽기의 식별자. 받은 결과가 지금 식별자와 다르면(출처 · 재현 · 다시 시도 · 주가 바뀜) 읽는 중으로 본다 —
+  // 바뀐 뒤 응답이 오기 전에 앞 결과(목 예시 · 지난 주의 목록)를 그리지 않는다
+  const request = `${source}|${mockEmpty}|${pastKey}|${serverWeek}`
+  const [loaded, setLoaded] = useState<{ request: string; load: PastLoad } | null>(null)
+  const past = loaded?.request === request ? loaded.load : null
+  useEffect(() => {
+    let live = true
+    // 늦게 온 응답(화면을 떠남 · 식별자가 바뀜)은 버린다. 목은 실패하지 않는다
+    listPastReports(source, { now, empty: mockEmpty }).then(
+      (reports) => {
+        if (live) setLoaded({ request, load: { status: 'ready', reports } })
+      },
+      () => {
+        if (live) setLoaded({ request, load: { status: 'failed' } })
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [source, now, mockEmpty, request])
+
+  function retryPast() {
+    setPastKey((key) => key + 1)
+  }
 
   const reports: PastReport[] = [
     ...(submitted && submittedWeek ? [{ isoWeek: submittedWeek, answer: submitted.answer }] : []),
-    ...(past.status === 'ready'
+    ...(past?.status === 'ready'
       ? past.reports.filter((report) => report.isoWeek !== submittedWeek)
       : []),
   ]
-  const empty = currentStatus === 'ready' && reports.length === 0
+  const empty = currentStatus === 'ready' && past !== null && reports.length === 0
 
   return (
     <AccountPageLayout
@@ -133,12 +175,13 @@ function Reports({
         지워요. 같은 주에 고쳐 보낸 보고는 마지막 보고만 남아요.
       </p>
 
-      {/* 이번 주 보고를 읽는 중 안내. 스크린리더는 이미 있던 영역의 내용이 바뀔 때 읽으므로 늘 그려 둔다 */}
+      {/* 이번 주 · 지난 보고를 읽는 중 안내. 스크린리더는 이미 있던 영역의 내용이 바뀔 때 읽으므로 늘 그려 둔다 */}
       <div className="flex flex-col">
         <div role="status">
           {currentStatus === 'loading' && (
             <p className="text-body text-fg-sub">이번 주 보고를 불러오고 있어요</p>
           )}
+          {past === null && <p className="text-body text-fg-sub">지난 보고를 불러오고 있어요</p>}
         </div>
 
         {currentStatus === 'failed' && (
@@ -150,6 +193,7 @@ function Reports({
                 variant="secondary"
                 size="sm"
                 className="self-start"
+                aria-label="이번 주 보고 다시 시도"
                 onClick={retryCurrentReport}
               >
                 다시 시도
@@ -176,7 +220,7 @@ function Reports({
         {empty && (
           <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
             <p className="text-section-title font-semibold text-fg">
-              {past.status === 'ready'
+              {past?.status === 'ready'
                 ? '아직 보낸 보고가 없어요'
                 : '이번 주에는 아직 보고하지 않았어요'}
             </p>
@@ -187,9 +231,22 @@ function Reports({
         )}
       </div>
 
-      {past.status === 'unavailable' && (
-        <AlertBox tone="neutral">
-          지난 보고는 아직 불러올 수 없어요. 지금은 이번 주 보고만 보여요.
+      {past?.status === 'failed' && (
+        <AlertBox
+          tone="danger"
+          action={
+            <Button
+              variant="secondary"
+              size="sm"
+              className="self-start"
+              aria-label="지난 보고 다시 시도"
+              onClick={retryPast}
+            >
+              다시 시도
+            </Button>
+          }
+        >
+          지난 보고를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
         </AlertBox>
       )}
     </AccountPageLayout>

@@ -68,6 +68,16 @@ export function useSubmittedReportWeek(): string | null {
 }
 
 /**
+ * 이번 주 보고 저장소가 마지막으로 읽은 주(보고가 없어도). 실데이터의 보고할 수 있는 회원이 읽은 뒤에만 있고, 그 밖은 null 이다.
+ * 화면을 띄운 채 주가 바뀌었는지 볼 때 쓴다(최근 보고 내역이 지난 보고를 다시 읽음, #251)
+ */
+export function useCurrentReportReadWeek(): string | null {
+  const source = useDataSource()
+  const current = useCurrentReport()
+  return source === 'api' && current?.report.status === 'ready' ? current.week : null
+}
+
+/**
  * 이번 주 보고를 읽었는지. 목데이터 · 비회원 · 보고할 수 없는 회원은 늘 `ready` 다(읽을 것이 없다).
  * 실데이터의 보고할 수 있는 회원은 저장소 요청의 상태다(`retryCurrentReport()` 로 다시 읽는다)
  */
