@@ -12,6 +12,8 @@ import { useMockAuth } from '@/features/auth/use-mock-auth'
 import { ExplainSheet } from '@/features/home/explain-sheet'
 import { reportButtonLabel } from '@/features/home/report-gate'
 import { useExplainParam } from '@/features/home/use-explain-param'
+import { useRegionWeekly } from '@/features/home/use-home-weekly'
+import { WeeklyLoadState } from '@/features/home/weekly-load-state'
 import { CONFIRM_PARAM } from '@/features/me/confirm'
 import { ConfirmModal } from '@/features/me/confirm-dialog'
 import { notificationsHref, regionSearch, reportHrefFor } from '@/features/me/me-paths'
@@ -27,6 +29,7 @@ import { useModalParam } from '@/lib/use-modal-param'
 import { DistrictPanel } from './district-panel'
 import { MapView } from './map-view'
 import type { MapWeek } from './types'
+import { fetchMapWeek } from './weekly-aggregates'
 
 /** `내 동네로 설정` 확인 대화상자의 쿼리 값 (`?confirm=set-mine`, 내 정보의 확인 대화상자와 같은 키) */
 export const SET_MINE_CONFIRM = 'set-mine'
@@ -46,7 +49,10 @@ const SET_MINE_INVALID = '이 동네는 내 동네로 설정할 수 없어요. �
  * | 태블릿 | 머리줄(동네 · 알림 · 보고 버튼, 아래 구분선) → 지도 → 펼친 동네 정보 → 탭바 |
  * | 데스크톱 | 홈과 같은 머리줄(지금 메뉴 `지도`) → 왼쪽 지도 + 오른쪽 400 동네 정보 |
  *
- * - **지도 그림만 임시다**(`MapView`). 행정동 경계 · 지도 라이브러리 · 집계 API 가 붙으면 목록 대신 칠한 지도로 바꾼다.
+ * - **지도 그림만 임시다**(`MapView`). 행정동 경계 · 지도 라이브러리가 붙으면 목록 대신 칠한 지도로 바꾼다.
+ * - **동네 자료의 출처**(#257): 목데이터는 서버 페이지가 넘긴 목 지도(`map`)다. 실데이터(`map` 이 null)는 화면이 처음 고른 동네
+ *   (둘러보기 동네, 없으면 회원의 내 동네)의 시군구 집계를 읽는다(`fetchMapWeek` — 홈과 같은 `useRegionWeekly`). 받기 전 · 실패 ·
+ *   볼 동네 없음이면 지도 · 동네 정보 자리에 홈과 같은 안내(`WeeklyLoadState`)만 둔다.
  * - 처음에는 처음 고른 동네(내 동네 · 둘러보기 동네)를 접어서 보인다. 다른 동네를 고르면 펼친다(Map-expanded).
  * - 동네는 사용자가 고른다 — 위치 권한을 묻지 않는다. 공식 정보(질병관리청)는 이 화면에 섞지 않는다.
  * - 둘러보기 동네(`regionCode`)는 탭바 · 메뉴 · 보고 진입 · 동네 안내 링크에 남긴다(다른 화면과 같다).
@@ -54,7 +60,7 @@ const SET_MINE_INVALID = '이 동네는 내 동네로 설정할 수 없어요. �
  *   고르면 `/map?region=<새 코드>` 로 기록을 바꿔 돌아온다(#141). 둘 다 둘러보기 동네만 바꾸고 내 동네는 그대로다(회원 · 비회원 같다).
  *   모바일은 머리줄이 없어 찾기가 동네를 옮기는 유일한 길이다. 찾은 동네가 지도 자료에 어떻게 실리는지는 `app/map/page.tsx` 다.
  *   보이는 이름은 다른 화면과 같은 `useShownRegionName`(둘러보기 동네 → 회원의 내 동네 → 목 예시)이다.
- *   지도의 처음 고른 동네는 둘러보기 동네 · 목 예시 동네다(회원의 내 동네로 두는 것은 집계 API 연동 뒤 — 지도 자료를 서버가 만든다).
+ *   지도의 처음 고른 동네는 둘러보기 동네, 없으면 실데이터는 회원의 내 동네 · 목데이터는 목 예시 동네다.
  * - **내 동네**(`(내 동네)` 표시 · `내 동네로 설정` 이 없는 동네): 회원은 프로필의 내 동네(`useMemberRegion`), 비회원은 처음 고른 동네다.
  * - **내 동네로 설정**(#145): 비회원은 로그인(돌아올 곳 홈 · 고른 동네를 `region` 으로)으로 간다. 회원은 확인 대화상자(`?confirm=set-mine`,
  *   기록을 쌓음)를 열고, 확인하면 고른 동네를 내 동네로 저장(`saveRegion`)한 뒤 대화상자를 닫고 알림으로 알린다. 버튼이 사라지므로
@@ -64,11 +70,18 @@ const SET_MINE_INVALID = '이 동네는 내 동네로 설정할 수 없어요. �
  *   주소로 바로 들어온 값은 회원이 내 동네가 아닌 동네를 골랐을 때만 연다(아니면 열지 않고 두기만 한다 — 판단 기준 `?explain=` 과 같다).
  */
 export function MapScreen({
-  map,
+  map: data,
+  regionName = '',
   regionCode = null,
 }: {
-  map: MapWeek
-  /** 둘러보기(`?region=`)로 고른 행정동 코드. `app/map/page.tsx` 가 아는 코드일 때만 넘긴다 */
+  /** 목데이터 지도(서버 페이지가 `?mock=` 로 고름). **null 이면 실데이터**라 화면이 행정동 주간 집계를 읽는다 */
+  map: MapWeek | null
+  /** 집계를 받기 전(실데이터) 머리줄 동네 이름 — 목 예시. 회원의 내 동네를 알면 그 이름이다 */
+  regionName?: string
+  /**
+   * 둘러보기(`?region=`)로 고른 행정동 코드. 목데이터는 `app/map/page.tsx` 가 아는 코드일 때만, 실데이터는 모양(숫자 8자리)만 보고
+   * 넘긴다(있는 동네인지는 집계 응답이 정한다 — 홈과 같다)
+   */
   regionCode?: string | null
 }) {
   const router = useRouter()
@@ -80,23 +93,48 @@ export function MapScreen({
   const { toast, show, dismiss } = useToast()
   const navSearch = regionSearch(regionCode)
   const openBrowseRegion = useBrowseRegion('/map', regionCode)
-  const shownRegionName = useShownRegionName(map.mineName, regionCode)
   const memberRegion = useMemberRegion()
+  const live = useRegionWeekly(data === null, regionCode, fetchMapWeek)
+  const liveMap = live?.status === 'ready' ? live.week : null
+  // 마지막으로 받은 실데이터 지도(이전 그림에서 정보를 남기는 React 의 렌더 중 상태 갱신 — 같은 값이면 다시 그리지 않는다)
+  const [lastLive, setLastLive] = useState<MapWeek | null>(null)
+  if (liveMap && liveMap !== lastLive) setLastLive(liveMap)
+  // 처음 고른 동네만 바뀌어(회원이 `내 동네로 설정` 함 · 다른 탭에서 내 동네를 바꿈) 다시 읽는 동안, 새 동네가 이미 받은 지도에
+  // 있으면 직전 지도를 그대로 그린다 — 목록 · 고른 동네 · 포커스를 잃고 불러오는 중으로 내려가지 않게
+  const nextMineCode = regionCode ?? memberRegion?.code ?? null
+  const keptMap =
+    live?.status === 'loading' &&
+    lastLive?.districts.some((district) => district.code === nextMineCode)
+      ? lastLive
+      : null
+  const map = data ?? liveMap ?? keptMap
+  // 지도를 그릴 수 없는 동안의 안내(실데이터)
+  const pending = map === null && live !== null && live.status !== 'ready' ? live : null
+  const shownRegionName = useShownRegionName(map?.mineName ?? regionName, regionCode)
   const confirm = useModalParam(CONFIRM_PARAM)
   const active = useActiveRef()
   const source = useDataSource()
 
-  const [selectedCode, setSelectedCode] = useState(map.mineCode)
-  const [expanded, setExpanded] = useState(false)
+  // 고른 동네 · 펼침. 처음 고른 동네가 바뀌면(실데이터를 받음 · 내 동네가 바뀜 · 둘러보기 동네가 바뀜) 버리고 그 동네를 접어 보인다.
+  // 고른 동네가 새 처음 고른 동네면(그 동네를 내 동네로 설정함) 그대로 둔다 — 보던 정보가 접히지 않게
+  const [view, setView] = useState<{ mineCode: string; code: string; expanded: boolean } | null>(
+    null,
+  )
+  const current =
+    map && (view?.mineCode === map.mineCode || view?.code === map.mineCode) ? view : null
+  const expanded = current?.expanded ?? false
   // 저장하는 중인 동네. 응답이 올 때까지 대화상자의 동네로 남긴다
   const [saving, setSaving] = useState<MemberRegion | null>(null)
   // 대화상자 안 빨강 상자 문구. 없으면 null
   const [failure, setFailure] = useState<string | null>(null)
+  const districts = map?.districts ?? []
   const selected =
-    map.districts.find((district) => district.code === selectedCode) ?? map.districts[0] ?? null
+    districts.find((district) => district.code === (current?.code ?? map?.mineCode)) ??
+    districts[0] ??
+    null
 
   // 회원의 내 동네는 프로필의 동네(모르면 없음), 비회원은 처음 고른 동네(둘러보기 · 목 예시)다
-  const mineCode = guest ? map.mineCode : (memberRegion?.code ?? null)
+  const mineCode = guest ? (map?.mineCode ?? null) : (memberRegion?.code ?? null)
   const settable =
     !guest && selected && selected.code !== mineCode
       ? { code: selected.code, name: selected.week.regionName }
@@ -110,18 +148,21 @@ export function MapScreen({
   }, [confirmOpen])
 
   // 저장에 성공하면 누른 버튼이 사라지므로 포커스를 동네 이름 제목으로 옮긴다. 대화상자가 닫히며 포커스를 (사라진) 버튼에
-  // 돌려준 뒤여야 한다 — 닫힌 그림의 effect 에서 옮긴다. 자식(Modal)의 `dialog.close()` effect 가 이 effect 보다 먼저 돈다
+  // 돌려준 뒤여야 한다 — 닫힌 그림의 effect 에서 옮긴다. 자식(Modal)의 `dialog.close()` effect 가 이 effect 보다 먼저 돈다.
+  // 제목이 없는 그림(실데이터를 다시 읽는 중 등)에서는 표시를 남겨 두고 제목이 생긴 그림에서 옮긴다
   const nameRef = useRef<HTMLHeadingElement>(null)
   const focusNameRef = useRef(false)
   useEffect(() => {
-    if (!focusNameRef.current || confirmOpen) return
+    if (!focusNameRef.current || confirmOpen || !nameRef.current) return
     focusNameRef.current = false
     nameRef.current?.focus({ preventScroll: true })
   })
 
   const select = (code: string) => {
-    setSelectedCode(code)
-    setExpanded(true)
+    if (map) setView({ mineCode: map.mineCode, code, expanded: true })
+  }
+  const setExpanded = (value: boolean) => {
+    if (map && selected) setView({ mineCode: map.mineCode, code: selected.code, expanded: value })
   }
 
   function onSetMine() {
@@ -189,14 +230,25 @@ export function MapScreen({
       </div>
 
       <main className="flex grow flex-col tablet:gap-5 tablet:px-6 tablet:py-5 desktop:flex-row desktop:gap-6 desktop:px-8 desktop:py-6">
-        <MapView
-          weekLabel={map.weekLabel}
-          districts={map.districts}
-          mineCode={mineCode}
-          selectedCode={selected?.code ?? null}
-          onSelect={select}
-          onSearch={openBrowseRegion}
-        />
+        {map ? (
+          <MapView
+            weekLabel={map.weekLabel}
+            districts={map.districts}
+            mineCode={mineCode}
+            selectedCode={selected?.code ?? null}
+            onSelect={select}
+            onSearch={openBrowseRegion}
+          />
+        ) : (
+          pending && (
+            <WeeklyLoadState
+              load={pending}
+              onPickRegion={openBrowseRegion}
+              pickOnFailure
+              className="mx-5 mt-4 tablet:m-0 desktop:grow"
+            />
+          )
+        )}
 
         {selected && (
           <DistrictPanel

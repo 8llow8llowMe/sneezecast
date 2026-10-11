@@ -19,7 +19,7 @@ import type {
 
 /*
  * 행정동 주간 집계(docs/api-contract-draft.md "행정동 주간 집계", 백엔드 #212)를 홈 화면 모델(`HomeWeekly`)로 옮긴다.
- * 지도(`GET /weekly-aggregates`)도 동네 집계 모양이 같아 `toHomeWeekly` 를 함께 쓸 수 있다.
+ * 지도(`GET /weekly-aggregates`, `features/map/weekly-aggregates.ts` — #257)도 동네 집계 모양이 같아 `toHomeWeekly` 를 함께 쓴다.
  *
  * - **실데이터만 부른다.** 목데이터는 서버 페이지가 `pickHomeMock`(`?mock=`)으로 고른 값을 그대로 넘긴다(`app/(home)/page.tsx`).
  * - 공개 API 라 `auth: false` 로 보낸다(만료된 access 로 게이트웨이가 거절하지 않게 — 행정동 API 와 같다).
@@ -62,13 +62,13 @@ type DistrictWeeklyAggregateResponse = AggregateWeekResponse & {
   district: DistrictAggregateResponse
 }
 
-const DISTRICTS_PATH = '/api/v1/districts'
+export const DISTRICTS_PATH = '/api/v1/districts'
 
 /** 행정동 코드 형식 — SGIS 숫자 8자리. 아니면 서버가 400(`AGGREGATE_101`)이라 보내지 않는다 */
-const DISTRICT_CODE_PATTERN = /^\d{8}$/
+export const DISTRICT_CODE_PATTERN = /^\d{8}$/
 
 /** 없는 코드 (404) */
-const AGGREGATE_NOT_FOUND = 'AGGREGATE_001'
+export const AGGREGATE_NOT_FOUND = 'AGGREGATE_001'
 
 const LEVEL_STATUS: Readonly<Record<string, RegionStatus>> = {
   NORMAL: 'normal',
