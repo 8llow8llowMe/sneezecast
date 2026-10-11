@@ -7,8 +7,8 @@ import type { HistoryEntry, ReviewCandidate, TimelineEvent } from './types'
 
 /* ── 발행 이력 · 정정 · 철회 (A03 `/admin/history`, #220) ─────────────────────────────────────────
  *
- * 최근 발행 · 보류 기록과 발행된 안내의 정정 발행 · 철회. **BE 미정이다(#214 · #215)** — 화면이 가정한 모양은
- * docs/api-contract-draft.md "발행 이력 (#220, 프론트 초안)" 이다.
+ * 최근 발행 · 보류 기록과 발행된 안내의 정정 발행 · 철회. **이력 목록 · 정정은 BE 미정이다(#267)** — 화면이 가정한 모양은
+ * docs/api-contract-draft.md "발행 이력 (#220, 프론트 초안)" 이다. 철회는 "운영자 안내 처리"(#246)로 확정됐다.
  *
  * - 실데이터: 요청하지 않고 `unavailable` 이다(검토 대기와 같은 까닭 — 목 안내를 철회해도 시민 화면은 바뀌지 않는다)
  * - 목: 모듈 메모리의 이력(목 서버 흉내). 검토 대기 목(`admin-review-client.ts`)의 보류 · 발행이 `recordReviewOutcome` 으로 여기 더해진다 —
