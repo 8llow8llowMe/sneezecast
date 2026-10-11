@@ -20,7 +20,6 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Comment;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import org.springframework.data.domain.Persistable;
 
 /**
  * 예방 안내 (entity-design §2-3). 회원 · 보고자 컬럼이 없다 — 처리한 운영자는 이력({@code advisory_history.operator_id})에만 남는다.
@@ -42,7 +41,7 @@ import org.springframework.data.domain.Persistable;
         // 정정 발행이 잇는 이전 안내 → 정정한 안내 (#267 정정됨 판정)
         @Index(name = "idx_advisory_corrects_advisory_id", columnList = "correctsAdvisoryId")
     })
-public class AdvisoryEntity extends BaseEntity implements Persistable<Long> {
+public class AdvisoryEntity extends BaseEntity {
 
     @Id
     @Comment("안내 아이디 (Snowflake)")
@@ -123,14 +122,5 @@ public class AdvisoryEntity extends BaseEntity implements Persistable<Long> {
         this.body = body;
         this.publishedAt = publishedAt;
         this.retractedAt = retractedAt;
-    }
-
-    /**
-     * 새 행인지 판정한다 — {@code createdAt} 은 persist 때 Auditing 이 채우므로 비어 있으면 아직 저장되지 않은 엔티티다 (coding-conventions §8-1).
-     * Snowflake 로 ID 를 미리 정하므로 기본 판정이면 {@code save} 가 merge 로 가서 겹치는 ID 의 행을 조용히 덮어쓴다.
-     */
-    @Override
-    public boolean isNew() {
-        return getCreatedAt() == null;
     }
 }

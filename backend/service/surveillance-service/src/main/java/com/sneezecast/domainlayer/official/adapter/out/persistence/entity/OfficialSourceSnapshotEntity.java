@@ -29,8 +29,8 @@ import org.hibernate.type.SqlTypes;
  * <p>실행 한 번(조회 조건 하나)에 한 행이다. <b>수정하지 않고 쌓기만 한다.</b> {@code FAILED} 행은 원천 데이터를 쓰지 않으므로 실패해도
  * {@code official_surveillance} 의 기존 값은 그대로다.
  *
- * <p>{@code id} 는 batch 가 Snowflake 로 할당한다. {@code Persistable} 을 구현하지 않는다 — surveillance 는 이 테이블을 {@code save}
- * 하지 않아 isNew 판정이 쓰이지 않는다. #74 가 BaseEntity 로 올리면 함께 적용된다.
+ * <p>{@code id} 는 batch 가 Snowflake 로 할당한다. 새 행 판정({@code BaseEntity#isNew})은 {@code save} 경로에서만 쓰이는데 surveillance 는
+ * 이 테이블을 {@code save} 하지 않는다.
  *
  * <p>enum 컬럼은 {@code @JdbcTypeCode(SqlTypes.VARCHAR)} 로 네이티브 enum 타입을 막는다 ({@link OfficialSurveillanceEntity} 참고).
  */

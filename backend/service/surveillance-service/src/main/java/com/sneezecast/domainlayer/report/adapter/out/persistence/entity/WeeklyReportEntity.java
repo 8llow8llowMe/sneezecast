@@ -13,7 +13,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.Comment;
-import org.springframework.data.domain.Persistable;
 
 /**
  * 주간 건강 보고 원시 행 (entity-design §2-1). 민감정보(건강)라 이 테이블 밖으로 행을 내보내는 API 는 없다 — 조회는 본인 보고(이번 주 · 지난 보고 내역)와 집계뿐이다.
@@ -36,7 +35,7 @@ import org.springframework.data.domain.Persistable;
         // 집계 스케줄러의 주 · 행정동 GROUP BY
         @Index(name = "idx_weekly_report_iso_week_district_code", columnList = "isoWeek, districtCode")
     })
-public class WeeklyReportEntity extends BaseEntity implements Persistable<Long> {
+public class WeeklyReportEntity extends BaseEntity {
 
     /** 동시 제출 판정이 이 이름으로 제약 위반을 가린다 ({@code WeeklyReportRepositoryAdapter#insert}). */
     public static final String REPORTER_KEY_ISO_WEEK_UNIQUE_INDEX = "uk_weekly_report_reporter_key_iso_week";
@@ -68,15 +67,4 @@ public class WeeklyReportEntity extends BaseEntity implements Persistable<Long> 
     @ColumnDefault("0")
     @Comment("같은 주 수정 횟수. 반복 보고 검토 후보의 근거")
     private short revisionCount;
-
-    /**
-     * 새 행인지 판정한다 — {@code createdAt} 은 persist 때 Auditing 이 채우므로 비어 있으면 아직 저장되지 않은 엔티티다 (coding-conventions §8-1).
-     *
-     * <p>Snowflake 로 ID 를 미리 정하므로 기본 판정(ID null 여부)이면 {@code save} 가 merge 로 가서, ID 가 겹칠 때 기존 행을 조용히 덮어쓴다.
-     * 이 판정으로 persist 를 타게 해 겹치는 ID 는 PK 위반으로 실패시킨다. 그래서 기존 행 수정은 엔티티 save 가 아니라 갱신 쿼리로 한다.
-     */
-    @Override
-    public boolean isNew() {
-        return getCreatedAt() == null;
-    }
 }
