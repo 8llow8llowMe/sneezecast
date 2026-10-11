@@ -6,10 +6,11 @@ import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 행정동 × 주 집계 저장 포트 (entity-design §2-2). 재계산은 "없으면 insert, 있으면 update" 다 — 네이티브 upsert 는 컨벤션상 쓰지 않는다
- * (coding-conventions §8-4). 재계산 · 마감 스케줄러(#211)가 쓴다.
+ * (coding-conventions §8-4). 재계산 · 마감 스케줄러가 쓴다 ({@code AggregateCommandProcessor}).
  *
  * <p><b>같은 칸 insert 경합</b>: 집계 · 마감 스케줄러는 한 번에 하나만 돈다(1단계 인스턴스 1개). 그래도 같은 {@code (district_code, iso_week)}
  * 를 두 번 insert 하면 {@code uk_district_weekly_aggregate_district_code_iso_week} 위반이 {@link #insert} 에서 그대로
@@ -58,4 +59,7 @@ public interface DistrictWeeklyAggregateRepositoryPort {
      * @param current 현재 주 (이 주는 넣지 않는다)
      */
     List<ReportWeek> findUnfinalizedWeeksBefore(ReportWeek current);
+
+    /** 주어진 주 가운데 집계 행이 하나라도 있는 주 (마감 여부와 무관). 빈 목록이면 조회하지 않고 빈 결과다. */
+    Set<ReportWeek> findWeeksWithRows(Collection<ReportWeek> isoWeeks);
 }

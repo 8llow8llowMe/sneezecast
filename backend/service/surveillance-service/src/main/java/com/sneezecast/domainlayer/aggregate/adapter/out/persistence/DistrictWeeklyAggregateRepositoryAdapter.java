@@ -13,6 +13,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -74,6 +76,15 @@ public class DistrictWeeklyAggregateRepositoryAdapter implements DistrictWeeklyA
     @Override
     public List<ReportWeek> findUnfinalizedWeeksBefore(ReportWeek current) {
         return districtWeeklyAggregateRepository.findUnfinalizedIsoWeeksBefore(current.value()).stream().map(ReportWeek::parse).toList();
+    }
+
+    @Override
+    public Set<ReportWeek> findWeeksWithRows(Collection<ReportWeek> isoWeeks) {
+        if (isoWeeks.isEmpty()) {
+            return Set.of();
+        }
+        List<String> values = isoWeeks.stream().map(ReportWeek::value).distinct().toList();
+        return districtWeeklyAggregateRepository.findDistinctIsoWeeksIn(values).stream().map(ReportWeek::parse).collect(Collectors.toUnmodifiableSet());
     }
 
     private LocalDateTime now() {

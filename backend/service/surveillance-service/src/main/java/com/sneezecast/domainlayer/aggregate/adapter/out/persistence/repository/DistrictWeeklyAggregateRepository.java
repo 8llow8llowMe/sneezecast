@@ -26,6 +26,10 @@ public interface DistrictWeeklyAggregateRepository extends JpaRepository<Distric
     @Query("select distinct a.isoWeek from DistrictWeeklyAggregateEntity a where a.finalizedAt is null and a.isoWeek < :isoWeek order by a.isoWeek")
     List<String> findUnfinalizedIsoWeeksBefore(String isoWeek);
 
+    /** 주어진 주 가운데 행이 하나라도 있는 주. {@code idx_district_weekly_aggregate_iso_week} 를 탄다. */
+    @Query("select distinct a.isoWeek from DistrictWeeklyAggregateEntity a where a.isoWeek in :isoWeeks")
+    List<String> findDistinctIsoWeeksIn(Collection<String> isoWeeks);
+
     /**
      * 한 칸의 수치 · 판정을 다시 쓴다. <b>마감된 행은 고치지 않는다</b> — 조건에 {@code finalizedAt is null} 을 걸어 마감과 재계산이 엇갈려도
      * 확정된 값이 바뀌지 않는다.

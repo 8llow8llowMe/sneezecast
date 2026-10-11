@@ -36,6 +36,23 @@ aggregate:
   baseline-weeks: 4
   baseline-lookback-weeks: 8
 
+# 집계 재계산 · 주 마감 스케줄 (aggregate 컨텍스트, entity-design §2-2). 판정 결과가 아니라 언제 도는지만 정하므로 위 aggregate.* 와 달리 env 로 바꿔도 된다.
+# env 이름은 SURVEILLANCE_AGGREGATE_JOB_* 다 (AGGREGATE_* 는 판정 규칙을 덮을 수 있어 쓰지 않는다). 잘못된 값이면 기동 실패 (AggregateJobProperties).
+surveillance:
+  aggregate-job:
+    # true / false 만 받는다(대소문자 무시, 그 밖의 값은 기동 실패). 여기 기본값은 꺼짐이다 — 테스트 컨텍스트가 공용 H2 의 집계 행을 건드리지 않게 한다.
+    # 꺼져 있으면 기동 때 WARN 을 남긴다. 배포는 compose 가 기본 true 로 넘긴다(dev · prod 모두).
+    scheduler-enabled: ${SURVEILLANCE_AGGREGATE_JOB_SCHEDULER_ENABLED:false}
+    # 기동 뒤 첫 회차까지. 첫 회차가 서버가 내려가 있던 동안 놓친 마감을 따라잡는다.
+    initial-delay: ${SURVEILLANCE_AGGREGATE_JOB_INITIAL_DELAY:PT1M}
+    # 재계산 한 회차가 끝난 뒤 다음 회차까지. 회차마다 [마감할 때가 지난 주 마감 → 현재 주 재계산]을 한다.
+    fixed-delay: ${SURVEILLANCE_AGGREGATE_JOB_FIXED_DELAY:PT10M}
+    # 주 마감 시각 (Spring cron, 초가 맨 앞. 배포 시간대와 상관없이 Asia/Seoul 기준). 기본 월요일 00:10.
+    close-cron: "${SURVEILLANCE_AGGREGATE_JOB_CLOSE_CRON:0 10 0 * * MON}"
+    # 주가 끝난 뒤 마감까지 기다리는 시간 (0 이상 1일 이하). 일요일 밤에 시작한 보고가 월요일에 커밋되는 경우를 흡수한다.
+    # grace ≤ close-cron 의 월요일 시각으로 둔다— 크면 cron 회차가 지난 주를 못 닫는다. 기본은 경계(0ms)를 피해 1분 여유를 둔다(9분 · 00:10).
+    close-grace: ${SURVEILLANCE_AGGREGATE_JOB_CLOSE_GRACE:PT9M}
+
 logging:
   level:
     # Eureka 클라이언트가 주기적으로 Eureka 서버 엔드포인트를 확인할 때 출력하는 반복 로그를 줄이기 위한 설정

@@ -17,6 +17,9 @@ public record AggregateCounts(
     int revisedReportCount
 ) {
 
+    /** 보고가 한 건도 없는 칸 — 재계산 결과에 없는 기존 행을 이 값으로 덮어쓴다 (동을 바꾼 수정 · 파기로 0건이 된 동). */
+    public static final AggregateCounts ZERO = new AggregateCounts(0, 0, 0, 0, 0);
+
     public AggregateCounts {
         if (participantCount < 0 || symptomaticCount < 0 || respiratoryCount < 0 || entericCount < 0 || revisedReportCount < 0) {
             throw new IllegalArgumentException("집계 수치는 0 이상이어야 합니다. " + describe(participantCount, symptomaticCount, respiratoryCount, entericCount,
