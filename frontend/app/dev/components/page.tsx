@@ -77,8 +77,8 @@ export default function ComponentsPreviewPage() {
           <ListRow
             kind="link"
             leading={<Badge kind="official" />}
-            title="전국 인플루엔자 유행주의보"
-            description="질병관리청 · 전국 · 주간 발표 기준"
+            title="질병관리청 공식 정보"
+            description="감염병 발생 현황 · 시민 자가보고와 따로 봐요"
           />
         </div>
 

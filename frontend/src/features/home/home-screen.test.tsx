@@ -78,7 +78,7 @@ describe('HomeScreen', () => {
     // 공식 정보 행은 모바일 자리와 태블릿 이상 자리에 하나씩 있고 폭에 따라 하나만 보인다
     const officialLinks = screen
       .getAllByRole('link')
-      .filter((link) => link.textContent?.includes('전국 인플루엔자 유행주의보'))
+      .filter((link) => link.textContent?.includes('감염병 발생 현황'))
     expect(officialLinks).toHaveLength(2)
     officialLinks.forEach((link) => expect(link.textContent).toContain('공식'))
   })

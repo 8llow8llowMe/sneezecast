@@ -227,7 +227,7 @@ describe('NoticeScreen — 정정된 안내 (Guide-corrected)', () => {
 })
 
 describe('NoticeScreen — 안내 없음 (Guide-none)', () => {
-  it('시민 자가보고 배지 · 안내 없음 설명 · 집계 · 공식 예방수칙 링크를 보이고 AI 고지는 없다', () => {
+  it('시민 자가보고 배지 · 안내 없음 설명 · 집계 · 질병관리청 공식 정보 링크를 보이고 AI 고지는 없다', () => {
     render(<NoticeScreen data={data('none')} />)
 
     expect(screen.getByText('시민 자가보고')).toBeDefined()
@@ -238,9 +238,9 @@ describe('NoticeScreen — 안내 없음 (Guide-none)', () => {
     expect(screen.queryByText(AI_DRAFT_DISCLOSURE)).toBeNull()
     expect(screen.queryByRole('heading', { name: '이렇게 해 주세요' })).toBeNull()
     expect(screen.getAllByText('136명')).toHaveLength(2)
-    expect(screen.getByRole('link', { name: '공식 예방수칙 보기' }).getAttribute('href')).toBe(
-      '/official',
-    )
+    expect(
+      screen.getByRole('link', { name: '질병관리청 공식 정보 보기' }).getAttribute('href'),
+    ).toBe('/official')
   })
 
   it('자료 부족이면 수치 · 상태색 없이 참여 진행 막대만 보인다', () => {
@@ -279,9 +279,9 @@ describe('NoticeScreen — 철회된 안내 (#225, 시안 없음)', () => {
     expect(screen.getByText('11월 3주 기준')).toBeDefined()
     expect(screen.getByText('11월 17일~23일 기준')).toBeDefined()
     expect(screen.getAllByText('128명')).toHaveLength(2)
-    expect(screen.getByRole('link', { name: '공식 예방수칙 보기' }).getAttribute('href')).toBe(
-      '/official?region=1111051500',
-    )
+    expect(
+      screen.getByRole('link', { name: '질병관리청 공식 정보 보기' }).getAttribute('href'),
+    ).toBe('/official?region=1111051500')
     const official = screen.getByRole('link', { name: /질병관리청 발표 보기/ })
     expect(official.getAttribute('href')).toBe('/official?region=1111051500')
     expect(official.textContent).not.toMatch(/\d/)
@@ -416,9 +416,9 @@ describe('NoticeScreen — 이동', () => {
       const official = screen.getByRole('link', { name: /질병관리청 발표 보기/ })
       expect(official.getAttribute('href')).toBe('/official?region=1111051500')
       if (key === 'none') {
-        expect(screen.getByRole('link', { name: '공식 예방수칙 보기' }).getAttribute('href')).toBe(
-          '/official?region=1111051500',
-        )
+        expect(
+          screen.getByRole('link', { name: '질병관리청 공식 정보 보기' }).getAttribute('href'),
+        ).toBe('/official?region=1111051500')
       }
     },
   )
@@ -431,9 +431,9 @@ describe('NoticeScreen — 이동', () => {
       />,
     )
 
-    expect(screen.getByRole('link', { name: '공식 예방수칙 보기' }).getAttribute('href')).toBe(
-      '/official?mock=published&region=1111051500',
-    )
+    expect(
+      screen.getByRole('link', { name: '질병관리청 공식 정보 보기' }).getAttribute('href'),
+    ).toBe('/official?mock=published&region=1111051500')
   })
 
   it('문 연 곳 찾기는 아직 없어 준비 중 알림을 띄운다', async () => {

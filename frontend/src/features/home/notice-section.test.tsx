@@ -49,13 +49,13 @@ describe('NoticeSection', () => {
     )
   })
 
-  it('발행 전이면 안내 없음과 공식 예방수칙 링크를 보인다', () => {
+  it('발행 전이면 안내 없음과 질병관리청 공식 정보 링크를 보인다', () => {
     render(<NoticeSection notice={null} />)
 
     expect(screen.getByText('이번 주 발행된 동네 안내가 없어요')).toBeDefined()
     expect(screen.queryByText('운영자 검토')).toBeNull()
-    expect(screen.getByRole('link', { name: '공식 예방수칙 보기' }).getAttribute('href')).toBe(
-      '/official',
-    )
+    expect(
+      screen.getByRole('link', { name: '질병관리청 공식 정보 보기' }).getAttribute('href'),
+    ).toBe('/official')
   })
 })

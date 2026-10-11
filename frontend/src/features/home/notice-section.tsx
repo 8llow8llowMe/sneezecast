@@ -8,7 +8,7 @@ import type { PublishedNotice } from './types'
 
 /**
  * 우리 동네 안내 섹션. **운영자가 검토 · 발행한 주에만** 안내를 보인다 (루트 CLAUDE.md "공식 정보와 안내").
- * 발행 전이면 공식 예방수칙으로 이어 준다. 안내 링크는 동네 안내 화면(S07 `/notice/[region]/[week]`)으로 간다.
+ * 발행 전이면 질병관리청 공식 정보로 이어 준다. 안내 링크는 동네 안내 화면(S07 `/notice/[region]/[week]`)으로 간다.
  *
  * 실데이터는 집계 응답의 요약(제목 · 발행일)만 알아 `운영자 검토` 배지 · 발행일 · 제목 · `안내 전체 보기` 를 그린다. 할 일 목록 · 근거는
  * 시안 예시(목)에만 있다(`types.ts` 의 `PublishedNotice`). 본문은 동네 안내 화면에서 보인다(#256).
@@ -21,7 +21,7 @@ export function NoticeSection({
   notice: PublishedNotice | null
   /** 안내 링크 뒤에 붙일 둘러보기 동네(`region=<코드>`) — 메뉴 링크처럼 동네를 잃지 않게 한다 */
   navSearch?: string | undefined
-  /** `공식 예방수칙 보기` 가 갈 곳. 홈은 공식 정보 행과 같은 주소(목 상태 · 둘러보기 동네 포함)를 넘긴다 */
+  /** `질병관리청 공식 정보 보기` 가 갈 곳. 홈은 공식 정보 행과 같은 주소(목 상태 · 둘러보기 동네 포함)를 넘긴다 */
   officialHref?: string
 }) {
   return (
@@ -62,7 +62,7 @@ export function NoticeSection({
         <div className="flex min-h-12 items-center justify-between gap-3">
           <span className="text-body text-fg-sub">이번 주 발행된 동네 안내가 없어요</span>
           <Link href={officialHref} className="shrink-0 text-sub font-semibold text-brand">
-            공식 예방수칙 보기
+            질병관리청 공식 정보 보기
           </Link>
         </div>
       )}

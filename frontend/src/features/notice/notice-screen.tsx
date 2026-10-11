@@ -387,7 +387,9 @@ function NoneArticle({
         href={officialHref}
         className="flex min-h-14 items-center justify-between gap-2.5 border-y border-divider text-fg"
       >
-        <span className="text-body font-medium tablet:text-body-large">공식 예방수칙 보기</span>
+        <span className="text-body font-medium tablet:text-body-large">
+          질병관리청 공식 정보 보기
+        </span>
         <ChevronRightIcon className="text-fg-muted" />
       </Link>
     </>
