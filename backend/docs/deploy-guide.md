@@ -163,7 +163,7 @@ service-discovery 는 공통만 읽고 서비스 경로가 없다. 키를 어느
 | 경로가 없거나 비면 실패 | `readServiceSecret: true` 인데 서비스 경로가 없으면(404) "공통만 쓴다" 로 넘어가지 않고 실패 | `readVaultSecretValues` |
 | `.env` 로 안전하게 쓸 수 없는 값은 실패 | 줄바꿈, `$`, 따옴표로 시작, 공백 뒤 `#`. compose `--env-file` 이 치환 · 따옴표 제거 · 주석 처리로 값을 바꾸기 때문이다 | `toEnvFileValues` |
 | 같은 키가 두 경로에 있으면 실패 | 덮어쓰지 않는다. 키 이름과 두 경로만 메시지에 남긴다 | `mergeVaultSecretValues` |
-| 서비스 전용 키는 주인 경로에만 | `REPORTER_KEY_PEPPER` → surveillance, `WITHDRAWN_EMAIL_PEPPER` · `AUTH_DB_*` → auth, `SURVEILLANCE_DB_*` → surveillance, `BATCH_DB_*` → batch. 공통이나 다른 서비스 경로에 있으면 실패 | `validateServiceOnlyKeys` |
+| 서비스 전용 키는 주인 경로에만 | `REPORTER_KEY_PEPPER` → surveillance, `WITHDRAWN_EMAIL_PEPPER` · `AUTH_DB_*` → auth, `SURVEILLANCE_DB_*` → surveillance, `BATCH_DB_*` · `SGIS_CONSUMER_*` · `KDCA_API_SERVICE_KEY` → batch. 공통이나 다른 서비스 경로에 있으면 실패 | `validateServiceOnlyKeys` |
 | 필수 키 · 프로필 · 포트 | 아래 표의 키가 비면 실패. `SPRING_PROFILES_ACTIVE` 는 배포 환경(dev/prod)과 같아야 하고, 포트 키는 `hostPorts` 와 같아야 한다 | `validateDeployEnvValues` |
 | discovery 주소 | 모든 잡의 `SERVICE_DISCOVERY_PORT` 가 discovery 포트(dev 3761 / prod 4761)와, 클라이언트 잡의 `SERVICE_DISCOVERY_HOSTNAME` 이 dev `192.168.0.13` 과 같아야 한다 | `validateDiscoveryEndpoint`, `discoveryEndpoints` |
 | 값은 로그에 남기지 않는다 | 경로별 **키 이름**만 출력한다. AppRole 자격 · Vault 토큰 · GitHub 토큰은 curl 인자가 아니라 stdin 으로 넘긴다 | `readDeployEnvValues`, `loginToVault` |
@@ -193,6 +193,7 @@ yml 에 기본값이 없는 자리표시자다. 모든 잡이 `SPRING_PROFILES_A
   `MAIL_FROM_*` · `LEGAL_*_VERSION` · `AUTH_EMAIL_SEND_*` · `AUTH_LOGIN_*` · `AUTH_SESSION_*` · `AUTH_PASSWORD_RESET_TOKEN_TTL` · `AUTH_OAUTH_*` · `AUTH_REPORT_PURGE_*` · `KAKAO_*_TIMEOUT` · `SNOWFLAKE_*` · surveillance 의 `SURVEILLANCE_AGGREGATE_JOB_*` 등)는 넣지 않아도 된다. compose 가 yml 과 같은 기본값을 넘긴다 — 빈 문자열을
   넘기면 yml 기본값이 적용되지 않기 때문이다.
 - `BATCH_SCHEDULE_ENABLED` 는 batch-service 경로의 Vault 값을 그대로 쓰고, 없으면 compose 가 dev `true` / prod `false` 를 넘긴다.
+- batch 외부 원천 인증키 `SGIS_CONSUMER_KEY` · `SGIS_CONSUMER_SECRET`(행정동 적재) · `KDCA_API_SERVICE_KEY`(전수신고 적재, 공공데이터포털 **Decoding** 값)는 batch-service 경로에만 둔다. compose 가 컨테이너로 넘기고, 비어 있으면 기동은 하되 그 잡이 `*_CREDENTIALS_MISSING` 으로 실패한다. 아직 `requiredEnvKeys` 에 넣지 않았다 — **Vault 에 값을 등록한 뒤** `Jenkinsfile-batch-service` 의 `requiredEnvKeys` 와 위 필수 키 표에 더한다(먼저 넣으면 batch 배포가 막힌다, #67).
 - auth 메일: `MAIL_USERNAME` / `MAIL_PASSWORD` 는 SMTP 계정과 앱 비밀번호다(auth 전용, 서비스 경로). `MAIL_HOST` · `MAIL_PORT` 기본값은
   Gmail(`smtp.gmail.com:587`, STARTTLS)이다. 다른 SMTP 를 쓰면 두 키를 서비스 경로에 넣는다.
 - auth 동의 문서 버전 `LEGAL_TERMS_VERSION` · `LEGAL_PRIVACY_VERSION` · `LEGAL_SENSITIVE_HEALTH_INFO_VERSION` 은 20자 이하이고 비면
