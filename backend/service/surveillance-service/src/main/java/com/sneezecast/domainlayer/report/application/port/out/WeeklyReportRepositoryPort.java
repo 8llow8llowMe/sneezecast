@@ -1,9 +1,11 @@
 package com.sneezecast.domainlayer.report.application.port.out;
 
 import com.sneezecast.domainlayer.report.application.exception.ReportErrorCode;
+import com.sneezecast.domainlayer.report.application.port.out.query.WeeklyReportCountQueryResult;
 import com.sneezecast.domainlayer.report.domain.enums.SymptomGroup;
 import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
 import com.sneezecast.domainlayer.report.domain.model.WeeklyReport;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -59,4 +61,18 @@ public interface WeeklyReportRepositoryPort {
      * @return 지운 행 수 (0 이상)
      */
     int deleteAllByReporterKey(String reporterKey);
+
+    /**
+     * 주 하나의 보고를 행정동 × 증상군 조합으로 센다 — 집계 재계산(aggregate)이 같은 서비스 안에서 이 포트로만 원시 보고를 읽는다. 보고자 · 보고 행은
+     * 내보내지 않는다. 순서는 정하지 않는다.
+     *
+     * @throws IllegalArgumentException 저장된 마스크에 모르는 비트가 있는 경우 ({@code SymptomGroup#fromMask}) — 조용히 버리면 증상 보고가 사라진다
+     */
+    List<WeeklyReportCountQueryResult> countByDistrictAndSymptoms(ReportWeek isoWeek);
+
+    /**
+     * {@code [fromInclusive, toExclusive)} 에서 보고가 한 건이라도 있는 주를 오래된 순으로. 집계 행이 하나도 없는 지난 주를 찾는 데 쓴다
+     * (entity-design §2-2 마감).
+     */
+    List<ReportWeek> findReportedWeeks(ReportWeek fromInclusive, ReportWeek toExclusive);
 }

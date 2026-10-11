@@ -2,6 +2,7 @@ package com.sneezecast.domainlayer.report.adapter.out.persistence.repository;
 
 import com.sneezecast.domainlayer.report.adapter.out.persistence.entity.WeeklyReportEntity;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -52,4 +53,31 @@ public interface WeeklyReportRepository extends JpaRepository<WeeklyReportEntity
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from WeeklyReportEntity w where w.reporterKey = :reporterKey")
     int deleteAllByReporterKey(String reporterKey);
+
+    /**
+     * 주 하나의 보고를 행정동 × 증상군 마스크로 묶어 센다 (집계 재계산). {@code idx_weekly_report_iso_week_district_code} 를 탄다. 비트 해석은 DB 함수
+     * 대신 호출자가 {@code SymptomGroup} 으로 한다 — JPQL 에 비트 연산자가 없고, 조합이 행정동마다 많아야 4개라 결과가 작다.
+     *
+     * <p>{@code count(w)} 가 곧 보고자 수다 — {@code uk_weekly_report_reporter_key_iso_week} 가 같은 사람의 같은 주를 한 행으로 지킨다.
+     */
+    @Query("select w.districtCode as districtCode, w.symptomMask as symptomMask, count(w) as reportCount,"
+        + " sum(case when w.revisionCount > 0 then 1 else 0 end) as revisedReportCount"
+        + " from WeeklyReportEntity w where w.isoWeek = :isoWeek group by w.districtCode, w.symptomMask")
+    List<DistrictSymptomCount> countByDistrictAndSymptomMask(String isoWeek);
+
+    /** {@code [fromIsoWeek, toIsoWeek)} 에서 보고가 한 건이라도 있는 주, 오래된 순. {@code YYYY-Www} 문자열 정렬이 시간 순이라 문자열로 비교한다. */
+    @Query("select distinct w.isoWeek from WeeklyReportEntity w where w.isoWeek >= :fromIsoWeek and w.isoWeek < :toIsoWeek order by w.isoWeek")
+    List<String> findDistinctIsoWeeksBetween(String fromIsoWeek, String toIsoWeek);
+
+    /** {@link #countByDistrictAndSymptomMask} 한 줄. */
+    interface DistrictSymptomCount {
+
+        String getDistrictCode();
+
+        byte getSymptomMask();
+
+        long getReportCount();
+
+        long getRevisedReportCount();
+    }
 }
