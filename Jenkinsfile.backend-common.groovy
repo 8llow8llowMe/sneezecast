@@ -581,6 +581,7 @@ Map<String, String> mergeVaultSecretValues(Map<String, Object> specs, Map<String
 Map<String, String> serviceOnlyKeyOwners() {
     return [
         'REPORTER_KEY_PEPPER'     : 'surveillance-service',
+        'WITHDRAWN_EMAIL_PEPPER'  : 'auth-service',
         'AUTH_DB_URL'             : 'auth-service',
         'AUTH_DB_USERNAME'        : 'auth-service',
         'AUTH_DB_PASSWORD'        : 'auth-service',
