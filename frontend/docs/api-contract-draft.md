@@ -1,6 +1,6 @@
 # API 계약
 
-백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 포함) · 행정동 · 주간 보고(이번 주)는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자 · 지난 보고 내역 · 알림 설정은 **BE 미정**이라 아래 초안은 프론트 제안이다.
+백엔드(origin/develop)와 맞춘 계약이다. **인증 · 회원(관심 동네 · 알림 설정 포함) · 행정동 · 주간 보고(이번 주)는 백엔드에 구현돼 있어 확정**이고, 집계 · 안내 · 공식 정보 · 운영자 · 지난 보고 내역은 **BE 미정**이라 아래 초안은 프론트 제안이다.
 
 - 계약의 정본은 백엔드 컨트롤러의 `@Operation` 설명과 [`backend/docs/modules.md`](../../backend/docs/modules.md) 다. **Swagger 는 공개 도메인(`https://api-dev.sneezecast.com`)에서 볼 수 없다** — 게이트웨이가 Swagger 경로를 라우팅하지 않고 문서 집계도 두지 않는다. 계약이 바뀌면 백엔드 코드 · 문서와 대조해 이 문서를 고친다.
 - 호출 방법(래퍼 · 토큰 · 오류 처리)은 [conventions.md](conventions.md) "API 계층" 이 정본이다.
@@ -164,6 +164,36 @@ DELETE /api/v1/members/me/interest-regions/{code}    → SliceResponse<MemberReg
 - 프론트 함수: `features/region/interest-region-client.ts` 의 `listInterestRegions(source, { scenario })` · `addInterestRegion(district, source)` · `removeInterestRegion(code, source)`. 실데이터는 위 계약대로 부르고, 일시 장애 · 인증 오류 · 분류 밖 오류는 거부한다(화면은 "잠시 뒤 다시 시도"). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다(목도 내 동네와 같으면 `home` 으로 거절한다).
 - 화면 표시(`features/me/interest-regions-screen.tsx`, [SCREENS.md](design/SCREENS.md) "관심 동네"): `name` 이 null 인 줄은 이름 자리에 `없어진 동네`, 시군구 자리에 `행정구역 개편으로 바뀌었어요` 를 보이고 `삭제` 는 그대로 둔다(이름 `없어진 동네 삭제`). 폐지(`abolished: true`, 이름 있음)는 이름 · 시군구 뒤에 `없어진 동네` 를 붙인다. 둘 중 하나라도 있으면 목록 아래 회색 상자로 지우고 새로 고르게 안내한다. 지어낸 이름 · 코드를 보이지 않는다 — 이름 null 줄이 둘 이상이면 `삭제` 이름에만 순번을 붙인다(`없어진 동네 1 삭제`). `home` 거절을 받았는데 화면이 아는 내 동네가 다르면 회원 정보 저장소의 내 동네를 다시 읽는다(`reloadMemberRegion`). 결과 목록의 `· 관심 동네` 표시 · 이미 고름 판단은 코드로 한다.
 
+### 알림 설정 `/me/notification-settings` (확정 — 백엔드 #218, 화면 #195)
+
+알림 설정 화면(`/me/notifications`)의 두 스위치다. 정본은 [`backend/docs/modules.md`](../../backend/docs/modules.md) "알림 설정" 과 [`backend/docs/entity-design.md`](../../backend/docs/entity-design.md) §1-7 이다. **알림을 받을지 고른 값(설정)과 실제로 보낼 곳(푸시 구독)은 따로다** — 설정은 이번 단계, 구독 · 발송은 2단계다. 설정을 켜도 지금은 알림이 가지 않는다.
+
+```text
+GET   /api/v1/members/me/notification-settings                                   → NotificationSettings   (인증)
+PATCH /api/v1/members/me/notification-settings  { weeklyReport?, regionNotice? } → NotificationSettings   (인증, 보낸 항목만 바꾼 뒤의 설정 전부)
+```
+
+- `NotificationSettings` = `{ weeklyReport: boolean, regionNotice: boolean }`. 항목은 시안(Settings) 알림 섹션의 둘이다 — `weeklyReport` 주간 보고 요청(월요일 아침), `regionNotice` 검토를 마친 동네 안내(운영자가 발행했을 때). 인증만 요구하고 `report:write` 는 요구하지 않는다(건강정보가 아니다 — 동의하지 않은 회원도 쓴다).
+- **처음 값은 모두 false 다** — 한 번도 바꾸지 않은 회원은 `GET` 이 모두 false 를 준다(서버는 이때 행을 만들지 않는다). 알림은 켠 사용자에게만 보낸다(루트 `CLAUDE.md`).
+- `PATCH` 는 보낸 항목만 바꾼다(`PUT` 으로 전부를 바꾸면 다른 탭 · 기기에서 바꾼 다른 항목을 덮는다). 응답은 바뀐 뒤의 설정 전부라 화면이 다시 읽지 않고 그린다. 서버는 **보낸 항목만 DB 에서 바꾼다** — 다른 탭 · 기기의 요청이 동시에 다른 항목을 바꿔도 둘 다 남는다. 다시 하는 것은 **첫 변경(설정을 처음 저장할 때)이 겹친 경우뿐**이고 서버가 한 번 다시 한 뒤에도 겹치면 `MEMBER_013` 이다.
+- 결정(#218):
+  - 켠 시각 · 끈 시각을 **동의 이력으로 남기지 않는다** — 서비스 알림의 수신 선택이고 광고성 정보가 아니다. 법적 의미의 알림 수신 동의는 2단계 푸시와 함께 따로 받는다(`PUSH_NOTIFICATION`).
+  - **건강정보 동의를 철회해도 설정은 그대로다**(다시 동의했을 때 다시 켤 필요가 없게). 2단계 발송 때 `weeklyReport` 는 건강정보 동의가 유효한 회원에게만 보낸다 — 화면은 동의 여부로 스위치를 바꾸지 않는다.
+  - **탈퇴하면 설정을 지운다**(서버의 탈퇴 처리 #154).
+  - `regionNotice` 는 스위치 하나다. 내 동네만인지 관심 동네(위 "관심 동네")도 포함하는지는 2단계 발송 대상 규칙에서 정하고, 이 설정의 모양과 무관하다(기획 확인 후보 — SCREENS.md "홈 화면 추가 · 알림 미지원").
+
+| 오류                         | 상태      | 뜻                                                                                                         |
+| ---------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- |
+| `MEMBER_111`                 | 400       | 항목이 하나도 없는 본문 `{}` (`fieldErrors[0].field = request`)                                            |
+| `MEMBER_112` · `113`         | 400       | `weeklyReport` · `regionNotice` 가 JSON `true` / `false` 가 아님 — 문자열 `"true"` · 숫자 · `null` 도 거절 |
+| `MEMBER_114`                 | 400       | 모르는 항목이 있음(`field = unknownItems`, 아는 항목도 바꾸지 않는다)                                      |
+| `MEMBER_100`                 | 400       | 깨진 JSON · 객체가 아닌 본문 · 본문 없음                                                                   |
+| `MEMBER_013`                 | 409       | 같은 계정의 첫 변경이 겹침(서버가 한 번 다시 한 뒤에도) — 다시 보내면 풀림                                 |
+| `MEMBER_004` · `002` · `003` | 404 · 403 | 회원 없음 · 탈퇴 · 정지 — 내 정보(`GET /me`)와 같다                                                        |
+
+- **2단계 — 푸시 구독(이번 범위 아님)**: 사용자가 스위치를 켤 때 서비스 워커 등록 → 알림 권한 요청 → `pushManager.subscribe` 를 거쳐 구독을 등록한다. 가정한 모양은 `POST /api/v1/members/me/push-subscriptions { endpoint, keys: { p256dh, auth } }`(기기마다 하나) · `DELETE /api/v1/members/me/push-subscriptions?endpoint=`. 서버는 **설정이 켜졌고 구독이 있는 회원에게만** 보낸다. 구독이 없거나 받을 수 없는 기기(iOS 홈 화면 추가 전 등)는 서비스 안에서 같은 내용을 본다(홈의 동네 안내 · "알림 대신 여기서 알려드려요"). VAPID 공개 키 전달 · 만료된 구독(410) 정리 · 로그아웃한 기기의 구독 삭제를 함께 정한다.
+- 프론트 함수: `features/notification/notification-settings-client.ts` 의 `getNotificationSettings` · `updateNotificationSetting(topic, enabled, source)`. **실데이터는 아직 요청하지 않고 `unavailable`**(화면은 스위치를 꺼진 모양으로 두고 "알림은 아직 준비하고 있어요")이다 — 위 계약으로 연동하는 것은 별도 FE 이슈다. 켠 모양을 보이면 알림이 오는 줄 알고, 저장하지 않은 설정이 사라진다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 설정이고 목 세션이 비회원이 되면 지운다.
+
 ## 행정동 `/api/v1/districts` (확정)
 
 인증 불필요(비로그인 둘러보기에서도 쓴다).
@@ -259,22 +289,6 @@ GET /api/v1/reports/me   → SliceResponse<WeeklyReport>   (인증 + report:writ
 - 목록은 관례대로 `SliceResponse { contents, hasNext }` 다(architecture-guide §8). 보관이 52주라 지난 보고는 많아야 51건이고 한 번에 모두 준다 — 페이지 파라미터를 두지 않고 `hasNext` 는 늘 false 다(프론트는 보지 않는다). 배열(`List`) 예외(행정동 검색 `DistrictWebController` 선례)는 쓰지 않았다 — 자동완성처럼 프론트 계약이 배열로 정해진 것이 아니고, 보관 기간이 늘면 페이지를 나눌 수 있게 둔다.
 - 오류는 `/reports/current` 와 같다: 토큰 없음 `SECURITY_001`, 동의 전 `SECURITY_006`(403). 받는 파라미터가 없어 검증 오류는 없다.
 - 프론트 함수: `features/report/report-history.ts` 의 `listPastReports(source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 "지난 보고는 아직 불러올 수 없어요")이다 — 건강정보라 BE 미정이어도 실제 회원에게 예시 이력을 보이지 않는다(conventions.md "데이터 출처" 의 예외). 목은 예시 이력이다.
-
-### 알림 설정 (#195, 프론트 초안)
-
-알림 설정 화면(`/me/notifications`)이 가정한 모양이다. 회원(`/api/v1/members/me`, 위 "회원")의 경로 · 권한 관례를 따른다. **알림을 받을지 고른 값(설정)과 실제로 보낼 곳(푸시 구독)은 따로다** — 설정은 이번 단계, 구독은 2단계다.
-
-```text
-GET   /api/v1/members/me/notification-settings                            → NotificationSettings   (인증)
-PATCH /api/v1/members/me/notification-settings  { weeklyReport?, regionNotice? } → NotificationSettings   (인증, 보낸 항목만 바꾼 뒤의 설정 전부)
-```
-
-- `NotificationSettings` = `{ weeklyReport: boolean, regionNotice: boolean }`. 항목은 시안(Settings) 알림 섹션의 둘이다 — `weeklyReport` 주간 보고 요청(월요일 아침), `regionNotice` 검토를 마친 동네 안내(운영자가 발행했을 때). 건강정보가 아니라 `report:write` 를 요구하지 않는다(동의하지 않은 회원도 쓴다).
-- **처음 값은 모두 false 다** — 알림은 동의한 사용자에게만 보낸다(루트 `CLAUDE.md`). 켠 시각 · 끈 시각을 동의 이력으로 남길지는 백엔드가 정한다.
-- `PATCH` 는 보낸 항목만 바꾼다(`PUT` 으로 전부를 바꾸면 다른 탭 · 기기에서 바꾼 다른 항목을 덮는다). 빈 바디 · 모르는 항목 · boolean 이 아닌 값은 검증 `MEMBER_1xx`(400, 번호는 백엔드가 정한다)다. 응답은 바뀐 뒤의 설정 전부라 화면이 다시 읽지 않고 그린다.
-- 백엔드와 정할 것: `regionNotice` 가 내 동네만인지 관심 동네(위 "회원" 의 "관심 동네")도 포함하는지(기획 확인 후보 — SCREENS.md "홈 화면 추가 · 알림 미지원"), 탈퇴 · 동의 철회 때 설정을 지울지, 검증 오류 번호(위 `MEMBER_1xx`).
-- **2단계 — 푸시 구독(이번 범위 아님)**: 사용자가 스위치를 켤 때 서비스 워커 등록 → 알림 권한 요청 → `pushManager.subscribe` 를 거쳐 구독을 등록한다. 가정한 모양은 `POST /api/v1/members/me/push-subscriptions { endpoint, keys: { p256dh, auth } }`(기기마다 하나) · `DELETE /api/v1/members/me/push-subscriptions?endpoint=`. 서버는 **설정이 켜졌고 구독이 있는 회원에게만** 보낸다. 구독이 없거나 받을 수 없는 기기(iOS 홈 화면 추가 전 등)는 서비스 안에서 같은 내용을 본다(홈의 동네 안내 · "알림 대신 여기서 알려드려요"). VAPID 공개 키 전달 · 만료된 구독(410) 정리 · 로그아웃한 기기의 구독 삭제를 함께 정한다.
-- 프론트 함수: `features/notification/notification-settings-client.ts` 의 `getNotificationSettings` · `updateNotificationSetting(topic, enabled, source)`. **실데이터는 요청하지 않고 `unavailable`**(화면은 스위치를 꺼진 모양으로 두고 "알림은 아직 준비하고 있어요")이다 — 켠 모양을 보이면 알림이 오는 줄 알고, 저장하지 않은 설정이 사라진다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 설정이고 목 세션이 비회원이 되면 지운다.
 
 ### 운영자 검토 (#219, 프론트 초안)
 

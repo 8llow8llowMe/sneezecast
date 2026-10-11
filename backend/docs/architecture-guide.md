@@ -65,6 +65,7 @@ Controller → WebUseCase → WebFacade → Processor → Port → Adapter
 
 - 읽기 `@Transactional(readOnly = true)`, 쓰기 `@Transactional` 을 WebFacade 에 거는 것이 기본.
 - **외부 I/O(OAuth·LLM·공공 API·다른 서비스)가 섞이면 Facade 에 걸지 않는다.** 외부 호출은 트랜잭션 밖에서 하고, DB 구간만 Processor 단위로 좁힌다. 왜 좁혔는지 메서드 주석을 남긴다.
+- **롤백 뒤 새 트랜잭션에서 다시 해야 하는 경우(unique 경합 재시도)도 WebFacade 에 걸지 않는다.** 트랜잭션은 Processor 메서드에 걸고 Facade 가 실패한 트랜잭션이 끝난 뒤 다시 부른다(예: 알림 설정 첫 변경 경합 — `MemberNotificationSettingWebFacade`).
 
 ## 4. 서비스 간 호출
 

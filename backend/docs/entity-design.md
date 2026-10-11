@@ -11,6 +11,7 @@
 member ──1:N── member_consent                   district ◀── batch 적재 (SGIS)
   │──1:1── member_region ─(district_code)──▶      ▲ (district_code, 보고 요청이 싣는다)
   │──1:N── member_interest_region ───────────▶    │
+  │──1:1── member_notification_setting            │
   └──1:N── report_purge_request ──DELETE──▶     weekly_report            (reporter_key, member_id 없음)
                                                   │ GROUP BY
         member.id ──HMAC(pepper)──▶ reporter_key  district_weekly_aggregate
@@ -40,6 +41,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | 동의 인덱스 | `idx_member_consent_member_id` | `idx_member_consent_member_id_type` | 항목별 최신 동의 조회 |
 | 행정동 | 없음 | `member_region` | 동네 선택 |
 | 관심 동네 | 없음 | `member_interest_region` | 내 동네 말고 지켜볼 동네 (상한 3곳) |
+| 알림 설정 | 없음 | `member_notification_setting` | 주간 보고 요청 · 동네 안내 알림을 받을지 (회원당 최대 1행) |
 | 보고 파기 | 없음 | `report_purge_request` | 다른 서비스에 있는 민감정보 파기를 끝까지 보장한다 |
 
 ### 1-1. member
@@ -93,7 +95,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 
 - **개인정보 보호법 제23조 민감정보는 증상 보고뿐이다.** 이메일 · 닉네임 · 프로필 이미지는 일반 개인정보라 PRIVACY_POLICY 로 받는다.
 - 건강정보 동의는 가입 동의와 **화면 · 체크를 분리**한다 (별도 동의 요건). 동의 여부는 JWT `scope` 의 `report:write` 로 전달된다.
-- 알림 수신 동의는 푸시(2단계)와 함께 `PUSH_NOTIFICATION` 으로 추가한다. 필수 여부는 enum 이 아니라 요청 검증 · 가입 로직이 정한다.
+- 알림 수신 동의는 푸시(2단계)와 함께 `PUSH_NOTIFICATION` 으로 추가한다. 필수 여부는 enum 이 아니라 요청 검증 · 가입 로직이 정한다. 1단계의 알림 설정(§1-7)은 동의가 아니라 수신 선택이라 이 표에 넣지 않는다.
 
 ### 1-4. member_region — 선택한 행정동
 
@@ -156,6 +158,26 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - 행정동이 폐지돼도 행을 지우거나 바꾸지 않는다. 조회 때 `abolished: true` 로 내리고 회원이 지운다 (§3-1).
 - 이름 · 폐지 여부는 저장하지 않고 조회할 때마다 surveillance 내부 API 로 읽는다(내 동네와 같다).
 - 회원 단위 삭제(탈퇴 시 정리)는 탈퇴 처리(#154)에서 저장소 포트와 함께 만든다.
+
+### 1-7. member_notification_setting — 알림 수신 설정
+
+회원이 고른 알림 수신 여부다(#218). 회원당 최대 1행이고 `member` 컨텍스트가 소유한다. **알림을 받을지 고른 값일 뿐 보낼 곳(푸시 구독)이 아니다** — 구독 · 발송은 2단계(§6 `push_subscription` · `notification_delivery`)다.
+
+| 컬럼 | 타입 | Null | 설명 |
+|------|------|------|------|
+| id | BIGINT | N | PK (Snowflake) |
+| member_id | BIGINT | N | 회원 아이디 (FK: member.id). **`uk_member_notification_setting_member_id`** |
+| weekly_report | BOOLEAN | N | 주간 보고 요청 알림(월요일 아침)을 받을지 |
+| region_notice | BOOLEAN | N | 운영자가 검토 · 발행한 동네 안내 알림을 받을지 |
+
+- 유니크: **`uk_member_notification_setting_member_id`** `(member_id)` — 회원당 1행. 회원 기준 조회 인덱스를 겸한다. 같은 회원의 첫 변경 두 건이 겹치면 하나가 여기서 막히고, 롤백 뒤 새 트랜잭션에서 한 번 다시 해 갱신으로 풀린다([modules.md](modules.md#serviceauth-service) "알림 설정").
+- **행이 없으면 모두 꺼짐(false)으로 본다.** 조회(`GET`)는 행을 만들지 않고, 첫 변경(`PATCH`) 때 모두 꺼짐을 바탕으로 보낸 항목만 반영해 만든다. 알림은 켠 회원에게만 보낸다(루트 CLAUDE.md).
+- 저장은 **현재 값만** 둔다. `PATCH` 는 보낸 항목만 **DB 에서** 바꾼다 — 기존 행은 `coalesce(?, 컬럼)` 부분 갱신 쿼리로 고치고 엔티티 변경 감지를 쓰지 않는다(두 칸을 모두 써서 같은 회원의 겹친 요청이 바꾼 다른 항목을 되돌린다). 마지막으로 바꾼 시각은 감사 컬럼 `updated_at` 뿐이고, 부분 갱신은 Auditing 을 타지 않아 쿼리가 직접 쓴다.
+- **켠 · 끈 이력을 동의 이력(`member_consent`)으로 남기지 않는다.** 이 설정은 서비스가 보내는 알림(주간 보고 요청 · 발행된 동네 안내)을 받을지 고르는 값이고 광고성 정보 수신 동의가 아니다. 법적 의미의 알림 수신 동의는 2단계에서 푸시와 함께 `PUSH_NOTIFICATION`(§1-3)으로 추가하고, 그때 동의 이력 규칙(§1-2)을 따른다.
+- **건강정보 동의를 철회해도 이 설정은 바꾸지 않는다** — 다시 동의했을 때 스위치를 다시 켤 필요가 없게. 대신 2단계 발송 때 `weekly_report` 대상은 건강정보 동의가 유효한 회원(`report:write` 와 같은 계산 — 미완료 보고 파기 요청이 없을 것 포함)으로 다시 거른다.
+- `region_notice` 는 스위치 하나다. 어느 동네(내 동네만 · 관심 동네 포함)의 안내를 보낼지는 발송 대상 규칙이라 2단계에서 정하고, 이 컬럼의 뜻과 무관하다.
+- **탈퇴 때 이 회원의 행을 지운다**(회원 파기를 기다리지 않는다 — 탈퇴한 회원에게 알림을 보낼 이유가 없다). 회원 단위 삭제는 저장소 포트 `MemberNotificationSettingRepositoryPort#deleteByMemberId`(벌크 DELETE, 없어도 성공, 호출자 트랜잭션 필수)로 #218 에서 두었고, 탈퇴 흐름에서 부르는 것은 탈퇴 처리(#154)다.
+- **회원 파기 때도 함께 지운다(탈퇴 경합 안전망)** — `member_consent` · `member_region` 을 회원 파기 때 지우는 것과 같은 방식이다. 회원 상태 확인은 쓰기와 같은 트랜잭션이라 요청이 차례로 올 때는 탈퇴 뒤의 요청이 행을 만들지 못하지만, 탈퇴와 **동시에** 들어온 `PATCH` 는 확인을 통과한 뒤 탈퇴가 커밋되면 행을 남길 수 있다. 그 고아 행은 파기 스케줄러가 회원 행과 함께 지운다(구현은 #154).
 
 ---
 
@@ -488,6 +510,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | member | 탈퇴 후 30일, **보고 파기 완료 후** | 파기 스케줄러가 hard delete |
 | member_consent · member_region | 회원과 같다 | 회원 파기 때 함께 삭제 |
 | member_interest_region | 회원과 같다 | 회원 파기 때 함께 삭제 — 회원 단위 삭제는 탈퇴 처리(#154)에서 만든다 |
+| member_notification_setting | 탈퇴할 때까지 | 탈퇴 처리(#154)가 회원 단위 삭제(`deleteByMemberId`, §1-7)로 지운다. 회원 파기 때도 함께 삭제(탈퇴와 겹친 변경이 남긴 행의 안전망) |
 | report_purge_request | 완료 후 1년 (설정) — 파기 증빙 | 정리 스케줄러가 삭제 |
 | weekly_report | 52주 · 탈퇴 / 철회 시 즉시 | 삭제 스케줄러 · 파기 API |
 | district_weekly_aggregate | 계속 (익명 집계) | — |
