@@ -389,7 +389,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 | synced_at | TIMESTAMP | N | 마지막 적재 시각 (응답 · 화면의 "수집 시각") |
 
 - **`uk_official_surveillance_natural_key`** = `(source, program, disease_key, metric, age_group, region_level, region_code, period_type, period_year, period_week)` — 멱등 upsert. 키에는 원천이 준 정수 연도 · 주차만 넣고, 가공한 날짜는 넣지 않는다 (주차 → 날짜 규칙이 바뀌어도 행이 겹치지 않게).
-- 인덱스: `idx_official_surveillance_program_period_start` (최근 기간 조회), `idx_official_surveillance_source_snapshot_id` (FK 조회)
+- 인덱스: `idx_official_surveillance_program_period_start` (최근 기간 조회), `idx_official_surveillance_source_snapshot_id` (FK 조회). 공개 조회(`/api/v1/official/latest`)의 계열별 최신 주 `GROUP BY` 는 인덱스를 타지 않고 주 단위 행 전체를 훑는다 — 연 수천 행이라 1단계는 그대로 두고, 요청이 늘면 짧은 TTL 캐시나 계열 키 커버링 인덱스를 검토한다.
 - **인플루엔자 절기 → 연도**: 절기 `startYear`–`endYear` 의 36 ~ 52(53)주는 `period_year = startYear`, 01 ~ 35주는 `endYear` 로 넣는다. 열 제목(`headerList`)의 주차만 보고 연도를 정하면 1년 어긋난다.
 - 원천은 **잠정 통계**라 과거 주 값이 바뀐다. 적재 잡은 최근 N주(설정)를 다시 받아 덮어쓴다. 값 변경 이력은 두지 않고, 어느 실행이 마지막으로 썼는지만 `source_snapshot_id` 로 남긴다.
 - **전수신고 주별은 신고 지연으로 최근 주 값이 계속 늘어난다** (진행 중인 주까지 온다, [data-api-analysis.md §2-3](data-api-analysis.md#2-3-신고-지연--최근-주는-값이-계속-늘어난다)). 적재는 하되, 화면의 기준 주는 **현재 주에서 2주 전**(설정 `official.notifiable.display-lag-weeks`, 기본 2)으로 하고 그보다 최근 주는 보이지 않는다. 현재 주는 질병관리청 주(일요일 시작, KST 날짜)다 — 공식 정보 조회(`GET /api/v1/official/latest`, [modules.md](modules.md#servicesurveillance-service) `official`)가 이 한도를 건다.
