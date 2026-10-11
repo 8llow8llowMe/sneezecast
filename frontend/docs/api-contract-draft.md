@@ -164,7 +164,7 @@ DELETE /api/v1/members/me/interest-regions/{code}    → SliceResponse<MemberReg
 - 프론트 함수: `features/region/interest-region-client.ts` 의 `listInterestRegions(source, { scenario })` · `addInterestRegion(district, source)` · `removeInterestRegion(code, source)`. 실데이터는 위 계약대로 부르고, 일시 장애 · 인증 오류 · 분류 밖 오류는 거부한다(화면은 "잠시 뒤 다시 시도"). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다(목도 내 동네와 같으면 `home` 으로 거절한다).
 - 화면 표시(`features/me/interest-regions-screen.tsx`, [SCREENS.md](design/SCREENS.md) "관심 동네"): `name` 이 null 인 줄은 이름 자리에 `없어진 동네`, 시군구 자리에 `행정구역 개편으로 바뀌었어요` 를 보이고 `삭제` 는 그대로 둔다(이름 `없어진 동네 삭제`). 폐지(`abolished: true`, 이름 있음)는 이름 · 시군구 뒤에 `없어진 동네` 를 붙인다. 둘 중 하나라도 있으면 목록 아래 회색 상자로 지우고 새로 고르게 안내한다. 지어낸 이름 · 코드를 보이지 않는다 — 이름 null 줄이 둘 이상이면 `삭제` 이름에만 순번을 붙인다(`없어진 동네 1 삭제`). `home` 거절을 받았는데 화면이 아는 내 동네가 다르면 회원 정보 저장소의 내 동네를 다시 읽는다(`reloadMemberRegion`). 결과 목록의 `· 관심 동네` 표시 · 이미 고름 판단은 코드로 한다.
 
-### 알림 설정 `/me/notification-settings` (확정 — 백엔드 #218, 화면 #195)
+### 알림 설정 `/me/notification-settings` (확정 — 백엔드 #218, 화면 #195, 연동 #250)
 
 알림 설정 화면(`/me/notifications`)의 두 스위치다. 정본은 [`backend/docs/modules.md`](../../backend/docs/modules.md) "알림 설정" 과 [`backend/docs/entity-design.md`](../../backend/docs/entity-design.md) §1-7 이다. **알림을 받을지 고른 값(설정)과 실제로 보낼 곳(푸시 구독)은 따로다** — 설정은 이번 단계, 구독 · 발송은 2단계다. 설정을 켜도 지금은 알림이 가지 않는다.
 
@@ -191,8 +191,8 @@ PATCH /api/v1/members/me/notification-settings  { weeklyReport?, regionNotice? }
 | `MEMBER_013`                 | 409       | 같은 계정의 첫 변경이 겹침(서버가 한 번 다시 한 뒤에도) — 다시 보내면 풀림                                 |
 | `MEMBER_004` · `002` · `003` | 404 · 403 | 회원 없음 · 탈퇴 · 정지 — 내 정보(`GET /me`)와 같다                                                        |
 
-- **2단계 — 푸시 구독(이번 범위 아님)**: 사용자가 스위치를 켤 때 서비스 워커 등록 → 알림 권한 요청 → `pushManager.subscribe` 를 거쳐 구독을 등록한다. 가정한 모양은 `POST /api/v1/members/me/push-subscriptions { endpoint, keys: { p256dh, auth } }`(기기마다 하나) · `DELETE /api/v1/members/me/push-subscriptions?endpoint=`. 서버는 **설정이 켜졌고 구독이 있는 회원에게만** 보낸다. 구독이 없거나 받을 수 없는 기기(iOS 홈 화면 추가 전 등)는 서비스 안에서 같은 내용을 본다(홈의 동네 안내 · "알림 대신 여기서 알려드려요"). VAPID 공개 키 전달 · 만료된 구독(410) 정리 · 로그아웃한 기기의 구독 삭제를 함께 정한다.
-- 프론트 함수: `features/notification/notification-settings-client.ts` 의 `getNotificationSettings` · `updateNotificationSetting(topic, enabled, source)`. **실데이터는 아직 요청하지 않고 `unavailable`**(화면은 스위치를 꺼진 모양으로 두고 "알림은 아직 준비하고 있어요")이다 — 위 계약으로 연동하는 것은 별도 FE 이슈다. 켠 모양을 보이면 알림이 오는 줄 알고, 저장하지 않은 설정이 사라진다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 설정이고 목 세션이 비회원이 되면 지운다.
+- **2단계 — 푸시 구독(이번 범위 아님)**: 1단계에서 이미 켠 회원에게는 구독 · 권한 · 수신 동의가 없다 — 2단계를 열 때 그 회원에게 다시 받는 흐름을 함께 정한다(화면은 지금 "알림을 보내기 시작하면 다시 알려 드려요" 라고 알린다). 사용자가 스위치를 켤 때 서비스 워커 등록 → 알림 권한 요청 → `pushManager.subscribe` 를 거쳐 구독을 등록한다. 가정한 모양은 `POST /api/v1/members/me/push-subscriptions { endpoint, keys: { p256dh, auth } }`(기기마다 하나) · `DELETE /api/v1/members/me/push-subscriptions?endpoint=`. 서버는 **설정이 켜졌고 구독이 있는 회원에게만** 보낸다. 구독이 없거나 받을 수 없는 기기(iOS 홈 화면 추가 전 등)는 서비스 안에서 같은 내용을 본다(홈의 동네 안내 · "알림 대신 여기서 알려드려요"). VAPID 공개 키 전달 · 만료된 구독(410) 정리 · 로그아웃한 기기의 구독 삭제를 함께 정한다.
+- 프론트 함수: `features/notification/notification-settings-client.ts` 의 `getNotificationSettings(source, { scenario })` · `updateNotificationSetting(topic, enabled, source)`. 둘 다 설정 전부(`NotificationSettings`)를 준다. 실데이터는 위 계약대로 부르고 바꾸기는 그 항목만 보낸다. `MEMBER_013` 은 한 번 다시 보내고, 그 밖(검증 · 일시 장애 · 인증 오류 · 두 번째 경합)은 거부한다(화면은 읽기 실패면 "불러오지 못했어요" + `다시 시도`, 바꾸기 실패면 "바꾸지 못했어요" — 값 그대로). 푸시 발송 전이라 화면은 켤 수 있을 때 "알림은 아직 보내지 않아요" 를 함께 보인다. 목은 모듈 메모리 설정이고 목 세션이 비회원이 되면 지운다.
 
 ## 행정동 `/api/v1/districts` (확정)
 
