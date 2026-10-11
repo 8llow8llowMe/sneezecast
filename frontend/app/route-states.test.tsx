@@ -8,6 +8,7 @@ import RouteError from './error'
 import MapLoading from './map/loading'
 import MeLoading from './me/loading'
 import NotFound from './not-found'
+import OfficialLoading from './official/loading'
 
 const pathname = vi.hoisted(() => ({ value: '/' }))
 vi.mock('next/navigation', () => ({ usePathname: () => pathname.value }))
@@ -17,7 +18,7 @@ describe('라우트 공통 상태 (loading · error)', () => {
     pathname.value = '/'
   })
 
-  it('불러오는 중은 홈 · 지도 · 내 정보 경계마다 그 메뉴를 지금 메뉴로 그린다', () => {
+  it('불러오는 중은 홈 · 지도 · 공식 정보 · 내 정보 경계마다 그 메뉴를 지금 메뉴로 그린다', () => {
     const home = render(<HomeLoading />)
     const homeTabBar = screen.getAllByRole('navigation', { name: '주요 메뉴' })[1]
     expect(
@@ -31,6 +32,13 @@ describe('라우트 공통 상태 (loading · error)', () => {
       mapTabBar && within(mapTabBar).getByRole('link', { current: 'page' }).textContent,
     ).toContain('지도')
     map.unmount()
+
+    const official = render(<OfficialLoading />)
+    const officialTabBar = screen.getAllByRole('navigation', { name: '주요 메뉴' })[1]
+    expect(
+      officialTabBar && within(officialTabBar).getByRole('link', { current: 'page' }).textContent,
+    ).toContain('홈')
+    official.unmount()
 
     render(<MeLoading />)
     const meTabBar = screen.getAllByRole('navigation', { name: '주요 메뉴' })[1]

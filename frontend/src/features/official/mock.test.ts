@@ -2,6 +2,21 @@ import { describe, expect, it } from 'vitest'
 
 import { OFFICIAL_MOCKS, pickOfficialMock } from './mock'
 
+describe('OFFICIAL_MOCKS', () => {
+  it('예시 발표는 실데이터와 같은 매핑을 거친 표본감시 세 묶음이다 — 단계 · 요약 · 발표일이 없다', () => {
+    const { published } = OFFICIAL_MOCKS
+    expect(published.status).toBe('published')
+    if (published.status !== 'published') return
+    expect(published.programs.map((program) => program.code)).toEqual([
+      'INFLUENZA_ILI',
+      'ARI',
+      'ENTERIC',
+    ])
+    expect(published).not.toHaveProperty('stage')
+    expect(published).not.toHaveProperty('summary')
+  })
+})
+
 describe('pickOfficialMock', () => {
   it('값이 없으면 받은 발표 없음이다 — 발표를 지어내 보이지 않는다', () => {
     expect(pickOfficialMock(undefined)).toBe(OFFICIAL_MOCKS.empty)
