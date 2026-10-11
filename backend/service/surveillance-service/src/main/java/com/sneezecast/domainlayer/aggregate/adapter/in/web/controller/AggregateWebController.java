@@ -43,6 +43,8 @@ public class AggregateWebController {
         INSUFFICIENT · LOW_SAMPLE · 참여 0 입니다. 폐지된 코드도 200 이고 `district.active=false` 입니다.
 
         비율은 퍼센트 소수 첫째 자리 반올림입니다. 증상군 변화(`trend`)는 이번 주와 전주가 모두 수치가 있는 단계일 때만 있습니다.
+        운영자가 발행한 안내가 요청 주(없으면 직전 주)에 지금 보이면 `publishedAdvisory`(근거 주 · 제목 · 발행 시각)가 있고, 없거나 철회됐으면 키가 없습니다.
+        안내는 마감된 주로만 만들어져 현재 주에는 보통 직전 주의 안내가 붙습니다. 자료 부족이어도 붙습니다. 본문은 동네 안내 API 를 그 `isoWeek` 로 읽습니다.
 
         인증 불필요. **필수: code(경로, SGIS 행정동 코드 숫자 8자리)** — 형식이 틀리면 AGGREGATE_101, 없는 코드는 AGGREGATE_001(404) 입니다.
         **선택: week(YYYY-Www, 생략하면 현재 주 KST)** — 형식이 틀리면 AGGREGATE_102, 미래 주 · 51주보다 이전 · 그 해에 없는 주는 AGGREGATE_002(400) 입니다.
@@ -59,7 +61,7 @@ public class AggregateWebController {
 
     @Operation(summary = "시군구 동네별 주간 집계 (지도)", description = """
         시군구 하나의 **현행** 행정동 전부의 한 주 집계를 코드 오름차순으로 돌려줍니다. 동네마다 값의 모양은 동네 주간 집계의 `district` 와 같고,
-        자료 부족 동네는 수치가 없습니다. 집계 행이 없는 동도 자료 부족(참여 0)으로 담깁니다.
+        자료 부족 동네는 수치가 없습니다. 집계 행이 없는 동도 자료 부족(참여 0)으로 담깁니다. 발행 안내 요약(`publishedAdvisory`)도 동네마다 같은 규칙입니다.
 
         **include(찾은 동네)는 반드시 담습니다** — 시군구 밖이거나 폐지된 코드여도 목록 맨 앞에 더합니다(이미 목록에 있으면 그 자리 그대로).
         시군구에 현행 동이 없고 include 도 없으면 `districts` 는 빈 배열입니다.

@@ -6,8 +6,11 @@ import com.sneezecast.domainlayer.aggregate.application.info.AggregateWeekInfo;
 import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo;
 import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo.GroupRate;
 import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo.Measured;
+import com.sneezecast.domainlayer.aggregate.application.info.DistrictWeeklyAggregateInfo.PublishedAdvisory;
+import com.sneezecast.domainlayer.aggregate.application.port.out.AggregateAdvisoryQueryPort;
 import com.sneezecast.domainlayer.aggregate.application.port.out.AggregateDistrictQueryPort;
 import com.sneezecast.domainlayer.aggregate.application.port.out.DistrictWeeklyAggregateRepositoryPort;
+import com.sneezecast.domainlayer.aggregate.application.port.out.query.AggregateAdvisoryQueryResult;
 import com.sneezecast.domainlayer.aggregate.application.port.out.query.AggregateDistrictQueryResult;
 import com.sneezecast.domainlayer.aggregate.application.service.AggregateProperties;
 import com.sneezecast.domainlayer.aggregate.domain.enums.AggregateLevel;
@@ -34,6 +37,10 @@ import org.springframework.stereotype.Component;
  *   <li><b>INSUFFICIENT 면 수치를 담지 않는다</b> — 행에 숫자가 있어도 비율 · 증상 수 · 증상군 수치 · 변화를 뺀다. 참여자 수만 남긴다.</li>
  *   <li><b>증상군 변화</b>는 이번 주와 전주가 모두 수치가 있는 단계일 때만 계산한다. 진행 중인 주(참여가 쌓이는 중)와 마감된 전주를 견주므로 주 초반에는
  *       변화가 크게 흔들릴 수 있다 — 표본 하한(100명)을 넘어야 수치가 나오는 것으로 그 폭을 줄인다.</li>
+ *   <li><b>발행 안내 요약</b>(#215)은 <b>요청 주에 발행 중(PUBLISHED)인 안내, 없으면 그 직전 주의 발행 중인 안내</b>다 — 그보다 오래된 주 · 철회된 안내 ·
+ *       승인 전 안내는 없음이다. 안내는 마감된 주의 집계로만 만들어지므로, 요청 주만 보면 기본 호출(현재 주 — 아직 마감 전)에는 요약이 붙을 수 없다. 요약은
+ *       자기 근거 주를 싣는다. 자료 부족 칸에도 붙인다 — 안내는 운영자가 승인한 정보이고 근거 주의 마감 · 자료 충분 집계로 한 판단이며, 이 칸의 수치 없음과
+ *       섞이지 않게 자기 근거 주를 밝힌다. advisory 는 {@link AggregateAdvisoryQueryPort} 로만 읽는다.</li>
  * </ul>
  */
 @Component
@@ -45,6 +52,7 @@ public class AggregateQueryProcessor {
 
     private final DistrictWeeklyAggregateRepositoryPort districtWeeklyAggregateRepositoryPort;
     private final AggregateDistrictQueryPort aggregateDistrictQueryPort;
+    private final AggregateAdvisoryQueryPort aggregateAdvisoryQueryPort;
     private final AggregateProperties aggregateProperties;
     private final Clock clock;
 
@@ -114,20 +122,39 @@ public class AggregateQueryProcessor {
         for (DistrictWeeklyAggregate row : districtWeeklyAggregateRepositoryPort.findAllByDistrictCodeInAndIsoWeekIn(codes, List.of(isoWeek, previousWeek))) {
             (row.isoWeek().equals(isoWeek) ? currentRows : previousRows).put(row.districtCode(), row);
         }
+        Map<String, AggregateAdvisoryQueryResult> advisories = advisoriesOf(codes, isoWeek, previousWeek);
         List<DistrictWeeklyAggregateInfo> infos = districts.stream()
-            .map(district -> toInfo(district, currentRows.get(district.code()), previousRows.get(district.code()), rule))
+            .map(district -> toInfo(district, currentRows.get(district.code()), previousRows.get(district.code()), rule, advisories.get(district.code())))
             .toList();
         return new AggregateWeekInfo(isoWeek, districtWeeklyAggregateRepositoryPort.existsFinalizedRow(isoWeek), rule.minSample(), rule.slightDeltaPp(),
             rule.highDeltaPp(), infos);
     }
 
+    /**
+     * 동네마다 보일 발행 안내 — 요청 주의 것, 없으면 직전 주의 것. 두 주를 동네 코드 IN × 주 IN 한 번으로 읽는다 (coding-conventions §8-5).
+     */
+    private Map<String, AggregateAdvisoryQueryResult> advisoriesOf(List<String> codes, ReportWeek isoWeek, ReportWeek previousWeek) {
+        Map<String, AggregateAdvisoryQueryResult> requested = new HashMap<>();
+        Map<String, AggregateAdvisoryQueryResult> previous = new HashMap<>();
+        for (AggregateAdvisoryQueryResult advisory : aggregateAdvisoryQueryPort.findPublished(codes, List.of(isoWeek, previousWeek))) {
+            if (advisory.isoWeek().equals(isoWeek)) {
+                requested.put(advisory.districtCode(), advisory);
+            } else if (advisory.isoWeek().equals(previousWeek)) {
+                previous.put(advisory.districtCode(), advisory);
+            }
+        }
+        previous.forEach(requested::putIfAbsent);
+        return requested;
+    }
+
     private static DistrictWeeklyAggregateInfo toInfo(AggregateDistrictQueryResult district, DistrictWeeklyAggregate row, DistrictWeeklyAggregate previous,
-        AggregateRule rule) {
+        AggregateRule rule, AggregateAdvisoryQueryResult advisory) {
         DistrictWeeklyAggregateInfo.DistrictWeeklyAggregateInfoBuilder info = DistrictWeeklyAggregateInfo.builder()
             .code(district.code())
             .name(district.name())
             .sigungu(district.sigungu())
-            .active(district.active());
+            .active(district.active())
+            .publishedAdvisory(advisory == null ? null : new PublishedAdvisory(advisory.isoWeek(), advisory.title(), advisory.publishedAt()));
         if (row == null) {
             return info.level(AggregateLevel.INSUFFICIENT).insufficientReason(InsufficientReason.LOW_SAMPLE).participantCount(0).build();
         }

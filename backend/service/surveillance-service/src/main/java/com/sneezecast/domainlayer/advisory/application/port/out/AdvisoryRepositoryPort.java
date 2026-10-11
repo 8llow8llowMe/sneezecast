@@ -1,6 +1,8 @@
 package com.sneezecast.domainlayer.advisory.application.port.out;
 
 import com.sneezecast.domainlayer.advisory.domain.model.Advisory;
+import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,6 +18,18 @@ public interface AdvisoryRepositoryPort {
 
     /** 잠그지 않는 조회 (운영자 상세). */
     Optional<Advisory> findById(long id);
+
+    /**
+     * 공개 동네 안내(#215)가 읽는 동네 · 주의 안내 — <b>발행됨(PUBLISHED) · 철회됨(RETRACTED)만</b> 준다. 초안 · 수정 · 승인 단계의 안내는 이 조회로 저장소
+     * 밖에 나오지 않는다. 잠그지 않는다(공개 조회는 전이와 줄을 서지 않는다).
+     */
+    List<Advisory> findAllPublicByDistrictCodeAndIsoWeek(String districtCode, ReportWeek isoWeek);
+
+    /**
+     * 공개 집계(홈 · 지도)의 발행 안내 요약이 읽는 여러 동네 · 여러 주의 발행 중(PUBLISHED) 안내. 동네 수만큼 단건으로 읽지 않고 한 번에 읽는다
+     * (coding-conventions §8-5). {@code districtCodes} 나 {@code isoWeeks} 가 비면 빈 목록이다. 잠그지 않는다.
+     */
+    List<Advisory> findAllPublishedByDistrictCodeInAndIsoWeekIn(Collection<String> districtCodes, Collection<ReportWeek> isoWeeks);
 
     /**
      * {@code advisoryId} 안내와 같은 동네 · 주의 모든 안내(자신 포함)를 잠금 읽기로 가져온다. 잠금은 트랜잭션 끝까지 간다. 그 안내가 없으면 빈 목록이다.

@@ -4,6 +4,7 @@ import com.sneezecast.domainlayer.aggregate.domain.enums.AggregateLevel;
 import com.sneezecast.domainlayer.aggregate.domain.enums.GroupTrend;
 import com.sneezecast.domainlayer.aggregate.domain.enums.InsufficientReason;
 import com.sneezecast.domainlayer.report.domain.enums.SymptomGroup;
+import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,6 +26,7 @@ import lombok.Builder;
  * @param participantCount   참여자 수. 행이 없으면 0
  * @param calculatedAt       마지막 재계산 시각 (저장 기준 지역 시각). 행이 없으면 null
  * @param measured           수치. INSUFFICIENT 면 null
+ * @param publishedAdvisory  발행 중인 안내 요약 (#215) — 요청 주의 안내, 없으면 직전 주의 안내. 둘 다 없거나 철회됐으면 null
  */
 @Builder
 public record DistrictWeeklyAggregateInfo(
@@ -36,7 +38,8 @@ public record DistrictWeeklyAggregateInfo(
     InsufficientReason insufficientReason,
     int participantCount,
     LocalDateTime calculatedAt,
-    Measured measured
+    Measured measured,
+    PublishedAdvisory publishedAdvisory
 ) {
 
     public DistrictWeeklyAggregateInfo {
@@ -83,6 +86,26 @@ public record DistrictWeeklyAggregateInfo(
         public GroupRate {
             Objects.requireNonNull(group, "group");
             Objects.requireNonNull(rate, "rate");
+        }
+    }
+
+    /**
+     * 발행 중인 안내 요약. 본문 · 인용 수치는 동네 안내 API 가 준다.
+     *
+     * @param isoWeek     안내의 근거 집계 주 — 요청 주이거나 그 직전 주다. 동네 안내 화면 주소({@code /notice/[region]/[week]})의 주
+     * @param title       제목
+     * @param publishedAt 발행 시각 (저장 기준 지역 시각)
+     */
+    public record PublishedAdvisory(
+        ReportWeek isoWeek,
+        String title,
+        LocalDateTime publishedAt
+    ) {
+
+        public PublishedAdvisory {
+            Objects.requireNonNull(isoWeek, "isoWeek");
+            Objects.requireNonNull(title, "title");
+            Objects.requireNonNull(publishedAt, "publishedAt");
         }
     }
 }

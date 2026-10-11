@@ -3,6 +3,7 @@ package com.sneezecast.domainlayer.advisory.domain.model;
 import com.sneezecast.domainlayer.advisory.domain.enums.AdvisoryStatus;
 import com.sneezecast.domainlayer.report.domain.model.ReportWeek;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.Objects;
 import lombok.Builder;
 
@@ -47,6 +48,13 @@ public record Advisory(
 
     /** {@code advisory.title} VARCHAR(100). 문자(코드포인트) 수로 잰다. */
     public static final int TITLE_MAX_LENGTH = 100;
+
+    /**
+     * 발행 순서 — 발행 시각, 같으면 {@code id}(Snowflake, 시간 순). 같은 동네 · 주에 발행 중인 안내는 하나뿐이지만(entity-design §2-3,
+     * {@code ADVISORY_007}) 그 규칙이 깨진 행이 있어도 공개 조회가 500 을 내지 않고 가장 최근 하나를 고르는 데 쓴다. 발행 시각이 없는 안내(발행 전)에
+     * 쓰면 NPE 다.
+     */
+    public static final Comparator<Advisory> PUBLICATION_ORDER = Comparator.comparing(Advisory::publishedAt).thenComparingLong(Advisory::id);
 
     public Advisory {
         Objects.requireNonNull(districtCode, "districtCode");
