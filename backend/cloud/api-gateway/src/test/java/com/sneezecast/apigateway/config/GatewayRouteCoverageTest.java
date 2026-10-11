@@ -59,7 +59,8 @@ class GatewayRouteCoverageTest {
         "/api/v1/members", "lb://${AUTH_SERVICE_APP_NAME}",
         "/api/v1/districts", "lb://${SURVEILLANCE_SERVICE_APP_NAME}",
         "/api/v1/reports", "lb://${SURVEILLANCE_SERVICE_APP_NAME}",
-        "/api/v1/advisories", "lb://${SURVEILLANCE_SERVICE_APP_NAME}"
+        "/api/v1/advisories", "lb://${SURVEILLANCE_SERVICE_APP_NAME}",
+        "/api/v1/official", "lb://${SURVEILLANCE_SERVICE_APP_NAME}"
     );
 
     @ParameterizedTest(name = "application-{0}.yml")
