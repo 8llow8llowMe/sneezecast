@@ -17,7 +17,7 @@
 #   - discovery 는 사설 IP(SERVICE_DISCOVERY_HOSTNAME, dev 192.168.0.13) + SERVICE_DISCOVERY_PORT 로 붙는다.
 #   - MySQL(.11)은 다른 호스트라 사설 IP 로 접속한다.
 #
-# Vault: 공통 + kv/sneezecast/backend/{env}/surveillance-service
+# Vault: 공통 + kv/sneezecast/backend/{env}/surveillance-service/env
 #   REPORTER_KEY_PEPPER 는 이 서비스 경로에만 있고 이 compose 만 컨테이너에 넘긴다.
 
 x-surveillance-service-environment: &surveillance_service_environment

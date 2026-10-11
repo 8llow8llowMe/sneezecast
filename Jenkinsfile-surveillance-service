@@ -6,7 +6,7 @@
 //   dev  -> backend-1 (192.168.0.13), 호스트 포트 3082
 //   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4082
 //
-// Vault: 공통 + kv/sneezecast/backend/{env}/surveillance-service
+// Vault: 공통 + kv/sneezecast/backend/{env}/surveillance-service/env
 //   REPORTER_KEY_PEPPER 는 이 경로에만 둔다. 공통이나 다른 서비스 경로에 있으면 파이프라인이 실패한다.
 def backendPipeline
 node('builder-backend') {

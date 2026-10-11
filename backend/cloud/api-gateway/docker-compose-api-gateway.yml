@@ -16,7 +16,7 @@
 #   - discovery 는 사설 IP(SERVICE_DISCOVERY_HOSTNAME, dev 192.168.0.13) + SERVICE_DISCOVERY_PORT(호스트 포트와 같은 값)로 붙는다.
 #   - 업스트림 서비스는 Eureka 에 등록된 주소(같은 호스트 8llow8llowme-net 브리지 IP + 서비스 포트)로 호출한다.
 #
-# Vault: 공통 + kv/sneezecast/backend/{env}/api-gateway
+# Vault: 공통 + kv/sneezecast/backend/{env}/api-gateway/env
 
 x-api-gateway-environment: &api_gateway_environment
   TIME_ZONE: ${TIME_ZONE:-Asia/Seoul}

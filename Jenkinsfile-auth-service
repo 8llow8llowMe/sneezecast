@@ -6,7 +6,7 @@
 //   dev  -> backend-1 (192.168.0.13), 호스트 포트 3081
 //   prod -> 백엔드 prod 미니PC (IP 미정), 호스트 포트 4081
 //
-// Vault: 공통 + kv/sneezecast/backend/{env}/auth-service
+// Vault: 공통 + kv/sneezecast/backend/{env}/auth-service/env
 //   REPORTER_KEY_PEPPER 는 읽지 않는다 — surveillance-service 경로에만 있고, 이 잡은 그 경로를 읽지 않는다.
 def backendPipeline
 node('builder-backend') {

@@ -10,8 +10,8 @@
 //
 // sneezecast 는 같은 인프라(Jenkins·Vault·nginx)를 공유하되 아래가 다르다.
 //   - Vault:      두 층을 읽어 합친다 (아래 "Vault secret 두 층" 참고)
-//                   kv/sneezecast/backend/{env}/env            공통
-//                   kv/sneezecast/backend/{env}/{serviceName}  서비스 전용 (service-discovery 는 없음)
+//                   kv/sneezecast/backend/{env}/common/env          공통
+//                   kv/sneezecast/backend/{env}/{serviceName}/env   서비스 전용 (service-discovery 는 없음)
 //   - Credential: sneezecast-vault-role-id / sneezecast-vault-secret-id
 //   - 포트 대역:  dev 3xxx / prod 4xxx. 컨테이너 내부 포트 = 호스트 포트 (Jenkinsfile 의 hostPorts 로 검사)
 //   - 배포 경로:  $HOME/deploy/sneezecast/backend/{group}/{service}
@@ -115,7 +115,7 @@ Map<String, Object> resolveVaultSpecs(Map<String, Object> config, Map<String, St
     String vaultSecretRoot = resolveVaultSecretRoot()
     Integer engineVersion = (params.VAULT_ENGINE_VERSION ?: '2') as Integer
 
-    String commonPath = "${vaultSecretRoot}/${ctx.deployEnv}/env"
+    String commonPath = "${vaultSecretRoot}/${ctx.deployEnv}/common/env"
     Map<String, Object> common = [
         path         : commonPath,
         // KV v2는 mount path와 secret path 사이에 /data/가 필요합니다.
@@ -125,7 +125,7 @@ Map<String, Object> resolveVaultSpecs(Map<String, Object> config, Map<String, St
 
     Map<String, Object> service = null
     if (readsServiceSecret(config)) {
-        String servicePath = "${vaultSecretRoot}/${ctx.deployEnv}/${config.serviceName}"
+        String servicePath = "${vaultSecretRoot}/${ctx.deployEnv}/${config.serviceName}/env"
         service = [
             path         : servicePath,
             apiPath      : resolveVaultApiPath(servicePath, engineVersion),
