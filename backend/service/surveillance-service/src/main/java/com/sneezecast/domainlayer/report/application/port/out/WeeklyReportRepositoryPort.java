@@ -18,11 +18,17 @@ import java.util.Set;
  * 없으므로 그 안에서 다시 시도하지 않는다. <b>트랜잭션 밖의 WebFacade 가 이 예외를 잡아 새 트랜잭션으로 한 번 다시 부르고</b>, 두 번째는
  * 행이 있으니 {@link #updateCurrent} 경로를 탄다. 두 번째도 지면 예외를 그대로 내보낸다 (409).
  *
- * <p>보고 주는 호출자가 {@code ReportWeekCalculator} 로 정한 현재 주다. 지난 주 거절 · 행정동 검증은 Processor 의 몫이다.
+ * <p>쓰기의 보고 주는 호출자가 {@code ReportWeekCalculator} 로 정한 현재 주다. 지난 주 거절 · 행정동 검증은 Processor 의 몫이다.
  */
 public interface WeeklyReportRepositoryPort {
 
     Optional<WeeklyReport> findByReporterKeyAndIsoWeek(String reporterKey, ReportWeek isoWeek);
+
+    /**
+     * 한 보고자의 {@code oldest} ~ {@code latest}(양 끝 포함) 주 보고를 <b>최근 주부터</b> 준다. 보고하지 않은 주는 자리가 없다.
+     * {@code oldest} 가 {@code latest} 보다 뒤면 빈 목록이다. 창(지난 주 · 보관 기간)은 Processor 가 정한다.
+     */
+    List<WeeklyReport> findAllByReporterKeyAndIsoWeekBetween(String reporterKey, ReportWeek oldest, ReportWeek latest);
 
     /**
      * 이번 주 첫 보고를 저장한다. {@code id} 는 호출자(Processor)가 Snowflake 로 정해서 넘기고, 수정 횟수 0 인 새 보고여야 한다

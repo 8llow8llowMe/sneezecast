@@ -5,6 +5,7 @@ import com.sneezecast.domainlayer.report.adapter.in.web.dto.request.WeeklyReport
 import com.sneezecast.domainlayer.report.adapter.in.web.dto.response.WeeklyReportResponse;
 import com.sneezecast.domainlayer.report.application.command.ReportSubmitCommand;
 import com.sneezecast.domainlayer.report.application.port.in.ReportWebUseCase;
+import com.sneezecast.persistence.dto.SliceResponse;
 import com.sneezecast.security.common.constant.SecurityScope;
 import com.sneezecast.security.common.dto.MemberLoginActive;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,16 +24,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 본인 이번 주 보고 API. 건강 · 증상은 민감정보라 <b>조회도 쓰기와 같은 권한</b>({@code report:write} — 민감정보 동의를 마친 회원)으로 막는다.
+ * 본인 주간 보고 API. 건강 · 증상은 민감정보라 <b>조회도 쓰기와 같은 권한</b>({@code report:write} — 민감정보 동의를 마친 회원)으로 막는다.
  * URL 수준은 security-core 가 전부 열어 두므로 보호는 {@code @PreAuthorize} 에만 달려 있다.
  *
- * <p>리소스는 "이번 주" 하나다 — 경로 · 본문에 주를 받지 않고 서버가 KST 현재 시각으로 정한다. 지난 주 보고는 쓸 수도 읽을 수도 없다.
- * 회원은 토큰의 {@code sub} 로만 알고, 응답에 회원 ID · 보고자 키 · 보고 ID 를 싣지 않는다.
+ * <p>쓸 수 있는 리소스는 "이번 주"({@code /current}) 하나다 — 경로 · 본문에 주를 받지 않고 서버가 KST 현재 시각으로 정한다. 지난 주 보고는
+ * 고칠 수 없고 지난 보고 내역({@code /me})으로 읽기만 한다. 회원은 토큰의 {@code sub} 로만 알고, 응답에 회원 ID · 보고자 키 · 보고 ID 를 싣지 않는다.
  */
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/v1/reports/current")
-@Tag(name = "주간 보고", description = "본인 이번 주 건강 보고 제출 · 조회 · 취소 API")
+@RequestMapping("/api/v1/reports")
+@Tag(name = "주간 보고", description = "본인 이번 주 건강 보고 제출 · 조회 · 취소, 지난 보고 내역 API")
 public class ReportWebController {
 
     private final ReportWebUseCase reportWebUseCase;
@@ -49,7 +50,7 @@ public class ReportWebController {
 
         호출 예: `PUT /api/v1/reports/current` `{"districtCode":"11230510","symptomGroups":["RESPIRATORY"]}`""",
         security = @SecurityRequirement(name = "bearerAuth"))
-    @PutMapping
+    @PutMapping("/current")
     @PreAuthorize("hasAuthority('" + SecurityScope.REPORT_WRITE_AUTHORITY + "')")
     public ResponseEntity<Response<WeeklyReportResponse>> submitCurrentReport(
         @AuthenticationPrincipal MemberLoginActive loginActive, @Valid @RequestBody WeeklyReportRequest request) {
@@ -63,7 +64,7 @@ public class ReportWebController {
 
         호출 예: `GET /api/v1/reports/current`""",
         security = @SecurityRequirement(name = "bearerAuth"))
-    @GetMapping
+    @GetMapping("/current")
     @PreAuthorize("hasAuthority('" + SecurityScope.REPORT_WRITE_AUTHORITY + "')")
     public ResponseEntity<Response<WeeklyReportResponse>> getCurrentReport(@AuthenticationPrincipal MemberLoginActive loginActive) {
         return ResponseEntity.ok(Response.success(reportWebUseCase.getCurrent(loginActive.memberId())));
@@ -76,11 +77,26 @@ public class ReportWebController {
 
         호출 예: `DELETE /api/v1/reports/current`""",
         security = @SecurityRequirement(name = "bearerAuth"))
-    @DeleteMapping
+    @DeleteMapping("/current")
     @PreAuthorize("hasAuthority('" + SecurityScope.REPORT_WRITE_AUTHORITY + "')")
     public ResponseEntity<Response<Void>> cancelCurrentReport(@AuthenticationPrincipal MemberLoginActive loginActive) {
         reportWebUseCase.cancelCurrent(loginActive.memberId());
         return ResponseEntity.ok(Response.success());
+    }
+
+    @Operation(summary = "지난 보고 내역", description = """
+        본인의 지난 보고를 최근 주부터 돌려줍니다. **이번 주(서버가 정한 KST ISO 주)는 빠집니다** — 이번 주 보고는 `GET /api/v1/reports/current` 로 읽습니다.
+        보관 기간(이번 주를 포함한 52주) 안의 주만 나오고, 보고하지 않은 주는 자리가 없습니다. 한 줄의 모양은 이번 주 보고와 같습니다.
+        한 번에 모두 주므로 `hasNext` 는 늘 false 이고, 지난 보고가 없으면 `contents` 가 빈 배열입니다.
+
+        **인증 필요: Authorization 헤더, 건강정보 동의(scope `report:write`).** 토큰이 없으면 SECURITY_001(401), 동의 전이면 SECURITY_006(403). 파라미터는 없습니다.
+
+        호출 예: `GET /api/v1/reports/me`""",
+        security = @SecurityRequirement(name = "bearerAuth"))
+    @GetMapping("/me")
+    @PreAuthorize("hasAuthority('" + SecurityScope.REPORT_WRITE_AUTHORITY + "')")
+    public ResponseEntity<Response<SliceResponse<WeeklyReportResponse>>> getMyPastReports(@AuthenticationPrincipal MemberLoginActive loginActive) {
+        return ResponseEntity.ok(Response.success(reportWebUseCase.getPastReports(loginActive.memberId())));
     }
 
     /** web DTO → application 명령 변환은 adapter 가 맡는다 — application 이 adapter 타입을 모르게 한다 (architecture-guide §3). */

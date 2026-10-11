@@ -20,6 +20,7 @@ import com.sneezecast.domainlayer.report.application.exception.ReportErrorCode;
 import com.sneezecast.domainlayer.report.application.exception.ReportException;
 import com.sneezecast.domainlayer.report.application.port.in.ReportWebUseCase;
 import com.sneezecast.domainlayer.report.domain.enums.SymptomGroup;
+import com.sneezecast.persistence.dto.SliceResponse;
 import com.sneezecast.security.common.dto.MemberLoginActive;
 import com.sneezecast.security.common.enums.SecurityRole;
 import com.sneezecast.security.common.jwt.JwtAuthentication;
@@ -49,6 +50,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class ReportWebControllerTest {
 
     private static final String PATH = "/api/v1/reports/current";
+    private static final String HISTORY_PATH = "/api/v1/reports/me";
     private static final long MEMBER_ID = 42L;
 
     private ReportWebUseCase reportWebUseCase;
@@ -208,13 +210,55 @@ class ReportWebControllerTest {
         verify(reportWebUseCase).cancelCurrent(MEMBER_ID);
     }
 
+    @Test
+    @DisplayName("지난 보고 내역은 {contents, hasNext} 이고 한 줄은 이번 주 보고와 같은 모양이다 — 보고 ID · 키 · 수정 횟수는 없다")
+    void pastReportsAreSliceOfReports() throws Exception {
+        WeeklyReportResponse w39 = response("2026-W39", List.of(SymptomGroup.RESPIRATORY));
+        WeeklyReportResponse w37 = response("2026-W37", List.of());
+        when(reportWebUseCase.getPastReports(MEMBER_ID)).thenReturn(new SliceResponse<>(List.of(w39, w37), false));
+
+        mockMvc.perform(get(HISTORY_PATH))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataHeader.success").value(true))
+            .andExpect(jsonPath("$.dataBody.hasNext").value(false))
+            .andExpect(jsonPath("$.dataBody.contents.length()").value(2))
+            .andExpect(jsonPath("$.dataBody.contents[0].isoWeek").value("2026-W39"))
+            .andExpect(jsonPath("$.dataBody.contents[0].districtCode").value("11230510"))
+            .andExpect(jsonPath("$.dataBody.contents[0].symptomGroups[0].code").value("RESPIRATORY"))
+            .andExpect(jsonPath("$.dataBody.contents[0].symptomGroups[0].name").value("호흡기"))
+            .andExpect(jsonPath("$.dataBody.contents[0].reportedAt").value("2026-10-01T05:12:00Z"))
+            .andExpect(jsonPath("$.dataBody.contents[0].updatedAt").value("2026-10-01T06:30:15Z"))
+            .andExpect(jsonPath("$.dataBody.contents[0].id").doesNotExist())
+            .andExpect(jsonPath("$.dataBody.contents[0].reporterKey").doesNotExist())
+            .andExpect(jsonPath("$.dataBody.contents[0].revisionCount").doesNotExist())
+            .andExpect(jsonPath("$.dataBody.contents[1].isoWeek").value("2026-W37"))
+            .andExpect(jsonPath("$.dataBody.contents[1].symptomGroups.length()").value(0));
+    }
+
+    @Test
+    @DisplayName("지난 보고가 없으면 빈 contents 다 — dataBody 가 null 이 아니다")
+    void pastReportsEmptyIsEmptyContents() throws Exception {
+        when(reportWebUseCase.getPastReports(anyLong())).thenReturn(new SliceResponse<>(List.of(), false));
+
+        mockMvc.perform(get(HISTORY_PATH))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.dataBody.contents").isArray())
+            .andExpect(jsonPath("$.dataBody.contents.length()").value(0))
+            .andExpect(jsonPath("$.dataBody.hasNext").value(false));
+        verify(reportWebUseCase).getPastReports(MEMBER_ID);
+    }
+
     private static ReportSubmitCommand command(String districtCode, SymptomGroup... symptomGroups) {
         return ReportSubmitCommand.of(districtCode, List.of(symptomGroups));
     }
 
     private static WeeklyReportResponse response(List<SymptomGroup> symptomGroups) {
+        return response("2026-W40", symptomGroups);
+    }
+
+    private static WeeklyReportResponse response(String isoWeek, List<SymptomGroup> symptomGroups) {
         return WeeklyReportResponse.builder()
-            .isoWeek("2026-W40")
+            .isoWeek(isoWeek)
             .districtCode("11230510")
             .symptomGroups(symptomGroups.stream().map(SymptomGroup::toMetadata).toList())
             .reportedAt(Instant.parse("2026-10-01T05:12:00Z"))

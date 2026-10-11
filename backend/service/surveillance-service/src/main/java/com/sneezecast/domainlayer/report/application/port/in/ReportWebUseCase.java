@@ -2,9 +2,10 @@ package com.sneezecast.domainlayer.report.application.port.in;
 
 import com.sneezecast.domainlayer.report.adapter.in.web.dto.response.WeeklyReportResponse;
 import com.sneezecast.domainlayer.report.application.command.ReportSubmitCommand;
+import com.sneezecast.persistence.dto.SliceResponse;
 
 /**
- * 본인 이번 주 보고. 회원은 인증 주체의 {@code memberId} 로만 받고, 저장 · 조회에는 가명 키({@code reporter_key})만 쓴다. 보고 주는 서버가 정한다.
+ * 본인 주간 보고. 회원은 인증 주체의 {@code memberId} 로만 받고, 저장 · 조회에는 가명 키({@code reporter_key})만 쓴다. 보고 주는 서버가 정한다.
  */
 public interface ReportWebUseCase {
 
@@ -19,4 +20,10 @@ public interface ReportWebUseCase {
 
     /** 이번 주 보고를 취소(삭제)한다. 보고가 없어도 성공이다 (멱등). */
     void cancelCurrent(long memberId);
+
+    /**
+     * 이번 주(서버 KST 주)를 뺀 지난 보고, 최근 주부터. 보관 기간(52주) 안의 주만이고 한 번에 모두 주므로 {@code hasNext} 는 늘 false 다.
+     * 없으면 빈 {@code contents} 다.
+     */
+    SliceResponse<WeeklyReportResponse> getPastReports(long memberId);
 }

@@ -7,10 +7,10 @@ import java.util.List;
 import lombok.Builder;
 
 /**
- * 본인의 이번 주 보고. 보고 ID · 보고자 키 · 수정 횟수는 싣지 않는다.
+ * 본인의 한 주 보고 (이번 주 보고 · 지난 보고 내역의 한 줄). 보고 ID · 보고자 키 · 수정 횟수는 싣지 않는다.
  */
 @Builder
-@Schema(description = "이번 주 보고 응답 DTO")
+@Schema(description = "주간 보고 응답 DTO (이번 주 보고 · 지난 보고 내역 한 줄)")
 public record WeeklyReportResponse(
     @Schema(description = "보고 주 (ISO 주, 월요일 시작, KST 달력 기준). 서버가 정한다", example = "2026-W40")
     String isoWeek,
@@ -22,7 +22,7 @@ public record WeeklyReportResponse(
         example = "[{\"code\":\"RESPIRATORY\",\"name\":\"호흡기\",\"description\":\"발열 · 기침 · 인후통\"}]")
     List<CodeNameDescriptionMetadata> symptomGroups,
 
-    @Schema(description = "이번 주 첫 보고 시각 (ISO-8601 UTC, 초 단위)", example = "2026-10-01T05:12:00Z")
+    @Schema(description = "그 주 첫 보고 시각 (ISO-8601 UTC, 초 단위)", example = "2026-10-01T05:12:00Z")
     Instant reportedAt,
 
     @Schema(description = "마지막 수정 시각 (ISO-8601 UTC, 초 단위). 고친 적이 없으면 reportedAt 과 같다", example = "2026-10-01T05:12:00Z")

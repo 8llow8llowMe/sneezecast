@@ -14,6 +14,12 @@ public interface WeeklyReportRepository extends JpaRepository<WeeklyReportEntity
     Optional<WeeklyReportEntity> findByReporterKeyAndIsoWeek(String reporterKey, String isoWeek);
 
     /**
+     * 한 보고자의 {@code oldestIsoWeek} ~ {@code latestIsoWeek}(양 끝 포함) 보고를 최근 주부터 준다. 주 값은 두 자리로 채운 {@code YYYY-Www}
+     * 라 문자열 비교 · 정렬이 시간 순이다 ({@code ReportWeek}). {@code uk_weekly_report_reporter_key_iso_week} 를 범위로 탄다.
+     */
+    List<WeeklyReportEntity> findAllByReporterKeyAndIsoWeekBetweenOrderByIsoWeekDesc(String reporterKey, String oldestIsoWeek, String latestIsoWeek);
+
+    /**
      * 같은 주 보고를 고친다. {@code revisionCount} 는 읽어서 더하지 않고 쿼리 안에서 올린다 — 동시 수정 두 건이 같은 값을 읽고 같은 값을 쓰면
      * 증가분 하나가 사라진다 (entity-design §2-1).
      *

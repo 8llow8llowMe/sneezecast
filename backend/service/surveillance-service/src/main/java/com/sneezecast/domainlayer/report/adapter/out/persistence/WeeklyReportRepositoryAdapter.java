@@ -36,6 +36,13 @@ public class WeeklyReportRepositoryAdapter implements WeeklyReportRepositoryPort
         return weeklyReportRepository.findByReporterKeyAndIsoWeek(reporterKey, isoWeek.value()).map(weeklyReportMapper::toDomainFromEntity);
     }
 
+    @Override
+    public List<WeeklyReport> findAllByReporterKeyAndIsoWeekBetween(String reporterKey, ReportWeek oldest, ReportWeek latest) {
+        return weeklyReportRepository.findAllByReporterKeyAndIsoWeekBetweenOrderByIsoWeekDesc(reporterKey, oldest.value(), latest.value()).stream()
+            .map(weeklyReportMapper::toDomainFromEntity)
+            .toList();
+    }
+
     /**
      * {@code saveAndFlush} 로 INSERT 를 바로 내보내 unique 위반이 이 자리에서 드러나게 한다. 커밋 시점까지 미루면 예외가 트랜잭션 프록시 밖에서
      * {@code DataIntegrityViolationException} 그대로 터져 WebFacade 가 동시 제출과 구분할 수 없다.

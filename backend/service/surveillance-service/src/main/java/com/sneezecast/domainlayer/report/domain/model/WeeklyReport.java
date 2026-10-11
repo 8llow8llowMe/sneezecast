@@ -31,6 +31,12 @@ public record WeeklyReport(
     LocalDateTime updatedAt
 ) {
 
+    /**
+     * 원시 보고 보관 주 수 (entity-design §8) — 이번 주를 포함해 이만큼의 주만 남기고, 그보다 오래된 주는 삭제 스케줄러가 지운다(스케줄러는
+     * 아직 없다 — 만들 때 이 값을 쓴다). 지난 보고 내역도 이 창 안의 주만 보인다 (삭제가 늦거나 없어도 보관이 끝난 보고를 보이지 않게).
+     */
+    public static final int RETENTION_WEEKS = 52;
+
     public WeeklyReport {
         // 마스크로 한 번 돌려 null 원소를 거부하고, 순서 · 불변성을 저장 값과 같게 맞춘다.
         symptoms = SymptomGroup.fromMask(SymptomGroup.toMask(symptoms));
