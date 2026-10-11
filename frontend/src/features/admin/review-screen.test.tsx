@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -150,7 +150,9 @@ describe('AdminReviewScreen 검토 대기 (목)', () => {
     await user.type(draft(), '고친 안내문이에요.')
     await user.click(button('수정 저장'))
 
-    expect(screen.getByRole('status').textContent).toBe('고친 초안을 저장했어요.')
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('고친 초안을 저장했어요.'),
+    )
     expect(within(table()).getAllByRole('row')[2]?.textContent).toContain('검토 중')
     const saved = await listReviewCandidates('mock')
     expect(saved.status === 'ready' && saved.candidates[1]?.draft).toBe('고친 안내문이에요.')
@@ -186,7 +188,7 @@ describe('AdminReviewScreen 검토 대기 (목)', () => {
     expect(screen.queryByRole('alert')).toBeNull()
     await user.click(button('승인하고 발행'))
 
-    expect(screen.getByText('○○1동 안내를 발행했어요.')).toBeDefined()
+    expect(await screen.findByText('○○1동 안내를 발행했어요.')).toBeDefined()
     expect(rowNames()).toEqual(['○○2동', '○○3동', '○○4동'])
     expect(detailTitle()).toBe('○○2동 · 참여 급증')
     expect(screen.getByText(/^이번 주 후보 3건/)).toBeDefined()
@@ -202,8 +204,10 @@ describe('AdminReviewScreen 검토 대기 (목)', () => {
     const user = userEvent.setup()
     await user.click(button('보류'))
 
-    expect(screen.getByRole('status').textContent).toBe(
-      '이 후보를 보류했어요. 이번 주에는 안내를 내지 않아요.',
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe(
+        '이 후보를 보류했어요. 이번 주에는 안내를 내지 않아요.',
+      ),
     )
     expect(within(table()).getAllByRole('row')[1]?.textContent).toContain('보류')
     expect(rowNames()).toHaveLength(4)
@@ -237,14 +241,18 @@ describe('AdminReviewScreen 검토 대기 (목)', () => {
     await user.type(draft(), ' 추가')
     await user.click(button('수정 저장'))
 
-    expect(screen.getByRole('alert').textContent).toBe(
-      '초안을 저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe(
+        '초안을 저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+      ),
     )
     expect((draft() as HTMLTextAreaElement).value).toMatch(/ 추가$/)
 
     await user.click(button('보류'))
-    expect(screen.getByRole('alert').textContent).toBe(
-      '보류하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe(
+        '보류하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+      ),
     )
   })
 
@@ -256,14 +264,18 @@ describe('AdminReviewScreen 검토 대기 (목)', () => {
     await user.type(draft(), ' 추가')
     await user.click(button('수정 저장'))
 
-    expect(screen.getByRole('status').textContent).toBe(
-      '다른 운영자가 먼저 이 후보를 고쳤어요. 최신 내용으로 바꿔 두었어요. 확인한 뒤 다시 시도해 주세요.',
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe(
+        '다른 운영자가 먼저 이 후보를 고쳤어요. 최신 내용으로 바꿔 두었어요. 확인한 뒤 다시 시도해 주세요.',
+      ),
     )
     expect((draft() as HTMLTextAreaElement).value).toBe(original)
-    expect(document.activeElement).toBe(draft())
+    await waitFor(() => expect(document.activeElement).toBe(draft()))
 
     await user.click(button('수정 저장'))
-    expect(screen.getByRole('status').textContent).toBe('고친 초안을 저장했어요.')
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('고친 초안을 저장했어요.'),
+    )
   })
 
   it('?mock-admin=empty 면 후보가 없다고 알리고 상세가 없다', async () => {
@@ -332,11 +344,13 @@ describe('AdminReviewScreen 보내는 중 · 포커스 · 처리 결과 갈래 (
     await checkAll(user)
     await user.click(button('승인하고 발행'))
 
-    expect(screen.getByText('○○4동 안내를 발행했어요.')).toBeDefined()
+    expect(await screen.findByText('○○4동 안내를 발행했어요.')).toBeDefined()
     expect(button('기준선 변화 1').getAttribute('aria-pressed')).toBe('true')
     expect(rowNames()).toEqual(['○○1동'])
     expect(detailTitle()).toBe('○○1동 · 기준선 대비 변화')
-    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 }))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 })),
+    )
   })
 
   it('보이는 목록의 마지막 후보를 발행하면 상세가 없어지고 발행 알림으로 포커스를 옮긴다', async () => {
@@ -346,10 +360,10 @@ describe('AdminReviewScreen 보내는 중 · 포커스 · 처리 결과 갈래 (
     await checkAll(user)
     await user.click(button('승인하고 발행'))
 
-    expect(screen.getByText('이 유형의 후보가 없어요.')).toBeDefined()
+    expect(await screen.findByText('이 유형의 후보가 없어요.')).toBeDefined()
     expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
     const notice = screen.getByText('○○2동 안내를 발행했어요.')
-    expect(document.activeElement?.contains(notice)).toBe(true)
+    await waitFor(() => expect(document.activeElement?.contains(notice)).toBe(true))
   })
 
   it('충돌인데 후보가 없으면(다른 운영자가 먼저 발행) 목록에서 빼고 알린 뒤 다음 후보를 고른다', async () => {
@@ -360,10 +374,12 @@ describe('AdminReviewScreen 보내는 중 · 포커스 · 처리 결과 갈래 (
     await renderScreen()
     await userEvent.setup().click(button('수정 저장'))
 
-    expect(screen.getByText('다른 운영자가 ○○1동 후보를 먼저 발행했어요.')).toBeDefined()
+    expect(await screen.findByText('다른 운영자가 ○○1동 후보를 먼저 발행했어요.')).toBeDefined()
     expect(rowNames()).toEqual(['○○2동', '○○3동', '○○4동'])
     expect(detailTitle()).toBe('○○2동 · 참여 급증')
-    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 }))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 })),
+    )
   })
 
   it('응답 전에 화면을 떠나면 늦은 응답을 버린다(상태를 바꾸지 않고 오류도 없다)', async () => {

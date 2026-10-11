@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -188,11 +188,13 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
     await user.type(reason, '참여자 수를 바로잡았어요.')
     await user.click(within(dialog()).getByRole('button', { name: '정정 발행' }))
 
-    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(rows()[0]?.textContent).toContain('정정 발행')
     expect(rows()[1]?.textContent).toContain('정정됨')
     expect(detailTitle()).toBe('○○1동 · 11월 2주')
-    expect(document.activeElement).toBe(screen.getAllByRole('heading', { level: 2 })[0])
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getAllByRole('heading', { level: 2 })[0]),
+    )
     expect(screen.getByRole('status').textContent).toBe(
       '정정 발행했어요. 사용자 화면에 정정일과 사유가 함께 보여요.',
     )
@@ -224,12 +226,14 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
     )
     await user.click(within(dialog()).getByRole('button', { name: '발행 철회' }))
 
-    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(rows()[0]?.textContent).toContain('철회')
     expect(screen.queryByRole('button', { name: '정정 발행' })).toBeNull()
     expect(screen.queryByRole('button', { name: '발행 철회' })).toBeNull()
     expect(steps().at(-1)).toBe('발행 철회 · 11월 20일 14:08공식 자료와 달랐어요.')
-    expect(document.activeElement).toBe(screen.getAllByRole('heading', { level: 2 })[0])
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getAllByRole('heading', { level: 2 })[0]),
+    )
     expect(screen.getByRole('link', { name: '사용자 화면에서 보기' }).getAttribute('href')).toBe(
       '/notice/99990101/2025-W46?mock=retracted',
     )
@@ -303,8 +307,10 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
     await user.type(within(dialog()).getByRole('textbox', { name: '정정 사유' }), '사유')
     await user.click(within(dialog()).getByRole('button', { name: '정정 발행' }))
 
-    expect(within(dialog()).getByRole('alert').textContent).toBe(
-      '정정 발행하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    await waitFor(() =>
+      expect(within(dialog()).getByRole('alert').textContent).toBe(
+        '정정 발행하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+      ),
     )
     expect(
       within(dialog()).getByRole<HTMLTextAreaElement>('textbox', { name: '정정 사유' }).value,
@@ -320,16 +326,18 @@ describe('AdminHistoryScreen 발행 이력 (목)', () => {
     await user.type(within(dialog()).getByRole('textbox', { name: '철회 사유' }), '사유')
     await user.click(within(dialog()).getByRole('button', { name: '발행 철회' }))
 
-    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.getByRole('status').textContent).toBe(
       '다른 운영자가 먼저 이 안내를 바꿨어요. 최신 내용으로 바꿔 두었어요. 확인한 뒤 다시 시도해 주세요.',
     )
-    expect(document.activeElement).toBe(screen.getAllByRole('heading', { level: 2 })[0])
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getAllByRole('heading', { level: 2 })[0]),
+    )
 
     await user.click(button('발행 철회'))
     await user.type(within(dialog()).getByRole('textbox', { name: '철회 사유' }), '사유')
     await user.click(within(dialog()).getByRole('button', { name: '발행 철회' }))
-    expect(rows()[0]?.textContent).toContain('철회')
+    await waitFor(() => expect(rows()[0]?.textContent).toContain('철회'))
   })
 
   it('?mock-admin=empty 면 기록이 없다고 알리고 비율 칸 · 상세가 없다', async () => {
