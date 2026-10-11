@@ -290,7 +290,7 @@ hondigagae auth-service 의 `member` · `member_consent` 와 같은 구조다. �
 - **같은 동네 · 주에 발행 중(PUBLISHED)인 안내는 하나뿐이다.** 이미 있으면 발행은 409 `ADVISORY_007` — 바꾸려면 그 안내를 철회(정정)한다. 동네 안내(#215)가 한 동네 · 주에 안내 하나를 보이게 한다. 초안 · 승인은 여럿이어도 된다(철회 뒤 새 안내 · 정정). 판단은 위 동네 · 주 잠금 읽기의 결과로 하므로, 서로 다른 두 안내를 동시에 발행하면 뒤에 선 쪽이 앞 쪽의 커밋된 PUBLISHED 를 보고 거부된다. 초안 생성은 이 잠금을 잡지 않는다(INSERT 는 발행 중 여부를 바꾸지 않는다).
 - **정정 발행(#246)**: PUBLISHED 본문은 고치지 않는다. 이전 안내를 철회(RETRACTED, `memo` = 정정 사유)하고 같은 동네 · 주 · 근거 집계로 새 안내를 만들어 `corrects_advisory_id` 로 잇는다. 새 안내의 `cited_*` 는 **이전 안내에서 옮긴다**(마감 집계는 바뀌지 않으므로 같은 값이고, 운영자가 검토한 수치를 그대로 잇는다). 새 안내가 승인 · 발행 단계를 어떻게 거칠지와 철회 · 발행 순서(발행 중 하나 규칙상 철회가 먼저)는 #246 이 한 트랜잭션으로 정한다.
 - **자동 발행 경로는 없다.** PUBLISHED 로 가는 전이는 OPERATOR 요청으로만 일어난다 — 모든 처리가 운영자 ID 를 받는다(`AdvisoryOperatorUseCase`).
-- 공개 API 는 PUBLISHED 만 읽는다.
+- **공개 API(#215)는 발행된 안내만 읽는다.** 동네 안내(`GET /api/v1/advisories`)는 동네 · 주의 PUBLISHED · RETRACTED 만 잠그지 않고 읽어(`AdvisoryRepositoryPort#findAllPublicByDistrictCodeAndIsoWeek`) 셋 중 하나로 보인다 — ① PUBLISHED 가 있으면 그 안내(제목 · 본문 · `cited_*` · 발행 시각)와 `corrects_advisory_id` 를 거꾸로 따라간 정정 시각(정정한 쪽의 `published_at`, 최근 것부터), ② 없고 다른 공개 안내가 정정하지 않은 RETRACTED 가 있으면 가장 최근 `retracted_at` 만(제목 · 본문 · 인용 수치는 싣지 않는다), ③ 그 밖은 안내 없음. 초안 · AI 초안 · 수정 · 승인 단계는 저장소 밖으로 나오지 않는다. 공개 집계(홈 · 지도)의 발행 안내 요약은 요청 주의 PUBLISHED, 없으면 직전 주의 PUBLISHED 만 본다(modules.md "공개 집계 조회"). 철회 · 정정 사유(`advisory_history.memo`)와 운영자 · 버전 · 안내 ID 는 공개하지 않는다. PUBLISHED 가 여럿인 행(규칙 위반)은 500 대신 가장 최근 `published_at`(같으면 id) 하나를 고르고 WARN 을 남긴다(`Advisory#PUBLICATION_ORDER`).
 
 ### 2-4. advisory_history — 상태 전이 · 수정 이력
 
