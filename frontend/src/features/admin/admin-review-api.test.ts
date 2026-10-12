@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import { operatorAdvisory } from '@/test/admin-history'
+import {
+  candidateAdvisory,
+  candidateItem,
+  candidateListResponse,
+  codeName as code,
+} from '@/test/admin-review'
 
 import {
   type ReviewCandidateItemResponse,
@@ -10,40 +16,11 @@ import {
   withAdvisoryDetail,
 } from './admin-review-api'
 
-/* 후보 API(#266) 응답 예시. 값은 모두 예시다 */
-
-function code(value: string) {
-  return { code: value, name: value, description: '' }
-}
+/* 후보 API(#266) 응답 예시. 값은 모두 예시다 — 수치가 있는 후보는 `candidateItem`(가락1동 · 기준선 변화 HIGH · 안내 없음) */
 
 const WEEK = '2026-W40'
-
-/** 수치가 있는 후보. 기본은 가락1동 — 기준선 변화(HIGH) · 안내 없음 */
-function item(overrides: Partial<ReviewCandidateItemResponse> = {}): ReviewCandidateItemResponse {
-  return {
-    districtCode: '11240660',
-    districtName: '가락1동',
-    sigungu: '서울특별시 송파구',
-    active: true,
-    signals: [code('BASELINE')],
-    level: code('HIGH'),
-    insufficientReason: null,
-    draftable: true,
-    participantCount: 150,
-    previousParticipantCount: 110,
-    revisedReportCount: 12,
-    symptomaticCount: 30,
-    symptomRate: 20,
-    baselineRate: 10,
-    baselineDeltaPp: 10,
-    groups: [
-      { group: code('RESPIRATORY'), count: 20, rate: 13.3 },
-      { group: code('ENTERIC'), count: 12, rate: 8 },
-    ],
-    advisory: null,
-    ...overrides,
-  }
-}
+const item = candidateItem
+const advisory = candidateAdvisory
 
 /** 자료 부족 후보 — 수치 키가 없다(`@JsonInclude(NON_NULL)`) */
 function insufficientItem(
@@ -66,18 +43,8 @@ function insufficientItem(
   }
 }
 
-function advisory(status: string, advisoryId = '7250', version = 2) {
-  return { advisoryId, status: code(status), version }
-}
-
 function list(candidates: ReviewCandidateItemResponse[]): ReviewCandidateListResponse {
-  return {
-    isoWeek: WEEK,
-    finalized: true,
-    surgeChangePercent: 30,
-    repeatRevisedPercent: 20,
-    candidates,
-  }
+  return candidateListResponse(candidates, WEEK)
 }
 
 describe('toReviewCandidate', () => {
@@ -190,6 +157,7 @@ describe('toReviewCandidate', () => {
       const candidate = toReviewCandidate(item({ advisory: null }), WEEK)
       expect(candidate?.state).toBe('waiting')
       expect(candidate).not.toHaveProperty('advisoryId')
+      expect(candidate).not.toHaveProperty('advisoryStatus')
       expect(candidate).not.toHaveProperty('version')
     })
 
@@ -197,15 +165,21 @@ describe('toReviewCandidate', () => {
       const candidate = toReviewCandidate(item({ advisory: advisory('RETRACTED') }), WEEK)
       expect(candidate?.state).toBe('waiting')
       expect(candidate).not.toHaveProperty('advisoryId')
+      expect(candidate).not.toHaveProperty('advisoryStatus')
       expect(candidate).not.toHaveProperty('version')
     })
 
     it.each(['DRAFT', 'AI_DRAFTED', 'EDITED', 'APPROVED'])(
-      '%s 는 검토 중이고 처리할 안내 ID · 버전을 싣는다',
+      '%s 는 검토 중이고 처리할 안내 ID · 안내 상태 · 버전을 싣는다',
       (status) => {
         expect(
           toReviewCandidate(item({ advisory: advisory(status, '7251', 4) }), WEEK),
-        ).toMatchObject({ state: 'reviewing', advisoryId: '7251', version: 4 })
+        ).toMatchObject({
+          state: 'reviewing',
+          advisoryId: '7251',
+          advisoryStatus: status,
+          version: 4,
+        })
       },
     )
 
@@ -312,7 +286,7 @@ describe('withAdvisoryDetail — 안내 상세의 제목 · 초안 · 버전 · 
     return candidate
   }
 
-  it('검토 중인 안내: 상세의 제목 · 본문 · 버전 · ID 를 싣고 나머지 후보 값은 그대로다', () => {
+  it('검토 중인 안내: 상세의 제목 · 본문 · 버전 · ID · 안내 상태를 싣고 나머지 후보 값은 그대로다', () => {
     const detail = {
       advisory: operatorAdvisory({ statusCode: 'EDITED', version: 5, body: '고친 본문' }),
       histories: [],
@@ -321,6 +295,7 @@ describe('withAdvisoryDetail — 안내 상세의 제목 · 초안 · 버전 · 
       ...reviewing(),
       state: 'reviewing',
       advisoryId: '701',
+      advisoryStatus: 'EDITED',
       version: 5,
       title: '발열·기침 보고가 지난 4주보다 많이 늘었어요',
       draft: '고친 본문',
@@ -340,7 +315,7 @@ describe('withAdvisoryDetail — 안내 상세의 제목 · 초안 · 버전 · 
       { advisory: operatorAdvisory({ statusCode: 'RETRACTED' }), histories: [] },
     )
     expect(retracted?.state).toBe('waiting')
-    for (const key of ['advisoryId', 'version', 'title', 'draft']) {
+    for (const key of ['advisoryId', 'advisoryStatus', 'version', 'title', 'draft']) {
       expect(retracted).not.toHaveProperty(key)
     }
   })
@@ -360,7 +335,7 @@ describe('withAdvisoryDetail — 안내 상세의 제목 · 초안 · 버전 · 
         advisory: operatorAdvisory({ statusCode: 'DRAFT', advisoryId: '702', version: 0 }),
         histories: [],
       }),
-    ).toMatchObject({ state: 'reviewing', advisoryId: '702', version: 0 })
+    ).toMatchObject({ state: 'reviewing', advisoryId: '702', advisoryStatus: 'DRAFT', version: 0 })
   })
 
   it('다른 동네 · 주의 안내이거나 모르는 상태면 계약과 달라 거부한다', () => {

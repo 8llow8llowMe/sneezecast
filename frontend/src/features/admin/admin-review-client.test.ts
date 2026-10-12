@@ -1,17 +1,46 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { loginWithEmail, logout, resetMockSession } from '@/features/auth/auth-client'
-import { processable } from '@/test/admin-review'
-
+import { ApiError, unavailableError } from '@/lib/api/api-error'
+import { apiRequest } from '@/lib/api/client'
+import type * as sessionStore from '@/lib/session/session-store'
+import { refreshSession } from '@/lib/session/session-store'
+import { operatorAdvisory } from '@/test/admin-history'
 import {
+  CANDIDATE_WEEK,
+  candidateAdvisory,
+  candidateItem,
+  candidateListResponse,
+  processable,
+} from '@/test/admin-review'
+
+import { ADMIN_ADVISORIES_PATH } from './admin-advisory-request'
+import type { ReviewCandidateItemResponse } from './admin-review-api'
+import { toReviewCandidate } from './admin-review-api'
+import {
+  ADMIN_CANDIDATES_PATH,
+  approveAndPublishAdvisory,
+  createAdvisoryDraft,
+  fetchCandidateDetail,
+  fetchReviewCandidates,
+  hasOpenAdvisory,
   holdCandidate,
   listReviewCandidates,
   parseMockAdminScenario,
+  type ProcessableCandidate,
   publishCandidate,
   resetMockReviewCandidates,
+  saveAdvisoryEdit,
   saveCandidateDraft,
 } from './admin-review-client'
 import { createMockCandidates, mockCandidateTitle } from './mock'
+import type { ReviewCandidate } from './types'
+
+vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
+vi.mock('@/lib/session/session-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof sessionStore>()),
+  refreshSession: vi.fn(() => Promise.resolve()),
+}))
 
 async function firstCandidate() {
   const result = await listReviewCandidates('mock')
@@ -22,6 +51,8 @@ async function firstCandidate() {
 beforeEach(() => {
   resetMockSession()
   resetMockReviewCandidates()
+  vi.mocked(apiRequest).mockReset()
+  vi.mocked(refreshSession).mockClear()
 })
 
 describe('운영자 검토 클라이언트', () => {
@@ -38,6 +69,7 @@ describe('운영자 검토 클라이언트', () => {
     expect(await publishCandidate('candidate-1', { draft: '안내', version: 3 }, 'api')).toEqual({
       status: 'unavailable',
     })
+    expect(apiRequest).not.toHaveBeenCalled()
   })
 
   it('목은 시안의 후보 4건(11월 3주)이고, 표본 100명 이상만 있다', async () => {
@@ -160,5 +192,456 @@ describe('운영자 검토 클라이언트', () => {
     expect(parseMockAdminScenario('conflict')).toBe('conflict')
     expect(parseMockAdminScenario('nope')).toBeNull()
     expect(parseMockAdminScenario(null)).toBeNull()
+  })
+})
+
+/* ── 실데이터 요청 (#272) ─────────────────────────────────────────────────────────────────── */
+
+function apiError(code: string, status: number): ApiError {
+  return new ApiError({ status, code, message: '거절' })
+}
+
+const ADVISORY_PATH = `${ADMIN_ADVISORIES_PATH}/701`
+
+function candidateOf(overrides: Partial<ReviewCandidateItemResponse> = {}): ReviewCandidate {
+  const candidate = toReviewCandidate(candidateItem(overrides), CANDIDATE_WEEK)
+  if (!candidate) throw new Error('no candidate')
+  return candidate
+}
+
+/** 처리할 안내(기본 EDITED · 701 · 버전 3)가 있는 후보 */
+function openCandidate(status = 'EDITED', version = 3): ProcessableCandidate {
+  const candidate = candidateOf({ advisory: candidateAdvisory(status, '701', version) })
+  if (!hasOpenAdvisory(candidate)) throw new Error('no open advisory')
+  return candidate
+}
+
+/** 처리 응답(안내 한 건) */
+function advisoryAt(statusCode: string, version: number, overrides = {}) {
+  return operatorAdvisory({ statusCode, version, publishedAt: null, ...overrides })
+}
+
+describe('운영자 검토 클라이언트 (실데이터 요청)', () => {
+  const edit = { title: '고친 제목', body: '고친 본문' }
+
+  describe('후보 목록 · 상세', () => {
+    it('목록은 GET /candidates 이고 week 를 주면 쿼리로 싣는다(없으면 서버 기본). 응답을 화면 묶음으로 옮긴다', async () => {
+      vi.mocked(apiRequest).mockResolvedValue(
+        candidateListResponse([
+          candidateItem({ advisory: candidateAdvisory('EDITED') }),
+          candidateItem({
+            districtCode: '11240670',
+            advisory: candidateAdvisory('PUBLISHED', '702'),
+          }),
+        ]),
+      )
+
+      const list = await fetchReviewCandidates()
+      expect(ADMIN_CANDIDATES_PATH).toBe('/api/v1/advisories/admin/candidates')
+      expect(apiRequest).toHaveBeenLastCalledWith(ADMIN_CANDIDATES_PATH, {
+        query: { week: undefined },
+      })
+      expect(list.isoWeek).toBe(CANDIDATE_WEEK)
+      // 발행 중인 안내가 있는 동네는 빠진다
+      expect(list.candidates.map((item) => [item.id, item.advisoryStatus])).toEqual([
+        ['11240660:2025-W46', 'EDITED'],
+      ])
+
+      await fetchReviewCandidates({ week: '2025-W45' })
+      expect(apiRequest).toHaveBeenLastCalledWith(ADMIN_CANDIDATES_PATH, {
+        query: { week: '2025-W45' },
+      })
+    })
+
+    it('목록 실패 · 응답 모양이 계약과 다르면 거부한다. 403 이면 세션 요약을 다시 맞춘다', async () => {
+      vi.mocked(apiRequest).mockResolvedValueOnce({ isoWeek: CANDIDATE_WEEK })
+      await expect(fetchReviewCandidates()).rejects.toThrow()
+      expect(refreshSession).not.toHaveBeenCalled()
+
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError('SECURITY_006', 403))
+      await expect(fetchReviewCandidates()).rejects.toMatchObject({ code: 'SECURITY_006' })
+      expect(refreshSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('상세는 GET /{advisoryId} 로 제목 · 초안 · 버전 · 안내 상태를 덮는다', async () => {
+      vi.mocked(apiRequest).mockResolvedValueOnce({
+        advisory: advisoryAt('APPROVED', 4, { title: '상세 제목', body: '상세 본문' }),
+        histories: [],
+      })
+
+      const candidate = await fetchCandidateDetail(openCandidate())
+      expect(apiRequest).toHaveBeenCalledWith(ADVISORY_PATH)
+      expect(candidate).toMatchObject({
+        state: 'reviewing',
+        advisoryId: '701',
+        advisoryStatus: 'APPROVED',
+        version: 4,
+        title: '상세 제목',
+        draft: '상세 본문',
+      })
+    })
+
+    it('처리할 안내가 없는 후보(대기)는 상세를 요청하지 않고 그대로 준다. 상세 실패는 거부한다', async () => {
+      const waiting = candidateOf()
+      expect(await fetchCandidateDetail(waiting)).toBe(waiting)
+      expect(apiRequest).not.toHaveBeenCalled()
+
+      vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('network', 0))
+      await expect(fetchCandidateDetail(openCandidate())).rejects.toMatchObject({
+        code: 'UNAVAILABLE',
+      })
+    })
+  })
+
+  describe('초안 만들기 · 수정 저장', () => {
+    it('초안 만들기는 POST { districtCode, isoWeek, title, body } 이고 응답(DRAFT)으로 후보를 덮는다', async () => {
+      vi.mocked(apiRequest).mockResolvedValueOnce(
+        advisoryAt('DRAFT', 0, { title: '새 제목', body: '새 본문' }),
+      )
+
+      const result = await createAdvisoryDraft(candidateOf(), { title: '새 제목', body: '새 본문' })
+      expect(vi.mocked(apiRequest).mock.calls).toEqual([
+        [
+          ADMIN_ADVISORIES_PATH,
+          {
+            method: 'POST',
+            body: {
+              districtCode: '11240660',
+              isoWeek: CANDIDATE_WEEK,
+              title: '새 제목',
+              body: '새 본문',
+            },
+          },
+        ],
+      ])
+      expect(result).toEqual({
+        status: 'ok',
+        candidate: expect.objectContaining({
+          state: 'reviewing',
+          advisoryId: '701',
+          advisoryStatus: 'DRAFT',
+          version: 0,
+          title: '새 제목',
+          draft: '새 본문',
+        }),
+      })
+    })
+
+    it('초안을 만들 수 없거나(draftable 아님) 이미 처리할 안내가 있으면 요청하지 않고 rejected 다', async () => {
+      expect(await createAdvisoryDraft(candidateOf({ draftable: false }), edit)).toEqual({
+        status: 'rejected',
+        reason: 'not-draftable',
+      })
+      expect(await createAdvisoryDraft(openCandidate(), edit)).toEqual({
+        status: 'rejected',
+        reason: 'has-advisory',
+      })
+      expect(apiRequest).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['ADVISORY_002', 404],
+      ['ADVISORY_003', 409],
+      ['ADVISORY_004', 409],
+    ])(
+      '초안 만들기가 %s(%i)면 목록을 다시 읽어 충돌로 준다 — 안내가 없는 후보는 상세를 읽지 않는다',
+      async (code, status) => {
+        vi.mocked(apiRequest)
+          .mockRejectedValueOnce(apiError(code, status))
+          .mockResolvedValueOnce(candidateListResponse([candidateItem({ draftable: false })]))
+
+        const result = await createAdvisoryDraft(candidateOf(), edit)
+        expect(apiRequest).toHaveBeenCalledTimes(2)
+        expect(apiRequest).toHaveBeenLastCalledWith(ADMIN_CANDIDATES_PATH, {
+          query: { week: CANDIDATE_WEEK },
+        })
+        expect(result).toMatchObject({
+          status: 'conflict',
+          candidate: { id: '11240660:2025-W46', draftable: false },
+        })
+      },
+    )
+
+    it('초안 만들기가 처리됐는데 응답을 옮기지 못하면 다시 읽어 안내가 있는 후보를 준다(중복 초안 방지). 못 읽으면 unrefreshed', async () => {
+      vi.mocked(apiRequest)
+        .mockResolvedValueOnce(advisoryAt('DRAFT', 0, { districtCode: '11240670' }))
+        .mockResolvedValueOnce(
+          candidateListResponse([
+            candidateItem({ advisory: candidateAdvisory('DRAFT', '701', 0) }),
+          ]),
+        )
+        .mockResolvedValueOnce({ advisory: advisoryAt('DRAFT', 0), histories: [] })
+      expect(await createAdvisoryDraft(candidateOf(), edit)).toMatchObject({
+        status: 'ok',
+        candidate: { advisoryId: '701', advisoryStatus: 'DRAFT', version: 0 },
+      })
+
+      vi.mocked(apiRequest)
+        .mockResolvedValueOnce(advisoryAt('DRAFT', 0, { districtCode: '11240670' }))
+        .mockRejectedValueOnce(unavailableError('network', 0))
+      expect(await createAdvisoryDraft(candidateOf(), edit)).toEqual({
+        status: 'unrefreshed',
+        outcome: 'ok',
+      })
+    })
+
+    it('다시 읽은 상세가 그사이 발행됐으면 목록에서 빼고 후보는 null 이다. 다시 읽기가 403 이면 세션 요약을 한 번 맞춘다', async () => {
+      vi.mocked(apiRequest)
+        .mockRejectedValueOnce(apiError('ADVISORY_005', 409))
+        .mockResolvedValueOnce(
+          candidateListResponse([
+            candidateItem({ advisory: candidateAdvisory('APPROVED', '701', 5) }),
+            candidateItem({ districtCode: '11240670' }),
+          ]),
+        )
+        .mockResolvedValueOnce({ advisory: advisoryAt('PUBLISHED', 6), histories: [] })
+      const result = await saveAdvisoryEdit(openCandidate(), edit)
+      if (result.status !== 'conflict') throw new Error('not conflict')
+      expect(result.candidate).toBeNull()
+      expect(result.list.candidates.map((item) => item.id)).toEqual(['11240670:2025-W46'])
+
+      vi.mocked(apiRequest)
+        .mockRejectedValueOnce(apiError('ADVISORY_006', 409))
+        .mockRejectedValueOnce(apiError('SECURITY_006', 403))
+      expect(await saveAdvisoryEdit(openCandidate(), edit)).toEqual({
+        status: 'unrefreshed',
+        outcome: 'conflict',
+      })
+      expect(refreshSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('수정 저장은 PUT /{advisoryId} { title, body, version } 이고 응답의 새 버전 · EDITED 를 싣는다', async () => {
+      vi.mocked(apiRequest).mockResolvedValueOnce(advisoryAt('EDITED', 4, edit))
+
+      const result = await saveAdvisoryEdit(openCandidate('APPROVED'), edit)
+      expect(apiRequest).toHaveBeenCalledWith(ADVISORY_PATH, {
+        method: 'PUT',
+        body: { ...edit, version: 3 },
+      })
+      expect(result).toMatchObject({
+        status: 'ok',
+        candidate: { advisoryStatus: 'EDITED', version: 4, title: '고친 제목', draft: '고친 본문' },
+      })
+    })
+
+    it('수정 저장 충돌(006)이면 목록 · 그 후보 상세를 다시 읽고, 다시 읽지 못하면 unrefreshed 다', async () => {
+      vi.mocked(apiRequest)
+        .mockRejectedValueOnce(apiError('ADVISORY_006', 409))
+        .mockResolvedValueOnce(
+          candidateListResponse([
+            candidateItem({ advisory: candidateAdvisory('EDITED', '701', 5) }),
+          ]),
+        )
+        .mockResolvedValueOnce({
+          advisory: advisoryAt('EDITED', 5, { body: '남이 고친 본문' }),
+          histories: [],
+        })
+
+      const result = await saveAdvisoryEdit(openCandidate(), edit)
+      expect(vi.mocked(apiRequest).mock.calls.slice(1)).toEqual([
+        [ADMIN_CANDIDATES_PATH, { query: { week: CANDIDATE_WEEK } }],
+        [ADVISORY_PATH],
+      ])
+      if (result.status !== 'conflict') throw new Error('not conflict')
+      expect(result.candidate).toMatchObject({ version: 5, draft: '남이 고친 본문' })
+      // 다시 읽은 목록의 그 행도 상세를 덮은 후보다
+      expect(result.list.candidates).toEqual([result.candidate])
+
+      vi.mocked(apiRequest)
+        .mockRejectedValueOnce(apiError('ADVISORY_006', 409))
+        .mockRejectedValueOnce(unavailableError('network', 0))
+      expect(await saveAdvisoryEdit(openCandidate(), edit)).toEqual({
+        status: 'unrefreshed',
+        outcome: 'conflict',
+      })
+    })
+
+    it('검증 거부(400)는 다시 읽지 않고 invalid, 그 밖의 실패는 거부한다. 403 이면 세션 요약을 다시 맞춘다', async () => {
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError('ADVISORY_106', 400))
+      expect(await saveAdvisoryEdit(openCandidate(), edit)).toEqual({ status: 'invalid' })
+      expect(apiRequest).toHaveBeenCalledTimes(1)
+
+      vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('timeout', 0))
+      await expect(saveAdvisoryEdit(openCandidate(), edit)).rejects.toMatchObject({
+        code: 'UNAVAILABLE',
+      })
+      expect(refreshSession).not.toHaveBeenCalled()
+
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError('SECURITY_006', 403))
+      await expect(createAdvisoryDraft(candidateOf(), edit)).rejects.toMatchObject({
+        code: 'SECURITY_006',
+      })
+      expect(refreshSession).toHaveBeenCalledTimes(1)
+      expect(apiRequest).toHaveBeenCalledTimes(3)
+    })
+  })
+
+  describe('승인하고 발행', () => {
+    const approvePath = `${ADVISORY_PATH}/approve`
+    const publishPath = `${ADVISORY_PATH}/publish`
+
+    it('검토 중(EDITED) · 고친 것 없음: approve → publish, 앞 응답의 version 을 잇는다', async () => {
+      vi.mocked(apiRequest)
+        .mockResolvedValueOnce(advisoryAt('APPROVED', 4))
+        .mockResolvedValueOnce(advisoryAt('PUBLISHED', 5))
+
+      const result = await approveAndPublishAdvisory(openCandidate('EDITED', 3), {
+        ...edit,
+        dirty: false,
+      })
+      expect(result).toEqual({ status: 'published' })
+      expect(vi.mocked(apiRequest).mock.calls).toEqual([
+        [approvePath, { method: 'POST', body: { version: 3 } }],
+        [publishPath, { method: 'POST', body: { version: 4 } }],
+      ])
+    })
+
+    it.each(['EDITED', 'APPROVED'])(
+      '%s · 고친 것 있음: PUT → approve → publish, 각 단계 응답의 version 을 잇는다',
+      async (status) => {
+        vi.mocked(apiRequest)
+          .mockResolvedValueOnce(advisoryAt('EDITED', 4, edit))
+          .mockResolvedValueOnce(advisoryAt('APPROVED', 5, edit))
+          .mockResolvedValueOnce(advisoryAt('PUBLISHED', 6, edit))
+
+        const result = await approveAndPublishAdvisory(openCandidate(status, 3), {
+          ...edit,
+          dirty: true,
+        })
+        expect(result).toEqual({ status: 'published' })
+        expect(vi.mocked(apiRequest).mock.calls).toEqual([
+          [ADVISORY_PATH, { method: 'PUT', body: { ...edit, version: 3 } }],
+          [approvePath, { method: 'POST', body: { version: 4 } }],
+          [publishPath, { method: 'POST', body: { version: 5 } }],
+        ])
+      },
+    )
+
+    it('이미 승인됨(APPROVED) · 고친 것 없음: 승인을 건너뛰고 publish 만 한다', async () => {
+      vi.mocked(apiRequest).mockResolvedValueOnce(advisoryAt('PUBLISHED', 4))
+
+      const result = await approveAndPublishAdvisory(openCandidate('APPROVED', 3), {
+        ...edit,
+        dirty: false,
+      })
+      expect(result).toEqual({ status: 'published' })
+      expect(vi.mocked(apiRequest).mock.calls).toEqual([
+        [publishPath, { method: 'POST', body: { version: 3 } }],
+      ])
+    })
+
+    it('발행이 007 이면 승인됨으로 남음(approvedNotPublished)이고 목록을 다시 읽는다 — 발행 중인 동네는 빠져 후보가 없다', async () => {
+      vi.mocked(apiRequest)
+        .mockResolvedValueOnce(advisoryAt('APPROVED', 4))
+        .mockRejectedValueOnce(apiError('ADVISORY_007', 409))
+        .mockResolvedValueOnce(candidateListResponse([]))
+
+      const result = await approveAndPublishAdvisory(openCandidate('DRAFT', 3), {
+        ...edit,
+        dirty: false,
+      })
+      expect(apiRequest).toHaveBeenLastCalledWith(ADMIN_CANDIDATES_PATH, {
+        query: { week: CANDIDATE_WEEK },
+      })
+      expect(apiRequest).toHaveBeenCalledTimes(3)
+      expect(result).toEqual({
+        status: 'approvedNotPublished',
+        list: expect.objectContaining({ candidates: [] }),
+        candidate: null,
+      })
+
+      vi.mocked(apiRequest)
+        .mockRejectedValueOnce(apiError('ADVISORY_007', 409))
+        .mockRejectedValueOnce(unavailableError('network', 0))
+      expect(
+        await approveAndPublishAdvisory(openCandidate('APPROVED', 4), { ...edit, dirty: false }),
+      ).toEqual({ status: 'unrefreshed', outcome: 'approvedNotPublished', step: 'publish' })
+    })
+
+    it('승인 단계 충돌(006)이면 멈추고 그 단계 · 다시 읽은 목록 · 그 후보 상세를 준다', async () => {
+      vi.mocked(apiRequest)
+        .mockResolvedValueOnce(advisoryAt('EDITED', 4, edit))
+        .mockRejectedValueOnce(apiError('ADVISORY_006', 409))
+        .mockResolvedValueOnce(
+          candidateListResponse([
+            candidateItem({ advisory: candidateAdvisory('EDITED', '701', 6) }),
+          ]),
+        )
+        .mockResolvedValueOnce({ advisory: advisoryAt('EDITED', 6), histories: [] })
+
+      const result = await approveAndPublishAdvisory(openCandidate('EDITED', 3), {
+        ...edit,
+        dirty: true,
+      })
+      expect(vi.mocked(apiRequest).mock.calls.slice(2)).toEqual([
+        [ADMIN_CANDIDATES_PATH, { query: { week: CANDIDATE_WEEK } }],
+        [ADVISORY_PATH],
+      ])
+      expect(result).toMatchObject({
+        status: 'conflict',
+        step: 'approve',
+        candidate: { version: 6 },
+      })
+    })
+
+    it('승인 뒤 발행 충돌(006)이면 step publish 의 충돌, 발행 일시 장애면 승인 뒤 버전을 실은 후보의 failed 다', async () => {
+      vi.mocked(apiRequest)
+        .mockResolvedValueOnce(advisoryAt('APPROVED', 4))
+        .mockRejectedValueOnce(apiError('ADVISORY_006', 409))
+        .mockResolvedValueOnce(
+          candidateListResponse([
+            candidateItem({ advisory: candidateAdvisory('APPROVED', '701', 5) }),
+          ]),
+        )
+        .mockResolvedValueOnce({ advisory: advisoryAt('APPROVED', 5), histories: [] })
+      expect(
+        await approveAndPublishAdvisory(openCandidate(), { ...edit, dirty: false }),
+      ).toMatchObject({ status: 'conflict', step: 'publish', candidate: { version: 5 } })
+
+      vi.mocked(apiRequest)
+        .mockResolvedValueOnce(advisoryAt('APPROVED', 4))
+        .mockRejectedValueOnce(unavailableError('network', 0))
+      expect(
+        await approveAndPublishAdvisory(openCandidate(), { ...edit, dirty: false }),
+      ).toMatchObject({
+        status: 'failed',
+        step: 'publish',
+        candidate: { advisoryStatus: 'APPROVED', version: 4 },
+        error: { code: 'UNAVAILABLE' },
+      })
+    })
+
+    it('수정 저장 응답이 다른 동네의 안내면(계약과 다름) 이어 가지 않고 step save 의 failed 다', async () => {
+      vi.mocked(apiRequest).mockResolvedValueOnce(
+        advisoryAt('EDITED', 4, { districtCode: '11240670' }),
+      )
+      expect(
+        await approveAndPublishAdvisory(openCandidate(), { ...edit, dirty: true }),
+      ).toMatchObject({ status: 'failed', step: 'save', candidate: { version: 3 } })
+      expect(apiRequest).toHaveBeenCalledTimes(1)
+    })
+
+    it('검증 거부는 그 단계의 invalid, 그 밖의 실패는 그 단계 · 처리된 단계까지 반영한 후보의 failed 다(거부하지 않는다)', async () => {
+      vi.mocked(apiRequest).mockRejectedValueOnce(apiError('ADVISORY_105', 400))
+      expect(await approveAndPublishAdvisory(openCandidate(), { ...edit, dirty: true })).toEqual({
+        status: 'invalid',
+        step: 'save',
+      })
+
+      vi.mocked(apiRequest).mockReset()
+      vi.mocked(apiRequest)
+        .mockResolvedValueOnce(advisoryAt('EDITED', 4, edit))
+        .mockRejectedValueOnce(apiError('SECURITY_006', 403))
+      const result = await approveAndPublishAdvisory(openCandidate(), { ...edit, dirty: true })
+      expect(result).toMatchObject({
+        status: 'failed',
+        step: 'approve',
+        candidate: { advisoryStatus: 'EDITED', version: 4, draft: '고친 본문' },
+        error: { code: 'SECURITY_006' },
+      })
+      expect(refreshSession).toHaveBeenCalledTimes(1)
+      // 실패 뒤 다시 읽지 않는다
+      expect(apiRequest).toHaveBeenCalledTimes(2)
+    })
   })
 })

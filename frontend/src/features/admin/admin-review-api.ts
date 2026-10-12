@@ -10,6 +10,7 @@ import type {
   CandidateKind,
   CandidateState,
   InsufficientReason,
+  ReviewAdvisoryStatus,
   ReviewCandidate,
   ReviewCandidateList,
 } from './types'
@@ -90,24 +91,27 @@ const INSUFFICIENT_REASON: Readonly<Record<string, InsufficientReason>> = {
   NO_BASELINE: 'no-baseline',
 }
 
+const REVIEW_ADVISORY_STATUSES: readonly ReviewAdvisoryStatus[] = [
+  'DRAFT',
+  'AI_DRAFTED',
+  'EDITED',
+  'APPROVED',
+]
+
+/** 처리할 수 있는(검토 중) 안내 상태면 그 값. 아니면 undefined */
+function reviewAdvisoryStatus(code: string): ReviewAdvisoryStatus | undefined {
+  return REVIEW_ADVISORY_STATUSES.find((status) => status === code)
+}
+
 /**
  * 안내 상태 → 후보 상태. 발행 중은 목록에서 빠진다(`published`). 철회된 안내는 고칠 수 없어 안내가 없는 것과 같은 `대기` 다.
  * 모르는 상태면 undefined
  */
 function advisoryState(code: string): CandidateState | 'published' | undefined {
-  switch (code) {
-    case 'RETRACTED':
-      return 'waiting'
-    case 'DRAFT':
-    case 'AI_DRAFTED':
-    case 'EDITED':
-    case 'APPROVED':
-      return 'reviewing'
-    case 'PUBLISHED':
-      return 'published'
-    default:
-      return undefined
-  }
+  if (reviewAdvisoryStatus(code)) return 'reviewing'
+  if (code === 'RETRACTED') return 'waiting'
+  if (code === 'PUBLISHED') return 'published'
+  return undefined
 }
 
 /** 아는 신호만 우선순위 순서로. 모르는 신호는 뺀다 */
@@ -155,6 +159,7 @@ export function toReviewCandidate(
   if (state === undefined || state === 'published') return null
   // 처리할 안내는 검토 중일 때만 싣는다 — 철회된 안내는 고칠 수 없어 초안 만들기부터다
   const processable = state === 'reviewing' ? item.advisory : null
+  const advisoryStatus = processable ? reviewAdvisoryStatus(processable.status.code) : undefined
 
   const signals = signalKinds(item.signals)
   const kind = signals[0]
@@ -187,7 +192,12 @@ export function toReviewCandidate(
     ...(item.baselineDeltaPp !== undefined && { baselineDeltaPp: item.baselineDeltaPp }),
     ...(leadingSymptom && { leadingSymptom }),
     state,
-    ...(processable && { advisoryId: processable.advisoryId, version: processable.version }),
+    ...(processable &&
+      advisoryStatus && {
+        advisoryId: processable.advisoryId,
+        advisoryStatus,
+        version: processable.version,
+      }),
   }
 }
 
@@ -213,8 +223,9 @@ function malformed(what: string): Error {
 }
 
 /**
- * 안내 상세로 후보의 제목 · 초안 · 버전 · 상태를 덮는다(후보 목록에는 제목 · 본문이 없다).
- * - 검토 중(DRAFT~APPROVED): 상세의 ID · 버전 · 제목 · 본문을 싣고 `검토 중` 이다
+ * 안내 상세로 후보의 제목 · 초안 · 버전 · 상태를 덮는다(후보 목록에는 제목 · 본문이 없다). 처리 응답(안내 한 건)도 같은 규칙으로 덮는다 —
+ * 부르는 쪽이 `{ advisory, histories: [] }` 로 싼다(`admin-review-client.ts`).
+ * - 검토 중(DRAFT~APPROVED): 상세의 ID · 안내 상태 · 버전 · 제목 · 본문을 싣고 `검토 중` 이다
  * - 그사이 발행됐으면 null — 목록에서 뺀다
  * - 철회됐으면 `대기` 로 돌리고 안내 값(ID · 버전 · 제목 · 초안)을 지운다 — 초안 만들기부터다
  *
@@ -236,12 +247,14 @@ export function withAdvisoryDetail(
   if (state === undefined) throw malformed(`모르는 상태 ${advisory.status.code}`)
   if (state === 'published') return null
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 안내 값을 지운 나머지 후보 값만 남긴다
-  const { advisoryId, version, title, draft, ...rest } = candidate
-  if (state !== 'reviewing') return { ...rest, state }
+  const { advisoryId, advisoryStatus, version, title, draft, ...rest } = candidate
+  const status = reviewAdvisoryStatus(advisory.status.code)
+  if (state !== 'reviewing' || status === undefined) return { ...rest, state }
   return {
     ...rest,
     state,
     advisoryId: advisory.advisoryId,
+    advisoryStatus: status,
     version: advisory.version,
     title: advisory.title,
     draft: advisory.body,
