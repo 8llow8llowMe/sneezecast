@@ -55,6 +55,12 @@ export const CANDIDATE_STATE_LABEL: Readonly<Record<CandidateState, string>> = {
   held: '보류',
 }
 
+/**
+ * 검토 중인 안내의 상태 (backend `AdvisoryStatus` 중 처리할 수 있는 넷). 승인하고 발행이 이 값으로 단계를 고른다 —
+ * APPROVED 면 고치지 않았을 때 승인을 건너뛰고 발행만 한다. 발행됨 · 철회됨 안내는 후보에 처리할 안내로 싣지 않는다
+ */
+export type ReviewAdvisoryStatus = 'DRAFT' | 'AI_DRAFTED' | 'EDITED' | 'APPROVED'
+
 /** 안내문 초안 최대 길이. 시민 화면의 안내 본문 한 단락 분량이다(시안 초안 약 150자) */
 export const DRAFT_MAX_LENGTH = 500
 
@@ -93,6 +99,8 @@ export type ReviewCandidate = Readonly<{
   // ── 후보 API(#266)에서 오는 값 — 목에는 없을 수 있다 ─────────────────────────────────────
   /** 처리할 안내(검토 중 — DRAFT · AI_DRAFTED · EDITED · APPROVED)의 ID. 안내가 없거나 철회된 안내뿐이면 없다 */
   advisoryId?: string
+  /** 처리할 안내의 상태. `advisoryId` 와 함께 있고 함께 없다 */
+  advisoryStatus?: ReviewAdvisoryStatus
   /** 안내 제목 (advisory `title`). 안내 상세를 읽으면 있다 */
   title?: string
   /** 신호 전체, 기준선 변화 → 참여 급증 → 반복 보고 의심 순. 신호 없이 안내만 있는 후보는 빈 배열이다 */
