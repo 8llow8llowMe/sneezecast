@@ -463,6 +463,7 @@ GET /api/v1/advisories/admin/candidates?week=   → { isoWeek, finalized, surgeC
 - 정할 것(연동 이슈): 발행 전 확인 세 항목을 서버에 남길지, 검토 시작 시각의 출처(advisory `createdAt`?), 다른 주 고르기(화면은 지금 한 주).
 - AI 초안 생성(DRAFT → AI_DRAFTED)은 이 화면이 부르지 않는다(범위 밖). 목 초안은 이미 있는 것으로 둔다.
 - 프론트 함수: `features/admin/admin-review-client.ts` 의 `listReviewCandidates` · `saveCandidateDraft` · `holdCandidate` · `publishCandidate(…, source)`. **실데이터는 아직 요청하지 않고 `unavailable`**(화면은 "운영자 검토는 아직 준비하고 있어요")이다 — 연동 이슈 전에는 목 후보를 실제 집계로 알고 발행해도 시민에게 아무것도 나가지 않게 한다(conventions.md "데이터 출처" 의 예외). 목은 모듈 메모리 목록이고 목 세션이 비회원이 되면 지운다. 목 재현 `?mock-admin=empty|fail|conflict`.
+- 실데이터 요청 함수(#272, 같은 파일 끝): `fetchReviewCandidates({ week? })` · `fetchCandidateDetail(candidate)`(처리할 안내가 없으면 요청하지 않음) · `createAdvisoryDraft(candidate, { title, body })`(`draftable` 이 아니거나 이미 처리할 안내가 있으면 요청하지 않고 `rejected`) · `saveAdvisoryEdit` · `approveAndPublishAdvisory(candidate, { title, body, dirty })`(고쳤으면 `PUT` 먼저, APPROVED 이고 고치지 않았으면 `publish` 만, 발행 `007` 은 `approvedNotPublished`, 멈춘 단계는 `step`). 처리 응답으로 후보를 덮고(`advisoryStatus` · `version`), 충돌(`001` · `005` · `006` · `007`, 초안 만들기는 `002` · `003` · `004` 도)이면 목록 · 그 후보 상세를 다시 읽는다(못 읽으면 `unrefreshed`). 충돌 · 검증 거부 코드와 403 처리는 발행 이력과 같은 `admin-advisory-request.ts` 다. 보류 · 대기 수는 실데이터로 만들지 않는다(서버에 없다). **화면 연결(제목 입력 칸 포함)은 #272 PR3 이고, 그 전까지 위 출처 인자 함수는 `unavailable` 을 유지한다.**
 
 ## 운영자 정정 · 발행 이력 `/api/v1/advisories/admin/{advisoryId}/correct` · `/history` (확정 — 백엔드 #267)
 
