@@ -12,6 +12,16 @@ if (typeof window !== 'undefined') {
   afterEach(cleanup)
 
   installDialogStub()
+  warmComputedStyle()
+}
+
+/**
+ * jsdom 은 창마다 첫 `getComputedStyle` 에서 기본 스타일시트를 파싱한다(단독 약 60ms, 전체 실행 부하에서 약 10배).
+ * `getByRole` 이 숨김 판정에 이 함수를 쓰므로, 그대로 두면 이 1회성 비용이 파일 첫 테스트의 5000ms 예산에 들어간다(#289).
+ * 테스트 시간 밖인 설정 단계에서 한 번 치른다.
+ */
+function warmComputedStyle() {
+  void getComputedStyle(document.documentElement).display
 }
 
 /**
