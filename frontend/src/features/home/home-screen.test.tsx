@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server'
 
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as authClient from '@/features/auth/auth-client'
 import {
@@ -18,6 +18,7 @@ import { leaveHomeNotice, takeHomeNotice } from '@/features/me/leave-notice'
 import { cancelReport, submitReport } from '@/features/report/report-client'
 
 import { HomeScreen } from './home-screen'
+import { HOME_SHEETS } from './home-sheets'
 import { HOME_MOCKS } from './mock'
 
 // 테스트에는 Next 라우터가 없다. 주소 쿼리는 이 값으로 흉내 낸다
@@ -41,6 +42,9 @@ function explainDialog() {
     ) ?? null
   )
 }
+
+// 시트 모듈 받기가 시트 안 요소를 기다리는 1000ms 창에 섞이지 않게 미리 받는다(#289, report-install-flow.test.tsx 참고)
+beforeAll(() => Promise.all(HOME_SHEETS.map((sheet) => sheet.load())))
 
 describe('HomeScreen', () => {
   beforeEach(() => {
