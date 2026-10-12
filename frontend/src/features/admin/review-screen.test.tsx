@@ -4,13 +4,14 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resetMockSession } from '@/features/auth/auth-client'
+import { ApiError } from '@/lib/api/api-error'
 import { CANDIDATE_WEEK, candidateAdvisory, candidateItem, codeName } from '@/test/admin-review'
 import { resetApiSession, selectApiSource } from '@/test/api-session'
 
 import { toReviewCandidate } from './admin-review-api'
 import * as client from './admin-review-client'
 import { listReviewCandidates, resetMockReviewCandidates } from './admin-review-client'
-import { barHeightPercent } from './candidate-detail'
+import { barHeightPercent, formatReviewTime } from './candidate-detail'
 import { AdminReviewScreen } from './review-screen'
 import type { ReviewCandidate, ReviewCandidateList } from './types'
 
@@ -90,6 +91,9 @@ describe('AdminReviewScreen 검토 대기 (목)', () => {
     expect(screen.getByRole('heading', { level: 1, name: '검토 대기' })).toBeDefined()
     expect(screen.getByText(/^이번 주 후보 4건 · 후보 기준:/)).toBeDefined()
     expect(screen.getByText('11월 3주')).toBeDefined()
+    // 목은 한 주뿐이라 주 이동을 그리지 않는다(#286)
+    expect(screen.queryByRole('group', { name: '기준 주' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '이전 주' })).toBeNull()
     expect(pendingMenu()).toBe('검토 대기, 남은 후보 4건')
     // 화면이 없는 메뉴(기준 설정)는 링크가 아니다(없는 화면 404 로 가지 않게). 발행 이력은 #220 부터 링크다
     const menu = within(screen.getByRole('navigation', { name: '운영 메뉴' }))
@@ -470,6 +474,32 @@ describe('AdminReviewScreen 보내는 중 · 포커스 · 처리 결과 갈래 (
   })
 })
 
+describe('formatReviewTime 검토 시작 · 경과 (지금 2025-11-20 14:08 KST)', () => {
+  const now = Date.parse('2025-11-20T05:08:00Z')
+
+  it('오늘(KST)이면 시각만, 경과는 분 · 시간 분이다(시안)', () => {
+    expect(formatReviewTime('2025-11-20T05:02:00Z', now)).toBe('검토 시작 14:02 · 경과 6분')
+    expect(formatReviewTime('2025-11-19T15:00:00Z', now)).toBe('검토 시작 00:00 · 경과 14시간 8분')
+  })
+
+  it('오늘이 아니면 날짜를 붙이고, 24시간 이상이면 일 · 시간으로 접는다(0 인 뒤 단위는 뺀다)', () => {
+    // 어제 23:59 KST — 24시간이 안 돼도 날짜가 다르다
+    expect(formatReviewTime('2025-11-19T14:59:00Z', now)).toBe(
+      '검토 시작 11월 19일 23:59 · 경과 14시간 9분',
+    )
+    expect(formatReviewTime('2025-11-17T01:00:00Z', now)).toBe(
+      '검토 시작 11월 17일 10:00 · 경과 3일 4시간',
+    )
+    expect(formatReviewTime('2025-11-17T05:08:00Z', now)).toBe(
+      '검토 시작 11월 17일 14:08 · 경과 3일',
+    )
+  })
+
+  it('읽을 수 없는 시각이면 null 이다', () => {
+    expect(formatReviewTime('nope', now)).toBeNull()
+  })
+})
+
 describe('barHeightPercent 기준선 막대 높이', () => {
   it('가장 큰 값이 96% 이고, 모두 0 이면 0 으로 나누지 않고 바닥이다', () => {
     expect(barHeightPercent(18, 18)).toBe(96)
@@ -589,7 +619,8 @@ describe('AdminReviewScreen 실데이터', () => {
     expect(screen.getByText('11월 2주')).toBeDefined()
     expect(
       screen.getByText(
-        '이번 주 후보 4건 · 후보 기준: 표본 100명 이상에서 기준선 대비 증가, 참여 급증(전주 대비 +25% 이상), 반복 보고 의심(수정된 보고 15% 이상)',
+        // 실데이터는 서버 기본 주도 `이번 주` 가 아니라 그 주 이름이다(#286)
+        '11월 2주 후보 4건 · 후보 기준: 표본 100명 이상에서 기준선 대비 증가, 참여 급증(전주 대비 +25% 이상), 반복 보고 의심(수정된 보고 15% 이상)',
       ),
     ).toBeDefined()
     expect(pendingMenu()).toBe('검토 대기, 남은 후보 4건')
@@ -639,7 +670,7 @@ describe('AdminReviewScreen 실데이터', () => {
 
   it('목록이 비면 후보가 없다고 알린다', async () => {
     await renderApi({ list: listOf([]) })
-    expect(screen.getByText('이번 주 검토할 후보가 없어요.')).toBeDefined()
+    expect(screen.getByText('11월 2주 검토할 후보가 없어요.')).toBeDefined()
     expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
     expect(client.fetchCandidateDetail).not.toHaveBeenCalled()
   })
@@ -1016,5 +1047,226 @@ describe('AdminReviewScreen 실데이터', () => {
     await user.click(button('다시 시도'))
     await waitFor(() => expect(detailTitle()).toBe('가락1동 · 기준선 대비 변화'))
     expect(screen.queryByText('다른 운영자가 먼저 이 후보를 바꿨어요.')).toBeNull()
+  })
+
+  describe('다른 주 고르기 (#286 — 지금은 2025-11-20 KST, 이번 주 2025-W47)', () => {
+    const weekGroup = () => screen.getByRole('group', { name: '기준 주' })
+    const previousWeek = () => within(weekGroup()).getByRole('button', { name: '이전 주' })
+    const nextWeek = () => within(weekGroup()).getByRole('button', { name: '다음 주' })
+    const listCall = (index: number) => vi.mocked(client.listReviewCandidates).mock.calls[index]
+
+    /** 다음 목록 요청을 붙잡는다 */
+    function holdNextList() {
+      let resolve: (result: client.CandidateListResult) => void = () => {}
+      let reject: (error: unknown) => void = () => {}
+      vi.mocked(client.listReviewCandidates).mockImplementationOnce(
+        () =>
+          new Promise((done, fail) => {
+            resolve = done
+            reject = fail
+          }),
+      )
+      return {
+        resolve: (value: client.CandidateListResult) => resolve(value),
+        reject: (error: unknown) => reject(error),
+      }
+    }
+
+    it('첫 진입은 주 없이 읽고(서버 기본), 이전 주로 옮기면 그 주를 읽고 선택 · 필터 · 상세를 처음부터 한다', async () => {
+      await renderApi()
+      expect(listCall(0)).toEqual(['api', { scenario: null }])
+      expect(listCall(0)?.[1]).not.toHaveProperty('week')
+      expect(within(weekGroup()).getByText('11월 2주')).toBeDefined()
+      expect(screen.getByText(/^11월 2주 후보 4건 · /)).toBeDefined()
+
+      const user = userEvent.setup()
+      await user.click(button('반복 보고 의심 1'))
+      expect(detailTitle()).toBe('가락2동 · 반복 보고 의심')
+
+      const held = holdNextList()
+      await user.click(previousWeek())
+      expect(listCall(1)).toEqual(['api', { scenario: null, week: '2025-W45' }])
+      // 읽는 동안은 옮겨 갈 주를 보이고 목록 · 상세가 없다. 누른 버튼에 포커스가 남는다
+      expect(within(weekGroup()).getByText('11월 1주')).toBeDefined()
+      expect(screen.getByText('검토 후보를 불러오고 있어요')).toBeDefined()
+      expect(screen.queryByRole('table')).toBeNull()
+      expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+      expect(document.activeElement).toBe(previousWeek())
+
+      vi.mocked(client.fetchCandidateDetail).mockResolvedValueOnce(detailed)
+      act(() => held.resolve({ status: 'ready', ...listOf([open, waiting]), isoWeek: '2025-W45' }))
+      await waitFor(() => expect(detailTitle()).toBe('가락1동 · 기준선 대비 변화'))
+      // 설명 줄은 옮긴 주의 이름이다. 필터는 전체로 돌아간다
+      expect(screen.getByText(/^11월 1주 후보 2건 · /)).toBeDefined()
+      expect(button('전체 2').getAttribute('aria-pressed')).toBe('true')
+
+      // 서버 기본 주로 돌아와도 `이번 주` 가 아니라 그 주 이름이다
+      vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({
+        status: 'ready',
+        ...listOf([]),
+      })
+      await user.click(nextWeek())
+      await waitFor(() => expect(screen.getByText(/^11월 2주 후보 0건 · /)).toBeDefined())
+      expect(listCall(2)).toEqual(['api', { scenario: null, week: '2025-W46' }])
+      expect(screen.getByText('11월 2주 검토할 후보가 없어요.')).toBeDefined()
+    })
+
+    it('읽는 중에 또 옮기면 마지막에 고른 주만 그린다 — 앞 주의 응답이 늦게 와도 버린다', async () => {
+      await renderApi()
+      const user = userEvent.setup()
+      const first = holdNextList()
+      await user.click(previousWeek())
+      const second = holdNextList()
+      await user.click(previousWeek())
+      expect(listCall(1)?.[1]).toEqual({ scenario: null, week: '2025-W45' })
+      expect(listCall(2)?.[1]).toEqual({ scenario: null, week: '2025-W44' })
+      expect(within(weekGroup()).getByText('10월 5주')).toBeDefined()
+
+      // 나중에 고른 주(W44)가 먼저 오고, 앞 주(W45)가 늦게 온다
+      act(() => second.resolve({ status: 'ready', ...listOf([waiting]), isoWeek: '2025-W44' }))
+      await waitFor(() => expect(rowNames()).toEqual(['가락2동']))
+      act(() =>
+        first.resolve({ status: 'ready', ...listOf([open, noSignal]), isoWeek: '2025-W45' }),
+      )
+      await act(async () => {})
+      expect(within(weekGroup()).getByText('10월 5주')).toBeDefined()
+      expect(screen.getByText(/^10월 5주 후보 1건 · /)).toBeDefined()
+      expect(rowNames()).toEqual(['가락2동'])
+    })
+
+    it('옮긴 주에서 처리 뒤 다시 읽지 못하면(unrefreshed) 다시 시도는 옮긴 주를 다시 읽는다', async () => {
+      await renderApi()
+      const user = userEvent.setup()
+      vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({
+        status: 'ready',
+        ...listOf([open]),
+        isoWeek: '2025-W45',
+      })
+      vi.mocked(client.fetchCandidateDetail).mockResolvedValueOnce(detailed)
+      await user.click(previousWeek())
+      await waitFor(() => expect(titleField()).toHaveProperty('value', '발열·기침 보고가 늘었어요'))
+
+      vi.mocked(client.saveAdvisoryEdit).mockResolvedValueOnce({
+        status: 'unrefreshed',
+        outcome: 'conflict',
+      })
+      await user.type(draft(), ' 추가')
+      await user.click(button('수정 저장'))
+      expect(await screen.findByText('다른 운영자가 먼저 이 후보를 바꿨어요.')).toBeDefined()
+      // 머리줄은 옮긴 주에 남는다
+      expect(within(weekGroup()).getByText('11월 1주')).toBeDefined()
+
+      vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({
+        status: 'ready',
+        ...listOf([waiting]),
+        isoWeek: '2025-W45',
+      })
+      await user.click(button('다시 시도'))
+      await waitFor(() => expect(rowNames()).toEqual(['가락2동']))
+      expect(listCall(2)).toEqual(['api', { scenario: null, week: '2025-W45' }])
+    })
+
+    it('현재 주 − 1 에서는 다음 주로 갈 수 있고, 현재 주에서는 다음 주가 막힌다(미래 주)', async () => {
+      await renderApi()
+      expect(nextWeek().hasAttribute('aria-disabled')).toBe(false)
+
+      vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({
+        status: 'ready',
+        ...listOf([]),
+        isoWeek: '2025-W47',
+      })
+      const user = userEvent.setup()
+      await user.click(nextWeek())
+      await waitFor(() => expect(screen.getByText('11월 3주 검토할 후보가 없어요.')).toBeDefined())
+      expect(listCall(1)?.[1]).toEqual({ scenario: null, week: '2025-W47' })
+      expect(nextWeek().getAttribute('aria-disabled')).toBe('true')
+      expect(document.activeElement).toBe(nextWeek())
+      await user.click(nextWeek())
+      expect(client.listReviewCandidates).toHaveBeenCalledTimes(2)
+      expect(previousWeek().hasAttribute('aria-disabled')).toBe(false)
+    })
+
+    it('51주 전(2024-W48)에서는 이전 주가 막힌다', async () => {
+      await renderApi({ list: { ...listOf([]), isoWeek: '2024-W49' } })
+      expect(previousWeek().hasAttribute('aria-disabled')).toBe(false)
+
+      vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({
+        status: 'ready',
+        ...listOf([]),
+        isoWeek: '2024-W48',
+      })
+      const user = userEvent.setup()
+      await user.click(previousWeek())
+      await waitFor(() => expect(within(weekGroup()).getByText('11월 4주')).toBeDefined())
+      expect(listCall(1)?.[1]).toEqual({ scenario: null, week: '2024-W48' })
+      await waitFor(() => expect(previousWeek().getAttribute('aria-disabled')).toBe('true'))
+      await user.click(previousWeek())
+      expect(client.listReviewCandidates).toHaveBeenCalledTimes(2)
+    })
+
+    it('고른 주를 서버가 받지 않으면(009 · 104) 다시 시도 대신 다른 주를 고르라고 알린다', async () => {
+      await renderApi()
+      const user = userEvent.setup()
+      vi.mocked(client.listReviewCandidates).mockRejectedValueOnce(
+        new ApiError({ status: 400, code: 'ADVISORY_009', message: '거절' }),
+      )
+      await user.click(previousWeek())
+      expect((await screen.findByRole('alert')).textContent).toBe(
+        '이 주의 검토 후보는 볼 수 없어요. 이번 주부터 51주 전까지만 볼 수 있어요. 위의 이전 주 · 다음 주로 다른 주를 골라 주세요.',
+      )
+      expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull()
+      expect(within(weekGroup()).getByText('11월 1주')).toBeDefined()
+
+      vi.mocked(client.listReviewCandidates).mockRejectedValueOnce(
+        new ApiError({ status: 400, code: 'ADVISORY_104', message: '거절' }),
+      )
+      await user.click(previousWeek())
+      await waitFor(() =>
+        expect(screen.getByRole('alert').textContent).toBe(
+          '기준 주를 읽지 못해 검토 후보를 불러오지 못했어요. 위의 이전 주 · 다음 주로 다른 주를 골라 주세요.',
+        ),
+      )
+
+      // 그 밖의 실패는 지금처럼 다시 시도다 — 같은 주를 다시 읽는다
+      vi.mocked(client.listReviewCandidates).mockRejectedValueOnce(new Error('network'))
+      await user.click(nextWeek())
+      expect(await screen.findByRole('button', { name: '다시 시도' })).toBeDefined()
+      vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({
+        status: 'ready',
+        ...listOf([waiting]),
+        isoWeek: '2025-W45',
+      })
+      await user.click(button('다시 시도'))
+      await waitFor(() => expect(rowNames()).toEqual(['가락2동']))
+      expect(listCall(4)?.[1]).toEqual({ scenario: null, week: '2025-W45' })
+    })
+
+    it('처리 중에는 주를 옮기지 않는다', async () => {
+      await renderApi()
+      const user = userEvent.setup()
+      let resolveSave: (result: client.AdvisoryWriteResult) => void = () => {}
+      vi.mocked(client.saveAdvisoryEdit).mockImplementationOnce(
+        () => new Promise((done) => (resolveSave = done)),
+      )
+      await user.type(draft(), ' 추가')
+      await user.click(button('수정 저장'))
+      expect(previousWeek().getAttribute('aria-disabled')).toBe('true')
+      expect(nextWeek().getAttribute('aria-disabled')).toBe('true')
+      await user.click(previousWeek())
+      expect(client.listReviewCandidates).toHaveBeenCalledTimes(1)
+
+      act(() => resolveSave({ status: 'ok', candidate: { ...detailed, version: 4 } }))
+      await waitFor(() => expect(previousWeek().hasAttribute('aria-disabled')).toBe(false))
+    })
+  })
+
+  it('검토 시작은 안내를 만든 시각이다 — 오늘이면 시안처럼 시각 · 경과, 오늘이 아니면 날짜를 붙이고 경과를 일로 접는다', async () => {
+    await renderApi({ detail: { ...detailed, reviewStartedAt: '2025-11-20T04:30:00Z' } })
+    expect(screen.getByText('검토 시작 13:30 · 경과 38분')).toBeDefined()
+  })
+
+  it('3일 전에 만든 안내는 날짜와 일 단위 경과로 보인다', async () => {
+    await renderApi({ detail: { ...detailed, reviewStartedAt: '2025-11-17T01:00:00Z' } })
+    expect(screen.getByText('검토 시작 11월 17일 10:00 · 경과 3일 4시간')).toBeDefined()
   })
 })

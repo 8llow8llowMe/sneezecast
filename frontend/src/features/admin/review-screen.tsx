@@ -7,7 +7,7 @@ import clsx from 'clsx'
 
 import { AlertBox } from '@/components/alert-box'
 import { Button } from '@/components/button'
-import { formatIsoWeekOfMonth } from '@/lib/iso-week'
+import { formatIsoWeekOfMonth, shiftIsoWeek } from '@/lib/iso-week'
 import { STATUS_TEXT_CLASS } from '@/lib/status'
 import { useActiveRef } from '@/lib/use-active-ref'
 import { useDataSource } from '@/lib/use-data-source'
@@ -26,6 +26,8 @@ import {
   MOCK_ADMIN_PARAM,
   parseMockAdminScenario,
   publishCandidate,
+  reviewWeekBounds,
+  reviewWeekError,
   saveAdvisoryEdit,
   saveCandidateDraft,
 } from './admin-review-client'
@@ -275,11 +277,24 @@ function publishOutcome(
   }
 }
 
-/** 읽는 중(null) · 후보 목록(기준 주 · 후보 기준) · 읽지 못함(다시 시도할 수 있다) */
+/**
+ * 고른 주를 서버가 받지 않았다(#286) — 다시 시도해도 같아 `다시 시도` 대신 머리줄의 주 이동으로 다른 주를 고르게 한다.
+ * 조회 창은 `reviewWeekBounds` 와 같다(이번 주 ~ 51주 전)
+ */
+const WEEK_ERROR_MESSAGES: Record<'out-of-range' | 'malformed', string> = {
+  'out-of-range':
+    '이 주의 검토 후보는 볼 수 없어요. 이번 주부터 51주 전까지만 볼 수 있어요. 위의 이전 주 · 다음 주로 다른 주를 골라 주세요.',
+  malformed:
+    '기준 주를 읽지 못해 검토 후보를 불러오지 못했어요. 위의 이전 주 · 다음 주로 다른 주를 골라 주세요.',
+}
+
+/**
+ * 읽는 중(null) · 후보 목록(기준 주 · 후보 기준) · 읽지 못함. `weekError` 가 있으면 고른 주 때문이고(다른 주를 고른다), 없으면 다시 시도할 수 있다
+ */
 type Load =
   | null
   | ({ status: 'ready' } & Pick<ReviewCandidateList, 'isoWeek' | 'criteria'>)
-  | { status: 'failed' }
+  | { status: 'failed'; weekError: 'out-of-range' | 'malformed' | null }
 
 /**
  * A01–A02 운영자 검토 대기 · 후보 상세 (`/admin/review`, #219, 시안 Admin — 데스크톱만). 가드는 레이아웃(`AdminGate`)이 건다.
@@ -295,6 +310,10 @@ type Load =
  *   안내 상세(제목 · 본문 · 버전)를 읽는다. 처리는 초안 만들기(안내 없음) · 수정 저장 · 승인하고 발행이고 보류는 없다(서버에 기록되지 않는다).
  *   처리 뒤 목록을 다시 읽지 못하면(`unrefreshed`) 처리 결과를 알리고 목록 실패 상태(`다시 시도`)로 둔다 — 옛 목록의 버튼으로 다시 처리하지
  *   않게(발행 이력과 같다). 다시 읽으면 처리한 후보를 고른다. 목 재현은 `?mock-admin=empty|fail|conflict`(목데이터에서만)
+ * - **다른 주**(#286, 실데이터만): 머리줄 기준 주 양옆의 이전 주 · 다음 주로 한 주씩 옮겨 그 주(`week`)의 후보를 다시 읽는다(읽는 중 · 실패 ·
+ *   빈 목록은 위와 같고 선택 · 필터 · 상세 · 알림은 처음부터다). 첫 진입은 주를 주지 않아 서버 기본(현재 주 − 1)이고, 고를 수 있는 주는 이번 주 ~
+ *   51주 전이다(서버 조회 창과 같다 — 미래 주는 막는다). 처리 중에는 옮기지 않는다. 실데이터의 설명 줄 · 빈 목록 문구는 서버 기본 주도
+ *   `이번 주` 가 아니라 그 주 이름(`11월 2주`)이다. 목은 한 주뿐이라 주 이동을 그리지 않고 문구는 시안대로 `이번 주` 다
  * - 좁은 화면(모바일 · 태블릿, 시안 없음): 한 단으로 쌓는다(목록 → 상세). 표는 행마다 두 줄 카드 모양이 된다(가로 스크롤 없음)
  * - **보내는 동안은 후보 고르기 · 필터를 막는다**(버튼 `disabled`). 늦게 온 결과는 보낼 때의 후보에 적용하는데, 그사이 다른 후보를
  *   보고 있으면 결과 안내가 엉뚱한 상세에 붙는다. 보내는 시간이 짧아 막는 쪽이 단순하다
@@ -308,8 +327,12 @@ export function AdminReviewScreen() {
   const detailRef = useRef<HTMLDivElement>(null)
   const retryRef = useRef<HTMLDivElement>(null)
   const [load, setLoad] = useState<Load>(null)
-  // 다시 시도할 때 올린다(목록을 다시 읽는다)
+  // 다시 시도 · 주 이동 때 올린다(목록을 다시 읽는다)
   const [loadKey, setLoadKey] = useState(0)
+  // 읽을 주(실데이터). null 이면 주를 주지 않는다 — 서버 기본(현재 주 − 1)
+  const [week, setWeek] = useState<string | null>(null)
+  // 머리줄의 기준 주 — 읽은 주, 옮기는 중이면 옮겨 갈 주. 처리 뒤 다시 읽지 못해도 남는다
+  const [shownWeek, setShownWeek] = useState<string | null>(null)
   // 처리 뒤 목록을 다시 읽지 못했을 때의 처리 결과 알림. 목록 실패 상자 위에 둔다
   const [loadNotice, setLoadNotice] = useState<DetailMessage | null>(null)
   // 다음에 읽은 목록에서 고를 후보(처리한 후보). 없거나 목록에 없으면 첫 후보다
@@ -364,14 +387,15 @@ export function AdminReviewScreen() {
 
   useEffect(() => {
     let live = true
-    // 늦게 온 응답(화면을 떠남 · 출처나 재현이 바뀜 · 다시 시도)은 버린다. 목은 실패하지 않는다
-    listReviewCandidates(source, { scenario }).then(
+    // 늦게 온 응답(화면을 떠남 · 출처나 재현이 바뀜 · 다시 시도 · 다른 주로 옮김)은 버린다. 목은 실패하지 않는다
+    listReviewCandidates(source, { scenario, ...(week !== null && { week }) }).then(
       (result) => {
         if (!live) return
         const list = result.candidates
         const preferred = list.find((item) => item.id === preferredId.current)
         preferredId.current = null
         setLoad({ status: 'ready', isoWeek: result.isoWeek, criteria: result.criteria })
+        setShownWeek(result.isoWeek)
         setCandidates(list)
         setSelectedId((preferred ?? list[0])?.id ?? null)
         setFilter('all')
@@ -380,9 +404,10 @@ export function AdminReviewScreen() {
         if (retried.current === 'list') pendingFocus.current = 'title'
         retried.current = null
       },
-      () => {
+      (error: unknown) => {
         if (!live) return
-        setLoad({ status: 'failed' })
+        // 주를 주지 않은 요청(서버 기본 주)은 고른 주 때문에 거부될 수 없다 — 다시 시도로 둔다
+        setLoad({ status: 'failed', weekError: week === null ? null : reviewWeekError(error) })
         if (retried.current === 'list') pendingFocus.current = 'retry'
         retried.current = null
       },
@@ -390,7 +415,7 @@ export function AdminReviewScreen() {
     return () => {
       live = false
     }
-  }, [source, scenario, loadKey])
+  }, [source, scenario, week, loadKey])
 
   const shown = filterBy(candidates, filter)
   const selected = shown.find((item) => item.id === selectedId) ?? null
@@ -438,6 +463,26 @@ export function AdminReviewScreen() {
     setLoad(null)
     setLoadNotice(null)
     setLoadKey((key) => key + 1)
+  }
+
+  /** 한 주 앞뒤로 옮겨 그 주의 후보를 읽는다. 선택 · 필터 · 상세 · 알림은 처음부터다(읽은 뒤 첫 후보) */
+  function moveWeek(weeks: -1 | 1) {
+    if (busy || shownWeek === null) return
+    const next = shiftIsoWeek(shownWeek, weeks)
+    if (next === null) return
+    preferredId.current = null
+    retried.current = null
+    setWeek(next)
+    setShownWeek(next)
+    setLoad(null)
+    setLoadNotice(null)
+    setLoadKey((key) => key + 1)
+    setCandidates([])
+    setSelectedId(null)
+    setFilter('all')
+    setMessage(null)
+    setNotice(null)
+    setDetailFailedId(null)
   }
 
   function select(id: string, { scroll = false } = {}) {
@@ -517,7 +562,7 @@ export function AdminReviewScreen() {
       case 'unrefreshed':
         // 서버에서 처리(또는 충돌)가 끝났을 수 있다 — 그 사실을 알리고, 옛 목록 대신 다시 읽게 한다
         preferredId.current = target.id
-        setLoad({ status: 'failed' })
+        setLoad({ status: 'failed', weekError: null })
         setCandidates([])
         setMessage(null)
         setLoadNotice(outcome.notice)
@@ -584,18 +629,34 @@ export function AdminReviewScreen() {
 
   const ready = load?.status === 'ready'
   const pendingCount = ready ? candidates.filter((item) => item.state !== 'held').length : null
+  // 실데이터는 늘 그 주 이름(`11월 2주`)이다 — 서버 기본 주도 현재 주 − 1 이라 `이번 주` 로 부르면 진짜 이번 주(조회 창 · 009 문구)와
+  // 뜻이 둘이 된다. 목은 한 주뿐이라 시안대로 `이번 주` 다
+  const weekWord =
+    ready && source === 'api' ? (formatIsoWeekOfMonth(load.isoWeek) ?? load.isoWeek) : '이번 주'
+  // 고를 수 있는 주(이번 주 ~ 51주 전). ISO 주 문자열은 순서가 시간 순서다. 목은 한 주뿐이라 옮기지 않는다
+  const bounds = reviewWeekBounds(new Date())
+  const weekNav =
+    source === 'api' && shownWeek !== null
+      ? {
+          canPrevious: !busy && shownWeek > bounds.earliest,
+          canNext: !busy && shownWeek < bounds.latest,
+          onPrevious: () => moveWeek(-1),
+          onNext: () => moveWeek(1),
+        }
+      : null
 
   return (
     <AdminShell
       current="review"
-      weekLabel={ready ? formatIsoWeekOfMonth(load.isoWeek) : null}
+      weekLabel={shownWeek === null ? null : formatIsoWeekOfMonth(shownWeek)}
+      weekNav={weekNav}
       pendingCount={pendingCount}
     >
       <div className="flex flex-col gap-1">
         <h1 className="text-sheet-title font-bold text-fg">검토 대기</h1>
         {ready && (
           <p className="text-body-strong text-fg-sub">
-            이번 주 후보 {candidates.length}건 · {criteriaText(load.criteria)}
+            {weekWord} 후보 {candidates.length}건 · {criteriaText(load.criteria)}
           </p>
         )}
       </div>
@@ -613,16 +674,20 @@ export function AdminReviewScreen() {
               {loadNotice.text}
             </AlertBox>
           )}
-          <AlertBox
-            tone="danger"
-            action={
-              <Button variant="secondary" size="sm" className="self-start" onClick={retryLoad}>
-                다시 시도
-              </Button>
-            }
-          >
-            검토 후보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
-          </AlertBox>
+          {load.weekError ? (
+            <AlertBox tone="danger">{WEEK_ERROR_MESSAGES[load.weekError]}</AlertBox>
+          ) : (
+            <AlertBox
+              tone="danger"
+              action={
+                <Button variant="secondary" size="sm" className="self-start" onClick={retryLoad}>
+                  다시 시도
+                </Button>
+              }
+            >
+              검토 후보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
+            </AlertBox>
+          )}
         </div>
       )}
 
@@ -665,7 +730,7 @@ export function AdminReviewScreen() {
             {shown.length === 0 ? (
               <p className="border-y border-divider py-6 text-center text-body text-fg-sub">
                 {candidates.length === 0
-                  ? '이번 주 검토할 후보가 없어요.'
+                  ? `${weekWord} 검토할 후보가 없어요.`
                   : '이 유형의 후보가 없어요.'}
               </p>
             ) : (

@@ -6,6 +6,8 @@ import { useSearchParams } from 'next/navigation'
 
 import clsx from 'clsx'
 
+import { IconButton } from '@/components/icon-button'
+import { ChevronLeftIcon, ChevronRightIcon } from '@/components/icons'
 import { MOCK_AUTH_PARAM, MOCK_ROLE_PARAM } from '@/features/auth/mock-params'
 import { HOME_PATH } from '@/features/onboarding/paths'
 import { APP_NAME } from '@/lib/app-info'
@@ -30,11 +32,20 @@ const MENU_OTHER = 'font-medium text-fg-sub'
 /** 운영자 메뉴 중 지금 화면 */
 export type AdminMenu = 'review' | 'history'
 
+/** 머리줄 기준 주의 이전 주 · 다음 주 이동(검토 대기, #286). 막힌 쪽은 꺼진 모양이고 눌러도 부르지 않는다 */
+export type WeekNav = {
+  onPrevious: () => void
+  onNext: () => void
+  canPrevious: boolean
+  canNext: boolean
+}
+
 /**
  * 운영자 화면 틀 (시안 Admin 의 머리줄 · 왼쪽 메뉴). 데스크톱 시안만 있다.
  *
- * - 머리줄: 서비스명(홈 링크) · `운영자` 배지 · 오른쪽 기준 주. 시안의 기준 주는 고르는 버튼이지만 지금은 이번 주만 보여(다른 주 조회는
- *   #214 계약에 없다) 글자로 둔다. 발행 이력은 시안의 기간(`최근 4주 ▾`)을 고를 계약이 없어 그리지 않는다
+ * - 머리줄: 서비스명(홈 링크) · `운영자` 배지 · 오른쪽 기준 주. 시안의 기준 주는 고르는 버튼(`11월 3주 ▾`)인데, 검토 대기는 `weekNav` 를
+ *   주면 이전 주 · 다음 주 버튼으로 기준 주를 감싼다(#286 — 목록을 펼치는 대신 한 주씩 옮긴다). 없으면 글자다.
+ *   발행 이력은 시안의 기간(`최근 4주 ▾`)을 고르지 않아 그리지 않는다
  * - 메뉴: `검토 대기`(남은 후보 수) · `발행 이력`(#220) · `기준 설정`. 기준 설정은 시안 · 화면이 없어 **누를 수 없는 글자**로 둔다
  *   (링크로 두면 없는 화면 404 로 간다). 지금 화면(`current`)은 `aria-current="page"` 다
  * - 좁은 화면(데스크톱 미만)은 메뉴를 머리줄 아래 한 줄로 두고 본문을 한 단으로 쌓는다(시안 없음)
@@ -44,12 +55,15 @@ export type AdminMenu = 'review' | 'history'
 export function AdminShell({
   current,
   weekLabel,
+  weekNav,
   pendingCount,
   children,
 }: {
   current: AdminMenu
   /** 머리줄의 기준 주 (`11월 3주`). 모르면 그리지 않는다 */
   weekLabel?: string | null
+  /** 기준 주 이동. 기준 주가 있을 때만 그린다 */
+  weekNav?: WeekNav | null
   /** `검토 대기` 옆 수 — 아직 처리하지 않은 후보(보류 제외). 모르면 그리지 않는다 */
   pendingCount?: number | null
   children: ReactNode
@@ -69,11 +83,14 @@ export function AdminShell({
           운영자
         </span>
         <span className="grow" />
-        {weekLabel && (
-          <span className="shrink-0 text-body-strong font-semibold whitespace-nowrap text-fg">
-            {weekLabel}
-          </span>
-        )}
+        {weekLabel &&
+          (weekNav ? (
+            <WeekStepper label={weekLabel} nav={weekNav} />
+          ) : (
+            <span className="shrink-0 text-body-strong font-semibold whitespace-nowrap text-fg">
+              {weekLabel}
+            </span>
+          ))}
       </header>
       <div className="flex grow flex-col desktop:flex-row">
         <nav
@@ -122,5 +139,39 @@ function DisabledMenuItem({ label }: { label: string }) {
       {label}
       <span className="sr-only"> (준비 중)</span>
     </span>
+  )
+}
+
+/**
+ * 기준 주와 이전 주 · 다음 주 버튼(시안 기준 주 버튼의 테두리 상자 안). 막힌 쪽은 `disabled` 가 아니라 `aria-disabled` 다 — 다음 주로 옮겨
+ * 끝(이번 주)에 닿거나 처리 중이 돼도 누른 버튼에서 포커스가 떨어지지 않게 한다. 주가 바뀌면 화면 읽기가 새 주를 읽는다(`aria-live`)
+ */
+function WeekStepper({ label, nav }: { label: string; nav: WeekNav }) {
+  return (
+    <div
+      role="group"
+      aria-label="기준 주"
+      className="flex shrink-0 items-center rounded-button border-hairline border-inactive-bar"
+    >
+      <IconButton
+        label="이전 주"
+        icon={<ChevronLeftIcon size={16} />}
+        aria-disabled={!nav.canPrevious || undefined}
+        onClick={() => {
+          if (nav.canPrevious) nav.onPrevious()
+        }}
+      />
+      <span aria-live="polite" className="text-body-strong font-semibold whitespace-nowrap text-fg">
+        {label}
+      </span>
+      <IconButton
+        label="다음 주"
+        icon={<ChevronRightIcon size={16} />}
+        aria-disabled={!nav.canNext || undefined}
+        onClick={() => {
+          if (nav.canNext) nav.onNext()
+        }}
+      />
+    </div>
   )
 }

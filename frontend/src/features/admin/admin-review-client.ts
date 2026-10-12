@@ -1,6 +1,7 @@
 import { getMockSession, subscribeMockSession } from '@/features/auth/auth-client'
 import { apiRequest } from '@/lib/api/client'
 import type { DataSource } from '@/lib/data-source'
+import { kstIsoWeek, shiftIsoWeek } from '@/lib/iso-week'
 
 import {
   ADMIN_ADVISORIES_PATH,
@@ -103,19 +104,22 @@ function respond<T>(answer: () => T): Promise<T> {
 }
 
 /**
- * 검토 후보를 읽는다(발행한 후보는 빠진다). 실데이터는 후보 API(서버 기본 주 — 현재 주 − 1)이고, 실패 · 응답 모양이 계약과 다르면 거부한다
- * (403 이면 세션 요약을 다시 맞춘다 — `fetchReviewCandidates`). 목 재현 쿼리는 듣지 않는다.
+ * 검토 후보를 읽는다(발행한 후보는 빠진다). 실데이터는 후보 API 이고 `week` 가 없으면 서버 기본 주(현재 주 − 1)다. 실패 · 응답 모양이
+ * 계약과 다르면 거부한다(403 이면 세션 요약을 다시 맞춘다 — `fetchReviewCandidates`). 목 재현 쿼리는 듣지 않는다.
  *
- * 목: 이번 주 목 후보다. `scenario` 는 목 재현이다 — 주어지면 목 목록을 그 상태로 다시 시작한다(화면을 열 때마다).
+ * 목: 이번 주 목 후보다(한 주뿐이라 `week` 를 듣지 않는다 — 화면이 목에서는 주 이동을 그리지 않는다, #286).
+ * `scenario` 는 목 재현이다 — 주어지면 목 목록을 그 상태로 다시 시작한다(화면을 열 때마다).
  * 주어지지 않으면 목록은 그대로 두고 재현(실패 · 충돌)만 끈다. 목은 실패하지 않는다.
  * 목 재현 `conflict` 는 목록을 준 직후 모든 후보의 `version` 을 올린다 — 다른 운영자가 그사이 고친 상황이다.
  * 그래서 후보마다 첫 처리가 충돌하고, 충돌 응답의 최신 후보로 다시 하면 된다
  */
 export async function listReviewCandidates(
   source: DataSource,
-  { scenario = null }: { scenario?: MockAdminScenario | null } = {},
+  { scenario = null, week }: { scenario?: MockAdminScenario | null; week?: string } = {},
 ): Promise<CandidateListResult> {
-  if (source === 'api') return { status: 'ready', ...(await fetchReviewCandidates()) }
+  if (source === 'api') {
+    return { status: 'ready', ...(await fetchReviewCandidates(week === undefined ? {} : { week })) }
+  }
   return respond(() => {
     if (scenario) mockStore = seed(scenario)
     else Object.assign(store(), { failWrites: false, staleOnList: false })
@@ -451,6 +455,30 @@ async function writeOnce(
     case 'failed':
       throw sent.error
   }
+}
+
+/** 검토 후보를 볼 수 있는 가장 이른 주 — 현재 주의 51주 전(backend `QUERYABLE_PAST_WEEKS`, 동네 안내 · 발행 이력과 같은 조회 창) */
+export const REVIEW_QUERYABLE_PAST_WEEKS = 51
+
+/**
+ * 검토 후보를 고를 수 있는 주의 범위 — `latest` 는 지금(KST)의 주, `earliest` 는 그 51주 전이다. 미래 주는 서버가 받지 않는다(`ADVISORY_009`).
+ * 기기 시계로 계산하므로 주가 바뀌는 순간에는 서버와 하루 어긋날 수 있다 — 그때 서버가 거부하면 화면이 조회 창 밖으로 알린다
+ */
+export function reviewWeekBounds(now: Date): { earliest: string; latest: string } {
+  const latest = kstIsoWeek(now)
+  // kstIsoWeek 는 늘 읽을 수 있는 주를 준다
+  return { earliest: shiftIsoWeek(latest, -REVIEW_QUERYABLE_PAST_WEEKS) ?? latest, latest }
+}
+
+/**
+ * 후보 목록 거부가 고른 주 때문인지 — 조회 창 밖(`ADVISORY_009` — 미래 · 51주보다 이전 · 그 해에 없는 주) · 형식(`ADVISORY_104`).
+ * 다시 시도해도 같아 화면이 다른 문구를 보인다. 그 밖이면 null 이다
+ */
+export function reviewWeekError(error: unknown): 'out-of-range' | 'malformed' | null {
+  const code = errorCode(error)
+  if (code === 'ADVISORY_009') return 'out-of-range'
+  if (code === 'ADVISORY_104') return 'malformed'
+  return null
 }
 
 /**

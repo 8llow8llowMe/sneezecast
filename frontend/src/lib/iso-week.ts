@@ -97,10 +97,24 @@ export function kstIsoWeek(instant: Date): string {
   const parts = KST_CALENDAR.formatToParts(instant)
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     Number(parts.find((item) => item.type === type)?.value)
-  const date = new Date(Date.UTC(part('year'), part('month') - 1, part('day')))
+  return isoWeekOfDate(new Date(Date.UTC(part('year'), part('month') - 1, part('day'))))
+}
+
+/** 달력 날짜(UTC 자정)가 속한 ISO 주 (`YYYY-Www`) */
+function isoWeekOfDate(date: Date): string {
   // 그 주의 목요일이 든 해가 ISO 연도다
   const thursday = addDays(date, 4 - (date.getUTCDay() || 7))
   const year = thursday.getUTCFullYear()
   const week = Math.ceil(((thursday.getTime() - Date.UTC(year, 0, 1)) / 86_400_000 + 1) / 7)
   return `${year}-W${String(week).padStart(2, '0')}`
+}
+
+/**
+ * 몇 주 앞뒤의 ISO 주 (`2026-W01` 에서 −1 이면 `2025-W52`, 53주가 있는 해는 `W53` 을 거친다). 읽을 수 없는 주면 null 이다.
+ * 같은 모양의 ISO 주는 문자열 순서가 시간 순서라 경계 비교는 문자열로 한다
+ */
+export function shiftIsoWeek(value: string, weeks: number): string | null {
+  const parsed = parseIsoWeek(value)
+  if (!parsed) return null
+  return isoWeekOfDate(addDays(isoWeekMonday(parsed), weeks * 7))
 }
