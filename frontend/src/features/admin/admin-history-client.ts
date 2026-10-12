@@ -1,10 +1,14 @@
 import { getMockSession, subscribeMockSession } from '@/features/auth/auth-client'
-import { ApiError } from '@/lib/api/api-error'
 import { apiRequest } from '@/lib/api/client'
-import { classifyApiError } from '@/lib/api/error-kind'
 import type { DataSource } from '@/lib/data-source'
-import { refreshSession } from '@/lib/session/session-store'
 
+import {
+  ADMIN_ADVISORIES_PATH,
+  CONFLICT_CODES,
+  errorCode,
+  INVALID_CODES,
+  syncRoleOnForbidden,
+} from './admin-advisory-request'
 import {
   type OperatorAdvisoryResponse,
   type PublicationHistoryResponse,
@@ -45,35 +49,8 @@ export type HistoryActionResult =
    */
   | { status: 'unrefreshed'; outcome: 'ok' | 'conflict'; selectedId: string | null }
 
-/** 운영자 안내 처리 · 발행 이력 API 앞부분 */
-export const ADMIN_ADVISORIES_PATH = '/api/v1/advisories/admin'
-
-/**
- * 다시 읽어 그릴 처리 거부 — 지금 상태에서 할 수 없음(`005` — 이미 정정 · 철회), 버전 다름(`006`), 같은 동네 · 주에 발행 중인 안내가 있음
- * (`007`), 없는 안내(`001`). 거부되면 아무것도 바뀌지 않는다
- */
-const CONFLICT_CODES: ReadonlySet<string> = new Set([
-  'ADVISORY_001',
-  'ADVISORY_005',
-  'ADVISORY_006',
-  'ADVISORY_007',
-])
-
-/** 입력 검증 거부 — 본문 형식(`100`), 제목 · 본문 · 사유 · version(`105`~`113`), 숫자가 아닌 ID(`198`) */
-const INVALID_CODES: ReadonlySet<string> = new Set([
-  'ADVISORY_100',
-  ...Array.from({ length: 9 }, (_, index) => `ADVISORY_${105 + index}`),
-  'ADVISORY_198',
-])
-
-function errorCode(error: unknown): string | null {
-  return error instanceof ApiError ? error.code : null
-}
-
-/** 권한 없음(403)이면 세션 요약을 다시 맞춘다 — 역할이 바뀌었으면 운영자 가드가 권한 없음을 그린다. 오류는 그대로 둔다 */
-function syncRoleOnForbidden(error: unknown): void {
-  if (classifyApiError(error) === 'forbidden') void refreshSession()
-}
+/** 운영자 안내 API 앞부분 — 요청 갈래(충돌 · 검증 거부 코드, 403 처리)는 `admin-advisory-request.ts` 가 검토 대기와 함께 쓴다 */
+export { ADMIN_ADVISORIES_PATH }
 
 async function fetchHistory(): Promise<HistoryEntry[]> {
   const response = await apiRequest<PublicationHistoryResponse>(`${ADMIN_ADVISORIES_PATH}/history`)
