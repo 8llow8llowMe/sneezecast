@@ -4,13 +4,15 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resetMockSession } from '@/features/auth/auth-client'
+import { CANDIDATE_WEEK, candidateAdvisory, candidateItem, codeName } from '@/test/admin-review'
 import { resetApiSession, selectApiSource } from '@/test/api-session'
 
+import { toReviewCandidate } from './admin-review-api'
 import * as client from './admin-review-client'
 import { listReviewCandidates, resetMockReviewCandidates } from './admin-review-client'
 import { barHeightPercent } from './candidate-detail'
 import { AdminReviewScreen } from './review-screen'
-import type { ReviewCandidate } from './types'
+import type { ReviewCandidate, ReviewCandidateList } from './types'
 
 // 테스트에는 Next 라우터가 없다. 주소 · 경로는 이 값으로 흉내 낸다
 let search = ''
@@ -20,13 +22,18 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
 }))
 
-// 보내는 중을 붙잡아 보려고 저장을, 선택 값이 빠진 후보를 그려 보려고 목록을 감싼다(기본은 실제 목)
+// 보내는 중을 붙잡아 보려고 저장을, 선택 값이 빠진 후보 · 실데이터 목록을 그려 보려고 목록을 감싼다(기본은 실제 목)
 vi.mock('./admin-review-client', async (importOriginal) => {
   const actual = await importOriginal<typeof client>()
   return {
     ...actual,
     listReviewCandidates: vi.fn(actual.listReviewCandidates),
     saveCandidateDraft: vi.fn(actual.saveCandidateDraft),
+    // 실데이터 처리 — 테스트마다 결과를 정한다(요청 갈래는 admin-review-client.test.ts 가 본다)
+    fetchCandidateDetail: vi.fn(actual.fetchCandidateDetail),
+    createAdvisoryDraft: vi.fn(actual.createAdvisoryDraft),
+    saveAdvisoryEdit: vi.fn(actual.saveAdvisoryEdit),
+    approveAndPublishAdvisory: vi.fn(actual.approveAndPublishAdvisory),
   }
 })
 
@@ -161,6 +168,8 @@ describe('AdminReviewScreen 검토 대기 (목)', () => {
     vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({
       status: 'ready',
       isoWeek: '2025-W47',
+      finalized: true,
+      criteria: { surgeChangePercent: 30, repeatRevisedPercent: 20 },
       candidates,
     })
     await renderScreen()
@@ -472,17 +481,540 @@ describe('barHeightPercent 기준선 막대 높이', () => {
 })
 
 describe('AdminReviewScreen 실데이터', () => {
-  it('운영자 API 가 없어 요청 없이 준비 중이라고 알린다 — 목 재현 쿼리도 듣지 않는다', async () => {
+  const CRITERIA = { surgeChangePercent: 25, repeatRevisedPercent: 15 }
+
+  function candidateOf(overrides: Parameters<typeof candidateItem>[0]): ReviewCandidate {
+    const candidate = toReviewCandidate(candidateItem(overrides), CANDIDATE_WEEK)
+    if (!candidate) throw new Error('no candidate')
+    return candidate
+  }
+
+  /** 검토 중(EDITED · 701 · 버전 3) — 기준선 변화 · 참여 급증 두 신호 */
+  const open = candidateOf({
+    signals: [codeName('BASELINE'), codeName('SURGE')],
+    advisory: candidateAdvisory('EDITED', '701', 3),
+  })
+  /** 대기(안내 없음) — 반복 보고 의심 */
+  const waiting = candidateOf({
+    districtCode: '11240670',
+    districtName: '가락2동',
+    signals: [codeName('REPEAT')],
+  })
+  /** 자료 부족(기준선 없음) — 참여 급증 신호만 있고 수치 키 · 초안 만들기가 없다 */
+  const insufficient = (() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 자료 부족이면 수치 키가 없다
+    const { symptomaticCount, symptomRate, baselineRate, baselineDeltaPp, groups, ...rest } =
+      candidateItem({
+        districtCode: '11240680',
+        districtName: '가락본동',
+        signals: [codeName('SURGE')],
+        level: codeName('INSUFFICIENT'),
+        insufficientReason: codeName('NO_BASELINE'),
+        draftable: false,
+        participantCount: 180,
+      })
+    const candidate = toReviewCandidate(rest, CANDIDATE_WEEK)
+    if (!candidate) throw new Error('no candidate')
+    return candidate
+  })()
+  /** 신호 없이 안내(승인됨)만 있는 동네 — `전체` 에만 든다 */
+  const noSignal = candidateOf({
+    districtCode: '11240690',
+    districtName: '문정1동',
+    signals: [],
+    level: codeName('NORMAL'),
+    advisory: candidateAdvisory('APPROVED', '702', 5),
+  })
+  /** 안내 상세를 읽은 `open` */
+  const detailed: ReviewCandidate = {
+    ...open,
+    title: '발열·기침 보고가 늘었어요',
+    draft: '손을 자주 씻어 주세요.',
+  }
+
+  function listOf(
+    candidates: readonly ReviewCandidate[] = [open, waiting, insufficient, noSignal],
+  ): ReviewCandidateList {
+    return { isoWeek: CANDIDATE_WEEK, finalized: true, criteria: CRITERIA, candidates }
+  }
+
+  const titleField = () => screen.getByRole('textbox', { name: '안내 제목' })
+  const CONFLICT_TEXT =
+    '다른 운영자가 먼저 이 후보를 고쳤어요. 최신 내용으로 바꿔 두었어요. 확인한 뒤 다시 시도해 주세요.'
+
+  beforeEach(() => {
+    // 앞 테스트가 쓰지 않고 남긴 응답이 다음 테스트로 새지 않게 한다(감싼 실제 함수로 되돌린다)
+    for (const fn of [
+      client.listReviewCandidates,
+      client.fetchCandidateDetail,
+      client.createAdvisoryDraft,
+      client.saveAdvisoryEdit,
+      client.approveAndPublishAdvisory,
+    ]) {
+      vi.mocked(fn).mockReset()
+    }
+  })
+
+  /** 실데이터로 그리고 목록 · 첫 후보의 안내 상세까지 읽는다 */
+  async function renderApi({
+    list = listOf(),
+    detail = detailed,
+  }: { list?: ReviewCandidateList; detail?: ReviewCandidate | null } = {}) {
     selectApiSource()
+    vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({ status: 'ready', ...list })
+    vi.mocked(client.fetchCandidateDetail).mockResolvedValueOnce(detail)
+    const view = await renderScreen()
+    await waitFor(() => expect(screen.queryByText('안내문을 불러오고 있어요')).toBeNull())
+    return view
+  }
+
+  it('후보 API 를 읽어 그린다 — 기준 주 · 후보 기준은 응답 값, 유형별 수는 신호로 세고, 보류는 없다', async () => {
     search = 'mock-admin=empty'
+    selectApiSource()
+    let resolve: (result: client.CandidateListResult) => void = () => {}
+    vi.mocked(client.listReviewCandidates).mockImplementationOnce(
+      () => new Promise((done) => (resolve = done)),
+    )
+    let resolveDetail: (candidate: ReviewCandidate | null) => void = () => {}
+    vi.mocked(client.fetchCandidateDetail).mockImplementationOnce(
+      () => new Promise((done) => (resolveDetail = done)),
+    )
+    await renderScreen()
+    expect(screen.getByText('검토 후보를 불러오고 있어요')).toBeDefined()
+    expect(screen.queryByRole('table')).toBeNull()
+
+    act(() => resolve({ status: 'ready', ...listOf() }))
+    await act(async () => {})
+    expect(client.listReviewCandidates).toHaveBeenCalledWith('api', { scenario: 'empty' })
+    expect(screen.getByText('11월 2주')).toBeDefined()
+    expect(
+      screen.getByText(
+        '이번 주 후보 4건 · 후보 기준: 표본 100명 이상에서 기준선 대비 증가, 참여 급증(전주 대비 +25% 이상), 반복 보고 의심(수정된 보고 15% 이상)',
+      ),
+    ).toBeDefined()
+    expect(pendingMenu()).toBe('검토 대기, 남은 후보 4건')
+    for (const name of ['전체 4', '기준선 변화 1', '참여 급증 2', '반복 보고 의심 1']) {
+      expect(button(name)).toBeDefined()
+    }
+    expect(rowNames()).toEqual(['가락1동', '가락2동', '가락본동', '문정1동'])
+
+    // 첫 후보의 안내 상세를 읽는 동안은 제목 · 본문 칸 대신 불러오는 중이고 처리 버튼이 꺼진다
+    expect(screen.getByText('안내문을 불러오고 있어요')).toBeDefined()
+    expect(button('승인하고 발행').hasAttribute('disabled')).toBe(true)
+    act(() => resolveDetail(detailed))
+    await waitFor(() => expect(titleField()).toHaveProperty('value', '발열·기침 보고가 늘었어요'))
+    expect(client.fetchCandidateDetail).toHaveBeenCalledWith(open)
+    expect(draft()).toHaveProperty('value', '손을 자주 씻어 주세요.')
+    expect(screen.getByText('운영자 수정 가능')).toBeDefined()
+    expect(button('수정 저장').hasAttribute('disabled')).toBe(false)
+    expect(screen.queryByRole('button', { name: '보류' })).toBeNull()
+
+    // 유형 필터는 신호로 거른다 — 두 신호를 가진 후보는 두 유형에 다 든다
+    await userEvent.setup().click(button('참여 급증 2'))
+    expect(rowNames()).toEqual(['가락1동', '가락본동'])
+  })
+
+  it('목록을 읽지 못하면 빨강 상자 + 다시 시도다 — 다시 실패하면 다시 시도로, 읽으면 상세 제목으로 포커스를 옮긴다', async () => {
+    selectApiSource()
+    vi.mocked(client.listReviewCandidates)
+      .mockRejectedValueOnce(new Error('network'))
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce({ status: 'ready', ...listOf([waiting]) })
     await renderScreen()
 
-    expect(screen.getByRole('status').textContent).toBe(
-      '운영자 검토는 아직 준비하고 있어요. 지금은 검토 후보를 불러올 수 없어요.',
+    expect(screen.getByRole('alert').textContent).toContain(
+      '검토 후보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.',
     )
-    expect(screen.queryByRole('table')).toBeNull()
-    expect(screen.queryByText(/이번 주 후보/)).toBeNull()
-    expect(screen.queryByText('이번 주 검토할 후보가 없어요.')).toBeNull()
     expect(pendingMenu()).toBe('검토 대기')
+    const user = userEvent.setup()
+    await user.click(button('다시 시도'))
+    await waitFor(() => expect(document.activeElement).toBe(button('다시 시도')))
+    await user.click(button('다시 시도'))
+    expect(await screen.findByRole('table')).toBeDefined()
+    expect(rowNames()).toEqual(['가락2동'])
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 })),
+    )
+  })
+
+  it('목록이 비면 후보가 없다고 알린다', async () => {
+    await renderApi({ list: listOf([]) })
+    expect(screen.getByText('이번 주 검토할 후보가 없어요.')).toBeDefined()
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+    expect(client.fetchCandidateDetail).not.toHaveBeenCalled()
+  })
+
+  it('안내 상세를 읽지 못하면 다시 시도할 수 있고, 그사이 발행됐으면 목록에서 뺀다', async () => {
+    selectApiSource()
+    vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({ status: 'ready', ...listOf() })
+    vi.mocked(client.fetchCandidateDetail)
+      .mockRejectedValueOnce(new Error('network'))
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(detailed)
+    await renderScreen()
+
+    expect(
+      await screen.findByText('안내문을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.'),
+    ).toBeDefined()
+    expect(screen.queryByRole('textbox', { name: '안내 제목' })).toBeNull()
+    expect(button('승인하고 발행').hasAttribute('disabled')).toBe(true)
+    const user = userEvent.setup()
+    await user.click(button('다시 시도'))
+    await waitFor(() => expect(document.activeElement).toBe(button('다시 시도')))
+    await user.click(button('다시 시도'))
+    await waitFor(() => expect(titleField()).toHaveProperty('value', '발열·기침 보고가 늘었어요'))
+    await waitFor(() => expect(document.activeElement).toBe(titleField()))
+
+    // 문정1동의 안내가 그사이 발행됐다
+    vi.mocked(client.fetchCandidateDetail).mockResolvedValueOnce(null)
+    await user.click(button('문정1동'))
+    expect(await screen.findByText('다른 운영자가 문정1동 후보를 먼저 발행했어요.')).toBeDefined()
+    expect(rowNames()).toEqual(['가락1동', '가락2동', '가락본동'])
+  })
+
+  it('늦게 온 안내 상세는 버린다 — 그사이 다른 후보를 고르면 그 후보의 상세 · 목록이 그대로다', async () => {
+    selectApiSource()
+    vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({ status: 'ready', ...listOf() })
+    let resolveFirst: (candidate: ReviewCandidate | null) => void = () => {}
+    vi.mocked(client.fetchCandidateDetail)
+      .mockImplementationOnce(() => new Promise((done) => (resolveFirst = done)))
+      .mockResolvedValueOnce({ ...noSignal, title: '문정1동 안내', draft: '문정1동 본문' })
+    await renderScreen()
+    await userEvent.setup().click(button('문정1동'))
+    await waitFor(() => expect(titleField()).toHaveProperty('value', '문정1동 안내'))
+
+    // 가락1동이 그사이 발행됐다는 늦은 응답
+    act(() => resolveFirst(null))
+    await act(async () => {})
+    expect(rowNames()).toEqual(['가락1동', '가락2동', '가락본동', '문정1동'])
+    expect(detailTitle()).toBe('문정1동')
+    expect(titleField()).toHaveProperty('value', '문정1동 안내')
+    expect(screen.queryByText(/먼저 발행했어요/)).toBeNull()
+  })
+
+  it('자료 부족 후보는 수치 · 상태색 없이 자료 부족이고, 초안 만들기를 막는다', async () => {
+    await renderApi()
+    const row = within(table()).getAllByRole('row')[3]
+    expect(row?.textContent).toContain('가락본동')
+    expect(row?.textContent).toContain('자료 부족')
+    expect(row?.textContent).not.toMatch(/%|undefined/)
+
+    await userEvent.setup().click(button('가락본동'))
+    expect(detailTitle()).toBe('가락본동 · 참여 급증')
+    expect(screen.getByText('11월 2주 · 참여 180명')).toBeDefined()
+    expect(
+      screen.getByText(
+        '자료 부족 후보예요. 증상 보고 비율을 셀 수 없어 초안을 만들거나 발행할 수 없어요.',
+      ),
+    ).toBeDefined()
+    expect(button('초안 만들기').hasAttribute('disabled')).toBe(true)
+    expect(titleField().hasAttribute('disabled')).toBe(true)
+    expect(draft().hasAttribute('disabled')).toBe(true)
+    // 처리할 안내가 없어 상세를 읽지 않는다(첫 후보 한 번뿐)
+    expect(client.fetchCandidateDetail).toHaveBeenCalledTimes(1)
+  })
+
+  it('안내가 없는 후보는 초안 만들기다 — 제목 · 본문이 필수이고, 만들면 수정 저장 · 승인하고 발행으로 바뀐다', async () => {
+    await renderApi()
+    const user = userEvent.setup()
+    await user.click(button('가락2동'))
+    expect(titleField()).toHaveProperty('value', '')
+    expect(draft()).toHaveProperty('value', '')
+    expect(screen.getByText('운영자 작성')).toBeDefined()
+    expect(screen.queryByRole('button', { name: '수정 저장' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '승인하고 발행' })).toBeNull()
+
+    await user.click(button('초안 만들기'))
+    expect(screen.getByText('제목을 입력해 주세요.')).toBeDefined()
+    expect(screen.getByText('안내문 초안을 입력해 주세요.')).toBeDefined()
+    expect(client.createAdvisoryDraft).not.toHaveBeenCalled()
+
+    const created: ReviewCandidate = {
+      ...waiting,
+      state: 'reviewing',
+      advisoryId: '703',
+      advisoryStatus: 'DRAFT',
+      version: 0,
+      title: '구토·설사 보고가 늘었어요',
+      draft: '음식은 충분히 익혀 드세요.',
+    }
+    vi.mocked(client.createAdvisoryDraft).mockResolvedValueOnce({
+      status: 'ok',
+      candidate: created,
+    })
+    await user.type(titleField(), '구토·설사 보고가 늘었어요')
+    await user.type(draft(), '음식은 충분히 익혀 드세요.')
+    await user.click(button('초안 만들기'))
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('초안을 만들었어요.'))
+    expect(client.createAdvisoryDraft).toHaveBeenCalledWith(waiting, {
+      title: '구토·설사 보고가 늘었어요',
+      body: '음식은 충분히 익혀 드세요.',
+    })
+    expect(within(table()).getAllByRole('row')[2]?.textContent).toContain('검토 중')
+    expect(button('수정 저장')).toBeDefined()
+    expect(button('승인하고 발행')).toBeDefined()
+    expect(screen.queryByRole('button', { name: '초안 만들기' })).toBeNull()
+    expect(titleField()).toHaveProperty('value', '구토·설사 보고가 늘었어요')
+  })
+
+  it('초안 만들기 결과 갈래: 요청하지 않음(rejected) · 검증 거부 · 실패를 알리고 입력은 그대로다', async () => {
+    await renderApi()
+    const user = userEvent.setup()
+    await user.click(button('가락2동'))
+    await user.type(titleField(), '제목')
+    await user.type(draft(), '본문')
+
+    const cases: [() => void, string][] = [
+      [
+        () =>
+          vi
+            .mocked(client.createAdvisoryDraft)
+            .mockResolvedValueOnce({ status: 'rejected', reason: 'has-advisory' }),
+        '이 후보에는 이미 검토 중인 안내가 있어요. 새로고침한 뒤 다시 확인해 주세요.',
+      ],
+      [
+        () =>
+          vi
+            .mocked(client.createAdvisoryDraft)
+            .mockResolvedValueOnce({ status: 'rejected', reason: 'not-draftable' }),
+        '이 후보로는 초안을 만들 수 없어요. 자료가 부족하거나 집계가 아직 마감되지 않았어요.',
+      ],
+      [
+        () => vi.mocked(client.createAdvisoryDraft).mockResolvedValueOnce({ status: 'invalid' }),
+        '초안을 만들지 못했어요. 입력한 내용을 확인해 주세요.',
+      ],
+      [
+        () => vi.mocked(client.createAdvisoryDraft).mockRejectedValueOnce(new Error('network')),
+        '초안을 만들지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+      ],
+    ]
+    for (const [arrange, text] of cases) {
+      arrange()
+      await user.click(button('초안 만들기'))
+      await waitFor(() => expect(screen.getByText(text)).toBeDefined())
+      expect(titleField()).toHaveProperty('value', '제목')
+      expect(draft()).toHaveProperty('value', '본문')
+    }
+  })
+
+  /** 가락2동(안내 없음)을 골라 제목 · 본문을 쓰고 초안 만들기를 누른다 */
+  async function createOnWaiting(result: client.CreateDraftResult) {
+    await renderApi()
+    const user = userEvent.setup()
+    await user.click(button('가락2동'))
+    await user.type(titleField(), '제목')
+    await user.type(draft(), '본문')
+    vi.mocked(client.createAdvisoryDraft).mockResolvedValueOnce(result)
+    await user.click(button('초안 만들기'))
+  }
+
+  it('초안 만들기 충돌: 다시 읽은 후보가 막혔으면(마감 전) 꺼진 칸 대신 상세 제목으로 포커스를 옮긴다', async () => {
+    const closed: ReviewCandidate = { ...waiting, draftable: false }
+    await createOnWaiting({ status: 'conflict', list: listOf([open, closed]), candidate: closed })
+
+    expect(await screen.findByText(CONFLICT_TEXT)).toBeDefined()
+    expect(button('초안 만들기').hasAttribute('disabled')).toBe(true)
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 })),
+    )
+  })
+
+  it('초안 만들기 충돌 뒤 그 후보가 목록에 없으면 발행됐다고 하지 않고 중립 문구다', async () => {
+    vi.mocked(client.fetchCandidateDetail).mockResolvedValueOnce(detailed)
+    await createOnWaiting({ status: 'conflict', list: listOf([open]), candidate: null })
+
+    expect(
+      await screen.findByText('이 후보는 더 이상 검토 대상이 아니에요. 목록을 다시 확인해 주세요.'),
+    ).toBeDefined()
+    expect(rowNames()).toEqual(['가락1동'])
+  })
+
+  it('초안 만들기는 됐는데 다시 읽지 못하면(unrefreshed ok) 만들었다고 알리고 목록을 다시 읽게 한다', async () => {
+    await createOnWaiting({ status: 'unrefreshed', outcome: 'ok' })
+
+    expect(await screen.findByText('초안을 만들었어요.')).toBeDefined()
+    expect(
+      screen.getByText('검토 후보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.'),
+    ).toBeDefined()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('수정 저장: 고친 제목 · 본문을 보내고, 충돌이면 다시 읽은 목록 · 후보로 바꿔 그린다', async () => {
+    await renderApi()
+    const user = userEvent.setup()
+    await user.clear(titleField())
+    await user.type(titleField(), '고친 제목')
+
+    const saved: ReviewCandidate = { ...detailed, title: '고친 제목', version: 4 }
+    vi.mocked(client.saveAdvisoryEdit).mockResolvedValueOnce({ status: 'ok', candidate: saved })
+    await user.click(button('수정 저장'))
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('고친 초안을 저장했어요.'),
+    )
+    expect(client.saveAdvisoryEdit).toHaveBeenCalledWith(detailed, {
+      title: '고친 제목',
+      body: '손을 자주 씻어 주세요.',
+    })
+
+    // 다른 운영자가 먼저 고쳤다 — 다시 읽은 목록(그사이 다른 후보가 빠짐)과 그 후보의 최신 본문
+    const latest: ReviewCandidate = { ...saved, draft: '다른 운영자가 고친 본문', version: 5 }
+    vi.mocked(client.saveAdvisoryEdit).mockResolvedValueOnce({
+      status: 'conflict',
+      list: listOf([latest, waiting]),
+      candidate: latest,
+    })
+    await user.type(draft(), ' 추가')
+    await user.click(button('수정 저장'))
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe(
+        '다른 운영자가 먼저 이 후보를 고쳤어요. 최신 내용으로 바꿔 두었어요. 확인한 뒤 다시 시도해 주세요.',
+      ),
+    )
+    expect(client.saveAdvisoryEdit).toHaveBeenLastCalledWith(saved, {
+      title: '고친 제목',
+      body: '손을 자주 씻어 주세요. 추가',
+    })
+    expect(rowNames()).toEqual(['가락1동', '가락2동'])
+    expect(draft()).toHaveProperty('value', '다른 운영자가 고친 본문')
+    await waitFor(() => expect(document.activeElement).toBe(draft()))
+  })
+
+  it('승인하고 발행: 고치지 않았으면 dirty 없이 보내고, 발행하면 목록에서 빠지고 다음 후보를 고른다', async () => {
+    await renderApi()
+    const user = userEvent.setup()
+    await checkAll(user)
+    vi.mocked(client.approveAndPublishAdvisory).mockResolvedValueOnce({ status: 'published' })
+    await user.click(button('승인하고 발행'))
+
+    expect(await screen.findByText('가락1동 안내를 발행했어요.')).toBeDefined()
+    expect(client.approveAndPublishAdvisory).toHaveBeenCalledWith(detailed, {
+      title: '발열·기침 보고가 늘었어요',
+      body: '손을 자주 씻어 주세요.',
+      dirty: false,
+    })
+    expect(rowNames()).toEqual(['가락2동', '가락본동', '문정1동'])
+    expect(detailTitle()).toBe('가락2동 · 반복 보고 의심')
+    expect(pendingMenu()).toBe('검토 대기, 남은 후보 3건')
+  })
+
+  it.each([
+    [
+      '승인됨으로 남음(같은 동네 · 주에 발행된 안내) — 그 후보가 빠진 목록으로 바꾸고 목록 위에 알린다',
+      { status: 'approvedNotPublished', list: listOf([waiting]), candidate: null },
+      '가락1동 안내는 승인됨으로 남았어요. 같은 동네 · 같은 주에 이미 발행된 안내가 있어 발행하지 못했어요.',
+    ],
+    [
+      '승인됨으로 남음인데 다시 읽지 못함 — 결과를 알리고 목록을 다시 읽게 한다',
+      { status: 'unrefreshed', outcome: 'approvedNotPublished', step: 'publish' },
+      '가락1동 안내는 승인됨으로 남았어요. 같은 동네 · 같은 주에 이미 발행된 안내가 있어 발행하지 못했어요.',
+    ],
+    [
+      '충돌 — 다시 읽은 목록 · 후보로 바꾼다',
+      {
+        status: 'conflict',
+        step: 'publish',
+        list: listOf([detailed, waiting]),
+        candidate: detailed,
+      },
+      '다른 운영자가 먼저 이 후보를 고쳤어요. 최신 내용으로 바꿔 두었어요. 확인한 뒤 다시 시도해 주세요.',
+    ],
+    [
+      '수정 저장 단계 실패',
+      { status: 'failed', step: 'save', candidate: detailed, error: new Error('x') },
+      '고친 내용을 저장하지 못해 발행을 멈췄어요. 잠시 뒤 다시 시도해 주세요.',
+    ],
+  ] as const)('승인하고 발행 결과: %s', async (_, result, text) => {
+    await renderApi()
+    const user = userEvent.setup()
+    await user.type(draft(), ' 추가')
+    await checkAll(user)
+    vi.mocked(client.approveAndPublishAdvisory).mockResolvedValueOnce(result)
+    await user.click(button('승인하고 발행'))
+
+    expect(await screen.findByText(text)).toBeDefined()
+    expect(client.approveAndPublishAdvisory).toHaveBeenCalledWith(
+      detailed,
+      expect.objectContaining({ dirty: true }),
+    )
+  })
+
+  it.each([
+    [
+      'approve 에서 failed',
+      'failed',
+      { ...detailed, version: 4, draft: '손을 자주 씻어 주세요. 추가' },
+      '고친 내용은 저장했어요. 승인하지 못해 발행을 멈췄어요. 잠시 뒤 다시 시도해 주세요.',
+    ],
+    [
+      'publish 에서 failed',
+      'failed',
+      {
+        ...detailed,
+        advisoryStatus: 'APPROVED',
+        version: 5,
+        draft: '손을 자주 씻어 주세요. 추가',
+      },
+      '승인은 됐지만 발행하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    ],
+    [
+      'approve 에서 invalid',
+      'invalid',
+      { ...detailed, version: 4, draft: '손을 자주 씻어 주세요. 추가' },
+      '고친 내용은 저장했어요. 발행하지 못했어요. 입력한 내용을 확인해 주세요.',
+    ],
+  ] as const)(
+    '승인하고 발행이 %s 로 멈추면 처리된 단계까지 반영한 후보로 바꾸고, 다시 누르면 고친 것 없이 그 후보로 보낸다',
+    async (name, status, stopped, text) => {
+      await renderApi()
+      const user = userEvent.setup()
+      await user.type(draft(), ' 추가')
+      await checkAll(user)
+      const step = name.startsWith('approve') ? 'approve' : 'publish'
+      vi.mocked(client.approveAndPublishAdvisory)
+        .mockResolvedValueOnce(
+          status === 'failed'
+            ? { status, step, candidate: stopped, error: new Error('x') }
+            : { status, step, candidate: stopped },
+        )
+        .mockResolvedValueOnce({ status: 'published' })
+      await user.click(button('승인하고 발행'))
+      expect(await screen.findByText(text)).toBeDefined()
+
+      await user.click(button('승인하고 발행'))
+      expect(await screen.findByText('가락1동 안내를 발행했어요.')).toBeDefined()
+      expect(client.approveAndPublishAdvisory).toHaveBeenLastCalledWith(stopped, {
+        title: '발열·기침 보고가 늘었어요',
+        body: '손을 자주 씻어 주세요. 추가',
+        dirty: false,
+      })
+    },
+  )
+
+  it('처리 뒤 목록을 다시 읽지 못하면(unrefreshed) 결과를 알리고 다시 시도로 옮긴다 — 다시 읽으면 그 후보를 고른다', async () => {
+    await renderApi()
+    const user = userEvent.setup()
+    await checkAll(user)
+    vi.mocked(client.approveAndPublishAdvisory).mockResolvedValueOnce({
+      status: 'unrefreshed',
+      outcome: 'conflict',
+      step: 'approve',
+    })
+    await user.click(button('승인하고 발행'))
+
+    expect(await screen.findByText('다른 운영자가 먼저 이 후보를 바꿨어요.')).toBeDefined()
+    expect(
+      screen.getByText('검토 후보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.'),
+    ).toBeDefined()
+    expect(screen.queryByRole('table')).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(button('다시 시도')))
+
+    vi.mocked(client.listReviewCandidates).mockResolvedValueOnce({
+      status: 'ready',
+      ...listOf([waiting, detailed]),
+    })
+    await user.click(button('다시 시도'))
+    await waitFor(() => expect(detailTitle()).toBe('가락1동 · 기준선 대비 변화'))
+    expect(screen.queryByText('다른 운영자가 먼저 이 후보를 바꿨어요.')).toBeNull()
   })
 })

@@ -3,8 +3,8 @@ import type { HistoryEntry, ReviewCandidate } from './types'
 const MOCK_SURGE_TITLE = '참여가 지난주보다 많이 늘었어요'
 
 /**
- * 목 후보로 낸 안내의 제목(예시) — **목 전용**이다. 목 후보에는 제목이 없어 검토 대기에서 보류 · 발행한 행이 발행 이력에 더해질 때 쓴다
- * (실데이터 제목은 안내 상세의 `title` 이다). 참여 급증은 참여, 그 밖은 많이 보고된 증상군으로 짓는다.
+ * 목 후보로 낸 안내의 제목(예시) — **목 전용**이다. 목 후보에는 제목이 없어 검토 대기 상세의 제목 칸 처음 값이고, 보류 · 발행한 행이
+ * 발행 이력에 더해질 때도 쓴다(고쳐 저장했으면 그 제목 — `mockTitleOf`. 실데이터 제목은 안내 상세의 `title` 이다). 참여 급증은 참여, 그 밖은 많이 보고된 증상군으로 짓는다.
  * 많이 보고된 증상군이 없으면(자료 부족 · 동점) 증상군을 지어내지 않고 중립 제목이다
  */
 export function mockCandidateTitle(candidate: ReviewCandidate): string {
@@ -19,6 +19,11 @@ export function mockCandidateTitle(candidate: ReviewCandidate): string {
   }
 }
 
+/** 목 후보의 제목 — 검토 대기에서 고쳐 저장한 제목, 없으면 예시 제목이다(`mockCandidateTitle`) */
+export function mockTitleOf(candidate: ReviewCandidate): string {
+  return candidate.title ?? mockCandidateTitle(candidate)
+}
+
 /**
  * 운영자 검토 목 데이터 (시안 Admin 의 값). 동 이름 · 수치 · 초안은 모두 예시다.
  *
@@ -27,10 +32,14 @@ export function mockCandidateTitle(candidate: ReviewCandidate): string {
  * - ○○3동의 참여는 시안의 64명이 아니라 146명이다. 시안 표 아래 문구("표본이 100명 미만인 행정동은 후보에 올라오지 않아요")와
  *   도메인 규칙(표본이 적으면 `자료 부족`)이 맞지 않아 100명 이상으로 고쳤다
  * - 기준선(`baselineRate`)은 시안 표의 `기준선 대비` 값과 증상 보고 비율로 맞춘다(○○2동 7% − 1%p = 6%)
+ * - 신호(`signals`)는 대표 유형 하나만 둔다 — 유형 필터 · 유형별 수는 후보 API 처럼 `signals` 로 센다(#272)
  */
 
 /** 목 후보의 집계 주 (`11월 3주`). 동네 안내 목(`NOTICE_EXAMPLE_WEEK`)과 같은 주다 */
 export const MOCK_REVIEW_WEEK = '2025-W47'
+
+/** 목 후보 기준 — 후보 API 의 기본값(참여 급증 30% · 반복 보고 20%)과 같다 */
+export const MOCK_REVIEW_CRITERIA = { surgeChangePercent: 30, repeatRevisedPercent: 20 } as const
 
 /** 시안의 `검토 시작 14:02 · 경과 6분` — 목을 처음 만들 때부터 6분 전에 시작한 것으로 둔다 */
 const REVIEW_STARTED_MINUTES_AGO = 6
@@ -45,6 +54,7 @@ export function createMockCandidates(now: Date = new Date()): MockReviewCandidat
     {
       id: 'candidate-1',
       kind: 'baseline',
+      signals: ['baseline'],
       districtCode: '99990101',
       districtName: '○○1동',
       isoWeek: MOCK_REVIEW_WEEK,
@@ -67,6 +77,7 @@ export function createMockCandidates(now: Date = new Date()): MockReviewCandidat
     {
       id: 'candidate-2',
       kind: 'surge',
+      signals: ['surge'],
       districtCode: '99990102',
       districtName: '○○2동',
       isoWeek: MOCK_REVIEW_WEEK,
@@ -84,6 +95,7 @@ export function createMockCandidates(now: Date = new Date()): MockReviewCandidat
     {
       id: 'candidate-3',
       kind: 'repeat',
+      signals: ['repeat'],
       districtCode: '99990103',
       districtName: '○○3동',
       isoWeek: MOCK_REVIEW_WEEK,
@@ -101,6 +113,7 @@ export function createMockCandidates(now: Date = new Date()): MockReviewCandidat
     {
       id: 'candidate-4',
       kind: 'baseline',
+      signals: ['baseline'],
       districtCode: '99990104',
       districtName: '○○4동',
       isoWeek: MOCK_REVIEW_WEEK,

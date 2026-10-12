@@ -15,7 +15,7 @@ import {
   toHistoryEntries,
 } from './admin-history-api'
 import type { MockAdminScenario } from './admin-review-client'
-import { createMockHistory, mockCandidateTitle } from './mock'
+import { createMockHistory, mockTitleOf } from './mock'
 import type { HistoryEntry, ReviewCandidate, TimelineEvent } from './types'
 
 /* ── 발행 이력 · 정정 · 철회 (A03 `/admin/history`, #220 · 연동 #271) ───────────────────────────────
@@ -305,7 +305,7 @@ export function recordReviewOutcome(
     outcome,
     processedAt: last.at,
     edited: outcome === 'published' && log.some((event) => event.step === 'edited'),
-    title: mockCandidateTitle(candidate),
+    title: mockTitleOf(candidate),
     body: draft,
     version: 1,
     timeline: [...log],

@@ -449,11 +449,13 @@ describe('AdminHistoryScreen 실데이터', () => {
     expect(screen.getByRole('link', { name: '사용자 화면에서 보기' }).getAttribute('href')).toBe(
       '/notice/11240660/2025-W46',
     )
+    // 검토 대기 수는 실데이터에서 숨긴다 — 메뉴 수 하나로 후보 목록을 읽지 않는다(#272)
     expect(
       within(screen.getByRole('navigation', { name: '운영 메뉴' })).getByRole('link', {
         name: /검토 대기/,
       }).textContent,
     ).toBe('검토 대기')
+    expect(server.requests()).toEqual([HISTORY])
   })
 
   it('이력이 없으면 최근 4주 동안 발행한 안내가 없다고 알린다', async () => {
