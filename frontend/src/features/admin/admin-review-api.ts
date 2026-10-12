@@ -19,8 +19,8 @@ import type {
  * 운영자 검토 후보(docs/api-contract-draft.md "운영자 검토 후보", 백엔드 #266)와 안내 상세("운영자 안내 처리" 의 `GET /{advisoryId}`, #246)의
  * 응답 모양과 화면 모델(`ReviewCandidate`)로 옮기는 순수 함수(연동 #272). 요청은 `admin-review-client.ts` 가 보낸다.
  *
- * **응답에 없는 값은 지어내지 않는다**: 예방수칙(`guides`) · 최근 비율 · 몰림 · 같은 기기 · 신규 참여 · 검토 시작은 비워 둔다 —
- * 화면이 그 칸 · 행을 숨긴다. 초안 · 제목은 목록에 없어 상세를 읽어야 있다(`withAdvisoryDetail`).
+ * **응답에 없는 값은 지어내지 않는다**: 예방수칙(`guides`) · 최근 비율 · 몰림 · 같은 기기 · 신규 참여는 비워 둔다 —
+ * 화면이 그 칸 · 행을 숨긴다. 초안 · 제목 · 검토 시작(안내를 만든 시각)은 목록에 없어 상세를 읽어야 있다(`withAdvisoryDetail`).
  */
 
 /** 후보 동네 · 주의 안내 하나(backend `AdvisoryReviewCandidateAdvisoryItem`) — 상세 · 처리 요청에 쓸 ID · 상태 · 버전만 */
@@ -225,9 +225,10 @@ function malformed(what: string): Error {
 /**
  * 안내 상세로 후보의 제목 · 초안 · 버전 · 상태를 덮는다(후보 목록에는 제목 · 본문이 없다). 처리 응답(안내 한 건)도 같은 규칙으로 덮는다 —
  * 부르는 쪽이 `{ advisory, histories: [] }` 로 싼다(`admin-review-client.ts`).
- * - 검토 중(DRAFT~APPROVED): 상세의 ID · 안내 상태 · 버전 · 제목 · 본문을 싣고 `검토 중` 이다
+ * - 검토 중(DRAFT~APPROVED): 상세의 ID · 안내 상태 · 버전 · 제목 · 본문을 싣고 `검토 중` 이다. 검토 시작(`reviewStartedAt`)은 안내를
+ *   만든 시각(`createdAt`)이다 — 서버에 검토 시작을 따로 저장하지 않고, 초안이 생긴 때부터 검토 대상이다(#286)
  * - 그사이 발행됐으면 null — 목록에서 뺀다
- * - 철회됐으면 `대기` 로 돌리고 안내 값(ID · 버전 · 제목 · 초안)을 지운다 — 초안 만들기부터다
+ * - 철회됐으면 `대기` 로 돌리고 안내 값(ID · 버전 · 제목 · 초안 · 검토 시작)을 지운다 — 초안 만들기부터다
  *
  * 다른 동네 · 주의 안내이거나, 후보가 처리할 안내 ID 를 갖고 있는데 다른 안내이거나, 모르는 상태면 계약과 달라 거부한다
  * (지어낸 값으로 채우지 않는다)
@@ -247,7 +248,7 @@ export function withAdvisoryDetail(
   if (state === undefined) throw malformed(`모르는 상태 ${advisory.status.code}`)
   if (state === 'published') return null
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 안내 값을 지운 나머지 후보 값만 남긴다
-  const { advisoryId, advisoryStatus, version, title, draft, ...rest } = candidate
+  const { advisoryId, advisoryStatus, version, title, draft, reviewStartedAt, ...rest } = candidate
   const status = reviewAdvisoryStatus(advisory.status.code)
   if (state !== 'reviewing' || status === undefined) return { ...rest, state }
   return {
@@ -258,5 +259,6 @@ export function withAdvisoryDetail(
     version: advisory.version,
     title: advisory.title,
     draft: advisory.body,
+    reviewStartedAt: advisory.createdAt,
   }
 }

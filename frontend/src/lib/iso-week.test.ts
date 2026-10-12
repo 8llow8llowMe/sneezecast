@@ -7,6 +7,7 @@ import {
   isoWeekMonday,
   kstIsoWeek,
   parseIsoWeek,
+  shiftIsoWeek,
 } from './iso-week'
 
 describe('parseIsoWeek', () => {
@@ -127,5 +128,26 @@ describe('kstIsoWeek — KST 기준 지금 ISO 주', () => {
       if (originalTz === undefined) delete process.env.TZ
       else process.env.TZ = originalTz
     }
+  })
+})
+
+describe('shiftIsoWeek — 몇 주 앞뒤의 ISO 주', () => {
+  it('같은 해 안에서 앞뒤로 옮긴다', () => {
+    expect(shiftIsoWeek('2025-W47', -1)).toBe('2025-W46')
+    expect(shiftIsoWeek('2025-W47', 1)).toBe('2025-W48')
+    expect(shiftIsoWeek('2025-W47', 0)).toBe('2025-W47')
+  })
+
+  it('해를 넘고, 53주가 있는 해는 W53 을 거친다', () => {
+    expect(shiftIsoWeek('2025-W01', -1)).toBe('2024-W52')
+    expect(shiftIsoWeek('2027-W01', -1)).toBe('2026-W53')
+    expect(shiftIsoWeek('2026-W53', 1)).toBe('2027-W01')
+    // 51주 전 — 검토 후보 · 동네 안내의 조회 창 끝
+    expect(shiftIsoWeek('2025-W47', -51)).toBe('2024-W48')
+  })
+
+  it('읽을 수 없는 주면 null 이다', () => {
+    expect(shiftIsoWeek('2025-W53', 1)).toBeNull()
+    expect(shiftIsoWeek('nope', -1)).toBeNull()
   })
 })

@@ -276,7 +276,7 @@ describe('toReviewCandidateList', () => {
   })
 })
 
-describe('withAdvisoryDetail — 안내 상세의 제목 · 초안 · 버전 · 상태를 후보에 덮는다', () => {
+describe('withAdvisoryDetail — 안내 상세의 제목 · 초안 · 버전 · 상태 · 검토 시작을 후보에 덮는다', () => {
   const reviewing = () => {
     const candidate = toReviewCandidate(
       item({ districtCode: '11240660', advisory: advisory('DRAFT', '701', 2) }),
@@ -286,7 +286,7 @@ describe('withAdvisoryDetail — 안내 상세의 제목 · 초안 · 버전 · 
     return candidate
   }
 
-  it('검토 중인 안내: 상세의 제목 · 본문 · 버전 · ID · 안내 상태를 싣고 나머지 후보 값은 그대로다', () => {
+  it('검토 중인 안내: 상세의 제목 · 본문 · 버전 · ID · 안내 상태 · 검토 시작(안내를 만든 시각)을 싣고 나머지 후보 값은 그대로다', () => {
     const detail = {
       advisory: operatorAdvisory({ statusCode: 'EDITED', version: 5, body: '고친 본문' }),
       histories: [],
@@ -299,7 +299,26 @@ describe('withAdvisoryDetail — 안내 상세의 제목 · 초안 · 버전 · 
       version: 5,
       title: '발열·기침 보고가 지난 4주보다 많이 늘었어요',
       draft: '고친 본문',
+      reviewStartedAt: '2025-11-11T05:02:00Z',
     })
+  })
+
+  it('검토 시작은 안내의 createdAt 이다 — 처리 응답으로 덮을 때도 새 응답의 값이다(updatedAt 이 아니다)', () => {
+    const first = withAdvisoryDetail(reviewing(), {
+      advisory: operatorAdvisory({ statusCode: 'DRAFT', createdAt: '2025-11-17T01:00:00Z' }),
+      histories: [],
+    })
+    expect(first?.reviewStartedAt).toBe('2025-11-17T01:00:00Z')
+    if (!first) throw new Error('no candidate')
+    const edited = withAdvisoryDetail(first, {
+      advisory: operatorAdvisory({
+        statusCode: 'EDITED',
+        createdAt: '2025-11-17T01:00:00Z',
+        updatedAt: '2025-11-17T03:30:00Z',
+      }),
+      histories: [],
+    })
+    expect(edited?.reviewStartedAt).toBe('2025-11-17T01:00:00Z')
   })
 
   it('그사이 발행됐으면 null(목록에서 뺀다), 철회됐으면 대기로 돌리고 안내 값을 지운다', () => {
@@ -311,11 +330,23 @@ describe('withAdvisoryDetail — 안내 상세의 제목 · 초안 · 버전 · 
     ).toBeNull()
 
     const retracted = withAdvisoryDetail(
-      { ...reviewing(), title: '이전 제목', draft: '이전 본문' },
+      {
+        ...reviewing(),
+        title: '이전 제목',
+        draft: '이전 본문',
+        reviewStartedAt: '2025-11-11T05:02:00Z',
+      },
       { advisory: operatorAdvisory({ statusCode: 'RETRACTED' }), histories: [] },
     )
     expect(retracted?.state).toBe('waiting')
-    for (const key of ['advisoryId', 'advisoryStatus', 'version', 'title', 'draft']) {
+    for (const key of [
+      'advisoryId',
+      'advisoryStatus',
+      'version',
+      'title',
+      'draft',
+      'reviewStartedAt',
+    ]) {
       expect(retracted).not.toHaveProperty(key)
     }
   })

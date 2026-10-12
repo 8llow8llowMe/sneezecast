@@ -32,6 +32,8 @@ import {
   type ProcessableCandidate,
   publishCandidate,
   resetMockReviewCandidates,
+  reviewWeekBounds,
+  reviewWeekError,
   saveAdvisoryEdit,
   saveCandidateDraft,
 } from './admin-review-client'
@@ -310,6 +312,41 @@ describe('운영자 검토 클라이언트 (실데이터 요청)', () => {
       expect(apiRequest).toHaveBeenLastCalledWith(ADMIN_CANDIDATES_PATH, {
         query: { week: '2025-W45' },
       })
+
+      // 화면은 listReviewCandidates 로 부른다 — week 를 주면 그 주, 주지 않으면 서버 기본이다(#286)
+      await listReviewCandidates('api', { scenario: null, week: '2025-W40' })
+      expect(apiRequest).toHaveBeenLastCalledWith(ADMIN_CANDIDATES_PATH, {
+        query: { week: '2025-W40' },
+      })
+      await listReviewCandidates('api')
+      expect(apiRequest).toHaveBeenLastCalledWith(ADMIN_CANDIDATES_PATH, {
+        query: { week: undefined },
+      })
+    })
+
+    it('목은 한 주뿐이라 week 를 듣지 않는다(요청하지 않는다)', async () => {
+      const result = await listReviewCandidates('mock', { week: '2025-W40' })
+      expect(result.isoWeek).toBe('2025-W47')
+      expect(apiRequest).not.toHaveBeenCalled()
+    })
+
+    it('고를 수 있는 주는 지금(KST)의 주부터 51주 전까지다 — 해를 넘겨 센다', () => {
+      // 2025-11-20 14:08 KST
+      expect(reviewWeekBounds(new Date('2025-11-20T05:08:00Z'))).toEqual({
+        earliest: '2024-W48',
+        latest: '2025-W47',
+      })
+      // 일요일 23:59 KST 는 아직 그 주, 월요일 00:00 KST 부터 다음 주다
+      expect(reviewWeekBounds(new Date('2025-11-23T14:59:00Z')).latest).toBe('2025-W47')
+      expect(reviewWeekBounds(new Date('2025-11-23T15:00:00Z')).latest).toBe('2025-W48')
+    })
+
+    it('고른 주 때문인 거부(009 조회 창 밖 · 104 형식)만 가려낸다', () => {
+      expect(reviewWeekError(apiError('ADVISORY_009', 400))).toBe('out-of-range')
+      expect(reviewWeekError(apiError('ADVISORY_104', 400))).toBe('malformed')
+      expect(reviewWeekError(apiError('ADVISORY_100', 400))).toBeNull()
+      expect(reviewWeekError(unavailableError('network', 0))).toBeNull()
+      expect(reviewWeekError(new Error('mapping'))).toBeNull()
     })
 
     it('목록 실패 · 응답 모양이 계약과 다르면 거부한다. 403 이면 세션 요약을 다시 맞춘다', async () => {

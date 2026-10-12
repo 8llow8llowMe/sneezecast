@@ -8,6 +8,7 @@ import { AlertBox, type AlertBoxTone } from '@/components/alert-box'
 import { Button } from '@/components/button'
 import { TextField } from '@/components/text-field'
 import { SYMPTOM_OPTIONS } from '@/features/report/symptoms'
+import { formatMonthDayTime } from '@/lib/format'
 import { formatIsoWeekOfMonth } from '@/lib/iso-week'
 import { STATUS_FILL_CLASS } from '@/lib/status'
 
@@ -33,26 +34,28 @@ const PUBLISH_CHECKS = [
   '질병관리청 공식 자료와 충돌 없음',
 ] as const
 
-// 서비스 지역이 한국이라 기기 시간대와 무관하게 한국 시각으로 보인다
-const CLOCK = new Intl.DateTimeFormat('ko-KR', {
-  timeZone: 'Asia/Seoul',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-})
-
-/** `검토 시작 14:02 · 경과 6분` (시안). 읽을 수 없는 시각이면 null 이다 — 그 줄을 비운다 */
+/**
+ * `검토 시작 14:02 · 경과 6분` (시안). 시각은 한국 시각이다(서비스 지역이 한국이라 기기 시간대와 무관). 읽을 수 없는 시각이면 null 이다 — 그 줄을 비운다.
+ * 실데이터의 검토 시작은 초안을 만든 시각(#286)이라 며칠 전일 수 있다 — 오늘(KST)이 아니면 날짜를 붙이고(`검토 시작 11월 17일 10:00`),
+ * 경과가 24시간 이상이면 `3일 4시간` 으로 접는다. 0 인 뒤 단위(`0분` · `0시간`)는 적지 않는다
+ */
 export function formatReviewTime(startedAt: string, now: number): string | null {
   const start = new Date(startedAt)
-  if (Number.isNaN(start.getTime())) return null
-  const parts = CLOCK.formatToParts(start)
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((item) => item.type === type)?.value ?? ''
+  const at = formatMonthDayTime(start)
+  if (at === null) return null
+  // `11월 20일 14:02` 의 날짜 부분이 지금과 같으면 오늘이다
+  const day = at.slice(0, at.lastIndexOf(' '))
+  const today = formatMonthDayTime(new Date(now))?.startsWith(`${day} `) ?? false
   const minutes = Math.max(0, Math.floor((now - start.getTime()) / 60_000))
   const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
   const elapsed =
-    hours === 0 ? `${minutes}분` : `${hours}시간${minutes % 60 ? ` ${minutes % 60}분` : ''}`
-  return `검토 시작 ${part('hour')}:${part('minute')} · 경과 ${elapsed}`
+    days > 0
+      ? `${days}일${hours % 24 ? ` ${hours % 24}시간` : ''}`
+      : hours > 0
+        ? `${hours}시간${minutes % 60 ? ` ${minutes % 60}분` : ''}`
+        : `${minutes}분`
+  return `검토 시작 ${today ? at.slice(at.lastIndexOf(' ') + 1) : at} · 경과 ${elapsed}`
 }
 
 /** 지금 시각(분 단위로 다시 그린다) — 검토 경과 시간 */

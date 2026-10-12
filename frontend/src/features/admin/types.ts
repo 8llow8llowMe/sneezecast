@@ -135,7 +135,7 @@ export type ReviewCandidate = Readonly<{
   sameDeviceRepeatCount?: number
   /** 이번 주 신규 참여 비율(%). 집계에 신규 참여자 수가 없다 */
   newParticipantRate?: number
-  /** 검토 시작 시각(ISO). 저장하는 곳이 없다 */
+  /** 검토 시작 시각(ISO). 따로 저장하지 않아 실데이터는 안내 상세의 `createdAt`(초안을 만든 시각, #286)이다 — 안내가 없으면 없다 */
   reviewStartedAt?: string
 }>
 
