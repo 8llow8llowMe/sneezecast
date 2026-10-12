@@ -6,14 +6,25 @@ import clsx from 'clsx'
 
 import { AlertBox, type AlertBoxTone } from '@/components/alert-box'
 import { Button } from '@/components/button'
+import { TextField } from '@/components/text-field'
 import { SYMPTOM_OPTIONS } from '@/features/report/symptoms'
 import { formatIsoWeekOfMonth } from '@/lib/iso-week'
 import { STATUS_FILL_CLASS } from '@/lib/status'
 
-import { CANDIDATE_KIND_TITLE, DRAFT_MAX_LENGTH, type ReviewCandidate } from './types'
+import {
+  CANDIDATE_KIND_TITLE,
+  DRAFT_MAX_LENGTH,
+  type ReviewCandidate,
+  TITLE_MAX_LENGTH,
+} from './types'
 
-export type CandidateAction = 'save' | 'hold' | 'publish'
+/** 상세의 처리. `create` 는 안내가 없는 후보의 초안 만들기, `hold` 는 목에서만 있다 */
+export type CandidateAction = 'create' | 'save' | 'hold' | 'publish'
 export type DetailMessage = { tone: AlertBoxTone; text: string }
+/** 처리에 싣는 입력. `dirty` 는 상세에서 읽은 제목 · 본문과 다른지다(승인하고 발행이 수정 저장을 먼저 할지) */
+export type DraftInput = { title: string; body: string; dirty: boolean }
+/** 안내문(제목 · 본문)을 읽었는지 — 실데이터는 처리할 안내가 있으면 상세를 읽어야 제목 · 본문이 있다 */
+export type DraftStatus = 'ready' | 'loading' | 'failed'
 
 /** 발행 전 확인 (시안). 운영자가 직접 확인해 누른다 — 서버에 남기지 않고, 후보를 고르거나 최신 내용을 받으면 다시 시작한다 */
 const PUBLISH_CHECKS = [
@@ -62,32 +73,78 @@ function draftError(draft: string): string | null {
   return null
 }
 
+/** 안내 제목 검사(advisory `title` 상한 — 넘으면 서버도 `ADVISORY_106`). 문제가 없으면 null 이다. 발행 이력의 정정 제목도 쓴다 */
+export function titleError(title: string): string | null {
+  if (title.trim() === '') return '제목을 입력해 주세요.'
+  if (title.length > TITLE_MAX_LENGTH) return `제목은 ${TITLE_MAX_LENGTH}자까지 쓸 수 있어요.`
+  return null
+}
+
+/**
+ * 초안을 만들거나 발행할 수 없는 까닭. 후보 API 의 `draftable` 이 거짓일 때만 있다(목 후보에는 값이 없다) — 자료 부족이면 그 문구,
+ * 아니면 마감 전이다
+ */
+function blockedReason(candidate: ReviewCandidate): string | null {
+  if (candidate.draftable !== false) return null
+  return candidate.level === 'insufficient'
+    ? '자료 부족 후보예요. 증상 보고 비율을 셀 수 없어 초안을 만들거나 발행할 수 없어요.'
+    : '이 주 집계가 아직 마감되지 않았어요. 마감된 뒤에 초안을 만들 수 있어요.'
+}
+
+/**
+ * 초안 칸 옆 작성 표시. 안내가 없으면 운영자가 처음 쓰는 초안이다. AI 초안(AI_DRAFTED)이거나 목(시안 — 안내 상태 없이 버전만 있음)이면
+ * 시안의 `AI 작성 · 운영자 수정 가능`, 그 밖의 안내(운영자가 만든 초안 · 수정본 · 승인됨)는 AI 를 쓴 것으로 보이지 않는다
+ */
+function draftHint(candidate: ReviewCandidate): string {
+  if (candidate.version === undefined) return '운영자 작성'
+  const status = candidate.advisoryStatus
+  return status === undefined || status === 'AI_DRAFTED'
+    ? 'AI 작성 · 운영자 수정 가능'
+    : '운영자 수정 가능'
+}
+
 /**
  * 후보 상세 (시안 Admin 의 오른쪽 패널). 고른 후보 하나의 근거와 처리 버튼이다.
  *
  * - 제목(`○○1동 · 기준선 대비 변화`) · 근거 줄(주 · 참여 · 증상 보고 · 기준선 · 많이 보고된 증상군)
+ * - 초안을 만들 수 없는 후보(`draftable: false` — 자료 부족 · 마감 전)는 근거 줄 아래 까닭을 알리고 입력 · 처리 버튼을 끈다
  * - 기준선 막대: 최근 주 비율과 기준선이 모두 있을 때만 그린다(2단계 값)
  * - 이상 보고 확인: 값이 있는 행만 그리고, 하나도 없으면 묶음을 숨긴다(백엔드 1단계에 없는 값 — `types.ts`)
  * - 발행 전 확인: 세 항목을 모두 눌러야 발행한다. 시안처럼 버튼은 늘 눌리고, 빠졌으면 누를 때 알린다
- * - 안내문 초안: AI 가 쓰고 운영자가 고친다(운영자 입력이라 시민 자유 서술 수집과 무관하다). 비었거나 `DRAFT_MAX_LENGTH` 를 넘으면
- *   저장 · 발행하지 않고 칸 아래에 알린다
- * - `보류`(이미 보류면 꺼짐) · `수정 저장` · `승인하고 발행`. 보내는 동안은 모두 꺼진다. 확인 대화상자는 두지 않는다 —
- *   시안에 없고, 발행 전 확인 세 항목이 그 역할을 한다
+ * - 안내 제목(#272 — 시안에 없다. advisory `title` 이 필수라 초안 칸 위에 둔다, `TITLE_MAX_LENGTH`) · 안내문 초안: 운영자가 쓰고 고친다
+ *   (운영자 입력이라 시민 자유 서술 수집과 무관하다). 비었거나 상한을 넘으면 처리하지 않고 칸 아래에 알린다.
+ *   실데이터에서 안내 상세를 읽는 중이거나 읽지 못하면(`status`) 두 칸 대신 그 상태와 `다시 시도` 를 보이고 처리 버튼을 끈다
+ * - 버튼: `보류`(목에서만 — `holdable`, 이미 보류면 꺼짐) · 처리할 안내(버전)가 있으면 `수정 저장` · `승인하고 발행`, 없으면 `초안 만들기`.
+ *   보내는 동안은 모두 꺼진다. 확인 대화상자는 두지 않는다 — 시안에 없고, 발행 전 확인 세 항목이 그 역할을 한다
  */
 export function CandidateDetail({
   candidate,
+  initialTitle,
+  holdable,
+  status,
   busy,
   message,
+  onRetry,
   onAction,
 }: {
   candidate: ReviewCandidate
+  /** 제목 칸의 처음 값 — 읽은 안내 제목(목은 예시 제목), 안내가 없으면 빈 칸이다 */
+  initialTitle: string
+  /** `보류` 를 보일지 — 보류는 서버에 기록되지 않아 목에서만 있다 */
+  holdable: boolean
+  status: DraftStatus
   busy: boolean
   message: DetailMessage | null
-  onAction: (action: CandidateAction, draft: string) => void
+  /** 안내 상세를 다시 읽는다(`status` 가 failed 일 때) */
+  onRetry: () => void
+  onAction: (action: CandidateAction, input: DraftInput) => void
 }) {
   const id = useId()
-  const [draft, setDraft] = useState(candidate.draft ?? '')
+  const initialDraft = candidate.draft ?? ''
+  const [title, setTitle] = useState(initialTitle)
+  const [draft, setDraft] = useState(initialDraft)
   const [checked, setChecked] = useState<readonly boolean[]>(() => PUBLISH_CHECKS.map(() => false))
+  const [titleProblem, setTitleProblem] = useState<string | null>(null)
   const [draftProblem, setDraftProblem] = useState<string | null>(null)
   const [checksMissing, setChecksMissing] = useState(false)
   const now = useMinuteClock(candidate.reviewStartedAt !== undefined)
@@ -110,18 +167,27 @@ export function CandidateDetail({
     : null
   const draftHintId = `${id}-draft-hint`
   const draftErrorId = `${id}-draft-error`
+  const blocked = blockedReason(candidate)
+  const ready = status === 'ready'
+  // 처리할 안내가 있으면 고치고 발행하고, 없으면 초안부터 만든다
+  const hasAdvisory = candidate.version !== undefined
+  const locked = busy || !ready || blocked !== null
+  const secondaryCount = (holdable ? 1 : 0) + (hasAdvisory ? 1 : 0)
 
   function submit(action: CandidateAction) {
+    const input = { title, body: draft, dirty: title !== initialTitle || draft !== initialDraft }
     if (action === 'hold') {
-      onAction(action, draft)
+      onAction(action, input)
       return
     }
-    const problem = draftError(draft)
+    const titleIssue = titleError(title)
+    const draftIssue = draftError(draft)
     const missing = action === 'publish' && checked.some((value) => !value)
-    setDraftProblem(problem)
+    setTitleProblem(titleIssue)
+    setDraftProblem(draftIssue)
     setChecksMissing(missing)
-    if (problem || missing) return
-    onAction(action, draft)
+    if (titleIssue || draftIssue || missing) return
+    onAction(action, input)
   }
 
   return (
@@ -141,6 +207,8 @@ export function CandidateDetail({
         </h2>
         <p className="text-body-strong text-fg-sub">{meta}</p>
       </div>
+
+      {blocked && <AlertBox tone="neutral">{blocked}</AlertBox>}
 
       {candidate.recentRates && candidate.recentRates.length > 1 && baseline !== undefined && (
         <BaselineChart rates={candidate.recentRates} baseline={baseline} />
@@ -195,65 +263,109 @@ export function CandidateDetail({
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <h3 className="text-body font-bold text-fg">
-            안내문 초안{' '}
-            <span id={draftHintId} className="text-caption font-semibold text-fg-sub">
-              AI 작성 · 운영자 수정 가능
-            </span>
-          </h3>
-          <span className="text-caption text-fg-sub">
-            출처 확인된 집계값과 공식 예방수칙만 사용
-          </span>
-        </div>
-        <textarea
-          aria-label="안내문 초안"
-          aria-describedby={clsx(draftHintId, draftProblem && draftErrorId)}
-          aria-invalid={draftProblem ? true : undefined}
-          value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value)
-            setDraftProblem(null)
-          }}
-          className="h-40 resize-none rounded-button border border-inactive-bar px-3.5 py-3 text-body-strong leading-[1.55] text-fg focus-visible:outline-2 focus-visible:outline-brand aria-invalid:border-danger desktop:h-28.5"
-        />
-        {draftProblem && (
-          <p id={draftErrorId} role="alert" className="text-sub text-danger">
-            {draftProblem}
-          </p>
-        )}
-        {candidate.guides && candidate.guides.length > 0 && (
-          <span className="text-caption text-fg-sub">
-            연결된 예방수칙: {candidate.guides.join(' · ')} (질병관리청)
-          </span>
-        )}
-      </div>
+      {status === 'loading' && (
+        <p role="status" className="text-body text-fg-sub">
+          안내문을 불러오고 있어요
+        </p>
+      )}
+      {status === 'failed' && (
+        <AlertBox
+          tone="danger"
+          action={
+            <Button variant="secondary" size="sm" className="self-start" onClick={onRetry}>
+              다시 시도
+            </Button>
+          }
+        >
+          안내문을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
+        </AlertBox>
+      )}
+      {ready && (
+        <>
+          <TextField
+            label="안내 제목"
+            value={title}
+            error={titleProblem ?? undefined}
+            counter={{ current: title.length, max: TITLE_MAX_LENGTH }}
+            disabled={blocked !== null}
+            onChange={(event) => {
+              setTitle(event.target.value)
+              setTitleProblem(null)
+            }}
+          />
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h3 className="text-body font-bold text-fg">
+                안내문 초안{' '}
+                <span id={draftHintId} className="text-caption font-semibold text-fg-sub">
+                  {draftHint(candidate)}
+                </span>
+              </h3>
+              <span className="text-caption text-fg-sub">
+                출처 확인된 집계값과 공식 예방수칙만 사용
+              </span>
+            </div>
+            <textarea
+              aria-label="안내문 초안"
+              aria-describedby={clsx(draftHintId, draftProblem && draftErrorId)}
+              aria-invalid={draftProblem ? true : undefined}
+              value={draft}
+              disabled={blocked !== null}
+              onChange={(event) => {
+                setDraft(event.target.value)
+                setDraftProblem(null)
+              }}
+              className="h-40 resize-none rounded-button border border-inactive-bar px-3.5 py-3 text-body-strong leading-[1.55] text-fg focus-visible:outline-2 focus-visible:outline-brand disabled:border-divider disabled:bg-section aria-invalid:border-danger desktop:h-28.5"
+            />
+            {draftProblem && (
+              <p id={draftErrorId} role="alert" className="text-sub text-danger">
+                {draftProblem}
+              </p>
+            )}
+            {candidate.guides && candidate.guides.length > 0 && (
+              <span className="text-caption text-fg-sub">
+                연결된 예방수칙: {candidate.guides.join(' · ')} (질병관리청)
+              </span>
+            )}
+          </div>
+        </>
+      )}
 
       {message && <AlertBox tone={message.tone}>{message.text}</AlertBox>}
 
       <div className="flex flex-wrap items-center gap-2.5">
         <span className="grow text-sub text-fg-sub">{reviewTime}</span>
-        {/* 좁은 화면은 보조 둘을 나란히, 발행을 그 아래 한 줄로 둔다(세 버튼이 한 줄에 들어가지 않는다) */}
+        {/* 좁은 화면은 보조 버튼을 나란히, 주 버튼을 그 아래 한 줄로 둔다(세 버튼이 한 줄에 들어가지 않는다). 보조가 하나면 한 줄을 다 쓴다 */}
         <div className="grid w-full grid-cols-2 gap-2.5 tablet:flex tablet:w-auto">
+          {holdable && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || candidate.state === 'held'}
+              onClick={() => submit('hold')}
+              className={clsx(secondaryCount === 1 && 'col-span-2')}
+            >
+              보류
+            </Button>
+          )}
+          {hasAdvisory && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={locked}
+              onClick={() => submit('save')}
+              className={clsx(secondaryCount === 1 && 'col-span-2')}
+            >
+              수정 저장
+            </Button>
+          )}
           <Button
-            variant="secondary"
             size="sm"
-            disabled={busy || candidate.state === 'held'}
-            onClick={() => submit('hold')}
-          >
-            보류
-          </Button>
-          <Button variant="secondary" size="sm" disabled={busy} onClick={() => submit('save')}>
-            수정 저장
-          </Button>
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => submit('publish')}
+            disabled={locked}
+            onClick={() => submit(hasAdvisory ? 'publish' : 'create')}
             className="col-span-2"
           >
-            승인하고 발행
+            {hasAdvisory ? '승인하고 발행' : '초안 만들기'}
           </Button>
         </div>
       </div>

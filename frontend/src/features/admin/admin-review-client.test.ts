@@ -15,11 +15,13 @@ import {
 } from '@/test/admin-review'
 
 import { ADMIN_ADVISORIES_PATH } from './admin-advisory-request'
+import { listHistory, resetMockHistory } from './admin-history-client'
 import type { ReviewCandidateItemResponse } from './admin-review-api'
 import { toReviewCandidate } from './admin-review-api'
 import {
   ADMIN_CANDIDATES_PATH,
   approveAndPublishAdvisory,
+  countPendingCandidates,
   createAdvisoryDraft,
   fetchCandidateDetail,
   fetchReviewCandidates,
@@ -33,7 +35,7 @@ import {
   saveAdvisoryEdit,
   saveCandidateDraft,
 } from './admin-review-client'
-import { createMockCandidates, mockCandidateTitle } from './mock'
+import { createMockCandidates, mockCandidateTitle, mockTitleOf } from './mock'
 import type { ReviewCandidate } from './types'
 
 vi.mock('@/lib/api/client', () => ({ apiRequest: vi.fn() }))
@@ -51,15 +53,28 @@ async function firstCandidate() {
 beforeEach(() => {
   resetMockSession()
   resetMockReviewCandidates()
+  resetMockHistory()
   vi.mocked(apiRequest).mockReset()
   vi.mocked(refreshSession).mockClear()
 })
 
 describe('운영자 검토 클라이언트', () => {
-  it('실데이터는 요청하지 않고 unavailable 이다 (목록 · 처리 모두)', async () => {
-    expect(await listReviewCandidates('api', { scenario: 'fail' })).toEqual({
-      status: 'unavailable',
+  it('실데이터 목록은 후보 API 를 읽는다(목 재현 쿼리는 듣지 않는다) — 목 처리 함수 · 검토 대기 수는 요청하지 않는다', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(candidateListResponse([candidateItem()]))
+    expect(await listReviewCandidates('api', { scenario: 'empty' })).toMatchObject({
+      status: 'ready',
+      isoWeek: CANDIDATE_WEEK,
+      finalized: true,
+      criteria: { surgeChangePercent: 30, repeatRevisedPercent: 20 },
+      candidates: [{ id: `11240660:${CANDIDATE_WEEK}`, districtName: '가락1동' }],
     })
+    expect(apiRequest).toHaveBeenCalledWith(ADMIN_CANDIDATES_PATH, { query: { week: undefined } })
+
+    vi.mocked(apiRequest).mockRejectedValueOnce(unavailableError('network', 0))
+    await expect(listReviewCandidates('api')).rejects.toThrow()
+
+    vi.mocked(apiRequest).mockClear()
+    // 처리는 제목 · 안내 ID 가 필요한 실데이터 함수가 맡고, 보류 · 검토 대기 수는 서버에 없다
     expect(await saveCandidateDraft('candidate-1', { draft: '안내', version: 3 }, 'api')).toEqual({
       status: 'unavailable',
     })
@@ -69,6 +84,7 @@ describe('운영자 검토 클라이언트', () => {
     expect(await publishCandidate('candidate-1', { draft: '안내', version: 3 }, 'api')).toEqual({
       status: 'unavailable',
     })
+    expect(await countPendingCandidates('api')).toBeNull()
     expect(apiRequest).not.toHaveBeenCalled()
   })
 
@@ -76,6 +92,14 @@ describe('운영자 검토 클라이언트', () => {
     const result = await listReviewCandidates('mock')
     if (result.status !== 'ready') throw new Error('not ready')
     expect(result.isoWeek).toBe('2025-W47')
+    expect(result.criteria).toEqual({ surgeChangePercent: 30, repeatRevisedPercent: 20 })
+    // 유형 필터는 신호로 센다 — 목 후보도 대표 유형 하나를 신호로 갖는다
+    expect(result.candidates.map((item) => item.signals)).toEqual([
+      ['baseline'],
+      ['surge'],
+      ['repeat'],
+      ['baseline'],
+    ])
     expect(result.candidates.map((item) => item.districtName)).toEqual([
       '○○1동',
       '○○2동',
@@ -175,6 +199,41 @@ describe('운영자 검토 클라이언트', () => {
 
     await logout('mock')
     expect((await firstCandidate()).state).toBe('reviewing')
+  })
+
+  it('목 제목: 고쳐 저장한 제목을 후보에 남기고 발행 이력에도 그 제목으로 더한다', async () => {
+    const candidate = await firstCandidate()
+    expect(mockTitleOf(candidate)).toBe('발열·기침 보고가 늘었어요')
+    const saved = await saveCandidateDraft(
+      candidate.id,
+      { title: '고친 제목', draft: candidate.draft, version: candidate.version },
+      'mock',
+    )
+    expect(saved).toMatchObject({ status: 'ok', candidate: { title: '고친 제목' } })
+
+    // 저장한 제목 · 초안 그대로 발행하면 운영자 수정은 저장 때 한 번이다
+    await publishCandidate(
+      candidate.id,
+      { title: '고친 제목', draft: candidate.draft, version: candidate.version + 1 },
+      'mock',
+    )
+    const history = await listHistory('mock')
+    const entry = history.entries.find((item) => item.id === candidate.id)
+    expect(entry).toMatchObject({ title: '고친 제목', edited: true })
+    expect(entry?.timeline.map((event) => event.step)).toEqual(['edited', 'published'])
+  })
+
+  it('목 발행: 저장하지 않고 제목만 고쳐 발행해도 운영자 수정을 거친 것으로 남는다', async () => {
+    const candidate = await firstCandidate()
+    await publishCandidate(
+      candidate.id,
+      { title: '바로 고친 제목', draft: candidate.draft, version: candidate.version },
+      'mock',
+    )
+    const history = await listHistory('mock')
+    const entry = history.entries.find((item) => item.id === candidate.id)
+    expect(entry?.title).toBe('바로 고친 제목')
+    expect(entry?.timeline.map((event) => event.step)).toEqual(['edited', 'published'])
   })
 
   it('목 후보의 예시 제목: 많이 보고된 증상군이 없으면 증상군을 지어내지 않고 중립 제목이다', () => {
@@ -626,6 +685,20 @@ describe('운영자 검토 클라이언트 (실데이터 요청)', () => {
       expect(await approveAndPublishAdvisory(openCandidate(), { ...edit, dirty: true })).toEqual({
         status: 'invalid',
         step: 'save',
+        candidate: openCandidate(),
+      })
+
+      // 저장한 뒤 승인이 검증 거부 — 저장까지 반영한 후보(다음 요청의 버전)를 싣는다
+      vi.mocked(apiRequest).mockReset()
+      vi.mocked(apiRequest)
+        .mockResolvedValueOnce(advisoryAt('EDITED', 4, edit))
+        .mockRejectedValueOnce(apiError('ADVISORY_113', 400))
+      expect(
+        await approveAndPublishAdvisory(openCandidate(), { ...edit, dirty: true }),
+      ).toMatchObject({
+        status: 'invalid',
+        step: 'approve',
+        candidate: { advisoryStatus: 'EDITED', version: 4, draft: '고친 본문' },
       })
 
       vi.mocked(apiRequest).mockReset()

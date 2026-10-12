@@ -15,7 +15,7 @@ import { formatMonthDay } from '@/lib/format'
 import { formatIsoWeekOfMonth } from '@/lib/iso-week'
 
 import { kstDate } from './admin-history-client'
-import type { DetailMessage } from './candidate-detail'
+import { type DetailMessage, titleError } from './candidate-detail'
 import {
   CANDIDATE_KIND_LABEL,
   DRAFT_MAX_LENGTH,
@@ -282,13 +282,6 @@ const DIALOG_CONTENT: Record<
 function reasonError(action: HistoryAction, reason: string): string | null {
   if (reason.trim() === '') return `${DIALOG_CONTENT[action].reasonLabel}를 입력해 주세요.`
   if (reason.length > REASON_MAX_LENGTH) return `사유는 ${REASON_MAX_LENGTH}자까지 쓸 수 있어요.`
-  return null
-}
-
-/** 고친 제목 검사(advisory `title` 상한). 문제가 없으면 null 이다 */
-function titleError(title: string): string | null {
-  if (title.trim() === '') return '제목을 입력해 주세요.'
-  if (title.length > TITLE_MAX_LENGTH) return `제목은 ${TITLE_MAX_LENGTH}자까지 쓸 수 있어요.`
   return null
 }
 

@@ -17,7 +17,13 @@ import {
   toReviewCandidateList,
   withAdvisoryDetail,
 } from './admin-review-api'
-import { createMockCandidates, MOCK_REVIEW_WEEK, type MockReviewCandidate } from './mock'
+import {
+  createMockCandidates,
+  MOCK_REVIEW_CRITERIA,
+  MOCK_REVIEW_WEEK,
+  type MockReviewCandidate,
+  mockTitleOf,
+} from './mock'
 import type {
   ReviewAdvisoryStatus,
   ReviewCandidate,
@@ -28,14 +34,13 @@ import type {
 
 /* ── 운영자 검토 (A01–A02 `/admin/review`, #219) ────────────────────────────────────────────────
  *
- * 이번 주 검토 후보와 그 처리(초안 수정 저장 · 보류 · 승인하고 발행). 처리(수정 · 승인 · 발행)는 백엔드 #246, 후보 목록은 #266 으로
- * 확정됐다(docs/api-contract-draft.md "운영자 안내 처리" · "운영자 검토 후보"). 연동은 별도 이슈에서 한다 — 후보 응답은 동네 하나가 한 행이고
- * 신호가 여럿일 수 있어 이 화면 모델(`kind` 하나)로 옮기는 매핑이 필요하다.
+ * 이번 주 검토 후보와 그 처리(초안 만들기 · 수정 저장 · 보류 · 승인하고 발행). 처리(초안 · 수정 · 승인 · 발행)는 백엔드 #246, 후보 목록은
+ * #266 으로 확정됐다(docs/api-contract-draft.md "운영자 안내 처리" · "운영자 검토 후보"). 응답을 화면 모델로 옮기는 규칙은 `admin-review-api.ts` 다.
  *
- * - 실데이터: 화면 연결 전이라 아래 출처 인자 함수는 요청하지 않고 `unavailable` 이다. 목으로 두면 운영자가 목 후보를 실제 집계로 알고
- *   발행을 눌러도 시민에게 아무것도 나가지 않는다(docs/conventions.md "데이터 출처" 의 예외). 화면이 아직 준비하고 있다고 알린다
- *   (지난 보고 내역 · 알림 설정이 연동 전 그랬던 결). 실데이터 요청 함수는 이 파일 끝 "실데이터 요청" 에 있고(#272), 화면은 제목 입력 칸을
- *   더할 때 그 함수로 옮긴다 — 반쯤 된 화면(제목 없이 초안 만들기)이 실데이터로 보이지 않게 한다
+ * - 실데이터(#272): 목록은 `listReviewCandidates` 가 후보 API 를 읽는다(`fetchReviewCandidates`). 처리는 제목 · 안내 ID 가 필요해 모양이
+ *   달라 화면이 파일 끝 "실데이터 요청" 의 함수(`createAdvisoryDraft` · `saveAdvisoryEdit` · `approveAndPublishAdvisory`)를 바로 부른다.
+ *   아래 목 처리 함수(`saveCandidateDraft` · `holdCandidate` · `publishCandidate`)는 실데이터에서 요청하지 않고 `unavailable` 이다 —
+ *   보류는 서버에 없고(화면이 버튼을 숨긴다), 수정 · 발행은 위 함수가 맡는다. 검토 대기 수(`countPendingCandidates`)도 서버에 없어 null 이다
  * - 목: 모듈 메모리의 후보 목록(목 서버 흉내). 처리는 백엔드처럼 `version` 을 맞춰 보고, 다르면 충돌(409)로 답한다
  *
  * 상태 전이(backend/docs/entity-design.md §2-5): 수정 저장 → EDITED(목록 `검토 중`), 승인하고 발행 → APPROVED → PUBLISHED
@@ -44,16 +49,15 @@ import type {
  * 보류 · 발행은 같은 목 서버의 발행 이력(A03, `admin-history-client.ts`)에도 남는다(#220).
  */
 
-export type CandidateListResult =
-  | { status: 'ready'; isoWeek: string; candidates: readonly ReviewCandidate[] }
-  /** 실데이터 — 운영자 API 가 아직 없다 */
-  | { status: 'unavailable' }
+/** 한 주의 검토 후보(기준 주 · 마감 여부 · 후보 기준 · 후보). 실데이터는 후보 API 응답을 옮긴 값이다 */
+export type CandidateListResult = { status: 'ready' } & ReviewCandidateList
 
 export type CandidateActionResult =
   /** 처리한 뒤의 후보. 발행해 목록에서 빠졌으면 null 이다 */
   | { status: 'ok'; candidate: ReviewCandidate | null }
   /** 다른 운영자가 먼저 고쳤다(409). 지금 서버의 후보이고, 이미 목록에서 빠졌으면(발행) null 이다 */
   | { status: 'conflict'; candidate: ReviewCandidate | null }
+  /** 실데이터 — 목 처리 함수는 요청하지 않는다(실데이터 처리는 파일 끝 함수) */
   | { status: 'unavailable' }
 
 /** 목 재현 쿼리. 목데이터 모드에서만 쓴다 */
@@ -99,18 +103,20 @@ function respond<T>(answer: () => T): Promise<T> {
 }
 
 /**
- * 이번 주 검토 후보를 읽는다(발행한 후보는 빠진다). `scenario` 는 목 재현이다 — 주어지면 목 목록을 그 상태로 다시 시작한다(화면을 열 때마다).
- * 주어지지 않으면 목록은 그대로 두고 재현(실패 · 충돌)만 끈다. 목은 실패하지 않는다
+ * 검토 후보를 읽는다(발행한 후보는 빠진다). 실데이터는 후보 API(서버 기본 주 — 현재 주 − 1)이고, 실패 · 응답 모양이 계약과 다르면 거부한다
+ * (403 이면 세션 요약을 다시 맞춘다 — `fetchReviewCandidates`). 목 재현 쿼리는 듣지 않는다.
  *
+ * 목: 이번 주 목 후보다. `scenario` 는 목 재현이다 — 주어지면 목 목록을 그 상태로 다시 시작한다(화면을 열 때마다).
+ * 주어지지 않으면 목록은 그대로 두고 재현(실패 · 충돌)만 끈다. 목은 실패하지 않는다.
  * 목 재현 `conflict` 는 목록을 준 직후 모든 후보의 `version` 을 올린다 — 다른 운영자가 그사이 고친 상황이다.
  * 그래서 후보마다 첫 처리가 충돌하고, 충돌 응답의 최신 후보로 다시 하면 된다
  */
-export function listReviewCandidates(
+export async function listReviewCandidates(
   source: DataSource,
   { scenario = null }: { scenario?: MockAdminScenario | null } = {},
 ): Promise<CandidateListResult> {
+  if (source === 'api') return { status: 'ready', ...(await fetchReviewCandidates()) }
   return respond(() => {
-    if (source === 'api') return { status: 'unavailable' }
     if (scenario) mockStore = seed(scenario)
     else Object.assign(store(), { failWrites: false, staleOnList: false })
     const current = store()
@@ -123,7 +129,13 @@ export function listReviewCandidates(
         candidate: { ...entry.candidate, version: entry.candidate.version + 1 },
       }))
     }
-    return { status: 'ready', isoWeek: MOCK_REVIEW_WEEK, candidates }
+    return {
+      status: 'ready',
+      isoWeek: MOCK_REVIEW_WEEK,
+      finalized: true,
+      criteria: MOCK_REVIEW_CRITERIA,
+      candidates,
+    }
   })
 }
 
@@ -172,19 +184,22 @@ function startReview(candidate: ReviewCandidate): ReviewCandidate {
   }
 }
 
-/** 안내문 초안을 고쳐 저장한다(EDITED). 보류한 후보도 고칠 수 있고, 고치면 다시 `검토 중` 이다 */
+/**
+ * 안내문 초안(`title` 을 주면 제목도)을 고쳐 저장한다(EDITED). 보류한 후보도 고칠 수 있고, 고치면 다시 `검토 중` 이다. 목 처리 함수다 —
+ * 실데이터는 요청하지 않는다(`saveAdvisoryEdit`)
+ */
 export function saveCandidateDraft(
   id: string,
-  { draft, version }: { draft: string; version: number },
+  { title, draft, version }: { title?: string; draft: string; version: number },
   source: DataSource,
 ): Promise<CandidateActionResult> {
   return write(id, version, source, (candidate) => ({
-    candidate: { ...startReview(candidate), draft },
+    candidate: { ...startReview(candidate), draft, ...(title !== undefined && { title }) },
     steps: ['edited'],
   }))
 }
 
-/** 이번 주 이 후보로는 안내를 내지 않는다(보류). 후보는 목록에 남고, 나중에 고쳐 발행할 수도 있다 */
+/** 이번 주 이 후보로는 안내를 내지 않는다(보류). 후보는 목록에 남고, 나중에 고쳐 발행할 수도 있다. 보류는 서버에 없어 목에서만이다 */
 export function holdCandidate(
   id: string,
   { version }: { version: number },
@@ -197,24 +212,29 @@ export function holdCandidate(
 }
 
 /**
- * 지금 초안으로 승인하고 발행한다(APPROVED → PUBLISHED). 저장하지 않은 수정도 함께 보낸다 — 운영자가 본 본문이 발행된다.
- * 발행한 후보는 목록에서 빠진다(`candidate: null`). 저장한 초안과 다르면 운영자 수정(EDITED)을 거친 것으로 남긴다
+ * 지금 제목 · 초안으로 승인하고 발행한다(APPROVED → PUBLISHED). 저장하지 않은 수정도 함께 보낸다 — 운영자가 본 제목 · 본문이 발행된다.
+ * 발행한 후보는 목록에서 빠진다(`candidate: null`). 저장한 제목 · 초안과 다르면 운영자 수정(EDITED)을 거친 것으로 남긴다.
+ * 목 처리 함수다 — 실데이터는 요청하지 않는다(`approveAndPublishAdvisory`)
  */
 export function publishCandidate(
   id: string,
-  { draft, version }: { draft: string; version: number },
+  { title, draft, version }: { title?: string; draft: string; version: number },
   source: DataSource,
 ): Promise<CandidateActionResult> {
-  return write(id, version, source, (candidate) => ({
-    candidate: { ...candidate, draft },
-    published: true,
-    steps: draft === candidate.draft ? ['published'] : ['edited', 'published'],
-  }))
+  return write(id, version, source, (candidate) => {
+    const unchanged =
+      draft === candidate.draft && (title === undefined || title === mockTitleOf(candidate))
+    return {
+      candidate: { ...candidate, draft, ...(title !== undefined && { title }) },
+      published: true,
+      steps: unchanged ? ['published'] : ['edited', 'published'],
+    }
+  })
 }
 
 /**
  * `검토 대기` 메뉴 옆 수 — 처리하지 않은 후보(보류 · 발행 제외). 다른 운영자 화면(발행 이력)의 메뉴가 쓴다.
- * 목 목록 · 재현을 바꾸지 않고 읽기만 한다. 실데이터는 운영자 API 가 없어 null 이다
+ * 목 목록 · 재현을 바꾸지 않고 읽기만 한다. 실데이터는 null 이다 — 수만 주는 API 가 없고, 메뉴 수 하나로 후보 목록을 읽지 않는다(#272 결정)
  */
 export function countPendingCandidates(source: DataSource): Promise<number | null> {
   return respond(() =>
@@ -234,7 +254,7 @@ export function resetMockReviewCandidates(): void {
  *
  * 후보 목록(`GET /candidates?week=`) · 안내 상세(`GET /{advisoryId}`) · 초안 만들기(`POST`) · 수정 저장(`PUT /{advisoryId}`) ·
  * 승인하고 발행(`POST /{advisoryId}/approve` → `/publish`). 계약은 docs/api-contract-draft.md "운영자 안내 처리"(#246) ·
- * "운영자 검토 후보"(#266)이고, 응답을 화면 모델로 옮기는 규칙은 `admin-review-api.ts` 다. 화면은 아직 부르지 않는다(위 머리말).
+ * "운영자 검토 후보"(#266)이고, 응답을 화면 모델로 옮기는 규칙은 `admin-review-api.ts` 다. 검토 대기 화면이 실데이터에서 부른다(위 머리말).
  *
  * - 처리 응답은 안내 한 건이라 그 후보에 바로 덮는다(`withAdvisoryDetail`) — 다시 읽지 않는다. 앞 응답의 `version` 을 다음 요청에 싣는다
  * - 충돌(409 `005` · `006` · `007`, 404 `001` — 초안 만들기는 `002` · `003` · `004` 도)이면 오류 봉투에 안내가 없어 **목록을 다시 읽고 그
@@ -305,8 +325,8 @@ export type ApproveAndPublishResult =
   | ({ status: 'approvedNotPublished' } & RefreshedCandidate)
   /** `step` 에서 충돌했다 — 그 앞 단계는 처리됐다. 다시 읽은 목록과 그 후보 */
   | ({ status: 'conflict'; step: PublishStep } & RefreshedCandidate)
-  /** `step` 에서 검증 거부됐다 — 그 앞 단계는 처리됐다 */
-  | { status: 'invalid'; step: PublishStep }
+  /** `step` 에서 검증 거부됐다 — 그 앞 단계는 처리됐다. `candidate` 는 처리된 단계까지 반영한 후보다(`failed` 와 같다) */
+  | { status: 'invalid'; step: PublishStep; candidate: ReviewCandidate }
   /** `step` 에서 충돌 · 승인됨으로 남음까지는 알지만 다시 읽지 못했다 */
   | { status: 'unrefreshed'; outcome: 'conflict' | 'approvedNotPublished'; step: PublishStep }
   /**
@@ -484,7 +504,7 @@ async function stopped(
 ): Promise<ApproveAndPublishResult> {
   switch (sent.kind) {
     case 'invalid':
-      return { status: 'invalid', step }
+      return { status: 'invalid', step, candidate }
     case 'failed':
       return { status: 'failed', step, candidate, error: sent.error }
     case 'conflict': {

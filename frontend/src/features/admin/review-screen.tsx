@@ -6,23 +6,38 @@ import { useSearchParams } from 'next/navigation'
 import clsx from 'clsx'
 
 import { AlertBox } from '@/components/alert-box'
+import { Button } from '@/components/button'
 import { formatIsoWeekOfMonth } from '@/lib/iso-week'
 import { STATUS_TEXT_CLASS } from '@/lib/status'
 import { useActiveRef } from '@/lib/use-active-ref'
 import { useDataSource } from '@/lib/use-data-source'
 
 import {
+  type AdvisoryWriteResult,
+  approveAndPublishAdvisory,
+  type ApproveAndPublishResult,
   type CandidateActionResult,
-  type CandidateListResult,
+  createAdvisoryDraft,
+  type CreateDraftResult,
+  fetchCandidateDetail,
+  hasOpenAdvisory,
   holdCandidate,
   listReviewCandidates,
   MOCK_ADMIN_PARAM,
   parseMockAdminScenario,
   publishCandidate,
+  saveAdvisoryEdit,
   saveCandidateDraft,
 } from './admin-review-client'
 import { AdminShell } from './admin-shell'
-import { type CandidateAction, CandidateDetail, type DetailMessage } from './candidate-detail'
+import {
+  type CandidateAction,
+  CandidateDetail,
+  type DetailMessage,
+  type DraftInput,
+  type DraftStatus,
+} from './candidate-detail'
+import { mockTitleOf } from './mock'
 import {
   CANDIDATE_KIND_LABEL,
   CANDIDATE_KINDS,
@@ -30,13 +45,27 @@ import {
   type CandidateKind,
   type CandidateState,
   type ReviewCandidate,
+  type ReviewCandidateList,
 } from './types'
 
 type Filter = CandidateKind | 'all'
 
-/** 시안 설명 줄의 후보 기준. 기준선(+5%p)은 2단계 값이라 백엔드가 기준을 내려 주면 그 값으로 바꾼다 */
-const CANDIDATE_CRITERIA =
-  '후보 기준: 표본 100명 이상에서 기준선 대비 +5%p, 참여 급증, 반복 보고 의심'
+/** 목록 설명 줄의 후보 기준 — 응답의 지금 기준(참여 급증 · 반복 보고 %)으로 그린다. 기준선 변화는 집계 단계(조금 · 많이 늘었어요)다 */
+function criteriaText({
+  surgeChangePercent,
+  repeatRevisedPercent,
+}: ReviewCandidateList['criteria']) {
+  return `후보 기준: 표본 100명 이상에서 기준선 대비 증가, 참여 급증(전주 대비 +${surgeChangePercent}% 이상), 반복 보고 의심(수정된 보고 ${repeatRevisedPercent}% 이상)`
+}
+
+/** 유형 필터 · 유형별 수는 `signals`(신호 전체)로 센다 — 신호가 없는 후보는 `전체` 에만 든다(#272). 신호 값이 없으면 대표 유형으로 본다 */
+function hasKind(candidate: ReviewCandidate, kind: CandidateKind): boolean {
+  return (candidate.signals ?? (candidate.kind ? [candidate.kind] : [])).includes(kind)
+}
+
+function filterBy(list: readonly ReviewCandidate[], filter: Filter): readonly ReviewCandidate[] {
+  return filter === 'all' ? list : list.filter((item) => hasKind(item, filter))
+}
 
 const STATE_CHIP_CLASS: Record<CandidateState, string> = {
   reviewing: 'bg-brand text-bg',
@@ -54,87 +83,362 @@ function isStacked(): boolean {
   return typeof window.matchMedia === 'function' && !window.matchMedia('(min-width: 80rem)').matches
 }
 
-const ACTION_MESSAGES: Record<CandidateAction, { done: string; failed: string }> = {
-  save: {
-    done: '고친 초안을 저장했어요.',
-    failed: '초안을 저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
-  },
-  hold: {
-    done: '이 후보를 보류했어요. 이번 주에는 안내를 내지 않아요.',
-    failed: '보류하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
-  },
-  publish: { done: '', failed: '발행하지 못했어요. 잠시 뒤 다시 시도해 주세요.' },
+const DONE_MESSAGES: Record<Exclude<CandidateAction, 'publish'>, string> = {
+  create: '초안을 만들었어요.',
+  save: '고친 초안을 저장했어요.',
+  hold: '이 후보를 보류했어요. 이번 주에는 안내를 내지 않아요.',
 }
+
+const FAILED_MESSAGES: Record<CandidateAction, string> = {
+  create: '초안을 만들지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+  save: '초안을 저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+  hold: '보류하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+  publish: '발행하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+}
+
+const INVALID_MESSAGES: Record<CandidateAction, string> = {
+  create: '초안을 만들지 못했어요. 입력한 내용을 확인해 주세요.',
+  save: '초안을 저장하지 못했어요. 입력한 내용을 확인해 주세요.',
+  hold: '보류하지 못했어요. 입력한 내용을 확인해 주세요.',
+  publish: '발행하지 못했어요. 입력한 내용을 확인해 주세요.',
+}
+
+const CONFLICT_MESSAGE =
+  '다른 운영자가 먼저 이 후보를 고쳤어요. 최신 내용으로 바꿔 두었어요. 확인한 뒤 다시 시도해 주세요.'
+
+const goneMessage = (name: string) => `다른 운영자가 ${name} 후보를 먼저 발행했어요.`
+
+/** 초안 만들기 충돌 뒤 그 후보가 목록에 없다 — 발행됐는지 알 수 없다(후보 조건이 바뀌었을 수도 있다) */
+const NOT_CANDIDATE_MESSAGE = '이 후보는 더 이상 검토 대상이 아니에요. 목록을 다시 확인해 주세요.'
+
+/** 발행이 `ADVISORY_007` 로 거부됨 — 안내는 승인됨으로 남는다 */
+const approvedOnlyMessage = (name: string) =>
+  `${name} 안내는 승인됨으로 남았어요. 같은 동네 · 같은 주에 이미 발행된 안내가 있어 발행하지 못했어요.`
+
+/** 승인하고 발행이 단계 실패로 멈췄을 때. 그 앞 단계(고친 내용 저장 · 승인)가 처리됐으면 그 사실을 함께 알린다 */
+function stoppedMessage(step: 'save' | 'approve' | 'publish', dirty: boolean): string {
+  if (step === 'save')
+    return '고친 내용을 저장하지 못해 발행을 멈췄어요. 잠시 뒤 다시 시도해 주세요.'
+  if (step === 'approve') {
+    return `${dirty ? '고친 내용은 저장했어요. ' : ''}승인하지 못해 발행을 멈췄어요. 잠시 뒤 다시 시도해 주세요.`
+  }
+  return '승인은 됐지만 발행하지 못했어요. 잠시 뒤 다시 시도해 주세요.'
+}
+
+/**
+ * 처리 결과를 화면이 그릴 갈래로 옮긴 것. 목 · 실데이터의 결과 모양이 달라 여기서 맞춘다.
+ * - updated: 그 후보를 바꿔 그 자리에 둔다(null 이면 목록에서 뺀다 — 발행됨)
+ * - published: 발행해 목록에서 빠진다
+ * - refreshed: 다른 운영자가 먼저 바꿨거나(충돌) 승인됨으로 남았다 — 다시 읽은 목록(실데이터)과 그 후보로 바꾼다
+ * - message: 후보는 그대로 두고 상세에 알린다(검증 거부 · 요청하지 않음 · 실패)
+ * - unrefreshed: 처리(또는 충돌)는 서버에서 끝났을 수 있는데 목록을 다시 읽지 못했다 — 알리고 목록을 다시 읽게 한다
+ */
+type Outcome =
+  | { kind: 'updated'; candidate: ReviewCandidate | null; message?: DetailMessage }
+  | { kind: 'published' }
+  | {
+      kind: 'refreshed'
+      list?: readonly ReviewCandidate[]
+      candidate: ReviewCandidate | null
+      message: string
+      goneNotice: string
+    }
+  | { kind: 'message'; message: DetailMessage }
+  | { kind: 'unrefreshed'; notice: DetailMessage }
+
+/** 목 처리 결과 */
+function mockOutcome(
+  action: CandidateAction,
+  target: ReviewCandidate,
+  result: CandidateActionResult,
+): Outcome {
+  if (result.status === 'unavailable') {
+    return { kind: 'message', message: { tone: 'danger', text: FAILED_MESSAGES[action] } }
+  }
+  if (result.status === 'conflict') {
+    return {
+      kind: 'refreshed',
+      candidate: result.candidate,
+      message: CONFLICT_MESSAGE,
+      goneNotice: goneMessage(target.districtName),
+    }
+  }
+  if (action === 'publish') return { kind: 'published' }
+  return {
+    kind: 'updated',
+    candidate: result.candidate,
+    message: { tone: 'info', text: DONE_MESSAGES[action] },
+  }
+}
+
+/** 실데이터 초안 만들기 · 수정 저장 결과 */
+function writeOutcome(
+  action: 'create' | 'save',
+  target: ReviewCandidate,
+  result: AdvisoryWriteResult | CreateDraftResult,
+): Outcome {
+  switch (result.status) {
+    case 'ok':
+      return {
+        kind: 'updated',
+        candidate: result.candidate,
+        message: { tone: 'info', text: DONE_MESSAGES[action] },
+      }
+    case 'conflict':
+      return {
+        kind: 'refreshed',
+        list: result.list.candidates,
+        candidate: result.candidate,
+        message: CONFLICT_MESSAGE,
+        goneNotice: action === 'create' ? NOT_CANDIDATE_MESSAGE : goneMessage(target.districtName),
+      }
+    case 'invalid':
+      return { kind: 'message', message: { tone: 'danger', text: INVALID_MESSAGES[action] } }
+    case 'rejected':
+      return {
+        kind: 'message',
+        message: {
+          tone: 'neutral',
+          text:
+            result.reason === 'has-advisory'
+              ? '이 후보에는 이미 검토 중인 안내가 있어요. 새로고침한 뒤 다시 확인해 주세요.'
+              : '이 후보로는 초안을 만들 수 없어요. 자료가 부족하거나 집계가 아직 마감되지 않았어요.',
+        },
+      }
+    case 'unrefreshed':
+      return {
+        kind: 'unrefreshed',
+        notice:
+          result.outcome === 'ok'
+            ? { tone: 'info', text: DONE_MESSAGES[action] }
+            : { tone: 'neutral', text: '다른 운영자가 먼저 이 후보를 바꿨어요.' },
+      }
+  }
+}
+
+/** 실데이터 승인하고 발행 결과 */
+function publishOutcome(
+  target: ReviewCandidate,
+  dirty: boolean,
+  result: ApproveAndPublishResult,
+): Outcome {
+  switch (result.status) {
+    case 'published':
+      return { kind: 'published' }
+    case 'approvedNotPublished':
+      return {
+        kind: 'refreshed',
+        list: result.list.candidates,
+        candidate: result.candidate,
+        message: approvedOnlyMessage(target.districtName),
+        goneNotice: approvedOnlyMessage(target.districtName),
+      }
+    case 'conflict':
+      return {
+        kind: 'refreshed',
+        list: result.list.candidates,
+        candidate: result.candidate,
+        message: CONFLICT_MESSAGE,
+        goneNotice: goneMessage(target.districtName),
+      }
+    case 'invalid':
+      // 앞 단계(고친 내용 저장)가 처리됐을 수 있어 그 단계까지 반영한 후보로 바꿔 둔다(`failed` 와 같다)
+      return {
+        kind: 'updated',
+        candidate: result.candidate,
+        message: {
+          tone: 'danger',
+          text:
+            result.step === 'save'
+              ? INVALID_MESSAGES.save
+              : `${dirty ? '고친 내용은 저장했어요. ' : ''}${INVALID_MESSAGES.publish}`,
+        },
+      }
+    case 'unrefreshed':
+      return {
+        kind: 'unrefreshed',
+        notice: {
+          tone: 'neutral',
+          text:
+            result.outcome === 'approvedNotPublished'
+              ? approvedOnlyMessage(target.districtName)
+              : '다른 운영자가 먼저 이 후보를 바꿨어요.',
+        },
+      }
+    case 'failed':
+      // 앞 단계가 처리됐을 수 있어 그 단계까지 반영한 후보(다음 요청의 버전)로 바꿔 둔다
+      return {
+        kind: 'updated',
+        candidate: result.candidate,
+        message: { tone: 'danger', text: stoppedMessage(result.step, dirty) },
+      }
+  }
+}
+
+/** 읽는 중(null) · 후보 목록(기준 주 · 후보 기준) · 읽지 못함(다시 시도할 수 있다) */
+type Load =
+  | null
+  | ({ status: 'ready' } & Pick<ReviewCandidateList, 'isoWeek' | 'criteria'>)
+  | { status: 'failed' }
 
 /**
  * A01–A02 운영자 검토 대기 · 후보 상세 (`/admin/review`, #219, 시안 Admin — 데스크톱만). 가드는 레이아웃(`AdminGate`)이 건다.
  *
- * - 목록: 유형 필터(전체 · 기준선 변화 · 참여 급증 · 반복 보고 의심, 수 포함) → 후보 표(유형 · 행정동 · 참여 · 증상 보고 · 기준선 대비 · 상태).
- *   행정동 버튼(마우스는 행 어디를 눌러도 같다)으로 후보를 고르면 오른쪽(좁은 화면은 아래) 상세가 그 후보다. 처음은 첫 후보다.
- *   기준선 대비는 자료 부족 후보에 없어(#266) 값이 있는 후보가 하나도 없으면 열째 숨기고, 없는 칸은 비운다
- * - 상세(`CandidateDetail`): 근거 · 이상 보고 확인 · 발행 전 확인 · 안내문 초안 · 연결된 예방수칙 · `보류` · `수정 저장` · `승인하고 발행`
- * - 처리 결과: 저장 · 보류는 후보를 바꿔 그 자리에 둔다. 발행한 후보는 목록에서 빠지고(발행 이력 A03 에 남는다) 목록 위에 알린 뒤 다음 후보를 고른다.
- *   실패는 상세에 빨강 상자, 충돌(409 — 다른 운영자가 먼저 고침)은 서버의 최신 후보로 바꿔 그리고 다시 확인하라고 알린다
- * - **실데이터는 연동 전이라 요청하지 않고** 아직 준비하고 있다고 알린다(처리 API #246 · 후보 API #266 은 확정). 목 재현은 `?mock-admin=empty|fail|conflict`
+ * - 목록: 유형 필터(전체 · 기준선 변화 · 참여 급증 · 반복 보고 의심, 수 포함 — `signals` 로 센다) → 후보 표(유형 · 행정동 · 참여 · 증상 보고 ·
+ *   기준선 대비 · 상태). 행정동 버튼(마우스는 행 어디를 눌러도 같다)으로 후보를 고르면 오른쪽(좁은 화면은 아래) 상세가 그 후보다. 처음은 첫 후보다.
+ *   기준선 대비는 자료 부족 후보에 없어(#266) 값이 있는 후보가 하나도 없으면 열째 숨기고, 없는 칸은 비운다. 자료 부족 후보는 증상 보고 칸에
+ *   수치 · 상태색 없이 `자료 부족` 이다
+ * - 상세(`CandidateDetail`): 근거 · 이상 보고 확인 · 발행 전 확인 · 안내 제목 · 안내문 초안 · 연결된 예방수칙 · 처리 버튼
+ * - 처리 결과: 저장 · 초안 만들기 · 보류는 후보를 바꿔 그 자리에 둔다. 발행한 후보는 목록에서 빠지고(발행 이력 A03 에 남는다) 목록 위에 알린 뒤
+ *   다음 후보를 고른다. 실패는 상세에 빨강 상자, 충돌(409 — 다른 운영자가 먼저 고침)은 서버의 최신 목록 · 후보로 바꿔 그리고 다시 확인하라고 알린다
+ * - **실데이터**(#272): 후보 API 를 읽고(읽는 동안 "불러오고 있어요", 읽지 못하면 빨강 상자 + `다시 시도`), 처리할 안내가 있는 후보를 고르면
+ *   안내 상세(제목 · 본문 · 버전)를 읽는다. 처리는 초안 만들기(안내 없음) · 수정 저장 · 승인하고 발행이고 보류는 없다(서버에 기록되지 않는다).
+ *   처리 뒤 목록을 다시 읽지 못하면(`unrefreshed`) 처리 결과를 알리고 목록 실패 상태(`다시 시도`)로 둔다 — 옛 목록의 버튼으로 다시 처리하지
+ *   않게(발행 이력과 같다). 다시 읽으면 처리한 후보를 고른다. 목 재현은 `?mock-admin=empty|fail|conflict`(목데이터에서만)
  * - 좁은 화면(모바일 · 태블릿, 시안 없음): 한 단으로 쌓는다(목록 → 상세). 표는 행마다 두 줄 카드 모양이 된다(가로 스크롤 없음)
  * - **보내는 동안은 후보 고르기 · 필터를 막는다**(버튼 `disabled`). 늦게 온 결과는 보낼 때의 후보에 적용하는데, 그사이 다른 후보를
  *   보고 있으면 결과 안내가 엉뚱한 상세에 붙는다. 보내는 시간이 짧아 막는 쪽이 단순하다
- * - 포커스: 발행해 후보가 빠지면 새로 고른 상세 제목으로(남은 후보가 없으면 발행 알림으로), 충돌로 최신 내용을 받으면 초안 칸으로
- *   옮긴다 — 누른 버튼이 사라지거나 다시 그려져 포커스가 문서 처음으로 떨어지지 않게 한다
+ * - 포커스: 발행해 후보가 빠지면 새로 고른 상세 제목으로(남은 후보가 없으면 발행 알림으로), 충돌로 최신 내용을 받으면 초안 칸으로,
+ *   목록을 다시 읽지 못하면 `다시 시도` 로 옮긴다 — 누른 버튼이 사라지거나 다시 그려져 포커스가 문서 처음으로 떨어지지 않게 한다
  */
 export function AdminReviewScreen() {
   const source = useDataSource()
   const scenario = parseMockAdminScenario(useSearchParams().get(MOCK_ADMIN_PARAM))
   const active = useActiveRef()
   const detailRef = useRef<HTMLDivElement>(null)
-  const [load, setLoad] = useState<CandidateListResult | null>(null)
+  const retryRef = useRef<HTMLDivElement>(null)
+  const [load, setLoad] = useState<Load>(null)
+  // 다시 시도할 때 올린다(목록을 다시 읽는다)
+  const [loadKey, setLoadKey] = useState(0)
+  // 처리 뒤 목록을 다시 읽지 못했을 때의 처리 결과 알림. 목록 실패 상자 위에 둔다
+  const [loadNotice, setLoadNotice] = useState<DetailMessage | null>(null)
+  // 다음에 읽은 목록에서 고를 후보(처리한 후보). 없거나 목록에 없으면 첫 후보다
+  const preferredId = useRef<string | null>(null)
   const [candidates, setCandidates] = useState<readonly ReviewCandidate[]>([])
   const [filter, setFilter] = useState<Filter>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  // 충돌로 서버 값을 받아 오면 늘린다 — 상세의 입력(초안 · 확인)을 새 값으로 다시 시작한다
+  // 충돌로 서버 값을 받아 오면 늘린다 — 상세의 입력(제목 · 초안 · 확인)을 새 값으로 다시 시작한다
   const [revision, setRevision] = useState(0)
+  // 안내 상세를 읽지 못한 후보(실데이터). 다시 시도하면 `detailKey` 를 올려 다시 읽는다
+  const [detailFailedId, setDetailFailedId] = useState<string | null>(null)
+  const [detailKey, setDetailKey] = useState(0)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<DetailMessage | null>(null)
-  const [published, setPublished] = useState<string | null>(null)
+  // 목록 위 알림 — 발행함 · 다른 운영자가 먼저 발행함 · 승인됨으로 남음(그 후보가 목록에서 빠졌을 때)
+  const [notice, setNotice] = useState<DetailMessage | null>(null)
   const noticeRef = useRef<HTMLDivElement>(null)
-  // 처리 결과를 그린 뒤 옮길 포커스. 그린 다음 effect 가 한 번 쓰고 비운다
-  const pendingFocus = useRef<'title' | 'draft' | 'notice' | null>(null)
+  // 처리 결과 · 다시 읽기를 그린 뒤 옮길 포커스. 그린 다음 effect 가 한 번 쓰고 비운다
+  const pendingFocus = useRef<
+    'title' | 'draft' | 'field' | 'notice' | 'retry' | 'detailRetry' | null
+  >(null)
+  // 누른 `다시 시도`(목록 · 안내 상세) — 다시 읽은 결과에 맞춰 포커스를 옮긴다
+  const retried = useRef<'list' | 'detail' | null>(null)
 
   useEffect(() => {
     const target = pendingFocus.current
     if (!target) return
     pendingFocus.current = null
+    if (target === 'retry') {
+      retryRef.current?.querySelector<HTMLElement>('button')?.focus()
+      return
+    }
     const detail = detailRef.current
+    const heading = detail?.querySelector<HTMLElement>('h2')
+    // 입력 칸이 꺼져 있으면(초안을 만들 수 없는 후보) 상세 제목으로
+    const field = (selector: string) => {
+      const element = detail?.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)
+      return element && !element.disabled ? element : heading
+    }
     const element =
       target === 'notice'
         ? noticeRef.current
         : target === 'title'
-          ? detail?.querySelector('h2')
-          : detail?.querySelector('textarea')
+          ? heading
+          : target === 'draft'
+            ? field('textarea')
+            : target === 'field'
+              ? field('input:not([type=checkbox])')
+              : detail?.querySelector<HTMLElement>('[role=alert] button')
     ;(element ?? noticeRef.current)?.focus()
   })
 
   useEffect(() => {
     let live = true
-    // 목은 실패하지 않고 실데이터는 요청하지 않는다. 연동 때 불러오는 중 · 실패 상태를 더한다
-    void listReviewCandidates(source, { scenario }).then((result) => {
-      if (!live) return
-      setLoad(result)
-      const list = result.status === 'ready' ? result.candidates : []
-      setCandidates(list)
-      setSelectedId(list[0]?.id ?? null)
-      setFilter('all')
-      setMessage(null)
-      setPublished(null)
-    })
+    // 늦게 온 응답(화면을 떠남 · 출처나 재현이 바뀜 · 다시 시도)은 버린다. 목은 실패하지 않는다
+    listReviewCandidates(source, { scenario }).then(
+      (result) => {
+        if (!live) return
+        const list = result.candidates
+        const preferred = list.find((item) => item.id === preferredId.current)
+        preferredId.current = null
+        setLoad({ status: 'ready', isoWeek: result.isoWeek, criteria: result.criteria })
+        setCandidates(list)
+        setSelectedId((preferred ?? list[0])?.id ?? null)
+        setFilter('all')
+        setMessage(null)
+        setNotice(null)
+        if (retried.current === 'list') pendingFocus.current = 'title'
+        retried.current = null
+      },
+      () => {
+        if (!live) return
+        setLoad({ status: 'failed' })
+        if (retried.current === 'list') pendingFocus.current = 'retry'
+        retried.current = null
+      },
+    )
     return () => {
       live = false
     }
-  }, [source, scenario])
+  }, [source, scenario, loadKey])
 
-  const shown = filter === 'all' ? candidates : candidates.filter((item) => item.kind === filter)
+  const shown = filterBy(candidates, filter)
   const selected = shown.find((item) => item.id === selectedId) ?? null
   const showBaseline = candidates.some((item) => item.baselineDeltaPp !== undefined)
+  // 실데이터는 목록에 제목 · 본문이 없다 — 처리할 안내가 있는 후보는 상세를 읽어야 고칠 수 있다
+  const detailTarget =
+    source === 'api' && selected?.advisoryId !== undefined && selected.draft === undefined
+      ? selected
+      : null
+  const draftStatus: DraftStatus =
+    detailTarget === null ? 'ready' : detailFailedId === detailTarget.id ? 'failed' : 'loading'
+
+  useEffect(() => {
+    if (!detailTarget) return
+    let live = true
+    setDetailFailedId(null)
+    fetchCandidateDetail(detailTarget).then(
+      (next) => {
+        if (!live) return
+        if (retried.current === 'detail') pendingFocus.current = 'field'
+        retried.current = null
+        if (next) {
+          setCandidates((list) => list.map((item) => (item.id === next.id ? next : item)))
+          return
+        }
+        // 그사이 발행됐다 — 지금 목록 · 필터로 뺀다(이 effect 를 시작한 그림의 값은 낡았을 수 있다)
+        settleRef.current(detailTarget, null)
+        setNotice({ tone: 'info', text: goneMessage(detailTarget.districtName) })
+      },
+      () => {
+        if (!live) return
+        setDetailFailedId(detailTarget.id)
+        if (retried.current === 'detail') pendingFocus.current = 'detailRetry'
+        retried.current = null
+      },
+    )
+    return () => {
+      live = false
+    }
+    // 고른 후보(상세가 필요한 동안)와 다시 시도만 듣는다 — 목록의 다른 후보가 바뀌어도 다시 읽지 않는다
+  }, [detailTarget?.id, detailKey])
+
+  function retryLoad() {
+    retried.current = 'list'
+    setLoad(null)
+    setLoadNotice(null)
+    setLoadKey((key) => key + 1)
+  }
 
   function select(id: string, { scroll = false } = {}) {
     if (busy || id === selectedId) return
@@ -146,7 +450,7 @@ export function AdminReviewScreen() {
   function changeFilter(next: Filter) {
     if (busy) return
     setFilter(next)
-    const list = next === 'all' ? candidates : candidates.filter((item) => item.kind === next)
+    const list = filterBy(candidates, next)
     if (!list.some((item) => item.id === selectedId)) {
       setSelectedId(list[0]?.id ?? null)
       setMessage(null)
@@ -154,70 +458,128 @@ export function AdminReviewScreen() {
   }
 
   /**
-   * 처리 결과로 목록 · 선택을 바꾼다. 빠진 후보(발행)면 **지금 보이는 목록**(필터 적용)에서 같은 자리의 다음 후보를 고르고
-   * (끝이었으면 앞 후보), 남은 후보가 있으면 그 상세 제목 · 없으면 발행 알림으로 포커스를 옮기게 한다
+   * 목록 · 선택을 바꾼다. `list` 를 주면(다시 읽은 목록) 목록을 통째로 바꾸고, 아니면 그 후보만 바꾸거나(`latest`) 뺀다.
+   * 그 후보가 빠졌으면 **지금 보이는 목록**(필터 적용)에서 같은 자리의 다음 후보를 고르고(끝이었으면 앞 후보), 남은 후보가 있으면 그 상세
+   * 제목 · 없으면 목록 위 알림으로 포커스를 옮기게 한다
    */
-  function apply(target: ReviewCandidate, next: ReviewCandidate | null) {
-    if (next) {
-      setCandidates((list) => list.map((item) => (item.id === next.id ? next : item)))
-      return
-    }
-    const index = shown.findIndex((item) => item.id === target.id)
-    const rest = candidates.filter((item) => item.id !== target.id)
-    setCandidates(rest)
-    const nextShown = shown.filter((item) => item.id !== target.id)
-    const nextId = (nextShown[index] ?? nextShown[index - 1])?.id ?? null
+  function settle(
+    target: ReviewCandidate,
+    latest: ReviewCandidate | null,
+    list?: readonly ReviewCandidate[],
+  ) {
+    const next =
+      list ??
+      (latest
+        ? candidates.map((item) => (item.id === target.id ? latest : item))
+        : candidates.filter((item) => item.id !== target.id))
+    setCandidates(next)
+    if (latest) return
+    const index = Math.max(
+      0,
+      shown.findIndex((item) => item.id === target.id),
+    )
+    const nextShown = filterBy(next, filter)
+    const nextId = nextShown[Math.min(index, nextShown.length - 1)]?.id ?? null
     setSelectedId(nextId)
     pendingFocus.current = nextId ? 'title' : 'notice'
   }
+  // 늦게 온 응답(안내 상세)이 그 때의 목록 · 필터가 아니라 지금 값으로 고치게 한다
+  const settleRef = useRef(settle)
+  useEffect(() => {
+    settleRef.current = settle
+  })
 
-  async function act(action: CandidateAction, target: ReviewCandidate, draft: string) {
-    if (busy) return
-    const { id, version } = target
-    // 처리할 안내(버전)가 없는 후보는 초안 만들기부터다 — 연동(#272) 전에는 목 후보만 오고 목 후보는 늘 버전이 있다
-    if (version === undefined) {
-      setMessage({ tone: 'danger', text: ACTION_MESSAGES[action].failed })
-      return
+  /** 처리 결과를 그린다 */
+  function show(outcome: Outcome, target: ReviewCandidate) {
+    switch (outcome.kind) {
+      case 'updated':
+        settle(target, outcome.candidate)
+        if (outcome.candidate) setMessage(outcome.message ?? null)
+        else setNotice({ tone: 'info', text: goneMessage(target.districtName) })
+        return
+      case 'published':
+        settle(target, null)
+        setNotice({ tone: 'info', text: `${target.districtName} 안내를 발행했어요.` })
+        return
+      case 'refreshed':
+        settle(target, outcome.candidate, outcome.list)
+        setRevision((value) => value + 1)
+        if (outcome.candidate) {
+          pendingFocus.current = 'draft'
+          setMessage({ tone: 'neutral', text: outcome.message })
+        } else {
+          setNotice({ tone: 'neutral', text: outcome.goneNotice })
+        }
+        return
+      case 'message':
+        setMessage(outcome.message)
+        return
+      case 'unrefreshed':
+        // 서버에서 처리(또는 충돌)가 끝났을 수 있다 — 그 사실을 알리고, 옛 목록 대신 다시 읽게 한다
+        preferredId.current = target.id
+        setLoad({ status: 'failed' })
+        setCandidates([])
+        setMessage(null)
+        setLoadNotice(outcome.notice)
+        pendingFocus.current = 'retry'
+        return
     }
+  }
+
+  /** 처리 하나를 보낸다. 목은 목 처리 함수, 실데이터는 처리 API(초안 만들기 · 수정 저장 · 승인하고 발행)다 */
+  async function send(
+    action: CandidateAction,
+    target: ReviewCandidate,
+    { title, body, dirty }: DraftInput,
+  ): Promise<Outcome> {
+    if (source === 'mock') {
+      const { id, version } = target
+      // 목 후보는 늘 버전이 있다. 버전이 없는 후보(초안 만들기)는 목 서버에 없다
+      if (version === undefined) {
+        return { kind: 'message', message: { tone: 'danger', text: FAILED_MESSAGES[action] } }
+      }
+      const result = await (action === 'hold'
+        ? holdCandidate(id, { version }, source)
+        : action === 'publish'
+          ? publishCandidate(id, { title, draft: body, version }, source)
+          : saveCandidateDraft(id, { title, draft: body, version }, source))
+      return mockOutcome(action, target, result)
+    }
+    if (action === 'create') {
+      return writeOutcome(action, target, await createAdvisoryDraft(target, { title, body }))
+    }
+    // 보류는 실데이터에 없다(버튼을 숨긴다). 처리할 안내가 없으면 초안 만들기부터다(버튼이 바뀐다)
+    if (action === 'hold' || !hasOpenAdvisory(target)) {
+      return { kind: 'message', message: { tone: 'danger', text: FAILED_MESSAGES[action] } }
+    }
+    if (action === 'save') {
+      return writeOutcome(action, target, await saveAdvisoryEdit(target, { title, body }))
+    }
+    return publishOutcome(
+      target,
+      dirty,
+      await approveAndPublishAdvisory(target, { title, body, dirty }),
+    )
+  }
+
+  async function act(action: CandidateAction, target: ReviewCandidate, input: DraftInput) {
+    if (busy) return
     setBusy(true)
     setMessage(null)
-    setPublished(null)
-    let result: CandidateActionResult
+    setNotice(null)
+    let outcome: Outcome
     try {
-      result = await (action === 'save'
-        ? saveCandidateDraft(id, { draft, version }, source)
-        : action === 'hold'
-          ? holdCandidate(id, { version }, source)
-          : publishCandidate(id, { draft, version }, source))
+      outcome = await send(action, target, input)
     } catch {
+      // 실패(일시 장애 · 권한 없음 — 403 이면 클라이언트가 세션 요약을 다시 맞춰 가드가 권한 없음을 그린다). 입력은 그대로다
       if (!active.current) return
       setBusy(false)
-      setMessage({ tone: 'danger', text: ACTION_MESSAGES[action].failed })
+      setMessage({ tone: 'danger', text: FAILED_MESSAGES[action] })
       return
     }
     if (!active.current) return
     setBusy(false)
-    if (result.status === 'unavailable') {
-      setMessage({ tone: 'danger', text: ACTION_MESSAGES[action].failed })
-      return
-    }
-    if (result.status === 'conflict') {
-      apply(target, result.candidate)
-      setRevision((value) => value + 1)
-      if (result.candidate) {
-        pendingFocus.current = 'draft'
-        setMessage({
-          tone: 'neutral',
-          text: '다른 운영자가 먼저 이 후보를 고쳤어요. 최신 내용으로 바꿔 두었어요. 확인한 뒤 다시 시도해 주세요.',
-        })
-      } else {
-        setPublished(`다른 운영자가 ${target.districtName} 후보를 먼저 발행했어요.`)
-      }
-      return
-    }
-    apply(target, result.candidate)
-    if (action === 'publish') setPublished(`${target.districtName} 안내를 발행했어요.`)
-    else setMessage({ tone: 'info', text: ACTION_MESSAGES[action].done })
+    show(outcome, target)
   }
 
   const ready = load?.status === 'ready'
@@ -233,15 +595,35 @@ export function AdminReviewScreen() {
         <h1 className="text-sheet-title font-bold text-fg">검토 대기</h1>
         {ready && (
           <p className="text-body-strong text-fg-sub">
-            이번 주 후보 {candidates.length}건 · {CANDIDATE_CRITERIA}
+            이번 주 후보 {candidates.length}건 · {criteriaText(load.criteria)}
           </p>
         )}
       </div>
 
-      {load?.status === 'unavailable' && (
-        <AlertBox tone="neutral">
-          운영자 검토는 아직 준비하고 있어요. 지금은 검토 후보를 불러올 수 없어요.
-        </AlertBox>
+      {load === null && (
+        <p role="status" className="text-body text-fg-sub">
+          검토 후보를 불러오고 있어요
+        </p>
+      )}
+
+      {load?.status === 'failed' && (
+        <div ref={retryRef} className="flex flex-col gap-3">
+          {loadNotice && (
+            <AlertBox tone={loadNotice.tone} role="alert">
+              {loadNotice.text}
+            </AlertBox>
+          )}
+          <AlertBox
+            tone="danger"
+            action={
+              <Button variant="secondary" size="sm" className="self-start" onClick={retryLoad}>
+                다시 시도
+              </Button>
+            }
+          >
+            검토 후보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
+          </AlertBox>
+        </div>
       )}
 
       {ready && (
@@ -250,18 +632,15 @@ export function AdminReviewScreen() {
             aria-label="검토 후보"
             className="flex min-w-0 flex-col gap-4 desktop:w-135 desktop:shrink-0"
           >
-            {published && (
+            {notice && (
               // 남은 후보가 없을 때 포커스를 받는 자리다(탭 순서에는 들지 않는다)
               <div ref={noticeRef} tabIndex={-1} className="focus:outline-none">
-                <AlertBox tone="info">{published}</AlertBox>
+                <AlertBox tone={notice.tone}>{notice.text}</AlertBox>
               </div>
             )}
             <div className="flex flex-wrap gap-2" role="group" aria-label="유형">
               {(['all', ...CANDIDATE_KINDS] as const).map((kind) => {
-                const count =
-                  kind === 'all'
-                    ? candidates.length
-                    : candidates.filter((item) => item.kind === kind).length
+                const count = filterBy(candidates, kind).length
                 const pressed = filter === kind
                 return (
                   <button
@@ -308,11 +687,19 @@ export function AdminReviewScreen() {
           <div ref={detailRef} className="flex min-w-0 grow scroll-mt-4 flex-col">
             {selected && (
               <CandidateDetail
-                key={`${selected.id}:${revision}`}
+                // 안내 상세를 다 읽으면 그 값으로 입력을 다시 시작한다
+                key={`${selected.id}:${revision}:${draftStatus}`}
                 candidate={selected}
+                initialTitle={source === 'mock' ? mockTitleOf(selected) : (selected.title ?? '')}
+                holdable={source === 'mock'}
+                status={draftStatus}
                 busy={busy}
                 message={message}
-                onAction={(action, draft) => void act(action, selected, draft)}
+                onRetry={() => {
+                  retried.current = 'detail'
+                  setDetailKey((key) => key + 1)
+                }}
+                onAction={(action, input) => void act(action, selected, input)}
               />
             )}
           </div>
@@ -374,9 +761,12 @@ function CandidateTable({
           const selected = item.id === selectedId
           const delta = item.baselineDeltaPp
           const deltaClass = delta !== undefined && delta > 0 && STATUS_TEXT_CLASS.high
+          // 자료 부족 후보는 수치 · 상태색 없이 `자료 부족` 이다(증상 보고 비율이 없다)
+          const insufficient = item.level === 'insufficient'
           const summary = [
             ...(item.kind ? [CANDIDATE_KIND_LABEL[item.kind]] : []),
             `참여 ${item.participants}명`,
+            ...(insufficient ? ['자료 부족'] : []),
             ...(item.symptomRate !== undefined ? [`증상 보고 ${item.symptomRate}%`] : []),
             ...(delta !== undefined ? [`기준선 대비 ${formatDelta(delta)}`] : []),
           ].join(' · ')
@@ -419,8 +809,10 @@ function CandidateTable({
                 <span className="text-sub text-fg-sub desktop:hidden">{summary}</span>
               </td>
               <td className={wideOnly}>{item.participants}명</td>
-              <td className={wideOnly}>
-                {item.symptomRate !== undefined && `${item.symptomRate}%`}
+              <td className={clsx(wideOnly, insufficient && 'text-fg-sub')}>
+                {insufficient
+                  ? '자료 부족'
+                  : item.symptomRate !== undefined && `${item.symptomRate}%`}
               </td>
               {showBaseline && (
                 <td className={clsx(wideOnly, deltaClass && ['font-semibold', deltaClass])}>
