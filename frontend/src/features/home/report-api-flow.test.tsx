@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resetMemberInfoForTests, startMemberInfo } from '@/features/auth/member-info'
 import { resetCurrentReportForTests, startCurrentReport } from '@/features/report/current-report'
@@ -24,6 +24,7 @@ import {
 } from '@/test/api-session'
 
 import { HomeScreen } from './home-screen'
+import { HOME_SHEETS } from './home-sheets'
 import { HOME_MOCKS } from './mock'
 
 // 테스트에는 Next 라우터가 없다. 주소는 jsdom 의 지금 주소를 읽는다(보고 흐름 단계는 history 로 바뀐다)
@@ -111,6 +112,9 @@ function sentBody(key: string): unknown {
   const body = call?.[1]?.body
   return typeof body === 'string' ? JSON.parse(body) : undefined
 }
+
+// 시트 모듈 받기가 시트 안 요소를 기다리는 1000ms 창에 섞이지 않게 미리 받는다(#289, report-install-flow.test.tsx 참고)
+beforeAll(() => Promise.all(HOME_SHEETS.map((sheet) => sheet.load())))
 
 describe('실데이터 홈 보고 버튼 — 이번 주 보고', () => {
   it('읽는 동안에는 완료로 보이지 않고(보고 흐름은 확인 중 · 고르기 꺼짐), 보낸 보고를 읽으면 완료 · 수정하기다', async () => {

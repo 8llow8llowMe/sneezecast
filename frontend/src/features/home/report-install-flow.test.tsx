@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resetMockSession } from '@/features/auth/auth-client'
 import { InstallScreen } from '@/features/install/install-screen'
@@ -11,6 +11,7 @@ import { cancelReport } from '@/features/report/report-client'
 import { NavTrailProvider } from '@/lib/use-nav-trail'
 
 import { HomeScreen } from './home-screen'
+import { HOME_SHEETS } from './home-sheets'
 import { HOME_MOCKS } from './mock'
 
 // 테스트에는 Next 라우터가 없다. 주소는 jsdom 의 지금 주소를 읽고, 화면 사이 이동은 아래에서 손으로 흉내 낸다
@@ -32,6 +33,11 @@ function openDialogTitle() {
 }
 
 const QA = 'mock-auth=member&mock-push=needs-install'
+
+// 홈 시트는 처음 열 때 받는다(지연 로드, #184). 테스트에서 첫 `import()` 는 시트 하위 모듈을 처음 변환 · 평가하는 시점이라,
+// 미리 받지 않으면 이 시간이 시트 안 버튼을 기다리는 `findBy*` · `waitFor` 의 기본 1000ms 창에 함께 들어간다 — 단독은 약 150ms 지만
+// 전체 실행 부하에서는 약 800ms 까지 늘어 간헐적으로 실패했다(#289). 받는 동안 · 받지 못한 동작은 sheet-load-failure.test.tsx 가 본다
+beforeAll(() => Promise.all(HOME_SHEETS.map((sheet) => sheet.load())))
 
 /**
  * S06 보고 완료 → S12 홈 화면 추가 안내 → 닫기 → 보고 완료 유지 (#110).
